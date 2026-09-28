@@ -1,0 +1,409 @@
+
+from backend.config.database import get_db
+from backend.models.eccd import EccdDomain, EccdQuestion, StudentEccdEvaluation, TestingPeriod
+from backend.models.message import Message
+from backend.models.section import Section
+from backend.models.section_teacher import SectionTeacher
+from backend.models.student import Student
+from backend.models.teacher import Teacher
+from backend.models.user import User, UserRole
+from backend.schemas.analytics import DashboardFilters, PieChartSlice
+from backend.utils.deps import verify_role
+from fastapi import APIRouter, Depends, Query
+from sqlalchemy import desc, distinct, func, case
+from sqlalchemy.orm import Session, aliased
+
+router = APIRouter(prefix="/api/analytics", tags=["Analytics"])
+
+
+def get_teacher_section_ids(teacher_id: int, db: Session) -> list[int]:
+    st_ids = [
+        st[0]
+        for st in db.query(SectionTeacher.section_id)
+        .filter(SectionTeacher.teacher_id == teacher_id, SectionTeacher.status == "Active")
+        .all()
+    ]
+    s_ids = [
+        s[0]
+        for s in db.query(Section.section_id)
+        .filter(Section.adviser_teacher_id == teacher_id)
+        .all()
+    ]
+    return list(set(st_ids + s_ids))
+
+
+@router.get("/filters", response_model=DashboardFilters)
+def get_dashboard_filters(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(
+        verify_role(["super-admin", "admin", "teacher", "chairman"])
+    ),
+):
+    domains = [
+        d[0]
+        for d in db.query(EccdDomain.domain_name).order_by(EccdDomain.domain_id).all()
+    ]
+
+    if current_user.role in [UserRole.SUPER_ADMIN, "chairman"]:
+        sections = [
+            s[0]
+            for s in db.query(Section.section_name).order_by(Section.section_name).all()
+        ]
+        school_years = [
+            y[0]
+            for y in db.query(distinct(Student.school_year))
+            .filter(Student.school_year.isnot(None))
+            .order_by(desc(Student.school_year))
+            .all()
+        ]
+        return {"sections": sections, "domains": domains, "schoolYears": school_years}
+    else:
+        # Teacher view
+        teacher = (
+            db.query(Teacher).filter(Teacher.user_id == current_user.user_id).first()
+        )
+        if not teacher:
+            return {"sections": [], "domains": domains, "schoolYears": []}
+
+        # A teacher only sees their assigned sections (via section_teachers or legacy section)
+        sec_ids = get_teacher_section_ids(teacher.teacher_id, db)
+        sections = [
+            s[0]
+            for s in db.query(Section.section_name)
+            .filter(Section.section_id.in_(sec_ids))
+            .order_by(Section.section_name)
+            .all()
+        ]
+        if not sections and teacher.class_name:
+            sections = [teacher.class_name]
+        return {"sections": sections, "domains": domains, "schoolYears": []}
+
+
+@router.get("/pie-data", response_model=list[PieChartSlice])
+def get_dashboard_pie_data(
+    section: str = Query("All"),
+    domain: str = Query("All"),
+    period: str = Query("All"),
+    schoolYear: str = Query("All"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(
+        verify_role(["super-admin", "admin", "teacher", "chairman"])
+    ),
+):
+    query = (
+        db.query(StudentEccdEvaluation.answer, func.count().label("count"))
+        .join(Student, StudentEccdEvaluation.student_lrn == Student.lrn_number)
+        .join(
+            EccdQuestion, StudentEccdEvaluation.question_id == EccdQuestion.question_id
+        )
+        .join(EccdDomain, EccdQuestion.domain_id == EccdDomain.domain_id)
+    )
+
+    if section != "All":
+        # Check if the section name matches any section
+        query = query.filter(Student.section.has(section_name=section))
+
+    if domain != "All":
+        query = query.filter(EccdDomain.domain_name == domain)
+
+    if period != "All":
+        query = query.filter(StudentEccdEvaluation.testing_period == period)
+
+    if schoolYear != "All":
+        query = query.filter(Student.school_year == schoolYear)
+    else:
+        query = query.filter(Student.is_active == True)
+
+    # If teacher, strictly enforce they can only see their sections
+    if current_user.role not in [UserRole.SUPER_ADMIN, "chairman"]:
+        teacher = (
+            db.query(Teacher).filter(Teacher.user_id == current_user.user_id).first()
+        )
+        if teacher:
+            sec_ids = get_teacher_section_ids(teacher.teacher_id, db)
+            if sec_ids:
+                query = query.filter(Student.section_id.in_(sec_ids))
+            else:
+                return [
+                    {"name": "KAYA", "value": 0, "color": "#10b981"},
+                    {"name": "DI-KAYA", "value": 0, "color": "#ef4444"},
+                ]
+        else:
+            return [
+                {"name": "KAYA", "value": 0, "color": "#10b981"},
+                {"name": "DI-KAYA", "value": 0, "color": "#ef4444"},
+            ]
+
+    results = query.group_by(StudentEccdEvaluation.answer).all()
+
+    kaya_count = 0
+    dikaya_count = 0
+
+    for row in results:
+        if row.answer == "KAYA":
+            kaya_count = row.count
+        elif row.answer == "DI-KAYA":
+            dikaya_count = row.count
+
+    return [
+        {"name": "KAYA", "value": kaya_count, "color": "#10b981"},
+        {"name": "DI-KAYA", "value": dikaya_count, "color": "#ef4444"},
+    ]
+
+
+@router.get("/stats")
+def get_dashboard_stats(
+    section: str = Query("All"),
+    schoolYear: str = Query("All"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(
+        verify_role(["super-admin", "admin", "teacher", "chairman"])
+    ),
+):
+    if current_user.role in [UserRole.SUPER_ADMIN, "chairman"]:
+        students_query = db.query(Student)
+        teachers_query = db.query(Teacher)
+        
+        if schoolYear != "All":
+            students_query = students_query.filter(Student.school_year == schoolYear)
+        else:
+            students_query = students_query.filter(Student.is_active == True)
+
+        if section != "All":
+            students_query = students_query.filter(Student.section.has(section_name=section))
+            teachers_query = teachers_query.filter(Teacher.sections.any(section_name=section))
+            
+        total_students = students_query.count()
+        total_teachers = teachers_query.count()
+        
+        eccd_query = (
+            db.query(StudentEccdEvaluation.answer, func.count().label("count"))
+            .join(Student, StudentEccdEvaluation.student_lrn == Student.lrn_number)
+        )
+        if schoolYear != "All":
+            eccd_query = eccd_query.filter(Student.school_year == schoolYear)
+        else:
+            eccd_query = eccd_query.filter(Student.is_active == True)
+        if section != "All":
+            eccd_query = eccd_query.filter(Student.section.has(section_name=section))
+            
+        eccd_rows = eccd_query.group_by(StudentEccdEvaluation.answer).all()
+        kaya_count = sum([r.count for r in eccd_rows if r.answer == "KAYA"])
+        dikaya_count = sum([r.count for r in eccd_rows if r.answer == "DI-KAYA"])
+        
+        total_eccd = kaya_count + dikaya_count
+        kaya_percentage = round((kaya_count / total_eccd) * 100) if total_eccd > 0 else 0
+        dikaya_percentage = round((dikaya_count / total_eccd) * 100) if total_eccd > 0 else 0
+
+        priority_query = (
+            db.query(Section.section_name.label("class_name"), func.count().label("dikaya_count"))
+            .select_from(StudentEccdEvaluation)
+            .join(Student, StudentEccdEvaluation.student_lrn == Student.lrn_number)
+            .join(Section, Student.section_id == Section.section_id)
+            .filter(StudentEccdEvaluation.answer == "DI-KAYA")
+        )
+        if schoolYear != "All":
+            priority_query = priority_query.filter(Student.school_year == schoolYear)
+        else:
+            priority_query = priority_query.filter(Student.is_active == True)
+        if section != "All":
+            priority_query = priority_query.filter(Student.section.has(section_name=section))
+            
+        priority_row = priority_query.group_by(Section.section_name).order_by(desc("dikaya_count")).first()
+        if priority_row:
+            priority_intervention = priority_row.class_name
+            priority_subtitle = "Requires Support"
+        else:
+            priority_intervention = "Perfect"
+            priority_subtitle = "Fully on Track"
+
+        domain_query = (
+            db.query(EccdDomain.domain_name, func.count().label("dikaya_count"))
+            .select_from(StudentEccdEvaluation)
+            .join(EccdQuestion, StudentEccdEvaluation.question_id == EccdQuestion.question_id)
+            .join(EccdDomain, EccdQuestion.domain_id == EccdDomain.domain_id)
+            .join(Student, StudentEccdEvaluation.student_lrn == Student.lrn_number)
+            .filter(StudentEccdEvaluation.answer == "DI-KAYA")
+        )
+        if schoolYear != "All":
+            domain_query = domain_query.filter(Student.school_year == schoolYear)
+        else:
+            domain_query = domain_query.filter(Student.is_active == True)
+        if section != "All":
+            domain_query = domain_query.filter(Student.section.has(section_name=section))
+
+        domain_row = domain_query.group_by(EccdDomain.domain_name).order_by(desc("dikaya_count")).first()
+        if domain_row:
+            critical_domain = domain_row.domain_name.replace(" Domain", "")
+            critical_subtitle = "Needs Improvement"
+        else:
+            critical_domain = "Perfect"
+            critical_subtitle = "Fully Mastered"
+
+        return {
+            "stats": {
+                "totalStudents": str(total_students),
+                "totalTeachers": str(total_teachers),
+                "priorityIntervention": priority_intervention,
+                "priorityInterventionSubtitle": priority_subtitle,
+                "criticalDomain": critical_domain,
+                "criticalDomainSubtitle": critical_subtitle,
+                "eccdProgress": f"{kaya_percentage}%",
+                "eccdAvg": f"{kaya_percentage}%" if kaya_percentage > 0 else "0%"
+            },
+            "functionalMastery": {
+                "kaya": kaya_percentage,
+                "dikaya": dikaya_percentage
+            }
+        }
+    else:
+        # Teacher Stats
+        teacher = db.query(Teacher).filter(Teacher.user_id == current_user.user_id).first()
+        if not teacher:
+            return {
+                "stats": {
+                    "totalStudents": "0",
+                    "unreadMessages": "0",
+                    "eccdProgress": "0%",
+                    "priorityDomain": "None"
+                },
+                "messages": []
+            }
+
+        sec_ids = get_teacher_section_ids(teacher.teacher_id, db)
+
+        total_students = (
+            db.query(Student)
+            .filter(
+                Student.section_id.in_(sec_ids),
+                Student.is_active == True,
+            )
+            .count()
+            if sec_ids
+            else 0
+        )
+
+        unread_messages = (
+            db.query(Message)
+            .filter(
+                Message.teacher_id == teacher.teacher_id,
+                Message.sender_role == "parent",
+                Message.is_read == False,
+                Message.is_archived == False,
+            )
+            .count()
+        )
+
+        total_questions = db.query(EccdQuestion).count()
+        total_possible = total_students * total_questions * 3
+
+        total_submitted = (
+            db.query(StudentEccdEvaluation)
+            .join(Student)
+            .filter(
+                Student.section_id.in_(sec_ids),
+                Student.is_active == True,
+            )
+            .count()
+            if sec_ids
+            else 0
+        )
+
+        progress = "0%"
+        if total_possible > 0:
+            progress = f"{(total_submitted / total_possible) * 100:.1f}%"
+
+        EccdEvalAlias = aliased(StudentEccdEvaluation)
+        
+        period_sort_logic = case(
+            (EccdEvalAlias.testing_period == TestingPeriod.PRE, 1),
+            (EccdEvalAlias.testing_period == TestingPeriod.MID, 2),
+            (EccdEvalAlias.testing_period == TestingPeriod.POST, 3),
+            else_=0,
+        )
+        
+        latest_period_subquery = (
+            db.query(EccdEvalAlias.testing_period)
+            .filter(EccdEvalAlias.student_lrn == StudentEccdEvaluation.student_lrn)
+            .order_by(period_sort_logic.desc())
+            .limit(1)
+            .correlate(StudentEccdEvaluation)
+            .scalar_subquery()
+        )
+
+        top_domain = (
+            db.query(
+                EccdDomain.domain_name,
+                func.count(StudentEccdEvaluation.answer).label("count"),
+            )
+            .select_from(StudentEccdEvaluation)
+            .join(Student, StudentEccdEvaluation.student_lrn == Student.lrn_number)
+            .join(EccdQuestion, StudentEccdEvaluation.question_id == EccdQuestion.question_id)
+            .join(EccdDomain, EccdQuestion.domain_id == EccdDomain.domain_id)
+            .filter(
+                Student.section_id.in_(sec_ids),
+                Student.is_active == True,
+                StudentEccdEvaluation.answer == "DI-KAYA",
+                StudentEccdEvaluation.testing_period == latest_period_subquery,
+            )
+            .group_by(EccdDomain.domain_id, EccdDomain.domain_name)
+            .order_by(desc("count"))
+            .first()
+            if sec_ids
+            else None
+        )
+
+        priority_domain = top_domain.domain_name.replace(" Domain", "") if top_domain else "None"
+
+        # Recent messages feed
+        from backend.models.parent import Parent
+        recent_messages = (
+            db.query(Message, Parent.fullname)
+            .join(Parent, Message.parent_id == Parent.parent_id)
+            .filter(
+                Message.teacher_id == teacher.teacher_id,
+                Message.sender_role == "parent",
+                Message.is_archived == False
+            )
+            .order_by(Message.created_at.desc())
+            .limit(5)
+            .all()
+        )
+        
+        messages_list = []
+        for msg, parent_name in recent_messages:
+            messages_list.append({
+                "id": msg.message_id,
+                "name": parent_name,
+                "preview": msg.body,
+                "time": msg.created_at.strftime("%b %d"),
+                "read": bool(msg.is_read)
+            })
+
+        return {
+            "stats": {
+                "totalStudents": str(total_students),
+                "unreadMessages": str(unread_messages),
+                "eccdProgress": progress,
+                "priorityDomain": priority_domain,
+            },
+            "messages": messages_list
+        }
+
+from backend.models.log import SystemLog
+@router.get("/logs")
+def get_system_logs(
+    db: Session = Depends(get_db),
+    current_user=Depends(verify_role(["super-admin", "chairman"])),
+):
+    logs = db.query(SystemLog).order_by(SystemLog.timestamp.desc()).limit(100).all()
+    results = []
+    for log in logs:
+        results.append({
+            "id": log.id,
+            "action": log.action,
+            "performed_by": log.performed_by,
+            "details": log.details,
+            "timestamp": log.timestamp.isoformat() if log.timestamp else None
+        })
+    return results

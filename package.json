@@ -1,0 +1,6 @@
+{
+  "scripts": {
+    "backend": "uv run uvicorn backend.main:app --reload",
+    "frontend": "cd frontend && pnpm dev"
+  }
+}

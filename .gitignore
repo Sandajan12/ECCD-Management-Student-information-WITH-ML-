@@ -1,0 +1,112 @@
+# =============================================================================
+# AMES System - Comprehensive Root .gitignore
+# =============================================================================
+
+# 1. Credentials & Environment Secrets (CRITICAL)
+.env
+.env.*
+*.env
+!*.env.example
+
+# 2. Legacy Migration Reference & Raw Database Dumps
+_legacy_reference/
+*.sql
+*.enc
+
+# 3. Virtual Environments & Dependencies
+.venv/
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+node_modules/
+.pnpm-store/
+
+# 4. Python Build, Cache & Test Artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# 5. Frontend & Build Outputs
+frontend/dist/
+frontend/dist-ssr/
+frontend/build/
+dist/
+*.local
+
+# 6. Package Manager Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+*.log
+
+# 7. Operating System & Editor Files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+[Dd]esktop.ini
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# 8. Machine Learning Large Model Binaries / Checkpoints (>100MB)
+*.pkl
+*.joblib
+*.pt
+*.pth
+*.onnx
+*.h5
+*.bin
+*.ckpt
+
+# 9. Runtime Uploads, Generated Exports, and SQLite Databases
+backend/uploads/
+backend/exports/
+uploads/
+exports/
+backups/
+*.db
+*.sqlite3
+*.sqlite
+
+# 10. Spreadsheets, Sensitive Student Data Exports & Templates
+*.xlsx
+*.xls
+*.csv
+backend/assets/templates/*.xlsx
+backend/assets/templates/*.xls

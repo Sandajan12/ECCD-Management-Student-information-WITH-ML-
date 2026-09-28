@@ -1,0 +1,45 @@
+# =============================================================================
+# AMES System - Backend .gitignore
+# =============================================================================
+
+# Credentials - CRITICAL
+.env
+.env.*
+*.env
+!*.env.example
+
+# Python Cache & Environments
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+venv/
+env/
+.venv/
+
+# Uploads, Backups & Generated Exports
+uploads/
+exports/
+backups/
+*.db
+*.sqlite3
+*.enc
+*.sql
+
+# ML Models
+*.pkl
+*.joblib
+*.pt
+*.pth
+*.onnx
+*.h5
+*.bin
+
+# Spreadsheets & Sensitive Student Data Templates
+*.xlsx
+*.xls
+*.csv
+assets/templates/*.xlsx
+assets/templates/*.xls
