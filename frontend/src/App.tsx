@@ -28,6 +28,8 @@ import MessageTeacher from "./pages/user/MessageTeacher";
 
 import ProtectedRoute from "./components/ProtectedRoute";
 import MainLayout from "./layouts/MainLayout";
+import ChairmanLayout from "./layouts/ChairmanLayout";
+import QuestionsWorkspace from "./pages/QuestionsWorkspace";
 import "./App.css";
 
 function App() {
@@ -38,6 +40,34 @@ function App() {
           <Routes>
             <Route path="/login" element={<LoginPage />} />
             <Route path="/register-parent" element={<RegisterParentPage />} />
+            <Route
+              path="/chairman/dashboard"
+              element={<Navigate to="/super-admin/dashboard" replace />}
+            />
+            <Route
+              path="/chairman/teachers"
+              element={<Navigate to="/super-admin/teachers" replace />}
+            />
+            <Route
+              path="/chairman/students"
+              element={<Navigate to="/super-admin/students" replace />}
+            />
+            <Route
+              path="/chairman/audit"
+              element={<Navigate to="/super-admin/audit" replace />}
+            />
+            <Route
+              path="/chairman/eccd-questions"
+              element={<Navigate to="/super-admin/eccd-questions" replace />}
+            />
+            <Route
+              path="/chairman/settings"
+              element={<Navigate to="/super-admin/settings" replace />}
+            />
+            <Route
+              path="/parents/childinformation"
+              element={<Navigate to="/parent/childinformation" replace />}
+            />
 
             {/* Super-Admin Protected Routes */}
             <Route
@@ -45,7 +75,7 @@ function App() {
                 <ProtectedRoute allowedRoles={["super-admin", "chairman"]} />
               }
             >
-              <Route element={<MainLayout />}>
+              <Route element={<ChairmanLayout />}>
                 <Route
                   path="/super-admin/dashboard"
                   element={<SuperAdminDashboard />}
@@ -93,7 +123,7 @@ function App() {
                       allowedRoles={["admin", "teacher"]}
                       requiredPermission="allow_eccd_question_management"
                     >
-                      <EccdQuestionsManagement />
+                      <QuestionsWorkspace />
                     </ProtectedRoute>
                   }
                 />

@@ -22,7 +22,17 @@ export default function SyncStatus() {
         ),
       ]);
       void pendingFiles(user.id)
-        .then((files) => setCount(pending.length + files.length))
+        .then((files) => {
+          setCount(pending.length + files.length);
+          setErrors([
+            ...new Set(
+              [
+                ...pending.map((item) => item.draft.error),
+                ...files.map((item) => item.record.error),
+              ].filter((error): error is string => !!error),
+            ),
+          ]);
+        })
         .catch(() => {});
     };
     const reconnect = () => {

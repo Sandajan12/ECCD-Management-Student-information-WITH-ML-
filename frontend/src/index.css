@@ -1,7 +1,17 @@
 @import "tailwindcss";
+@import "@fontsource/poppins/latin-300.css";
+@import "@fontsource/poppins/latin-400.css";
+@import "@fontsource/poppins/latin-500.css";
+@import "@fontsource/poppins/latin-600.css";
+@import "@fontsource/poppins/latin-700.css";
+@import "@fontsource/poppins/latin-800.css";
 @theme {
-  --font-sans: "Poppins", "Segoe UI", system-ui, sans-serif;
+  --font-sans: "Poppins", "Roboto", "Helvetica", "Arial", sans-serif;
   --color-brand: var(--primary-color, #2563eb);
+  /* MUI's default breakpoints, scoped to the components audited against legacy. */
+  --breakpoint-legacy-sm: 37.5rem;
+  --breakpoint-legacy-md: 56.25rem;
+  --breakpoint-legacy-lg: 75rem;
 }
 @layer base {
   body {
@@ -28,6 +38,22 @@
   }
 }
 @layer components {
+  .legacy-ripple-enter {
+    position: absolute;
+    opacity: 0.3;
+    animation: legacy-ripple-enter 550ms cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .legacy-ripple-focus {
+    animation-duration: 200ms;
+  }
+  .legacy-ripple-exit {
+    opacity: 0;
+    animation: legacy-ripple-exit 550ms cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .legacy-ripple-pulse {
+    animation: legacy-ripple-pulse 2500ms cubic-bezier(0.4, 0, 0.2, 1) 200ms
+      infinite;
+  }
   .card {
     @apply min-w-0 rounded-2xl bg-white p-5 shadow-sm sm:p-6;
   }
@@ -48,5 +74,66 @@
   }
   .badge {
     @apply inline-flex rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700;
+  }
+}
+@keyframes legacy-ripple-enter {
+  from {
+    transform: scale(0);
+    opacity: 0.1;
+  }
+  to {
+    transform: scale(1);
+    opacity: 0.3;
+  }
+}
+@keyframes legacy-ripple-exit {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+@keyframes legacy-ripple-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(0.92);
+  }
+}
+
+/* Original MUI LinearProgress indeterminate timing and paths. */
+@keyframes legacy-progress-first {
+  0% {
+    left: -35%;
+    right: 100%;
+  }
+  60%,
+  100% {
+    left: 100%;
+    right: -90%;
+  }
+}
+@keyframes legacy-progress-second {
+  0% {
+    left: -200%;
+    right: 100%;
+  }
+  60%,
+  100% {
+    left: 107%;
+    right: -8%;
+  }
+}
+@layer components {
+  .legacy-progress-first {
+    animation: legacy-progress-first 2.1s
+      cubic-bezier(0.65, 0.815, 0.735, 0.395) infinite;
+  }
+  .legacy-progress-second {
+    animation: legacy-progress-second 2.1s cubic-bezier(0.165, 0.84, 0.44, 1)
+      1.15s infinite;
   }
 }

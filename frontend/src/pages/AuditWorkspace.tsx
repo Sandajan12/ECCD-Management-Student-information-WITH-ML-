@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import API, { errorMessage } from "../services/api";
-import { Empty, Field, Modal, Notice, PageHeader } from "../components/ui";
+import { Field, Modal, Notice } from "../components/chairman/ui";
+import Icon from "../components/chairman/Icon";
 interface Audit {
   id: number;
   action: string;
@@ -23,67 +24,123 @@ export default function AuditWorkspace() {
       .toLowerCase()
       .includes(search.toLowerCase()),
   );
+  const date = (timestamp: string | null) =>
+    timestamp
+      ? new Date(timestamp).toLocaleDateString("en-US", {
+          year: "numeric",
+          month: "short",
+          day: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+        })
+      : "N/A";
   return (
-    <>
-      <PageHeader
-        title="System Audit Log"
-        subtitle="Review the latest 100 recorded school operations."
-      />
-      <Notice tone="error">{error}</Notice>
-      <div className="card mt-5">
-        <Field
-          label="Search audit log"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
-        <div className="mt-5 overflow-x-auto">
-          <table className="w-full">
-            <thead>
+    <div className="p-6">
+      <section className="mx-auto min-h-[80vh] max-w-[1200px] rounded-2xl bg-white p-6 shadow-[0_4px_20px_rgba(0,0,0,.05)] legacy-md:p-10">
+        <div className="mb-8 flex flex-wrap items-center justify-between gap-4">
+          <h1 className="text-2xl font-black leading-[1.334] text-[#111827]">
+            System Audit Logs
+          </h1>
+          <Field
+            aria-label="Search audit log"
+            placeholder="Enter search Logs by (Name or Action Type)"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            containerClassName="w-full legacy-sm:w-[350px]"
+            className="rounded-[32px] bg-[#F9FAFB]"
+            endAdornment={<Icon name="Search" />}
+          />
+        </div>
+        <Notice tone="error">{error}</Notice>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[650px]">
+            <thead className="bg-[#f3f4f6]">
               <tr>
-                <th>Action</th>
-                <th>Performed by</th>
-                <th>Date & time</th>
-                <th>Details</th>
+                {["Timestamp", "Fullname", "Action Type"].map((title, i) => (
+                  <th
+                    key={title}
+                    className={`border-0! font-bold! text-[#6b7280]! ${i === 0 ? "w-[30%] rounded-l-lg" : i === 1 ? "w-[40%]" : "w-[30%] rounded-r-lg"}`}
+                  >
+                    {title}
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody>
               {visible.map((row) => (
-                <tr key={row.id} className="hover:bg-slate-50">
-                  <td>
-                    <button
-                      className="font-medium text-blue-700"
-                      onClick={() => setSelected(row)}
-                    >
-                      {row.action}
-                    </button>
+                <tr
+                  key={row.id}
+                  className="cursor-pointer transition-colors duration-200 hover:bg-[#f9fafb]"
+                  onClick={() => setSelected(row)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      setSelected(row);
+                    }
+                  }}
+                  onMouseDown={event=>event.preventDefault()}
+                  tabIndex={0}
+                  aria-label={`View ${row.action}`}
+                >
+                  <td className="border-[#f3f4f6]! py-6! font-bold! text-[#111827]">
+                    {date(row.timestamp)}
                   </td>
-                  <td>{row.performed_by}</td>
-                  <td className="whitespace-nowrap">
-                    {row.timestamp
-                      ? new Date(row.timestamp).toLocaleString()
-                      : "—"}
+                  <td className="border-[#f3f4f6]! py-6! font-bold! text-[#111827]">
+                    {row.performed_by}
                   </td>
-                  <td className="max-w-xs truncate">{row.details}</td>
+                  <td className="border-[#f3f4f6]! py-6! font-bold! text-[#111827]">
+                    {row.action}
+                  </td>
                 </tr>
               ))}
+              {!visible.length && (
+                <tr>
+                  <td colSpan={3} className="py-12! text-center text-[#777]">
+                    No audit logs found matching your search.
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
-          {!visible.length && <Empty>No matching activity.</Empty>}
         </div>
-      </div>
+      </section>
       {selected && (
-        <Modal title="Activity Details" onClose={() => setSelected(null)}>
-          <p className="font-semibold">{selected.action}</p>
-          <p className="text-sm text-slate-500">
-            {selected.performed_by} •{" "}
-            {selected.timestamp &&
-              new Date(selected.timestamp).toLocaleString()}
-          </p>
-          <p className="whitespace-pre-wrap break-words rounded-xl bg-slate-50 p-4 text-sm leading-7">
-            {selected.details}
-          </p>
+        <Modal
+          title="Audit Action Details"
+          onClose={() => setSelected(null)}
+          closeButton
+          closeSmall
+          closeClassName="text-[#9ca3af]"
+          className="rounded-xl p-2"
+          titleClassName="border-b border-black/12 [&_h2]:font-black [&_h2]:text-[#111827]"
+          bodyClassName="pt-6 pb-6"
+        >
+          <div className="flex flex-col gap-4 text-sm leading-[1.43]">
+            {[
+              ["Action Taken By", selected.performed_by],
+              ["Date & Time", date(selected.timestamp)],
+              ["Action Type", selected.action],
+            ].map(([label, value]) => (
+              <div key={label} className="flex justify-between">
+                <span className="font-bold text-[#777]">{label}:</span>
+                <span
+                  className={`font-bold ${label === "Action Type" ? "text-brand" : "text-[#111827]"}`}
+                >
+                  {value}
+                </span>
+              </div>
+            ))}
+            <div className="mt-4">
+              <p className="mb-2 text-xs font-bold leading-[1.66] text-[#777]">
+                SPECIFIC DETAILS:
+              </p>
+              <div className="rounded-lg border border-[#f3f4f6] bg-[#f9fafb] p-4 text-sm leading-[1.6] whitespace-pre-wrap text-[#4b5563]">
+                {selected.details || "No specific details were recorded for this action."}
+              </div>
+            </div>
+          </div>
         </Modal>
       )}
-    </>
+    </div>
   );
 }

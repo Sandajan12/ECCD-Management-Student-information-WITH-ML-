@@ -12,6 +12,53 @@ import {
   Select,
   TextArea,
 } from "../components/ui";
+function HomeBasedToggle({
+  question,
+  onSaved,
+}: {
+  question: Question;
+  onSaved: () => void;
+}) {
+  const { values, change, save } = useDurableForm(
+    `question_home_${question.question_id}`,
+    { is_home_based: question.is_home_based || false },
+  );
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  return (
+    <div className="mt-4 space-y-2">
+      <label className="flex items-center gap-3 text-xs font-medium text-slate-500">
+        <input
+          type="checkbox"
+          checked={values.is_home_based}
+          disabled={busy}
+          onChange={async (e) => {
+            const next = { is_home_based: e.target.checked };
+            change(next);
+            setBusy(true);
+            setError("");
+            try {
+              const result = await save(
+                `/api/eccd-config/questions/${question.question_id}/home-based`,
+                "put",
+                next,
+                next,
+              );
+              if (result === "saved") onSaved();
+              else setError("Saved for reconnection.");
+            } catch (err) {
+              setError(errorMessage(err));
+            } finally {
+              setBusy(false);
+            }
+          }}
+        />
+        Home-based assessment
+      </label>
+      <Notice tone="error">{error}</Notice>
+    </div>
+  );
+}
 function ConfigForm({
   domain,
   question,
@@ -24,7 +71,7 @@ function ConfigForm({
   onSaved: () => void;
 }) {
   const { values, change, save } = useDurableForm(
-    `config_${type}_${type === 'question' ? question ? `edit_${question.question_id}` : `new_domain_${domain?.domain_id}` : domain ? `edit_${domain.domain_id}` : 'new'}`,
+    `config_${type}_${type === "question" ? (question ? `edit_${question.question_id}` : `new_domain_${domain?.domain_id}`) : domain ? `edit_${domain.domain_id}` : "new"}`,
     {
       domain_name: domain?.domain_name || "",
       question_text: question?.question_text || "",
@@ -226,28 +273,10 @@ export default function QuestionsWorkspace() {
                         </Button>
                       </div>
                     </div>
-                    <label className="mt-4 flex items-center gap-3 text-xs font-medium text-slate-500">
-                      <input
-                        type="checkbox"
-                        checked={q.is_home_based || false}
-                        disabled={busy}
-                        onChange={async (e) => {
-                          setBusy(true);
-                          try {
-                            await API.put(
-                              `/api/eccd-config/questions/${q.question_id}/home-based`,
-                              { is_home_based: e.target.checked },
-                            );
-                            await refresh();
-                          } catch (err) {
-                            setError(errorMessage(err));
-                          } finally {
-                            setBusy(false);
-                          }
-                        }}
-                      />
-                      Home-based assessment
-                    </label>
+                    <HomeBasedToggle
+                      question={q}
+                      onSaved={() => void refresh()}
+                    />
                   </article>
                 ))}
               </div>

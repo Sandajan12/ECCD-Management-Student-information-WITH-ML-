@@ -1,21 +1,31 @@
+// Legacy visual source: pages/auth/Register.jsx (RegisterParentPage.jsx re-exports it).
 import { useState } from "react";
-import { useSessionField } from "../utils/sessionDrafts";
 import { Link, Navigate, useNavigate } from "react-router-dom";
+import { useSessionField } from "../utils/sessionDrafts";
 import { useAuth, roleHome } from "../context/AuthContext";
+import { useSettings } from "../context/SettingsContext";
 import API, { errorMessage } from "../services/api";
 import type {
   AuthResponse,
   ChallengeResponse,
   SessionResponse,
 } from "../types";
-import { Button, Field, Notice, Select } from "../components/ui";
+import { passwordValid } from "../components/ForceChangePassword";
 import {
-  PasswordRules,
-  passwordValid,
-} from "../components/ForceChangePassword";
-import { AuthFrame } from "./LoginPage";
+  AuthBackdrop,
+  AuthAlert,
+  AuthButton,
+  AuthField,
+  OtpFields,
+  PasswordCriteria,
+  RememberDevice,
+  fallbackLogo,
+} from "../components/auth-ui";
+import LegacyRipple from "../components/LegacyRipple";
+import LegacyIcon from "../components/LegacyIcon";
 export default function RegisterParentPage() {
   const { user, login } = useAuth();
+  const { settings } = useSettings();
   const navigate = useNavigate();
   const [form, setForm, confirmForm] = useSessionField("ames_registration", {
     firstName: "",
@@ -34,179 +44,262 @@ export default function RegisterParentPage() {
       "ames_registration_challenge",
       null,
     );
+  const [remember, setRemember, confirmRemember] = useSessionField(
+    "ames_registration_remember_device",
+    false,
+  );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
   if (user) return <Navigate to={roleHome(user.role)} replace />;
   const register = async (): Promise<AuthResponse> =>
     (
       await API.post<AuthResponse>("/api/auth/register-parent", {
-        firstName: form.firstName,
-        lastName: form.lastName,
-        email: form.email,
+        firstName: form.firstName.trim(),
+        lastName: form.lastName.trim(),
+        email: form.email.trim(),
         password: form.password,
         relationship: form.relationship,
+        rememberDevice: remember,
       })
     ).data;
+  const accept = (data: AuthResponse) => {
+    if (data.requireOtp) {
+      setChallenge(data);
+      setError(
+        data.emailSent
+          ? ""
+          : data.message ||
+              "The email could not be sent. Retry below to recover your registration.",
+      );
+      setMessage(data.emailSent ? "Verification code sent to your email!" : "");
+    } else {
+      confirmForm();
+      confirmOtp();
+      confirmChallenge();
+      confirmRemember();
+      login(data);
+      navigate("/parent/dashboard");
+    }
+  };
   return (
-    <AuthFrame
-      title={challenge ? "Verify your email" : "Create parent account"}
-      subtitle="Stay connected with your child’s learning journey."
-    >
-      <form
-        className="space-y-4"
-        onSubmit={async (e) => {
-          e.preventDefault();
-          setBusy(true);
-          setError("");
-          try {
-            const data = challenge
-              ? (
-                  await API.post<SessionResponse>("/api/auth/verify-otp", {
-                    challengeToken: challenge.challengeToken,
-                    otp,
-                  })
-                ).data
-              : await register();
-            if (data.requireOtp) {
-              setChallenge(data);
-              if (!data.emailSent)
-                setError(
-                  data.message ||
-                    "The email could not be sent. Retry below to recover your registration.",
-                );
-            } else {
-              confirmForm();
-              confirmOtp();
-              confirmChallenge();
-              login(data);
-              navigate("/parent/dashboard");
-            }
-          } catch (err) {
-            setError(errorMessage(err));
-          } finally {
-            setBusy(false);
-          }
-        }}
+    <AuthBackdrop>
+      <div
+        data-auth-card="registration"
+        className="mx-auto flex w-full max-w-[37.5rem] flex-col items-center overflow-hidden rounded-xl bg-[rgba(255,255,255,0.98)] px-5 py-5 text-center shadow-[0px_8px_10px_-5px_rgba(0,0,0,0.2),0px_16px_24px_2px_rgba(0,0,0,0.14),0px_6px_30px_5px_rgba(0,0,0,0.12)] backdrop-blur-[10px] legacy-sm:px-8"
       >
-        <Notice tone="error">{error}</Notice>
-        {challenge ? (
-          <>
-            <Notice>Enter the code sent to {challenge.email}.</Notice>
-            <Field
-              label="Verification code"
-              inputMode="numeric"
-              pattern="[0-9]{6}"
-              maxLength={6}
-              autoComplete="one-time-code"
-              value={otp}
-              onChange={(e) => setOtp(e.target.value)}
-              required
-            />
-            <Button
-              variant="secondary"
-              disabled={busy}
-              onClick={async () => {
-                setBusy(true);
-                try {
-                  const data = await register();
-                  if (data.requireOtp) {
-                    setChallenge(data);
-                    setError(
-                      data.emailSent
-                        ? ""
-                        : data.message ||
-                            "Email delivery failed. Please retry.",
-                    );
-                  } else {
-                    confirmForm();
-                    confirmOtp();
-                    confirmChallenge();
-                    login(data);
-                    navigate("/parent/dashboard");
+        <img
+          src={settings.logo_url || fallbackLogo}
+          alt="School Emblem"
+          className="mb-1.5 size-[2.875rem] rounded-full bg-white object-contain shadow-[0_2px_8px_rgba(0,0,0,0.1)]"
+        />
+        <h1 className="mb-0.5 text-xl leading-[1.334] font-extrabold tracking-[0.04em] text-brand uppercase">
+          Parent Registration
+        </h1>
+        <p className="mb-3 text-[0.8rem] leading-[1.43] font-medium text-[#777]">
+          Create your account to view your child&apos;s milestones
+        </p>
+        <AuthAlert compact>{error}</AuthAlert>
+        <AuthAlert compact tone="success">
+          {message}
+        </AuthAlert>
+        <form
+          className="w-full"
+          onSubmit={async (e) => {
+            e.preventDefault();
+            if (busy) return;
+            setError("");
+            setMessage("");
+            if (challenge && !/^\d{6}$/.test(otp)) {
+              setError("Please enter the complete 6-digit verification code.");
+              return;
+            }
+            setBusy(true);
+            try {
+              accept(
+                challenge
+                  ? (
+                      await API.post<SessionResponse>("/api/auth/verify-otp", {
+                        challengeToken: challenge.challengeToken,
+                        otp,
+                        rememberDevice: remember,
+                      })
+                    ).data
+                  : await register(),
+              );
+            } catch (err) {
+              setError(errorMessage(err));
+            } finally {
+              setBusy(false);
+            }
+          }}
+        >
+          {challenge ? (
+            <>
+              <div className="mb-3 flex items-center text-left">
+                <button
+                  type="button"
+                  aria-label="Back to Registration"
+                  className="relative mr-2 inline-flex rounded-full p-1.25 text-[#777] outline-none hover:bg-black/4 [@media(hover:none)]:hover:bg-transparent focus-visible:outline-none"
+                  onClick={() => setChallenge(null)}
+                >
+                  <LegacyIcon name="ArrowBack" className="size-5" />
+                  <LegacyRipple center />
+                </button>
+                <span className="text-[0.82rem] leading-[1.43] font-bold text-[#777]">
+                  Back to Registration
+                </span>
+              </div>
+              <p className="mb-1 text-xs leading-[1.66] font-bold tracking-[0.5px] text-[#777]">
+                6-DIGIT VERIFICATION CODE
+              </p>
+              <p className="mb-4 text-[0.85rem] leading-[1.5] text-[#4b5563]">
+                We sent an activation code to <br />
+                <strong>{challenge.email || form.email}</strong>
+              </p>
+              <OtpFields value={otp} onChange={setOtp} compact />
+              <AuthButton type="submit" disabled={busy} kind="registration">
+                {busy ? "Verifying..." : "Verify & Activate Account"}
+              </AuthButton>
+              <button
+                type="button"
+                disabled={busy}
+                className="relative mt-2 w-full rounded-lg px-2 py-1.5 text-sm leading-[1.75] font-medium text-[#4543c0] outline-none hover:bg-[#4543c0]/4 focus-visible:bg-[#4543c0]/12 focus-visible:outline-none disabled:text-black/26"
+                onClick={async () => {
+                  setBusy(true);
+                  try {
+                    accept(await register());
+                  } catch (err) {
+                    setError(errorMessage(err));
+                  } finally {
+                    setBusy(false);
                   }
-                } catch (err) {
-                  setError(errorMessage(err));
-                } finally {
-                  setBusy(false);
-                }
-              }}
-            >
-              Resend verification email
-            </Button>
-          </>
-        ) : (
-          <>
-            <div className="grid gap-4 sm:grid-cols-2">
-              {(["firstName", "lastName"] as const).map((key) => (
-                <Field
-                  key={key}
-                  label={key === "firstName" ? "First name" : "Last name"}
-                  value={form[key]}
-                  onChange={(e) => setForm({ ...form, [key]: e.target.value })}
+                }}
+              >
+                Resend verification code
+                <LegacyRipple />
+              </button>
+            </>
+          ) : (
+            <>
+              <div className="mb-2.5 grid gap-4 legacy-sm:grid-cols-2">
+                <AuthField
+                  compact
+                  label="First name"
+                  name="firstName"
+                  placeholder="First Name"
+                  value={form.firstName}
+                  onChange={(e) =>
+                    setForm({ ...form, firstName: e.target.value })
+                  }
                   required
                 />
-              ))}
-            </div>
-            <Select
-              label="Relationship to child"
-              value={form.relationship}
-              onChange={(e) =>
-                setForm({ ...form, relationship: e.target.value })
-              }
-            >
-              {["Mother", "Father", "Guardian"].map((item) => (
-                <option key={item}>{item}</option>
-              ))}
-            </Select>
-            <Field
-              label="Email"
-              type="email"
-              autoComplete="email"
-              value={form.email}
-              onChange={(e) => setForm({ ...form, email: e.target.value })}
-              required
-            />
-            <Field
-              label="Password"
-              type="password"
-              autoComplete="new-password"
-              value={form.password}
-              onChange={(e) => setForm({ ...form, password: e.target.value })}
-              required
-            />
-            <PasswordRules value={form.password} />
-            <Field
-              label="Confirm password"
-              type="password"
-              autoComplete="new-password"
-              value={form.confirm}
-              onChange={(e) => setForm({ ...form, confirm: e.target.value })}
-              required
-            />
-          </>
-        )}
-        <Button
-          type="submit"
-          className="w-full"
-          disabled={
-            busy ||
-            (!challenge &&
-              (!passwordValid(form.password) || form.password !== form.confirm))
-          }
-        >
-          {busy
-            ? "Please wait…"
-            : challenge
-              ? "Verify & continue"
-              : "Create account"}
-        </Button>
-        <p className="text-center text-sm text-slate-500">
-          Already registered?{" "}
-          <Link className="font-semibold text-blue-600" to="/login">
-            Sign in
-          </Link>
-        </p>
-      </form>
-    </AuthFrame>
+                <AuthField
+                  compact
+                  label="Last name"
+                  name="lastName"
+                  placeholder="Last Name"
+                  value={form.lastName}
+                  onChange={(e) =>
+                    setForm({ ...form, lastName: e.target.value })
+                  }
+                  required
+                />
+              </div>
+              <div className="mb-2.5 grid gap-4 legacy-sm:grid-cols-[1fr_2fr]">
+                <label className="relative min-w-0 text-left">
+                  <span className="mb-0.5 block text-[0.72rem] leading-[1.66] font-bold text-[#777] uppercase">
+                    Relationship
+                  </span>
+                  <select
+                    aria-label="Relationship to child"
+                    name="relationship"
+                    className="h-[2.5rem] w-full appearance-none rounded border-0 bg-[#f9fafb] pl-3.5 pr-8 py-[8.5px] text-base leading-[1.4375] text-[#333] shadow-[inset_0_0_0_1px_rgba(0,0,0,0.23)] outline-none hover:shadow-[inset_0_0_0_1px_#333] focus:shadow-[inset_0_0_0_2px_#4543c0] focus-visible:outline-none"
+                    value={form.relationship}
+                    onChange={(e) =>
+                      setForm({ ...form, relationship: e.target.value })
+                    }
+                  >
+                    {["Mother", "Father", "Guardian"].map((item) => (
+                      <option key={item}>{item}</option>
+                    ))}
+                  </select>
+                  <LegacyIcon
+                    name="ArrowDropDown"
+                    className="pointer-events-none absolute right-1.75 bottom-2 size-6 text-black/54"
+                  />
+                </label>
+                <AuthField
+                  compact
+                  label="Email address"
+                  aria-label="Email"
+                  name="email"
+                  icon="EmailOutlined"
+                  placeholder="Enter your email"
+                  type="email"
+                  autoComplete="email"
+                  value={form.email}
+                  onChange={(e) => setForm({ ...form, email: e.target.value })}
+                  required
+                />
+              </div>
+              <div className="mb-2.5 grid gap-4 legacy-sm:grid-cols-2">
+                <AuthField
+                  compact
+                  label="Password"
+                  name="password"
+                  icon="LockOutlined"
+                  placeholder="Create password"
+                  type="password"
+                  autoComplete="new-password"
+                  value={form.password}
+                  onChange={(e) =>
+                    setForm({ ...form, password: e.target.value })
+                  }
+                  required
+                />
+                <AuthField
+                  compact
+                  label="Confirm password"
+                  name="confirmPassword"
+                  icon="LockOutlined"
+                  placeholder="Confirm password"
+                  type="password"
+                  autoComplete="new-password"
+                  value={form.confirm}
+                  onChange={(e) =>
+                    setForm({ ...form, confirm: e.target.value })
+                  }
+                  required
+                />
+              </div>
+              <PasswordCriteria value={form.password} compact />
+              <RememberDevice
+                checked={remember}
+                onChange={setRemember}
+                compact
+              />
+              <AuthButton
+                type="submit"
+                kind="registration"
+                disabled={
+                  busy ||
+                  !passwordValid(form.password) ||
+                  form.password !== form.confirm
+                }
+              >
+                {busy ? "Sending Code..." : "Sign Up"}
+              </AuthButton>
+              <p className="mt-2 text-center text-[0.82rem] leading-[1.43] text-[#6b7280]">
+                Already have an account?{" "}
+                <Link to="/login" className="font-bold text-brand no-underline">
+                  Log In here
+                </Link>
+              </p>
+            </>
+          )}
+        </form>
+      </div>
+    </AuthBackdrop>
   );
 }

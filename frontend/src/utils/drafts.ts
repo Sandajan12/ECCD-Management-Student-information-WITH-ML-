@@ -116,10 +116,11 @@ export function useDurableForm<T>(resource: string, initial: T) {
     path: string,
     method: "post" | "put",
     data: unknown = values,
+    snapshot: T = values,
   ): Promise<"saved" | "pending"> => {
     const draft: Draft<T> = {
       owner_id: owner,
-      values,
+      values: snapshot,
       revision: crypto.randomUUID(),
       is_pending_sync: true,
       request: { path, method, data },

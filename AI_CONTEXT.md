@@ -1,5 +1,70 @@
 # AMES SYSTEM - AI Context & System Architecture
 
+## Phase 3 authentication/layout visual parity (2026-10-11)
+
+The current authentication pages and core layout have been refactored from the
+original legacy MUI sources into native React/TypeScript/Tailwind components.
+Login, parent registration, first-login password setup, OTP, role drawers, mobile
+app bar and parent bottom navigation retain the extracted legacy measurements,
+Poppins typography, Material SVG paths, colors, elevation, focus/ripple behavior
+and 600/900px responsive boundaries. Existing scoped durable drafts and backend
+challenge responses remain authoritative. Legacy files are read-only.
+
+The isolated `frontend/tests/legacy-visual/` harness renders the original JSX,
+stylesheet, theme and Tailwind 3 configuration with synthetic API/settings data.
+Its MUI/Emotion packages are test-only and are not dependencies of the active UI.
+`frontend/tests/auth-parity.spec.ts` compares geometry and screenshots at five auth
+widths and desktop/mobile dialog/OTP/navigation states. Per-file extraction details
+and test commands are documented in `frontend/VISUAL_PARITY.md`. Other migrated
+workspace pages and chat content still require individual visual parity audits.
+
+## Phase 3 frontend migration (2026-10-11): current UI contract
+
+This section supersedes the earlier frontend inventory and Phase 3 TODOs below.
+The active UI uses React 19, TypeScript, Vite and Tailwind CSS through
+`@tailwindcss/vite`. MUI and Emotion have been removed from the active frontend.
+The read-only `AMES-SYSTEM-LEGACY/frontend/` guided the dark role sidebar, blue
+actions, rounded cards/dialogs, dashboard charts, management flows and assessment
+tabs. Mobile navigation, scrollable tables and chat remain responsive.
+
+- Role workspaces cover staff/parent dashboards, student enrollment and family
+  details, multi-child linking, teacher/section management, ID-based bulk transfers,
+  archives, ECCD assessments/questions, audit history, school/account settings,
+  six adviser parent-access switches, Excel import/export, encrypted backups,
+  confirmed restore, school-year rollover/undo and authenticated Socket.IO chat.
+- Legacy chairman URLs redirect to the current super-admin workspace. Student
+  routes, assessment state and drafts use integer IDs; LRNs are masked for display
+  and accepted as raw input only for enrollment/linking. Parent result masking and
+  edit gates follow the API's active Primary Adviser permissions.
+- Auth follows server challenge responses. `ENABLE_OTP=false` in backend/.env
+  controls local verification bypass; no frontend OTP flag is needed. First-login
+  password changes gate protected pages; credential changes replace the session.
+  Ordinary logout preserves remembered devices and all drafts; forgetting the
+  device explicitly revokes it. Expired/unauthorized sessions return to login.
+- `utils/drafts.ts` stores owner/record-scoped form revisions. Assessment keys use
+  `eccd_draft_<studentId>_<period>_<domainId>_<ownerId>`; home forms add a home suffix.
+  Inputs survive reload. Failed network submissions stay pending and synchronize
+  on reconnection; only the exact confirmed HTTP 200/201 revision is removed.
+  In-flight responses cannot erase newer edits. Permissions/validation failures
+  retain inputs for review. No global localStorage clearing is permitted.
+- `utils/sessionDrafts.ts` retains credential inputs within the browser tab's
+  sessionStorage. `utils/fileDrafts.ts` retains selected files in IndexedDB and
+  queues background-image/workbook uploads; partially imported workbooks remain
+  available alongside row errors. Backup restore always requires explicit manual
+  confirmation. Selected files and record drafts are scoped to the signed-in owner.
+- Chat joins authenticated teacher-parent rooms, persists through HTTP before
+  broadcasting the returned message ID, deduplicates messages and recovers history
+  after reconnect. The connected indicator waits for room acknowledgement.
+- `frontend/tests/migration.spec.ts` exercises desktop and mobile workflows against
+  the loopback-only `backend.tests.serve_phase3` API on port 8767. It creates and
+  removes isolated PostgreSQL schemas and uses synthetic accounts. It never resets
+  live school data. See `frontend/README.md` for local commands and verification.
+
+Final verification passed all 26 desktop/mobile browser checks, the 52 Phase 1/2
+backend tests, TypeScript, ESLint and the frontend production build. The build
+reports a non-blocking bundle-size warning; production optimization is outside
+this migration's feature scope. The local UI/API respond on ports 5173/8000.
+
 ## Phase 2 backend migration (2026-10-11): current runtime contract
 
 This section supersedes the historical Phase 1 compatibility notes below.
@@ -9,7 +74,7 @@ existing frontend TypeScript check. The local API and Vite server started and
 responded successfully; the extracted 7 domains/109 questions are initialized.
 The active backend uses FastAPI, Pydantic V2, SQLAlchemy and PostgreSQL. The legacy
 folder `AMES-SYSTEM-LEGACY/` is a read-only behavior reference. Phase 3 frontend
-integration remains separate and must use React/TypeScript with Tailwind.
+integration is complete as documented above, using React/TypeScript with Tailwind.
 
 - Apply `backend.migrations.phase2` after Phase 1, with the dev server stopped.
   The transaction checks every preserved table's data, removes plaintext
@@ -74,10 +139,10 @@ integration remains separate and must use React/TypeScript with Tailwind.
 
 Verification is documented in `backend/migrations/README.md`. Tests use unique,
 temporary PostgreSQL schemas and synthetic accounts; they never reset live data.
-Phase 3 must wire ID-based UI state and routes, challenge/replacement-session
-handling, first-login gating, authenticated chat, school settings, rollover and
-import/export feedback while preserving scoped offline drafts until confirmed
-HTTP 200/201 responses. Do not clear drafts or global localStorage on auth changes.
+Phase 3 wires ID-based UI state and routes, challenge/replacement-session handling,
+first-login gating, authenticated chat, school settings, rollover and import/export
+feedback. Preserve scoped offline drafts until confirmed HTTP 200/201 responses.
+Do not clear drafts or global localStorage on auth changes.
 
 ## Phase 1 migration state (2026-10-11): authoritative schema additions
 

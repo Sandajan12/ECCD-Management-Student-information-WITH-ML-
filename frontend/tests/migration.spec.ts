@@ -21,7 +21,7 @@ async function login(page: Page, username: string) {
   await page.goto("/login");
   await page.getByLabel("Email or username").fill(`${username}@example.com`);
   await page.getByLabel("Password", { exact: true }).fill(PASSWORD);
-  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await page.getByRole("button", { name: "Log In", exact: true }).click();
   await expect(page).not.toHaveURL(/\/login$/);
 }
 async function session(page: Page) {
@@ -32,6 +32,21 @@ test.beforeEach(async ({ page, request }) => {
   expect(reset.ok()).toBeTruthy();
   await bridge(page);
 });
+
+async function screenshot(page: Page, path: string) {
+  await page.evaluate(() => {
+    window.scrollTo({ top: 0, behavior: "instant" });
+    document
+      .querySelector("[data-layout-content]")
+      ?.scrollTo({ top: 0, behavior: "instant" });
+  });
+  await page.locator("aside").evaluate(async (element) => {
+    await Promise.all(
+      element.getAnimations().map((animation) => animation.finished),
+    );
+  });
+  await page.screenshot({ path, fullPage: true });
+}
 
 test("local parent registration signs in immediately and mobile navigation fits", async ({
   page,
@@ -44,9 +59,7 @@ test("local parent registration signs in immediately and mobile navigation fits"
     .fill("new-parent@example.com");
   await page.getByLabel("Password", { exact: true }).fill(PASSWORD);
   await page.getByLabel("Confirm password").fill(PASSWORD);
-  await page
-    .getByRole("button", { name: "Create account", exact: true })
-    .click();
+  await page.getByRole("button", { name: "Sign Up", exact: true }).click();
   await expect(page).toHaveURL(/parent\/dashboard/);
   await expect(
     page.getByRole("heading", { name: "Your child’s learning journey" }),
@@ -63,10 +76,7 @@ test("local parent registration signs in immediately and mobile navigation fits"
       () => document.documentElement.scrollWidth <= window.innerWidth + 1,
     ),
   ).toBeTruthy();
-  await page.screenshot({
-    path: `test-results/${info.project.name}-parent.png`,
-    fullPage: true,
-  });
+  await screenshot(page, `test-results/${info.project.name}-parent.png`);
 });
 
 test("assessment drafts survive reload and reconnect using IDs", async ({
@@ -195,14 +205,13 @@ test("teacher creation enforces first-login password before school APIs mount", 
 }) => {
   await login(page, "chairman");
   await page.goto("/super-admin/teachers");
-  await page.getByRole("button", { name: "+ Add teacher" }).click();
-  await page.getByLabel("First name", { exact: true }).fill("New");
-  await page.getByLabel("Last name", { exact: true }).fill("Teacher");
+  await page.getByRole("button", { name: "Add New Teacher" }).click();
+  await page.getByLabel("Full Name", { exact: true }).fill("New Teacher");
   await page
     .getByLabel("Email", { exact: true })
     .fill("newteacher@example.com");
-  await page.getByLabel("Temporary password").fill(PASSWORD);
-  await page.getByRole("button", { name: "Create teacher account" }).click();
+  await page.getByLabel("Password", { exact: true }).fill(PASSWORD);
+  await page.getByRole("button", { name: "Save", exact: true }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await page.evaluate(() => {
     localStorage.removeItem("token");
@@ -210,11 +219,13 @@ test("teacher creation enforces first-login password before school APIs mount", 
   });
   await login(page, "newteacher");
   await expect(
-    page.getByRole("heading", { name: "First-time login security setup" }),
+    page.getByRole("heading", { name: "First-Time Login Security Setup" }),
   ).toBeVisible();
   await page.getByLabel("New password", { exact: true }).fill("Changed123");
-  await page.getByLabel("Confirm new password").fill("Changed123");
-  await page.getByRole("button", { name: "Save password & continue" }).click();
+  await page
+    .getByLabel("Confirm new password", { exact: true })
+    .fill("Changed123");
+  await page.getByRole("button", { name: "Save Password & Continue" }).click();
   await expect(
     page.getByRole("heading", { name: "Dashboard", exact: true }),
   ).toBeVisible();
@@ -271,9 +282,10 @@ test("student transfer uses IDs and preserves evaluations", async ({
   await login(page, "chairman");
   await page.goto("/super-admin/students");
   await page.getByRole("checkbox", { name: "Select Student, Test M." }).check();
-  await page.getByRole("button", { name: "Transfer students" }).click();
-  await page.getByLabel("Destination section").selectOption("2");
-  await page.getByRole("button", { name: "Confirm transfer" }).click();
+  await page.getByRole("button", { name: /Transfer Selected/ }).click();
+  await page.getByRole("combobox", { name: "Destination Section" }).click();
+  await page.getByRole("option", { name: /Test B/ }).click();
+  await page.getByRole("button", { name: "Confirm Transfer" }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   const chairmanToken = await session(page);
   const res = await request.get(`${TEST_API}/api/eccd/assessment/1`, {
@@ -287,21 +299,21 @@ test("school branding, rollover undo, and backups use the migrated contracts", a
 }, info) => {
   await login(page, "chairman");
   await page.goto("/super-admin/settings");
-  await page.getByLabel("School name", { exact: true }).fill("Example School");
-  await page.getByRole("button", { name: "Save school settings" }).click();
+  await page.getByLabel("School Name:", { exact: true }).fill("Example School");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
   await expect(page.getByText("School settings saved.")).toBeVisible();
-  await page.getByRole("button", { name: "Start next school year" }).click();
-  await page.getByRole("button", { name: "Confirm", exact: true }).click();
-  await expect(
-    page.getByRole("button", { name: /Undo rollover/ }),
-  ).toBeVisible();
-  await page.getByRole("button", { name: /Undo rollover/ }).click();
-  await page.getByRole("button", { name: "Confirm", exact: true }).click();
-  await expect(page.getByRole("button", { name: /Undo rollover/ })).toHaveCount(
-    0,
-  );
+  await page.getByRole("button", { name: /Advance System to/ }).click();
+  await page
+    .getByRole("button", { name: "Yes, Advance Year", exact: true })
+    .click();
+  await expect(page.getByRole("button", { name: /Revert to/ })).toBeVisible();
+  await page.getByRole("button", { name: /Revert to/ }).click();
+  await page
+    .getByRole("button", { name: "Yes, Revert School Year", exact: true })
+    .click();
+  await expect(page.getByRole("button", { name: /Revert to/ })).toHaveCount(0);
   const downloaded = page.waitForEvent("download");
-  await page.getByRole("button", { name: "Download encrypted backup" }).click();
+  await page.getByRole("button", { name: "Download Encrypted Backup" }).click();
   const file = await downloaded;
   expect(file.suggestedFilename()).toMatch(/\.enc$/);
   const path = await file.path();
@@ -309,10 +321,12 @@ test("school branding, rollover undo, and backups use the migrated contracts", a
   expect(bytes.toString("utf8").startsWith("gAAAA")).toBeTruthy();
   await page.getByLabel("Restore .enc backup").setInputFiles(path!);
   await page
-    .getByRole("button", { name: "Restore backup", exact: true })
+    .getByRole("button", { name: "Restore System", exact: true })
     .click();
   const restoreResponse = page.waitForResponse("**/api/backup/restore");
-  await page.getByRole("button", { name: "Confirm", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Yes, Overwrite Data", exact: true })
+    .click();
   const result = await restoreResponse;
   expect(result.status(), await result.text()).toBe(200);
   await expect(page.getByText(/Backup restored successfully/)).toBeVisible();
@@ -321,8 +335,144 @@ test("school branding, rollover undo, and backups use the migrated contracts", a
       () => document.documentElement.scrollWidth <= window.innerWidth + 1,
     ),
   ).toBeTruthy();
-  await page.screenshot({
-    path: `test-results/${info.project.name}-settings.png`,
-    fullPage: true,
+  await screenshot(page, `test-results/${info.project.name}-settings.png`);
+});
+
+test("student profile drafts persist through reload and save only allowed fields", async ({
+  page,
+}) => {
+  await login(page, "adviser");
+  await page.goto("/teacher/students");
+  await page.getByRole("button", { name: "Details", exact: true }).click();
+  await page.getByLabel("Home address").fill("Example Street");
+  await page.getByRole("button", { name: "Close dialog" }).click();
+  await page.reload();
+  await page.getByRole("button", { name: "Details", exact: true }).click();
+  await expect(page.getByLabel("Home address")).toHaveValue("Example Street");
+  await page.getByRole("button", { name: "Save changes" }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  const token = await session(page);
+  const row = await page.request.get(`${TEST_API}/api/students/1`, {
+    headers: { Authorization: `Bearer ${token}` },
   });
+  expect((await row.json()).address).toBe("Example Street");
+});
+
+test("question configuration restores drafts and assigns home-based items", async ({
+  page,
+}) => {
+  await login(page, "chairman");
+  await page.goto("/super-admin/eccd-questions");
+  await page.getByRole("button", { name: "Manage Questions" }).first().click();
+  await page.getByRole("button", { name: "Add Question" }).click();
+  await page.getByLabel("Question Text").fill("Example practice item.");
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  await page.reload();
+  await page.getByRole("button", { name: "Manage Questions" }).first().click();
+  await page.getByRole("button", { name: "Add Question" }).click();
+  await expect(page.getByLabel("Question Text")).toHaveValue(
+    "Example practice item.",
+  );
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  const row = page.locator("tr").filter({ hasText: "Example practice item." });
+  await expect(row).toBeVisible();
+  await row.getByRole("button", { name: "Home-based assessment" }).click();
+  await expect(
+    row.getByRole("button", { name: "Home-based assessment" }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await row.getByRole("button", { name: "Home-based assessment" }).click();
+  await expect(
+    row.getByRole("button", { name: "Home-based assessment" }),
+  ).toHaveAttribute("aria-pressed", "false");
+});
+
+test("account changes replace the token and wrong current passwords retain inputs", async ({
+  page,
+}) => {
+  await login(page, "chairman");
+  await page.goto("/super-admin/settings");
+  const oldToken = await session(page);
+  await page.getByLabel("Current Password (Required):").fill("Incorrect123");
+  await page
+    .getByLabel("New Email (Optional):")
+    .fill("changed-chairman@example.com");
+  await page.getByRole("button", { name: "Update Account" }).click();
+  await expect(page.getByText("Incorrect current password.")).toBeVisible();
+  await expect(page).toHaveURL(/super-admin\/settings/);
+  await page.reload();
+  await expect(page.getByLabel("New Email (Optional):")).toHaveValue(
+    "changed-chairman@example.com",
+  );
+  await page.getByLabel("Current Password (Required):").fill(PASSWORD);
+  await page.getByRole("button", { name: "Update Account" }).click();
+  await expect(page.getByText("Account updated successfully.")).toBeVisible();
+  expect(await session(page)).not.toBe(oldToken);
+  const token = await session(page);
+  const data = await page.request.get(`${TEST_API}/api/chairman/students`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  expect(data.ok()).toBeTruthy();
+});
+
+test("selected upload files survive reload and background upload reconnects", async ({
+  page,
+}) => {
+  await login(page, "chairman");
+  await page.goto("/super-admin/settings");
+  await page
+    .getByText("Additional appearance settings", { exact: true })
+    .click();
+  await page.getByLabel("Login background image").setInputFiles({
+    name: "example.png",
+    mimeType: "image/png",
+    buffer: Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aBYkAAAAASUVORK5CYII=",
+      "base64",
+    ),
+  });
+  await expect(page.getByText("Selected image: example.png")).toBeVisible();
+  await page.reload();
+  await page
+    .getByText("Additional appearance settings", { exact: true })
+    .click();
+  await expect(page.getByText("Selected image: example.png")).toBeVisible();
+  let fail = true;
+  await page.route("**/api/settings/upload-background", async (route) => {
+    if (fail) return route.abort("connectionfailed");
+    return route.continue();
+  });
+  await page.getByRole("button", { name: "Upload background" }).click();
+  await expect(
+    page.getByText("Image saved on this device and queued for reconnection."),
+  ).toBeVisible();
+  fail = false;
+  await page.evaluate(() => window.dispatchEvent(new Event("online")));
+  await expect(
+    page.getByRole("button", { name: "Upload background" }),
+  ).toBeDisabled();
+  const settings = await page.request.get(`${TEST_API}/api/settings`);
+  expect((await settings.json()).login_background).toMatch(
+    /^data:image\/png;base64,/,
+  );
+});
+
+test("Excel import reports partial row failures and retains the workbook", async ({
+  page,
+}) => {
+  await login(page, "adviser");
+  await page.goto("/teacher/students");
+  await page.getByRole("button", { name: "Import Excel" }).click();
+  const response = await page.request.get(`${TEST_API}/__test/import-workbook`);
+  expect(response.ok()).toBeTruthy();
+  await page.getByLabel("Excel workbook").setInputFiles({
+    name: "example.xlsx",
+    mimeType:
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    buffer: await response.body(),
+  });
+  await page.getByRole("button", { name: "Import workbook" }).click();
+  await expect(page.getByText("1 imported • 1 failed")).toBeVisible();
+  await expect(page.getByText(/Row 4:/)).toBeVisible();
+  await expect(page.getByText("Selected workbook: example.xlsx")).toBeVisible();
 });

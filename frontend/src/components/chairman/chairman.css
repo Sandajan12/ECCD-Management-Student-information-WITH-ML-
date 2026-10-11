@@ -1,0 +1,28 @@
+@reference "../../index.css";
+@layer components {
+  [data-chairman-portal] {
+    color: #333;
+  }
+  [data-chairman-portal] table {
+    border-collapse: collapse;
+    border-spacing: 0;
+  }
+  [data-chairman-portal] th {
+    @apply p-4 text-left text-sm font-medium normal-case tracking-normal;
+    color: #333;
+    line-height: 1.5rem;
+    border-bottom: 1px solid #e0e0e0;
+  }
+  [data-chairman-portal] td {
+    @apply p-4 text-sm font-normal;
+    line-height: 1.43;
+    border-bottom: 1px solid #e0e0e0;
+  }
+  [data-chairman-portal] tr {
+    border: 0;
+  }
+  [data-chairman-portal] .chairman-card {
+    @apply min-w-0 rounded-2xl bg-white p-6;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+  }
+}

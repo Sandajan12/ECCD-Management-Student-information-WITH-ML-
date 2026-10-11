@@ -4,6 +4,8 @@ export default defineConfig({
   timeout: 30000,
   fullyParallel: false,
   workers: 1,
+  snapshotPathTemplate:
+    "{testDir}/../test-results/legacy-baselines/{projectName}/{arg}{ext}",
   use: { baseURL: "http://localhost:5173", trace: "retain-on-failure" },
   projects: [
     { name: "desktop", use: { ...devices["Desktop Chrome"] } },
@@ -13,6 +15,11 @@ export default defineConfig({
     },
   ],
   webServer: [
+    {
+      command: "pnpm exec vite --config tests/legacy-visual/vite.config.mjs",
+      url: "http://localhost:5187/",
+      reuseExistingServer: true,
+    },
     {
       command: "pnpm dev --host localhost",
       url: "http://localhost:5173",

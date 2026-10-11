@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { io } from "socket.io-client";
 import type { Socket } from "socket.io-client";
 import { useAuth } from "../context/AuthContext";
@@ -126,12 +132,17 @@ export default function ChatInterface({
   const [search, setSearch] = useState("");
   const [error, setError] = useState("");
   const [connected, setConnected] = useState(false);
+  const [roomReady, setRoomReady] = useState(false);
+  const currentRoom = useRef("");
   const socket = useRef<Socket | null>(null);
   const bottom = useRef<HTMLDivElement>(null);
   const teacherId = currentUserRole === "teacher" ? ownId : active?.id;
   const parentId = currentUserRole === "parent" ? ownId : active?.id;
   const room =
     teacherId && parentId ? `teacher-${teacherId}-parent-${parentId}` : "";
+  useLayoutEffect(() => {
+    currentRoom.current = room;
+  }, [room]);
   const refreshContacts = useCallback(async () => {
     try {
       const res = await API.get<{ myId: number | null; contacts: Contact[] }>(
@@ -155,10 +166,12 @@ export default function ChatInterface({
   }, [refreshContacts]);
   const refresh = useCallback(async () => {
     if (!teacherId || !parentId) return;
+    const selectedRoom = `teacher-${teacherId}-parent-${parentId}`;
     try {
       const res = await API.get<ChatMessage[]>("/api/messages/history", {
         params: { teacher_id: teacherId, parent_id: parentId },
       });
+      if (currentRoom.current !== selectedRoom) return;
       setMessages(res.data);
       await API.put("/api/messages/read", {
         teacher_id: teacherId,
@@ -179,7 +192,10 @@ export default function ChatInterface({
     );
     socket.current = connection;
     connection.on("connect", () => setConnected(true));
-    connection.on("disconnect", () => setConnected(false));
+    connection.on("disconnect", () => {
+      setConnected(false);
+      setRoomReady(false);
+    });
     connection.on("connect_error", () => setConnected(false));
     connection.on("chat_error", (event: { message: string }) =>
       setError(event.message),
@@ -193,10 +209,16 @@ export default function ChatInterface({
     const connection = socket.current;
     if (!room || !connection) return;
     let mounted = true;
+    setRoomReady(false);
     setMessages([]);
     void refresh();
+    const join = () =>
+      connection.emit("join_room", room, (result: { success: boolean }) => {
+        if (mounted && currentRoom.current === room)
+          setRoomReady(result.success);
+      });
     const recover = () => {
-      connection.emit("join_room", room);
+      join();
       void refresh();
       void refreshContacts();
     };
@@ -222,7 +244,7 @@ export default function ChatInterface({
     };
     connection.on("connect", recover);
     connection.on("receive_message", receive);
-    if (connection.connected) connection.emit("join_room", room);
+    if (connection.connected) join();
     const poll = setInterval(() => void refresh(), 15000);
     const synced = () => void refresh();
     window.addEventListener("ames-record-synced", synced);
@@ -298,7 +320,7 @@ export default function ChatInterface({
                     {active.name}
                   </h2>
                   <p className="mt-1 text-xs text-slate-500">
-                    {connected
+                    {connected && roomReady
                       ? "Connected"
                       : "Reconnecting • messages remain saved"}
                   </p>
