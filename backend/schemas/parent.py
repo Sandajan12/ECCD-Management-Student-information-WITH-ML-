@@ -1,6 +1,7 @@
 from datetime import date
 from typing import Any, Dict, List, Optional
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+from .common import Lrn, PositiveId
 
 
 class ParentBase(BaseModel):
@@ -63,19 +64,19 @@ class ChildProfileResponse(BaseModel):
 
 
 class ParentChildUpdateRequest(BaseModel):
-    emergency_contact: Optional[str] = None
-    address: Optional[str] = None
-    handedness: Optional[str] = None
-    num_of_siblings: Optional[int] = None
-    birth_order: Optional[str] = None
-    father_name: Optional[str] = None
-    father_age: Optional[int] = None
-    father_occ: Optional[str] = None
-    father_educ: Optional[str] = None
-    mother_name: Optional[str] = None
-    mother_age: Optional[int] = None
-    mother_occ: Optional[str] = None
-    mother_educ: Optional[str] = None
+    emergency_contact: Optional[str] = Field(default=None, max_length=20)
+    address: Optional[str] = Field(default=None, max_length=100)
+    handedness: Optional[str] = Field(default=None, pattern="^(Left|Right)$")
+    num_of_siblings: Optional[int] = Field(default=None, ge=0)
+    birth_order: Optional[str] = Field(default=None, max_length=50)
+    father_name: Optional[str] = Field(default=None, max_length=100)
+    father_age: Optional[int] = Field(default=None, ge=0)
+    father_occ: Optional[str] = Field(default=None, max_length=50)
+    father_educ: Optional[str] = Field(default=None, max_length=20)
+    mother_name: Optional[str] = Field(default=None, max_length=100)
+    mother_age: Optional[int] = Field(default=None, ge=0)
+    mother_occ: Optional[str] = Field(default=None, max_length=50)
+    mother_educ: Optional[str] = Field(default=None, max_length=20)
 
     model_config = ConfigDict(extra="ignore")
 
@@ -84,14 +85,11 @@ class ParentChildUpdateRequest(BaseModel):
     def coerce_empty_to_none(cls, v: Any) -> Optional[int]:
         if v is None or v == "" or str(v).strip() == "":
             return None
-        try:
-            return int(v)
-        except (ValueError, TypeError):
-            return None
+        return v
 
 
 class ParentLinkChildRequest(BaseModel):
-    lrn_number: str
+    lrn_number: Lrn
     relationship_type: Optional[str] = "Guardian"
 
     model_config = ConfigDict(extra="ignore")
@@ -116,6 +114,7 @@ class PeriodSummary(BaseModel):
 
 
 class ParentEccdSummaryResponse(BaseModel):
+    student_id: PositiveId
     student_lrn: str
     student_name: str
     current_phase: Optional[str] = None

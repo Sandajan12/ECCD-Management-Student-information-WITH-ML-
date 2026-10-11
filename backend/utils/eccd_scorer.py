@@ -1,6 +1,7 @@
 import os
 import json
 from datetime import date
+from decimal import Decimal, ROUND_HALF_UP
 from typing import List, Dict, Any
 
 # Load scoring data at module initialization
@@ -34,7 +35,7 @@ def calculate_decimal_age(birth_date: date, evaluation_date: date) -> float:
         years -= 1
         months += 12
         
-    return round(years + (months / 12.0), 1)
+    return float((Decimal(years) + Decimal(months) / 12).quantize(Decimal('0.1'), rounding=ROUND_HALF_UP))
 
 def calculate_scores(evaluations: List[Dict[str, Any]], decimal_age: float) -> Dict[str, Any]:
     bracket = get_age_bracket(decimal_age)
@@ -52,7 +53,7 @@ def calculate_scores(evaluations: List[Dict[str, Any]], decimal_age: float) -> D
         'Receptive Language': 'RL', '4': 'RL', 4: 'RL',
         'Expressive Language': 'EL', '5': 'EL', 5: 'EL',
         'Cognitive': 'C', '6': 'C', 6: 'C',
-        'Socio-Emotional': 'SE', '7': 'SE', 7: 'SE'
+        'Socio-Emotional': 'SE', 'Social-Emotional': 'SE', '7': 'SE', 7: 'SE'
     }
 
     for ev in evaluations:

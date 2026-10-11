@@ -2,6 +2,7 @@ import os
 
 from dotenv import load_dotenv
 from fastapi_mail import ConnectionConfig, FastMail, MessageSchema, MessageType
+from backend.config.settings import settings
 
 env_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env')
 load_dotenv(dotenv_path=env_path)
@@ -25,6 +26,9 @@ def get_connection_config():
     )
 
 async def send_otp_email(email: str, otp: str):
+    if not settings.ENABLE_OTP:
+        return
+
     html = f"""
     <div style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px; text-align: center;">
         <h2 style="color: #111827;">Verification Code</h2>

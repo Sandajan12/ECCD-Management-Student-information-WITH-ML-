@@ -1,7 +1,8 @@
-from sqlalchemy import Column, ForeignKey, Integer, String
+from sqlalchemy import Column, DateTime, ForeignKey, ForeignKeyConstraint, Index, Integer, String, func
 from sqlalchemy.orm import relationship
 
 from .base import Base
+from sqlalchemy.ext.hybrid import hybrid_property
 
 
 class FamilyAccess(Base):
@@ -11,15 +12,29 @@ class FamilyAccess(Base):
     parent_id = Column(
         Integer, ForeignKey("parents.parent_id", ondelete="CASCADE"), nullable=False
     )
-    student_lrn = Column(
-        String(50),
-        ForeignKey("students.lrn_number", ondelete="CASCADE"),
-        nullable=False,
-    )
+    student_id = Column(Integer, ForeignKey("students.student_id", ondelete="CASCADE"), nullable=False)
     relationship_type = Column(String(50), nullable=True)
+    date_linked = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    __table_args__ = (
+        Index("idx_family_student", "student_id"),
+    )
 
     parent = relationship("Parent", back_populates="students")
-    student = relationship("Student", back_populates="parents")
+    student = relationship("Student", back_populates="parents", foreign_keys=[student_id])
+
+    @hybrid_property
+    def student_lrn(self):
+        return getattr(self, "_student_lookup", None) or (self.student.lrn_number if self.student else None)
+
+    @student_lrn.setter
+    def student_lrn(self, value):
+        self._student_lookup = value
+
+    @student_lrn.comparator
+    def student_lrn(cls):
+        from .student_identity import StudentReferenceLookup
+        return StudentReferenceLookup(cls.student_id)
 
 
 class Parent(Base):

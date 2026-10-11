@@ -1,0 +1,8 @@
+packages:
+  - frontend
+
+# Retain the existing frontend lockfile and its exact dependency resolutions.
+sharedWorkspaceLockfile: false
+
+# Bootstrap explicitly; running both servers must not trigger competing installs.
+verifyDepsBeforeRun: false

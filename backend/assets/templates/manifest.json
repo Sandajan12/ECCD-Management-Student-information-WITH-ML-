@@ -1,0 +1,18 @@
+[
+  {
+    "file": "ECCD_Checklist_Blank_Template.xlsx",
+    "sheets": [
+      "CHECKLIST"
+    ],
+    "sha256": "8115df70c301a68105b08bbab8918911d29598eaabf026cd69f4dee136085796"
+  },
+  {
+    "file": "ECCD_Summary_Matrix_Template.xlsx",
+    "sheets": [
+      "PR",
+      "M",
+      "PO"
+    ],
+    "sha256": "04547465c6b1934991924b342249c6ee2098a718134260979bfba37710d7dfaa"
+  }
+]

@@ -1,5 +1,5 @@
 import enum
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, func
+from sqlalchemy import CheckConstraint, Column, DateTime, ForeignKey, Integer, String, func
 from sqlalchemy.orm import relationship
 from .base import Base
 
@@ -34,3 +34,7 @@ class SectionTeacher(Base):
 
     section = relationship("Section", back_populates="teacher_assignments")
     teacher = relationship("Teacher", back_populates="section_assignments")
+    __table_args__ = (
+        CheckConstraint("role IN ('Primary Adviser', 'Substitute')", name="ck_section_teacher_role"),
+        CheckConstraint("status IN ('Active', 'Inactive')", name="ck_section_teacher_status"),
+    )

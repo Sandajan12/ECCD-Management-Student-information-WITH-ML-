@@ -1,26 +1,82 @@
-import axios from 'axios';
-
+import axios from "axios";
 const API = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:8000',
+  baseURL: import.meta.env.VITE_API_URL || "http://localhost:8000",
+  withCredentials: true,
+  timeout: 20000,
 });
-
-// Automatically attach JWT token to every request
 API.interceptors.request.use((config) => {
-  const token = localStorage.getItem('token');
-  if (token && config.headers) {
-    config.headers.Authorization = `Bearer ${token}`;
+  const token = localStorage.getItem("token");
+  if (token) config.headers.Authorization = `Bearer ${token}`;
+  if (
+    config.url === "/api/settings/update" &&
+    config.data &&
+    !(config.data instanceof FormData) &&
+    ("existing_logo_url" in config.data ||
+      "existing_profile_pic_url" in config.data)
+  ) {
+    const form = new FormData();
+    for (const [key, value] of Object.entries(
+      config.data as Record<string, unknown>,
+    ))
+      if (value !== null && value !== undefined)
+        form.append(key, String(value));
+    config.data = form;
   }
   return config;
 });
-
-export default API;
-
 API.interceptors.response.use(
   (response) => response,
-  (error) => {
-    if (error.response && error.response.status === 422 && error.response.data && Array.isArray(error.response.data.detail)) {
-      error.response.data.detail = error.response.data.detail.map((err: any) => err.msg).join(', ');
-    }
+  (error: unknown) => {
+    if (
+      axios.isAxiosError(error) &&
+      error.response?.status === 401 &&
+      error.response.data?.message !== "Incorrect current password." &&
+      error.response.data?.detail !== "Incorrect current password." &&
+      !error.config?.url?.startsWith("/api/auth/")
+    )
+      window.dispatchEvent(new Event("ames-session-expired"));
     return Promise.reject(error);
-  }
+  },
 );
+export function errorMessage(error: unknown): string {
+  if (
+    axios.isAxiosError<{
+      message?: string;
+      detail?: string | { msg: string }[];
+    }>(error)
+  ) {
+    const data = error.response?.data;
+    if (Array.isArray(data?.detail))
+      return data.detail.map((item) => item.msg).join(" ");
+    return (
+      data?.message ||
+      (typeof data?.detail === "string" ? data.detail : "") ||
+      "Cannot reach the server. Your draft has been kept. Please try again."
+    );
+  }
+  return error instanceof Error
+    ? error.message
+    : "The request could not be completed.";
+}
+export const isNetworkError = (error: unknown): boolean =>
+  axios.isAxiosError(error) && !error.response;
+export async function downloadFile(
+  path: string,
+  fallback: string,
+): Promise<void> {
+  const res = await API.get<Blob>(path, {
+    responseType: "blob",
+    timeout: 120000,
+  });
+  const disposition = String(res.headers["content-disposition"] || "");
+  const filename =
+    /filename\*=UTF-8''([^;]+)/i.exec(disposition)?.[1] ||
+    /filename="?([^";]+)"?/i.exec(disposition)?.[1];
+  const url = URL.createObjectURL(res.data);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename ? decodeURIComponent(filename) : fallback;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+export default API;

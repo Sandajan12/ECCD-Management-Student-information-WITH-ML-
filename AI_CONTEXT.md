@@ -1,5 +1,571 @@
 # AMES SYSTEM - AI Context & System Architecture
 
+## Phase 2 backend migration (2026-10-11): current runtime contract
+
+This section supersedes the historical Phase 1 compatibility notes below.
+The local PostgreSQL database has received version 002 and passed the final schema
+integrity check. Verification passed 52 backend tests, Python compilation and the
+existing frontend TypeScript check. The local API and Vite server started and
+responded successfully; the extracted 7 domains/109 questions are initialized.
+The active backend uses FastAPI, Pydantic V2, SQLAlchemy and PostgreSQL. The legacy
+folder `AMES-SYSTEM-LEGACY/` is a read-only behavior reference. Phase 3 frontend
+integration remains separate and must use React/TypeScript with Tailwind.
+
+- Apply `backend.migrations.phase2` after Phase 1, with the dev server stopped.
+  The transaction checks every preserved table's data, removes plaintext
+  `students.lrn_number` and child `student_lrn` columns, verifies ID foreign keys,
+  primary keys, unique constraints and protected LRNs, and records version 002.
+  The historical Phase 1 schema builder now explicitly copies its foreign keys.
+- Students use `student_id` in URLs, assessment payloads, transfers and messages.
+  Valid 12-digit LRNs remain accepted as input through HMAC lookup. Public JSON
+  returns masked aliases only. Full LRNs are decrypted in RAM for authorized
+  DepEd spreadsheets. `Student.lrn_number` is a Python compatibility property,
+  not a database column; SQL joins use integer student IDs.
+- Both login aliases honor `ENABLE_OTP=false`. Registration then activates and
+  signs in immediately; password/email updates still require the appropriate
+  authenticated/current-password flow. Existing credentials and local secrets
+  must never be reset or replaced. OTP-enabled behavior uses account/purpose/email
+  bound, hashed challenges with expiry, limited attempts and replay rejection.
+  Failed registration email delivery leaves a recoverable pending account.
+- New teachers must change their initial password before protected APIs or chat
+  become accessible. Password/email changes return a replacement session and
+  revoke old credential-bound sessions, challenges and remembered devices.
+  Remembered tokens are stored hashed, expire after 30 days without renewal on
+  login, and survive ordinary logout unless the device is explicitly forgotten.
+- Teacher ownership uses active `SectionTeacher` records. Parent permissions use
+  only the six granular flags on the active Primary Adviser, never a substitute
+  or cached adviser column. Locked edits return 403. Unreleased scores, answers,
+  dates, ages, matrix values and progress are null; interpretation is
+  `Pending Adviser Release`. Hidden student information and guardian data are
+  masked. Student transfers and adviser handovers preserve evaluation rows.
+- Assessment saves validate question IDs and PRE < MID < POST dates before writes.
+  Parent saves accept home-based questions only, and unchanged answers retain
+  their evaluation dates. Scoring retains the original ECCD lookup data; decimal
+  age uses half-up rounding to match the legacy calculations. Latest-period
+  parent statistics use POST > MID > PRE with alphabetical domain tie-breaking.
+- School settings support official school/principal names and opening month.
+  Rollover archives exactly the active students/unarchived messages and records
+  chunked audit snapshots in the same transaction. Thirty-day undo restores only
+  those IDs and the original month; older archives remain archived. A missing
+  or invalid snapshot is rejected instead of globally reactivating records.
+- Excel import preserves the legacy `Info Sheet` and GM/FM/SH/RL/EL/C/SE layouts,
+  including Excel date epochs, guardian details and PRE-derived school years.
+  Each student and their evaluations commit together; invalid rows roll back and
+  return row errors while successful rows are retained. Cross-section updates
+  are rejected. Checklist and summary exports use reviewed blank DepEd assets,
+  individual cohort years and actual scores; sections exceeding 30 children
+  produce multiple workbooks rather than discarding excess rows.
+- Backups use the current Python project's authenticated Fernet `.enc` format
+  and strict typed school-data document. Restore validates before deletion and
+  commits once, preserves the live user registry/credentials, clears verification
+  and device tables, and restarts school-data sequences transactionally. Invalid
+  relationships roll back all changes. Legacy MySQL SQL/CBC/v2 containers and
+  older schema documents are not accepted as current-format backups.
+- `backend.main:app` is the Socket.IO ASGI wrapper; `backend.main:api` is FastAPI.
+  HTTP persistence is authoritative. Socket connection and room events verify
+  sessions and teacher-parent relationships; broadcasts load the sender-owned
+  persisted message by ID and never trust client-supplied message bodies.
+  Restoring a backup disconnects chat sessions. Legacy functional route aliases
+  coexist with current URLs; deployment/readiness/rate-limit machinery is omitted.
+- If both ECCD reference tables are empty, startup adds the 7 domains and 109
+  questions from the extracted active reference JSON. Existing/custom reference
+  data is preserved. Startup checks the schema; it does not upgrade tables or
+  create accounts. Local OTP remains disabled; SMTP delivery is mocked in tests.
+
+Verification is documented in `backend/migrations/README.md`. Tests use unique,
+temporary PostgreSQL schemas and synthetic accounts; they never reset live data.
+Phase 3 must wire ID-based UI state and routes, challenge/replacement-session
+handling, first-login gating, authenticated chat, school settings, rollover and
+import/export feedback while preserving scoped offline drafts until confirmed
+HTTP 200/201 responses. Do not clear drafts or global localStorage on auth changes.
+
+## Phase 1 migration state (2026-10-11): authoritative schema additions
+
+The local PostgreSQL 18 database has received the transactional Phase 1 migration
+in `backend/migrations/phase1.py`. Existing accounts, credentials and original data
+are preserved. See `backend/migrations/README.md` for commands and verification.
+The legacy source is `AMES-SYSTEM-LEGACY/`; it remains read-only. The active stack
+remains FastAPI, SQLAlchemy/PostgreSQL and React/TypeScript. Future migrated UI uses
+Tailwind per the user's migration instruction.
+
+- `students.student_id` is now the integer identity primary key; new fields are
+  `middle_name`, `lrn_encrypted`, `lrn_search_hash` (unique) and `lrn_last4`.
+- `family_access` and `student_eccd_evaluations` now have required student-ID foreign
+  keys. Evaluation uniqueness uses `(student_id, question_id, testing_period)`;
+  family links include a timezone-aware `date_linked` timestamp.
+- **Temporary compatibility:** existing routes retain `students.lrn_number` and
+  child `student_lrn`. Composite constraints prevent mismatched ID/LRN references.
+  ORM events populate IDs and protection fields for these old routes. Phase 2 must
+  switch API contracts to IDs/masked LRNs and remove plaintext columns afterward.
+  LRN protection is staged; plaintext storage has not yet been eliminated.
+- `users` has `is_first_login` and `is_registration_pending`; existing accounts
+  receive false flags. New teacher provisioning in Phase 2 must opt into first-login
+  password changes. `user_trusted_devices` stores account-bound token hashes/expiry.
+- `email_verifications` supports `user_id`, purpose, challenge/OTP hashes and
+  attempts; compatibility OTP fields remain and expiry timestamps use UTC.
+- `system_settings` adds `school_name`, `principal_name` and opening month (1–12,
+  default 8). `system_logs.details` is `TEXT` for exact rollover snapshot/chunk JSON.
+- The normalized Primary Adviser/Substitute assignment model and six granular
+  parent permissions are preserved. No deprecated OJT roles or new coarse flags
+  are introduced. Existing PostgreSQL enum storage conventions remain unchanged.
+- Pydantic V2 contracts support migrated auth, ID-based students/assessments,
+  granular access, school settings, rollover snapshots, notifications and a strict
+  complete backup document. These new contracts are prepared for Phase 2 routes.
+
+Only models, schemas and the data migration are delivered in Phase 1. Existing
+auth, restore, rollover and UI behavior remains pending Phase 2/3 integration;
+in particular, snapshot-based 30-day undo and credential-preserving atomic restore
+are not enabled yet. LRN secrets live only in `backend/.env`, must be retained with
+backups, and must not be printed or regenerated for existing encrypted records.
+Older schema descriptions below represent the pre-migration API compatibility
+baseline wherever they still describe an LRN primary key.
+
+## Local development infrastructure: authoritative setup guide
+
+**Audit date: 2026-10-11.** This setup guide describes the active Python/TypeScript project. Its runtime/configuration instructions take precedence over older infrastructure descriptions below. The existing domain, schema, assessment, offline durability and permission requirements are retained. No application logic, UI, routes or database schema was changed by this audit.
+
+The backend must use **Python 3.12 in a repository-local `.venv` managed by Astral `uv`**. The frontend must use **pnpm**. Run root launch scripts from the repository root. Virtual-environment activation is unnecessary.
+
+### A. Runtime requirements and workspace boundaries
+
+| Layer | Required setup | Audited runtime / evidence |
+| --- | --- | --- |
+| Python | CPython **3.12.x**, root `.venv/` | Python 3.12.15, Windows x64 |
+| Python manager | Astral `uv` executable on PATH | uv 0.13.0 |
+| JavaScript runtime | Recommend **Node.js 24.x** | Node 24.21.0 |
+| Supported Node engines | `^20.19.0 || ^22.13.0 || >=24` | Intersection of current Vite/ESLint requirements |
+| JavaScript manager | **pnpm 12.11.2** | Pinned in root `packageManager` and `engines.pnpm` |
+| Database | Running PostgreSQL; templates target **16+**, port 5432 | No local service/listener or credentials available during audit |
+| Backend server | Uvicorn, default 127.0.0.1:8000 | CLI and isolated ASGI checks passed |
+| Frontend server | Vite, default localhost:5173 | Live HTTP checks passed |
+| Email | Configured/reachable SMTP for email-dependent features | Not exercised |
+
+Vite 8 permits Node 22.12+, but ESLint 10 requires Node 22.13+ on that release line. Node 24 is the tested choice. The PostgreSQL package `psycopg2-binary` is a client driver, not a database server.
+
+```text
+root/
+  package.json                  private orchestration package; no app dependencies
+  pnpm-workspace.yaml           includes only frontend; separate lockfiles
+  pnpm-lock.yaml                root pnpm tool metadata / empty app dependency set
+  .python-version              interpreter request: 3.12
+  .venv/                        uv-managed backend environment, ignored
+  .env.example                  duplicate backend template, not an active env file
+  AI_CONTEXT.md                 setup guide and retained business context
+  backend/
+    requirements.txt            60 exact Python package pins
+    .env.example                canonical backend configuration template
+    .env                        required local settings, ignored; create locally
+    main.py                     ASGI target: backend.main:app
+    config/settings.py          absolute backend/.env path; required settings
+    config/database.py          SQLAlchemy engine/session factory
+    models/ schemas/ routes/ utils/   existing application layers
+    eccd_scoring_data.json       existing file-relative scoring resource
+    assets/templates/           externally supplied spreadsheet assets
+  frontend/
+    package.json                React/Vite dependencies and scripts
+    pnpm-lock.yaml              exact frontend resolutions/peers/integrities
+    node_modules/               frontend dependencies, ignored
+    .env.example                public VITE_API_URL template
+    .env.local                  recommended local public overrides, ignored
+    vite.config.ts              React plugin; no API proxy configured
+    tsconfig*.json              application and Vite-tooling TS projects
+```
+
+No active `pyproject.toml`, `uv.lock`, Alembic configuration, Docker configuration, or Python seed/bootstrap command was found. The backend is requirements-based: **`uv run` does not automatically install `requirements.txt`**. Keep dependency installation explicit. The repository root makes backend namespace/package directories importable, including directories without `__init__.py`.
+
+Root package boundaries:
+
+- `package.json` pins pnpm as a tool, with no application dependencies. The removed npm `uv@1.4.0` is a UTF-8 validation library, unrelated to Astral uv. Astral uv is installed separately.
+- pnpm 12 can record its own executable/platform binaries in `packageManagerDependencies` tool metadata in the root lockfile. This is distinct from application dependencies.
+- Workspace `packages: [frontend]` selects the active frontend only. `sharedWorkspaceLockfile: false` preserves the existing frontend lockfile. A root frozen install installs the selected projects.
+- `verifyDepsBeforeRun: false` prevents server launch from triggering competing automatic installs. Bootstrap explicitly, and reinstall after manifest changes.
+- An untracked root `package-lock.json` existed before this task and was left intact. It is not authoritative for this project; do not use `npm install` for project dependencies.
+- `_legacy_reference/` is absent. An independent `AMES-SYSTEM-LEGACY/` directory became available during the audit; its backend/frontend manifests and Vite config were read without modification. It uses Node 24/pnpm 10.30.0, Express/MySQL and a different frontend toolchain. It is excluded from this pnpm workspace. Its migrations/settings are not the active PostgreSQL setup.
+- Existing ignore rules exclude `.env`, environments, node_modules, generated exports, spreadsheets and ML binaries. A fresh clone does not provide private spreadsheet templates or local secrets.
+
+### B. Backend dependency chains and exact version constraints
+
+The frozen requirements list includes both directly used packages and transitives, without distinguishing dependency intent. All 60 pins were preserved, including the user's pre-existing removal of optional `httptools`. Uvicorn can use h11; Windows does not require uvloop. This workflow does not request `uvicorn[standard]` extras.
+
+These chains were checked against installed package metadata. Optional docs/test/provider extras are not automatically installed. The database row describes the application/dialect chain, rather than claiming SQLAlchemy always installs a PostgreSQL driver.
+
+| Role | Dependency chain with installed versions |
+| --- | --- |
+| HTTP API | `fastapi 0.141.1` -> `starlette 1.6.0`, `pydantic 2.13.5`, `typing-extensions 4.16.0`, `typing-inspection 0.4.4`, `annotated-doc 0.0.5` |
+| ASGI concurrency | `starlette` -> `anyio 4.15.1` -> `idna 3.20`, `typing-extensions` on Python 3.12 |
+| Validation | `pydantic` -> **`pydantic-core 2.46.5` exactly**, `annotated-types 0.8.0`, typing packages |
+| Settings | `pydantic-settings 2.15.0` -> `pydantic`, `python-dotenv 1.2.3`, `typing-inspection` |
+| Server/reload | `uvicorn 0.53.0` -> `click 8.5.0`, `h11 0.16.0`; explicitly pinned `watchfiles 1.2.0` -> `anyio` |
+| Database | app -> `sqlalchemy 2.0.54` -> PostgreSQL dialect driver `psycopg2-binary 2.9.13` -> external PostgreSQL; SQLAlchemy also requires `greenlet 3.5.6` on this architecture and `typing-extensions` |
+| Password/JWT | app directly imports `bcrypt 5.0.0`; `python-jose 3.5.0` -> `ecdsa 0.19.2` -> `six 1.17.0`, `rsa 4.9.1` -> `pyasn1 0.6.4` |
+| Encryption | `cryptography 50.0.1` -> `cffi 2.1.1` -> `pycparser 3.0` on CPython |
+| Email | `fastapi-mail 1.6.8` -> `aiosmtplib 5.1.3`, `blinker 1.9.0`, cryptography, `email-validator 2.3.0`, `httpx 0.28.1`, `jinja2 3.1.6`, pydantic/settings, `regex 2026.9.10`, starlette, typing-extensions |
+| Email/templates | `email-validator` -> `dnspython 2.8.0`, idna; `jinja2` -> `markupsafe 3.0.3` |
+| HTTP client | `httpx` -> anyio, `certifi 2026.7.22`, `httpcore 1.0.9`, idna; httpcore -> certifi/h11 |
+| Excel/tabular data | `openpyxl 3.1.5` -> `et-xmlfile 2.0.0`; `pandas 3.0.6` -> `numpy 2.5.3`, `python-dateutil 2.9.0.post0` -> six, plus `tzdata 2026.4` on Windows |
+| ML packages | `scikit-learn 1.9.1` -> numpy, `scipy 1.18.1` -> numpy, `joblib 1.6.0` -> `cloudpickle 3.1.2`, `narwhals 2.26.0`, `threadpoolctl 3.7.0` |
+| Socket transport packages | `python-socketio 5.17.0` -> `bidict 0.24.1`, `python-engineio 4.14.0` -> `simple-websocket 1.1.0` -> `wsproto 1.3.2` -> h11 |
+| Remaining explicit pins | `passlib 1.7.4`, `python-multipart 0.0.32`, `pyyaml 6.0.3`, `websockets 17.1` |
+
+Important compatibility intersections: FastAPI-Mail requires cryptography `>=50,<51` and Starlette `>=1,<2`; the pins satisfy both. SciPy requires NumPy `>=2.0,<2.8`; NumPy 2.5.3 also satisfies the pinned pandas/scikit-learn requirements. Keep Pydantic aligned with its exact compiled-core version.
+
+Installed Socket.IO packages do not establish that an ASGI Socket.IO service is mounted. No `backend/ml/` implementation directory was found: ML libraries are installed, while retained domain context describes the ML goals. Infrastructure installation does not prove every business feature exists.
+
+Inspect the complete live tree and all exact pins from root:
+
+```text
+uv pip list --python .venv
+uv pip tree --python .venv
+uv pip check --python .venv
+```
+
+`backend/requirements.txt` remains the version authority; do not freeze an unrelated interpreter over it. Version pins are not a hash-locked, platform-universal artifact: platform markers and wheel availability still apply. Python 3.12 Windows x64 was tested; other architectures require the same installation/import checks.
+
+### C. Frontend dependency tree and configuration
+
+| Package | Manifest range | Exact frontend lockfile version |
+| --- | --- | --- |
+| @emotion/react | ^11.14.0 | 11.14.0 |
+| @emotion/styled | ^11.14.1 | 11.14.1 |
+| @mui/icons-material | ^9.4.0 | 9.4.0 |
+| @mui/material | ^9.4.0 | 9.4.0 |
+| axios | ^1.20.0 | 1.20.0 |
+| react | ^19.2.8 | 19.3.0 |
+| react-dom | ^19.2.8 | 19.3.0 |
+| react-router-dom | ^7.18.4 | 7.18.4 |
+| recharts | ^3.10.1 | 3.10.1 |
+| socket.io-client | ^4.8.3 | 4.8.3 |
+| @eslint/js (dev) | ^10.0.1 | 10.0.1 |
+| @types/node (dev) | ^24.13.3 | 24.13.5 |
+| @types/react (dev) | ^19.2.18 | 19.3.0 |
+| @types/react-dom (dev) | ^19.2.7 | 19.3.0 |
+| @vitejs/plugin-react (dev) | ^6.1.1 | 6.1.1 |
+| eslint (dev) | ^10.10.0 | 10.10.0 |
+| eslint-plugin-react-hooks (dev) | ^7.1.1 | 7.1.1 |
+| eslint-plugin-react-refresh (dev) | ^0.5.6 | 0.5.7 |
+| globals (dev) | ^17.12.0 | 17.12.0 |
+| typescript (dev) | ~6.0.2 | 6.0.3 |
+| typescript-eslint (dev) | ^8.69.0 | 8.70.0 |
+| vite (dev) | ^8.3.0 | 8.3.0 |
+
+There are 10 application and 12 development dependencies. The frozen frontend installation retained the existing lockfile unchanged. React DOM depends on React; MUI/icons depend on MUI/React peers and the Emotion styling engine; Recharts uses charting/state dependencies and React peers; Socket.IO client uses Engine.IO/client parsers. Vite 8 uses Rolldown and an OS/architecture-specific native binding; plugin-react has a Vite peer; typescript-eslint links its parser/plugin and TypeScript/ESLint peers.
+
+Exact transitive versions, optional native bindings and peer-qualified snapshots live in `frontend/pnpm-lock.yaml`. Inspect with `pnpm --dir frontend list --depth Infinity` and `pnpm --dir frontend why <package>`. Do not suppress all optional dependencies: Vite's matching platform binding must be installed.
+
+- `frontend/package.json` is ESM (`type: module`). Scripts: `dev` = vite; `build` = **tsc -b && vite build**; `lint` = eslint .; `preview` = vite preview.
+- `vite.config.ts` enables `@vitejs/plugin-react`, with no API proxy, custom port, or backend dotenv loader.
+- `tsconfig.json` has empty `files` and references application/tooling projects. Run the required `pnpm tsc --noEmit`, **and** `pnpm exec tsc -b`; the root-only command does not fully check referenced projects.
+- Application TS config uses ES2023, bundler resolution, React JSX, noEmit and unused-variable/parameter checks. Tooling config checks vite.config.ts and includes Node types. Compiler settings and application types were not edited.
+- Axios and the chat component read `VITE_API_URL`, falling back to `http://localhost:8000`. Use the backend origin **without `/api` appended**.
+- Vite reads frontend environment files; root `.env` does not configure Vite. VITE variables are public browser/build values. Backend secrets must remain backend-only.
+
+### D. Fresh-checkout bootstrap, in order
+
+#### D1. Install tools and external services once
+
+Install Node.js 24.x from the [official Node.js downloads](https://nodejs.org/en/download). Install/start PostgreSQL 16+ from the [official PostgreSQL downloads](https://www.postgresql.org/download/). Retain the actual credentials chosen during PostgreSQL installation. Put its bin directory on PATH to use the client commands below. OS permissions/network access are prerequisites for tool installation.
+
+Windows PowerShell, if uv is absent:
+
+```powershell
+winget install --exact --id astral-sh.uv
+```
+
+For the exact audited uv version, the alternative official installer is:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "irm https://astral.sh/uv/0.13.0/install.ps1 | iex"
+```
+
+That alternative scopes policy to the installer process; routine development needs no policy change. Reopen the terminal to refresh PATH. If pnpm is absent, install only the pinned tool using Node's npm executable:
+
+```powershell
+npm.cmd install --global pnpm@12.11.2
+node --version
+pnpm.cmd --version
+uv --version
+Get-Command node,pnpm.cmd,uv
+```
+
+This npm command installs the tool only; all project dependencies use pnpm. An npm-free alternative is the matching standalone binary from [official pnpm installation options](https://pnpm.io/installation). Do not install pnpm as an application dependency.
+
+macOS/Linux, with Node.js 24 and PostgreSQL installed:
+
+```bash
+curl -LsSf https://astral.sh/uv/0.13.0/install.sh | sh
+# Reopen the terminal to load the uv PATH changes.
+npm install --global pnpm@12.11.2
+node --version
+pnpm --version
+uv --version
+command -v node pnpm uv
+```
+
+Expected pnpm version: 12.11.2. Audited uv: 0.13.0. Repeat verification when upgrading tools/runtimes.
+
+#### D2. Create the repository-local Python 3.12 environment
+
+Windows PowerShell, from a fresh checkout:
+
+```powershell
+Set-Location -LiteralPath 'C:\Users\Administrator\Desktop\ECCD-Management-Student-information-WITH-ML-'
+uv python install 3.12
+uv venv --python 3.12 .venv
+uv pip sync --python .venv backend/requirements.txt
+uv pip check --python .venv
+uv run --no-project --python 3.12 python -c "import sys; assert sys.version_info[:2] == (3, 12); print(sys.version); print(sys.executable)"
+```
+
+macOS/Linux, substitute the actual checkout location:
+
+```bash
+cd '/absolute/path/to/ECCD-Management-Student-information-WITH-ML-'
+uv python install 3.12
+uv venv --python 3.12 .venv
+uv pip sync --python .venv backend/requirements.txt
+uv pip check --python .venv
+uv run --no-project --python 3.12 python -c "import sys; assert sys.version_info[:2] == (3, 12); print(sys.version); print(sys.executable)"
+```
+
+The printed executable must be under root `.venv`: Scripts/python.exe on Windows, bin/python on POSIX. uv accepts the environment directory in `--python .venv`, making install commands portable. **uv pip sync uses a positional requirements file, without -r**; it installs the frozen set and may remove extras from that dedicated environment. An additive alternative is `uv pip install --python .venv -r backend/requirements.txt`.
+
+For an existing checkout, inspect .venv/pyvenv.cfg/interpreter and skip venv creation if already correct. Do not delete an environment or clear caches blindly. Stop when any command fails and fix the cause before proceeding. PowerShell sequences do not automatically stop on every native-command failure; check `$LASTEXITCODE` when scripting these steps.
+
+#### D3. Install JavaScript dependencies with pnpm
+
+From root, Windows:
+
+```powershell
+pnpm.cmd install --frozen-lockfile
+```
+
+From root, POSIX:
+
+```bash
+pnpm install --frozen-lockfile
+```
+
+The root workspace includes frontend, retaining separate lockfiles. Include dev dependencies: Vite/TypeScript are dev dependencies. A production-only install cannot run dev/build. First bootstrap requires registry access; offline mode only works after archives and pnpm verification metadata have been cached.
+
+#### D4. Create local environment files and replace placeholders
+
+Windows, from root; do not overwrite existing local settings:
+
+```powershell
+if (-not (Test-Path -LiteralPath 'backend/.env')) {
+    Copy-Item -LiteralPath 'backend/.env.example' -Destination 'backend/.env'
+}
+if (-not (Test-Path -LiteralPath 'frontend/.env.local')) {
+    Copy-Item -LiteralPath 'frontend/.env.example' -Destination 'frontend/.env.local'
+}
+```
+
+POSIX, from root:
+
+```bash
+if [ ! -f backend/.env ]; then cp backend/.env.example backend/.env; fi
+if [ ! -f frontend/.env.local ]; then cp frontend/.env.example frontend/.env.local; fi
+```
+
+Generate local secrets once by replacing **only exact template placeholders**. This command neither prints secrets nor rotates existing values:
+
+```text
+uv run --no-project --python 3.12 python -c "from pathlib import Path; import secrets; from cryptography.fernet import Fernet; p = Path('backend/.env'); s = p.read_text(encoding='utf-8'); s = s.replace('your_secure_random_secret_key_here', secrets.token_hex(32)).replace('replace_with_generated_fernet_key', Fernet.generate_key().decode()).replace('replace_with_generated_32_hex_characters', secrets.token_hex(16)); p.write_text(s, encoding='utf-8')"
+```
+
+Then edit backend/.env with actual PostgreSQL credentials and SMTP settings. Windows can use `notepad.exe backend\.env`. Edit frontend/.env.local if changing the API origin. Preserve existing secrets, especially the backup key required to decrypt historical exports.
+
+| Variable | Actual requirement/behavior |
+| --- | --- |
+| DATABASE_URL | Required. Template: `postgresql+psycopg2://postgres:your_password_here@localhost:5432/ames_db`. Replace credentials; percent-encode reserved characters in URI username/password components. |
+| SECRET_KEY | Required JWT secret; placeholder replacement supplies 32 random bytes as 64 hex characters. |
+| ALGORITHM | Code/template use HS256. |
+| ACCESS_TOKEN_EXPIRE_MINUTES | Code default **30**; template explicitly sets **60**. |
+| BACKUP_ENCRYPTION_KEY | Required; actual backup implementation needs a **44-character URL-safe base64 Fernet key** generated by Fernet.generate_key(). |
+| BACKUP_IV | Required by current Settings, but unused by the current Fernet backup code; replacement supplies 16 random bytes as 32 hex characters. |
+| MAIL_USERNAME / MAIL_PASSWORD | Actual SMTP credentials for sending mail. Existing loader removes whitespace from MAIL_PASSWORD. |
+| MAIL_SERVER / MAIL_PORT / MAIL_FROM | SMTP host, numeric port, sender; template uses smtp.gmail.com/587 and a placeholder sender. |
+| MAIL_STARTTLS / MAIL_SSL_TLS | Template True/False; match actual provider transport requirements. Loader accepts common true values case-insensitively. |
+| VITE_API_URL | Public frontend API/socket origin; defaults to http://localhost:8000, with no /api suffix. Restart Vite after changes. |
+
+Settings computes the absolute backend/.env path from backend/config/settings.py. Root .env.example is a duplicate template, not an independently loaded file. Existing process environment values take precedence. Prefer frontend/.env.local for local overrides; keep it consistent with frontend/.env if both exist. Never put backend secrets in VITE variables.
+
+**Backup correction:** backend/routes/backup.py uses Fernet rather than AES-CBC/raw key plus IV. It replaces a non-44-character environment key with a process-local generated key, so using the old placeholder could make exports undecryptable after restart. Both templates now describe the actual format. The backend launch script loads dotenv into the process environment before app import, covering both Pydantic and os.environ consumers. No encryption business logic was modified.
+
+#### D5. Prepare PostgreSQL before a real backend launch
+
+Provision an empty development database using the account in DATABASE_URL. These commands use the template's postgres/ames_db names and prompt for your actual password; adapt host/account/port to your installation:
+
+```text
+pg_isready -h localhost -p 5432
+createdb -h localhost -p 5432 -U postgres -W ames_db
+psql -h localhost -p 5432 -U postgres -W -d ames_db -c "SELECT current_database(), current_user;"
+```
+
+Skip createdb if the intended database exists. No database provisioning, schema change, data import, restore or seed was executed by this infrastructure audit.
+
+Existing **Base.metadata.create_all(bind=engine) executes during import of backend.main**. Real startup therefore needs a reachable PostgreSQL database and table-creation permissions for an empty dev database. Existing startup may create tables; it does not create the database, migrate existing columns, or seed accounts/questions. No migrated account/seed command was found; authorized baseline data is a separate prerequisite for interactive business workflows.
+
+After configuring your own environment, check connectivity without writing data:
+
+```text
+uv run --no-project --python 3.12 python -c "from backend.config.database import engine; from sqlalchemy import text; c = engine.connect(); print(c.execute(text('SELECT 1')).scalar()); c.close()"
+```
+
+Expected output is 1. This imports the database configuration, not backend.main, so it does not invoke startup create_all.
+
+### E. Exact launch scripts and execution flow
+
+Root scripts:
+
+```json
+{
+  "backend": "uv run --no-project --python 3.12 python -m uvicorn backend.main:app --reload --env-file backend/.env",
+  "frontend": "pnpm --dir frontend dev",
+  "dev": "pnpm run \"/^(backend|frontend)$/\""
+}
+```
+
+Backend flow: root working directory -> uv local Python 3.12 environment -> python imports that environment's Uvicorn -> dotenv loaded before app import -> backend.main imports existing layers -> PostgreSQL startup create_all -> HTTP service/reload. Keeping root as the working directory also preserves current workbook paths such as backend/assets/templates/....
+
+Frontend flow: root script -> pnpm --dir frontend -> local Vite binary, frontend manifest/config/index.html/env -> browser requests -> VITE_API_URL -> Uvicorn. The directory option avoids a cd/shell-operator chain; there is no Vite API proxy.
+
+Combined flow: root dev -> anchored regex selecting exactly backend/frontend -> concurrent scripts under pnpm 12.11.2. It does not select root dev or recurse into frontend dev directly; the frontend wrapper invokes it normally. Watch both outputs. A Uvicorn reload supervisor can remain alive after a child import failure, so a running process alone is not an API readiness check.
+
+Windows PowerShell, from root after bootstrap/environment/database setup:
+
+```powershell
+# Both servers in one terminal:
+pnpm.cmd run dev
+```
+
+Or independently, using two root terminals:
+
+```powershell
+# Terminal A:
+pnpm.cmd run backend
+```
+
+```powershell
+# Terminal B:
+pnpm.cmd run frontend
+```
+
+Direct commands, also from root:
+
+```powershell
+uv run --no-project --python 3.12 python -m uvicorn backend.main:app --reload --env-file backend/.env
+```
+
+```powershell
+pnpm.cmd --dir frontend dev
+```
+
+macOS/Linux uses the same commands with pnpm instead of pnpm.cmd:
+
+```bash
+pnpm run dev
+# Or in separate root terminals:
+# pnpm run backend
+# pnpm run frontend
+```
+
+Ctrl+C stops the development session. Avoid multiple reload supervisors/Vite processes on the same ports. Extra arguments to combined dev are forwarded to both scripts; set server-specific flags with the individual scripts instead.
+
+**Windows execution policy:** invoke pnpm.cmd rather than pnpm.ps1. Package scripts use normal package-script shells/native uv; no Activate.ps1, source, Bash-only environment assignment or machine-wide policy change is required. This host's LocalMachine policy is Restricted, and .cmd checks passed. Organization-enforced application controls/permissions remain external constraints.
+
+The agent sandbox initially denied user-cache access for uv/pnpm; checks passed after approved cache access. This was a filesystem permission issue, not a dependency or execution-policy defect. Use permitted cache/store locations or approved access in constrained environments; changing machine policy does not fix filesystem access.
+
+| Service | Default URL | Notes |
+| --- | --- | --- |
+| Vite UI | http://localhost:5173 | May select another port if busy; read startup output |
+| API root | http://127.0.0.1:8000/ | Existing welcome response |
+| API docs/schema | http://127.0.0.1:8000/docs and /openapi.json | Require successful backend import/startup |
+| Vite preview | http://localhost:4173 | Build preview only; backend remains separate |
+
+Predictable frontend port: `pnpm.cmd run frontend --host 127.0.0.1 --port 5173 --strictPort`. Alternate backend port: `pnpm.cmd run backend --port 8001`, then change VITE_API_URL to http://localhost:8001 and restart Vite. For a LAN phone, bind both servers to 0.0.0.0 and configure the development computer's actual reachable address: localhost on a phone means the phone. Network/firewall access must permit the ports.
+
+### F. Verification results and remaining prerequisites
+
+| Check | Observed result |
+| --- | --- |
+| Existing local backend environment | Python 3.12.15; uv pip check reported all 60 packages compatible |
+| Fresh Python installation | Separate ignored node_modules/.infra-check/python312 created with uv/Python 3.12; all 60 requirements resolved/installed and uv pip check passed; working .venv unchanged; temporary audit environment removed afterward |
+| pnpm frozen install | Succeeded from root; frontend lockfile unchanged; registry-metadata policy verification passed |
+| TypeScript | pnpm --dir frontend tsc --noEmit and pnpm --dir frontend exec tsc -b passed after installation |
+| Frontend build | tsc -b and Vite 8.3.0 production build passed |
+| Combined root dispatch | pnpm.cmd run dev --help displayed Uvicorn/Vite help concurrently, exit 0 with approved cache access |
+| Live frontend | Root frontend script started Vite in 385 ms; GET / and /src/main.tsx returned HTTP 200 on 127.0.0.1:5173; temporary server stopped afterward |
+| Backend syntax/imports | All 48 backend Python files parsed; 16 runtime/native modules imported, including psycopg2/cryptography/pandas/NumPy/SciPy/scikit-learn |
+| Isolated backend HTTP | App imports/OpenAPI generation succeeded; GET / and /openapi.json returned HTTP 200 with temporary process settings and mocked startup create_all; no database contacted |
+| Real PostgreSQL-backed backend startup | **Not verified**: backend/.env, local PostgreSQL listener/service and configured credentials were absent |
+| OS execution coverage | Windows x64; POSIX instructions are documented equivalents, not claimed as locally executed |
+
+Nonfatal warnings: the frontend build reported a roughly 1.27 MB main JavaScript bundle before gzip; the isolated backend TestClient check reported Starlette's deprecation of its httpx adapter. Both passed; no app changes or dependency upgrades were made to suppress warnings.
+
+**Readiness boundary:** installs, dependency consistency, module resolution, TypeScript, frontend build, live frontend and launch dispatch were verified. A completely healthy concurrent session still requires actual backend settings and PostgreSQL. SMTP, populated database contents, exports, authenticated flows and Socket.IO behavior were not validated. Error-free operation cannot be guaranteed across absent private assets/services or untested platforms.
+
+Additional prerequisites:
+
+- Export code requires `backend/assets/templates/EasyCD-Checklist-2024-V3.-violet-FEMALE-2024-2025-.xlsx`; that workbook is absent and spreadsheets are ignored. Obtain the authorized existing template before exercising the export.
+- No migrated administrator/seed command was found. A server starting does not prove that accounts, sections, questions or historical records exist.
+- The legacy repositories and application source were left unchanged; unrelated pre-existing edits/files were preserved.
+
+After supplying your local settings, run from root:
+
+```powershell
+uv pip check --python .venv
+pnpm.cmd --dir frontend tsc --noEmit
+pnpm.cmd --dir frontend exec tsc -b
+pnpm.cmd --dir frontend build
+pnpm.cmd run dev --help
+# With backend/.env and PostgreSQL ready:
+pnpm.cmd run dev
+```
+
+In another terminal while the real servers are running:
+
+```powershell
+(Invoke-WebRequest -Uri 'http://localhost:5173/' -UseBasicParsing -TimeoutSec 10).StatusCode
+(Invoke-WebRequest -Uri 'http://127.0.0.1:8000/' -UseBasicParsing -TimeoutSec 10).StatusCode
+(Invoke-WebRequest -Uri 'http://127.0.0.1:8000/openapi.json' -UseBasicParsing -TimeoutSec 10).StatusCode
+```
+
+POSIX equivalents:
+
+```bash
+curl --fail --max-time 10 http://localhost:5173/
+curl --fail --max-time 10 http://127.0.0.1:8000/
+curl --fail --max-time 10 http://127.0.0.1:8000/openapi.json
+```
+
+### G. Failure-to-remedy map
+
+| Symptom | Inspect | Infrastructure remedy |
+| --- | --- | --- |
+| pnpm.ps1 blocked | PowerShell script policy | Use pnpm.cmd; activation/policy changes are unnecessary |
+| uv not recognized | Astral uv missing/stale PATH | Install official executable and reopen terminal |
+| No module named uvicorn | Wrong/incomplete environment | Check printed interpreter; sync requirements into root .venv |
+| No module named backend | Wrong working directory | Launch from root with backend.main:app |
+| Missing env/Pydantic fields | Missing/incomplete backend/.env | Copy canonical template only when absent; configure required values |
+| Database refused/auth failed | Service, database, URI/credentials | Verify pg_isready and SELECT 1; package installation cannot start a database |
+| Existing DB missing columns | create_all is not a migration system | Obtain approved migration procedure; do not invent schema changes |
+| Backup key/restore error | Wrong format/lost or changed key | Preserve original valid 44-character Fernet key; do not rotate to fix startup |
+| vite/tsc missing | Frontend deps absent/dev deps omitted | Root pnpm install --frozen-lockfile, including dev dependencies |
+| Frozen lockfile mismatch | Manifest versus corresponding lockfile | Review intended dependency edits; regenerate deliberately with pinned pnpm |
+| Native Rolldown binding absent | Incomplete install/optional deps excluded | Install for actual platform and retain matching optional bindings |
+| Cache Access denied | Sandbox/directory permissions | Approved cache/store access; execution policy is unrelated |
+| Offline metadata miss | Fresh cache lacks archives/policy metadata | Bootstrap with network access; do not bypass checks to claim a pass |
+| Vite ready, API unavailable | Backend worker/configuration/service | Check worker output and /openapi.json separately |
+| Wrong API destination | VITE_API_URL or stale Vite env | Configure origin in frontend/.env.local, restart Vite |
+| Workbook FileNotFoundError | Missing private template | Obtain existing template at the existing path |
+
+CLI references: [uv installation](https://docs.astral.sh/uv/getting-started/installation/), [uv environment selection](https://docs.astral.sh/uv/pip/environments/), [uv commands](https://docs.astral.sh/uv/reference/cli/), [pnpm installation](https://pnpm.io/installation), and [pnpm concurrent script selection](https://pnpm.io/cli/run). Exact package versions and application loader behavior were derived from this checkout.
+
+---
+
+The existing domain context follows. Keep its business requirements intact; use the audited infrastructure setup above for local configuration and execution.
+
 ## 1. Project Overview & Objectives
 
 The AMES System is a comprehensive School Management and Early Childhood Care and Development (ECCD) Assessment platform. The primary objective is to allow educators (Teachers) to manage student records, conduct and track ECCD evaluations (PRE, MID, POST periods), and maintain open, real-time communication with Parents. Parents are provided with dedicated access to view their children's profiles, monitor their progress, and message teachers directly. The system is now integrated with a machine learning pipeline to perform predictive analytics on student performance and early risk detection without altering the core DepEd-compliant scoring workflows.
@@ -29,7 +595,7 @@ The AMES System is a comprehensive School Management and Early Childhood Care an
 
 ### Backend (Server-Side)
 
-* **Core:** Python 3.11+, FastAPI framework
+* **Core:** Python 3.12 in a root-local uv-managed virtual environment, FastAPI framework
 * **Database Connection:** SQLAlchemy 2.0 ORM, psycopg2-binary
 * **Authentication/Security:** JSON Web Tokens (`python-jose`), Bcrypt (`passlib`), CORS middleware
 
@@ -282,7 +848,7 @@ To facilitate mid-year teacher resignations, leaves of absence, and dynamic clas
 
 * **Safe Restoration:** During restoration, the system gracefully purges existing tables using SQLAlchemy's metadata dependency graph (deleting tables in reverse topological order to respect foreign keys) before cleanly inserting the decrypted JSON rows. This guarantees safe overwrites without triggering constraint violations.
 
-* **Environment Keys:** Encryption and Decryption require valid `BACKUP_ENCRYPTION_KEY` (32 bytes hex) and `BACKUP_IV` (16 bytes hex) environment variables in the `.env` file. These must be kept entirely secure.
+* **Environment Keys:** The current backup implementation requires a persistent `BACKUP_ENCRYPTION_KEY` containing a 44-character URL-safe base64 Fernet key. `BACKUP_IV` is also required by Settings but is currently unused by Fernet backup code. Store both in `backend/.env`; see the audited setup guide above for generation commands. Keep these values secure and preserve the backup key across restarts.
 
 
 * **Access Control:** The Backup and Restore functions are exclusively available to the `super-admin` (Chairman) role. The backend API endpoints are strictly guarded by the FastAPI authentication dependencies (`get_current_user` and `verify_role(["super-admin"])`).

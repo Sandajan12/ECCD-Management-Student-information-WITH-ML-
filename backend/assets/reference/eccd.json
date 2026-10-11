@@ -1,0 +1,797 @@
+{
+  "domains": [
+    {
+      "domain_id": 1,
+      "domain_name": "Gross Motor Domain"
+    },
+    {
+      "domain_id": 2,
+      "domain_name": "Fine Motor Domain"
+    },
+    {
+      "domain_id": 3,
+      "domain_name": "Self-Help Domain"
+    },
+    {
+      "domain_id": 4,
+      "domain_name": "Receptive Language Domain"
+    },
+    {
+      "domain_id": 5,
+      "domain_name": "Expressive Language Domain"
+    },
+    {
+      "domain_id": 6,
+      "domain_name": "Cognitive Domain"
+    },
+    {
+      "domain_id": 7,
+      "domain_name": "Social-Emotional Domain"
+    }
+  ],
+  "questions": [
+    {
+      "question_id": 1,
+      "domain_id": 1,
+      "question_text": "Nakaaakyat sa upuan o iba pang maaakyatang bagay/kasangkapan gaya ng kama nang walang tulong.",
+      "sequence_order": 1,
+      "is_home_based": 1
+    },
+    {
+      "question_id": 2,
+      "domain_id": 1,
+      "question_text": "Nakalalakad ng paatras.",
+      "sequence_order": 2,
+      "is_home_based": 1
+    },
+    {
+      "question_id": 3,
+      "domain_id": 1,
+      "question_text": "Nakatatakbo nang hindi nadadapa.",
+      "sequence_order": 3,
+      "is_home_based": 1
+    },
+    {
+      "question_id": 4,
+      "domain_id": 1,
+      "question_text": "Nakabababa sa hagdan nang dalawang paa sa bawat hakbang na nakahawak ang isang kamay sa gabay ng hagdanan.",
+      "sequence_order": 4,
+      "is_home_based": 1
+    },
+    {
+      "question_id": 5,
+      "domain_id": 1,
+      "question_text": "Nakaakyat sa hagdan nang dalawang paa sa bawat hakbang na nakahawak ang isang kamay sa gabay ng hagdanan.",
+      "sequence_order": 5,
+      "is_home_based": 1
+    },
+    {
+      "question_id": 6,
+      "domain_id": 1,
+      "question_text": "Nakaaakyat sa hagdan nang salitan ang mga paa at hindi humahawak sa gabay ng hagdanan.",
+      "sequence_order": 6,
+      "is_home_based": 1
+    },
+    {
+      "question_id": 7,
+      "domain_id": 1,
+      "question_text": "Nakababa sa hagdan nang salitan ang mga paa at hindi humahawak sa gabay ng hagdanan.",
+      "sequence_order": 7,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 8,
+      "domain_id": 1,
+      "question_text": "Naigagalaw ang bahagi ng katawan na tinutukoy.",
+      "sequence_order": 8,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 9,
+      "domain_id": 1,
+      "question_text": "Nakatatalon.",
+      "sequence_order": 9,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 10,
+      "domain_id": 1,
+      "question_text": "Naihahagis ang bola nang paitaas na may direksyon.",
+      "sequence_order": 10,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 11,
+      "domain_id": 1,
+      "question_text": "Nakalulundag nang isa hanggang tatlong beses gamit ang mas gustong paa.",
+      "sequence_order": 11,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 12,
+      "domain_id": 1,
+      "question_text": "Nakatatalon at nakaiikot.",
+      "sequence_order": 12,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 13,
+      "domain_id": 1,
+      "question_text": "Nakasasayaw nang may pinaparisan o tinutularan/ nakalalahok sa mga gawaing ukol sa kilos o galaw na para sa grupo.",
+      "sequence_order": 13,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 14,
+      "domain_id": 2,
+      "question_text": "Nagagamit ang lahat ng 5 daliri sa pagkuha ng pagkain/laruan na nakalagay sa patag na espasyo.",
+      "sequence_order": 1,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 15,
+      "domain_id": 2,
+      "question_text": "Nakukuha ang bagay gamit ang hinlalaki at hintuturo.",
+      "sequence_order": 2,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 16,
+      "domain_id": 2,
+      "question_text": "Naipakikita ang gustong kamay na laging ginagamit",
+      "sequence_order": 3,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 17,
+      "domain_id": 2,
+      "question_text": "Nalalagay/natatanggal ang maliliit na bagay mula sa lalagyan.",
+      "sequence_order": 4,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 18,
+      "domain_id": 2,
+      "question_text": "Nahahawakan ang krayola nang nakasara ang mga daliri sa palad.",
+      "sequence_order": 5,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 19,
+      "domain_id": 2,
+      "question_text": "Natatanggal ang takip ng bote/lalagyan, inaalis ang balot ng pagkain.",
+      "sequence_order": 6,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 20,
+      "domain_id": 2,
+      "question_text": "Nakaguguhit nang kusa.",
+      "sequence_order": 7,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 21,
+      "domain_id": 2,
+      "question_text": "Nakaguguhit ng patayo at pahalang na linya.",
+      "sequence_order": 8,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 22,
+      "domain_id": 2,
+      "question_text": "Nakaguguhit ng hugis bilog.",
+      "sequence_order": 9,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 23,
+      "domain_id": 2,
+      "question_text": "Nakaguguhit ng larawan ng tao (ulo, mata, katawan, braso, kamay, hita, paa).",
+      "sequence_order": 10,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 24,
+      "domain_id": 2,
+      "question_text": "Nakaguguhit ng bahay gamit ang iba't-ibang uri ng hugis (parisukat, tatsulok).",
+      "sequence_order": 11,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 25,
+      "domain_id": 3,
+      "question_text": "Pinapakain ang sarili ng mga pagkain tulad ng biskwit at tinapay (finger food).",
+      "sequence_order": 1,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 26,
+      "domain_id": 3,
+      "question_text": "Pinapakain ang sarili ng ulam at kanin gamit ang mga daliri ngunit may natatapong pagkain.",
+      "sequence_order": 2,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 27,
+      "domain_id": 3,
+      "question_text": "Pinapakain ang sarili gamit ang kutsara ngunit may natatapong pagkain.",
+      "sequence_order": 3,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 28,
+      "domain_id": 3,
+      "question_text": "Pinapakain ang sarili gamit ang mga daliri nang walang natatapong pagkain.",
+      "sequence_order": 4,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 29,
+      "domain_id": 3,
+      "question_text": "Pinapakain ang sarili gamit ang kutsara nang walang natatapong pagkain.",
+      "sequence_order": 5,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 30,
+      "domain_id": 3,
+      "question_text": "Kumakain nang hindi na sinusubuan sa tuwing kakain.",
+      "sequence_order": 6,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 31,
+      "domain_id": 3,
+      "question_text": "Tumutulong sa paghawak ng baso/tasa sa pag-inom.",
+      "sequence_order": 7,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 32,
+      "domain_id": 3,
+      "question_text": "Umiinom sa baso ngunit may natatapon.",
+      "sequence_order": 8,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 33,
+      "domain_id": 3,
+      "question_text": "Umiinom sa baso nang walang umaalalay.",
+      "sequence_order": 9,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 34,
+      "domain_id": 3,
+      "question_text": "Kumukuha ng inumin nang mag-isa.",
+      "sequence_order": 10,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 35,
+      "domain_id": 3,
+      "question_text": "Ibinubuhos ang tubig o anumang likido mula sa pitsel papunta sa baso nang walang natatapon.",
+      "sequence_order": 11,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 36,
+      "domain_id": 3,
+      "question_text": "Naghahanda ng sariling pagkain/meryenda.",
+      "sequence_order": 12,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 37,
+      "domain_id": 3,
+      "question_text": "Naghahanda ng pagkain para sa nakababatang kapatid/ibang miyembro ng pamilya kung walang matanda.",
+      "sequence_order": 13,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 38,
+      "domain_id": 3,
+      "question_text": "Nakikipagtulungan kung binibihisan (hal. itinataas ang mga kamay at paa).",
+      "sequence_order": 14,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 39,
+      "domain_id": 3,
+      "question_text": "Hinuhubad ang elastikong damit (hal. shorts, palda, pantalon).",
+      "sequence_order": 15,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 40,
+      "domain_id": 3,
+      "question_text": "Hinuhubad ang butones ng damit.",
+      "sequence_order": 16,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 41,
+      "domain_id": 3,
+      "question_text": "Nagbibihis nang sarili ngunit hindi nabubutones ang damit.",
+      "sequence_order": 17,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 42,
+      "domain_id": 3,
+      "question_text": "Nagbibihis nang sarili kasama na ang pagbubutones at pagtali.",
+      "sequence_order": 18,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 43,
+      "domain_id": 3,
+      "question_text": "Ipinapakita ang pagkaalam sa pag-ihi o pagdumi sa diaper/pantalon.",
+      "sequence_order": 19,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 44,
+      "domain_id": 3,
+      "question_text": "Ipinaaalam sa tagapag-alaga ang pangangailangang umihi o dumumi ngunit paminsan-minsan ay may pagkakataong hindi mapigilang umihi o dumumi sa pantalon.",
+      "sequence_order": 20,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 45,
+      "domain_id": 3,
+      "question_text": "Pumupunta sa tamang lugar upang umihi o dumumi ngunit paminsan-minsan ay may pagkakataong hindi mapigilang umihi o dumumi sa pantalon.",
+      "sequence_order": 21,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 46,
+      "domain_id": 3,
+      "question_text": "Matagumpay na gumagamit ng palikuran upang umihi o dumumi.",
+      "sequence_order": 22,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 47,
+      "domain_id": 3,
+      "question_text": "Pinupunasan ang sarili pagkatapos dumumi.",
+      "sequence_order": 23,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 48,
+      "domain_id": 3,
+      "question_text": "Nagsisipilyo ng ngipin.",
+      "sequence_order": 24,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 49,
+      "domain_id": 3,
+      "question_text": "Naghihilamos ng mukha.",
+      "sequence_order": 25,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 50,
+      "domain_id": 3,
+      "question_text": "Naliligo nang mag-isa.",
+      "sequence_order": 26,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 51,
+      "domain_id": 3,
+      "question_text": "Naghuhugas at nagpupunas ng mga kamay.",
+      "sequence_order": 27,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 52,
+      "domain_id": 4,
+      "question_text": "Itinuturo ang mga kapamilya o pamilyar na bagay kapag ipinahanap.",
+      "sequence_order": 1,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 53,
+      "domain_id": 4,
+      "question_text": "Itinuturo ang 5 bahagi ng katawan kung inutusan.",
+      "sequence_order": 2,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 54,
+      "domain_id": 4,
+      "question_text": "Itinuturo ang 5 napangalanang larawan ng mga bagay.",
+      "sequence_order": 3,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 55,
+      "domain_id": 4,
+      "question_text": "Sumusunod sa isang hakbang na panuto na may kasamang simpleng kilos (hal. \"ibigay mo sa akin ang bola\").",
+      "sequence_order": 4,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 56,
+      "domain_id": 4,
+      "question_text": "Sumusunod sa 2 hakbang na panuto na may kasamang simpleng kilos.",
+      "sequence_order": 5,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 57,
+      "domain_id": 5,
+      "question_text": "Gumagamit ng 5-20 nakikilalang salita.",
+      "sequence_order": 1,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 58,
+      "domain_id": 5,
+      "question_text": "Napapangalanan ang mga bagay na nakikita sa larawan.",
+      "sequence_order": 2,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 59,
+      "domain_id": 5,
+      "question_text": "Gumagamit ng 2-3 salitang pangungusap.",
+      "sequence_order": 3,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 60,
+      "domain_id": 5,
+      "question_text": "Gumagamit ng mga panghalip (ako, ikaw, siya).",
+      "sequence_order": 4,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 61,
+      "domain_id": 5,
+      "question_text": "Nagsasalita sa tamang pangungusap (mga 3-4 na salita).",
+      "sequence_order": 5,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 62,
+      "domain_id": 5,
+      "question_text": "Naikukuwento ang mga katatapos na karanasan (kapag tinanong/dinidiktahan) nang naaayon sa pagkasunod-sunod ng mga pangyayari gamit ang mga salitang tumutukoy sa nakaraan.",
+      "sequence_order": 6,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 63,
+      "domain_id": 5,
+      "question_text": "Nagtatanong ng \"ano\".",
+      "sequence_order": 7,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 64,
+      "domain_id": 5,
+      "question_text": "Nagtatanong ng \"sino\" at \"bakit\".",
+      "sequence_order": 8,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 65,
+      "domain_id": 6,
+      "question_text": "Tinitingnan ang direksyon ng nahuhulog na bagay.",
+      "sequence_order": 1,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 66,
+      "domain_id": 6,
+      "question_text": "Hinahanap ang mga bagay na bahagyang nakatago.",
+      "sequence_order": 2,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 67,
+      "domain_id": 6,
+      "question_text": "Hinahanap ang mga bagay na lubusang nakatago.",
+      "sequence_order": 3,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 68,
+      "domain_id": 6,
+      "question_text": "Binibigay ang mga bagay ngunit hindi binibitawan.",
+      "sequence_order": 4,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 69,
+      "domain_id": 6,
+      "question_text": "Ginagaya ang mga kilos na nakikita pa lamang (hal. pag-ubo).",
+      "sequence_order": 5,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 70,
+      "domain_id": 6,
+      "question_text": "Ginagaya ang mga kilos na nakita na noon pa.",
+      "sequence_order": 6,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 71,
+      "domain_id": 6,
+      "question_text": "Napag-uugnay ang magkakaparehong bagay.",
+      "sequence_order": 7,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 72,
+      "domain_id": 6,
+      "question_text": "Napag-uugnay ang magkakaparehong hugis.",
+      "sequence_order": 8,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 73,
+      "domain_id": 6,
+      "question_text": "Napag-uugnay ang magkakaparehong kulay.",
+      "sequence_order": 9,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 74,
+      "domain_id": 6,
+      "question_text": "Napag-uugnay ang mga hugis sa kaukulang bahagi o posisyon.",
+      "sequence_order": 10,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 75,
+      "domain_id": 6,
+      "question_text": "Kinikilala ang dalawa hanggang tatlong kulay.",
+      "sequence_order": 11,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 76,
+      "domain_id": 6,
+      "question_text": "Nauunawaan ang mga salitang tumutukoy sa pwesto o kinalalagyan.",
+      "sequence_order": 12,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 77,
+      "domain_id": 6,
+      "question_text": "Nakikilala ang mga salitang nagsasaad ng dami.",
+      "sequence_order": 13,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 78,
+      "domain_id": 6,
+      "question_text": "Naiisa-isa ang mga numero 1 hanggang 10.",
+      "sequence_order": 14,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 79,
+      "domain_id": 6,
+      "question_text": "Nauunawaan ang konsepto ng pagkakasunod-sunod (una, pangalawa, pangatlo, atbp.).",
+      "sequence_order": 15,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 80,
+      "domain_id": 6,
+      "question_text": "Nauunawaan ang konsepto ng laki (malaki, maliit, pinakamalaki, atbp.).",
+      "sequence_order": 16,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 81,
+      "domain_id": 6,
+      "question_text": "Napagbubukod ang mga bagay batay sa hugis.",
+      "sequence_order": 17,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 82,
+      "domain_id": 6,
+      "question_text": "Napagbubukod ang mga bagay batay sa dalawang katangian.",
+      "sequence_order": 18,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 83,
+      "domain_id": 6,
+      "question_text": "Naiaayos ang mga bagay ayon sa laki.",
+      "sequence_order": 19,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 84,
+      "domain_id": 6,
+      "question_text": "Naiaayos ang mga bagay ayon sa haba.",
+      "sequence_order": 20,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 85,
+      "domain_id": 6,
+      "question_text": "Natutukoy kung alin ang kaliwa at kanang bahagi ng katawan.",
+      "sequence_order": 21,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 86,
+      "domain_id": 7,
+      "question_text": "Lumalapit at yumayakap sa mga magulang.",
+      "sequence_order": 1,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 87,
+      "domain_id": 7,
+      "question_text": "Ngumingiti at tumatawa bilang tugon sa ibang tao.",
+      "sequence_order": 2,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 88,
+      "domain_id": 7,
+      "question_text": "Kilala ang sarili sa salamin.",
+      "sequence_order": 3,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 89,
+      "domain_id": 7,
+      "question_text": "Nagpapakita ng pagkaasiwa sa mga hindi kilalang tao.",
+      "sequence_order": 4,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 90,
+      "domain_id": 7,
+      "question_text": "Nakikipaglaro sa isa o dalawang bata.",
+      "sequence_order": 5,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 91,
+      "domain_id": 7,
+      "question_text": "Ibinabahagi ang laruan sa iba.",
+      "sequence_order": 6,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 92,
+      "domain_id": 7,
+      "question_text": "Nakikibahagi sa mga laro na may patakaran.",
+      "sequence_order": 7,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 93,
+      "domain_id": 7,
+      "question_text": "Nagsasabi ng \"Pakiusap\" at \"Salamat\".",
+      "sequence_order": 8,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 94,
+      "domain_id": 7,
+      "question_text": "Naiintindihan at sinusunod ang mga tuntunin sa bahay/paaralan.",
+      "sequence_order": 9,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 95,
+      "domain_id": 7,
+      "question_text": "Nag-aalok ng tulong sa iba.",
+      "sequence_order": 10,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 96,
+      "domain_id": 7,
+      "question_text": "Nag-aaliw sa mga kalaro na umiiyak o nasasaktan.",
+      "sequence_order": 11,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 97,
+      "domain_id": 7,
+      "question_text": "Ipinagtatanggol ang sarili kapag inaapi.",
+      "sequence_order": 12,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 98,
+      "domain_id": 7,
+      "question_text": "Nagpapakita ng simpatiya o pag-unawa sa damdamin ng iba.",
+      "sequence_order": 13,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 99,
+      "domain_id": 7,
+      "question_text": "Kinikilala at pinapangalanan ang iba't-ibang emosyon.",
+      "sequence_order": 14,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 100,
+      "domain_id": 7,
+      "question_text": "Napananatili ang kontrol sa sarili kapag nagagalit o nadidismaya.",
+      "sequence_order": 15,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 101,
+      "domain_id": 7,
+      "question_text": "Nagpapakita ng paggalang sa mga nakatatanda gamit ang \"po\" at \"opo\".",
+      "sequence_order": 16,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 102,
+      "domain_id": 7,
+      "question_text": "Tumutulong sa mga gawaing bahay.",
+      "sequence_order": 17,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 103,
+      "domain_id": 7,
+      "question_text": "Responsableng nag-iingat sa mga personal na gamit.",
+      "sequence_order": 18,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 104,
+      "domain_id": 7,
+      "question_text": "Kayang maiwan sa tagapag-alaga nang hindi umiiyak.",
+      "sequence_order": 19,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 105,
+      "domain_id": 7,
+      "question_text": "Nagpapakita ng pagmamalaki sa mga nagawa o natapos na gawain.",
+      "sequence_order": 20,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 106,
+      "domain_id": 7,
+      "question_text": "Nakapaghihintay ng pagkakataon (turn-taking).",
+      "sequence_order": 21,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 107,
+      "domain_id": 7,
+      "question_text": "Nakikipag-ayos o nakikipagbati matapos makipag-away.",
+      "sequence_order": 22,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 108,
+      "domain_id": 7,
+      "question_text": "Nagpapakita ng pagtitiwala sa sarili na kayang gawin ang mga bagay.",
+      "sequence_order": 23,
+      "is_home_based": 0
+    },
+    {
+      "question_id": 109,
+      "domain_id": 7,
+      "question_text": "Tinutulungan ang mga nakababatang kapatid o ibang bata.",
+      "sequence_order": 24,
+      "is_home_based": 0
+    }
+  ]
+}

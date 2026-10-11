@@ -19,10 +19,12 @@ export default defineConfig([
       globals: globals.browser,
     },
     rules: {
-      '@typescript-eslint/no-explicit-any': 'off',
+      '@typescript-eslint/no-explicit-any': 'error',
       '@typescript-eslint/no-use-before-define': 'off',
       'no-use-before-define': 'off',
       'react-hooks/exhaustive-deps': 'off',
+      // API fetches and scoped draft restoration are deliberate effect-driven state updates.
+      'react-hooks/set-state-in-effect': 'off',
       'react-refresh/only-export-components': 'off',
       '@typescript-eslint/no-unused-vars': 'warn'
     }

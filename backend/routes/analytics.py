@@ -8,6 +8,7 @@ from backend.models.student import Student
 from backend.models.teacher import Teacher
 from backend.models.user import User, UserRole
 from backend.schemas.analytics import DashboardFilters, PieChartSlice
+from backend.schemas.operations import AnalyticsStats, AuditLogItem
 from backend.utils.deps import verify_role
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import desc, distinct, func, case
@@ -17,19 +18,7 @@ router = APIRouter(prefix="/api/analytics", tags=["Analytics"])
 
 
 def get_teacher_section_ids(teacher_id: int, db: Session) -> list[int]:
-    st_ids = [
-        st[0]
-        for st in db.query(SectionTeacher.section_id)
-        .filter(SectionTeacher.teacher_id == teacher_id, SectionTeacher.status == "Active")
-        .all()
-    ]
-    s_ids = [
-        s[0]
-        for s in db.query(Section.section_id)
-        .filter(Section.adviser_teacher_id == teacher_id)
-        .all()
-    ]
-    return list(set(st_ids + s_ids))
+    return [row[0] for row in db.query(SectionTeacher.section_id).filter_by(teacher_id=teacher_id, status="Active").distinct()]
 
 
 @router.get("/filters", response_model=DashboardFilters)
@@ -74,8 +63,6 @@ def get_dashboard_filters(
             .order_by(Section.section_name)
             .all()
         ]
-        if not sections and teacher.class_name:
-            sections = [teacher.class_name]
         return {"sections": sections, "domains": domains, "schoolYears": []}
 
 
@@ -92,7 +79,7 @@ def get_dashboard_pie_data(
 ):
     query = (
         db.query(StudentEccdEvaluation.answer, func.count().label("count"))
-        .join(Student, StudentEccdEvaluation.student_lrn == Student.lrn_number)
+        .join(Student, StudentEccdEvaluation.student_id == Student.student_id)
         .join(
             EccdQuestion, StudentEccdEvaluation.question_id == EccdQuestion.question_id
         )
@@ -151,7 +138,7 @@ def get_dashboard_pie_data(
     ]
 
 
-@router.get("/stats")
+@router.get("/stats", response_model=AnalyticsStats, response_model_exclude_none=True)
 def get_dashboard_stats(
     section: str = Query("All"),
     schoolYear: str = Query("All"),
@@ -162,7 +149,7 @@ def get_dashboard_stats(
 ):
     if current_user.role in [UserRole.SUPER_ADMIN, "chairman"]:
         students_query = db.query(Student)
-        teachers_query = db.query(Teacher)
+        teachers_query = db.query(Teacher).join(User, Teacher.user_id == User.user_id).filter(User.is_active.is_(True))
         
         if schoolYear != "All":
             students_query = students_query.filter(Student.school_year == schoolYear)
@@ -171,14 +158,14 @@ def get_dashboard_stats(
 
         if section != "All":
             students_query = students_query.filter(Student.section.has(section_name=section))
-            teachers_query = teachers_query.filter(Teacher.sections.any(section_name=section))
+            teachers_query = teachers_query.filter(Teacher.section_assignments.any((SectionTeacher.status == "Active") & SectionTeacher.section.has(section_name=section)))
             
         total_students = students_query.count()
         total_teachers = teachers_query.count()
         
         eccd_query = (
             db.query(StudentEccdEvaluation.answer, func.count().label("count"))
-            .join(Student, StudentEccdEvaluation.student_lrn == Student.lrn_number)
+            .join(Student, StudentEccdEvaluation.student_id == Student.student_id)
         )
         if schoolYear != "All":
             eccd_query = eccd_query.filter(Student.school_year == schoolYear)
@@ -198,7 +185,7 @@ def get_dashboard_stats(
         priority_query = (
             db.query(Section.section_name.label("class_name"), func.count().label("dikaya_count"))
             .select_from(StudentEccdEvaluation)
-            .join(Student, StudentEccdEvaluation.student_lrn == Student.lrn_number)
+            .join(Student, StudentEccdEvaluation.student_id == Student.student_id)
             .join(Section, Student.section_id == Section.section_id)
             .filter(StudentEccdEvaluation.answer == "DI-KAYA")
         )
@@ -222,7 +209,7 @@ def get_dashboard_stats(
             .select_from(StudentEccdEvaluation)
             .join(EccdQuestion, StudentEccdEvaluation.question_id == EccdQuestion.question_id)
             .join(EccdDomain, EccdQuestion.domain_id == EccdDomain.domain_id)
-            .join(Student, StudentEccdEvaluation.student_lrn == Student.lrn_number)
+            .join(Student, StudentEccdEvaluation.student_id == Student.student_id)
             .filter(StudentEccdEvaluation.answer == "DI-KAYA")
         )
         if schoolYear != "All":
@@ -324,7 +311,7 @@ def get_dashboard_stats(
         
         latest_period_subquery = (
             db.query(EccdEvalAlias.testing_period)
-            .filter(EccdEvalAlias.student_lrn == StudentEccdEvaluation.student_lrn)
+            .filter(EccdEvalAlias.student_id == StudentEccdEvaluation.student_id)
             .order_by(period_sort_logic.desc())
             .limit(1)
             .correlate(StudentEccdEvaluation)
@@ -337,7 +324,7 @@ def get_dashboard_stats(
                 func.count(StudentEccdEvaluation.answer).label("count"),
             )
             .select_from(StudentEccdEvaluation)
-            .join(Student, StudentEccdEvaluation.student_lrn == Student.lrn_number)
+            .join(Student, StudentEccdEvaluation.student_id == Student.student_id)
             .join(EccdQuestion, StudentEccdEvaluation.question_id == EccdQuestion.question_id)
             .join(EccdDomain, EccdQuestion.domain_id == EccdDomain.domain_id)
             .filter(
@@ -391,7 +378,7 @@ def get_dashboard_stats(
         }
 
 from backend.models.log import SystemLog
-@router.get("/logs")
+@router.get("/logs", response_model=list[AuditLogItem])
 def get_system_logs(
     db: Session = Depends(get_db),
     current_user=Depends(verify_role(["super-admin", "chairman"])),
@@ -400,9 +387,9 @@ def get_system_logs(
     results = []
     for log in logs:
         results.append({
-            "id": log.id,
-            "action": log.action,
-            "performed_by": log.performed_by,
+            "id": log.log_id,
+            "action": log.action_type,
+            "performed_by": log.user.username if log.user else "System",
             "details": log.details,
             "timestamp": log.timestamp.isoformat() if log.timestamp else None
         })

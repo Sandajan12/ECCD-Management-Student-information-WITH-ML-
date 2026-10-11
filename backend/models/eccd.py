@@ -6,12 +6,15 @@ from sqlalchemy import (
     Date,
     Enum,
     ForeignKey,
+    ForeignKeyConstraint,
+    Index,
     Integer,
     String,
     Text,
     UniqueConstraint,
 )
 from sqlalchemy.orm import relationship
+from sqlalchemy.ext.hybrid import hybrid_property
 
 from .base import Base
 
@@ -63,11 +66,7 @@ class StudentEccdEvaluation(Base):
     __tablename__ = "student_eccd_evaluations"
 
     evaluation_id = Column(Integer, primary_key=True, autoincrement=True)
-    student_lrn = Column(
-        String(50),
-        ForeignKey("students.lrn_number", ondelete="CASCADE"),
-        nullable=False,
-    )
+    student_id = Column(Integer, ForeignKey("students.student_id", ondelete="CASCADE"), nullable=False)
     teacher_id = Column(
         Integer, ForeignKey("teachers.teacher_id", ondelete="SET NULL"), nullable=True
     )
@@ -83,8 +82,23 @@ class StudentEccdEvaluation(Base):
     # Enforce strict composite uniqueness matching DepEd logic
     __table_args__ = (
         UniqueConstraint(
-            "student_lrn", "question_id", "testing_period", name="unique_student_eval"
+            "student_id", "question_id", "testing_period", name="unique_student_eval"
         ),
+        Index("idx_student_period", "student_id", "testing_period"),
     )
 
     question = relationship("EccdQuestion", back_populates="evaluations")
+    student = relationship("Student", back_populates="evaluations", foreign_keys=[student_id])
+
+    @hybrid_property
+    def student_lrn(self):
+        return getattr(self, "_student_lookup", None) or (self.student.lrn_number if self.student else None)
+
+    @student_lrn.setter
+    def student_lrn(self, value):
+        self._student_lookup = value
+
+    @student_lrn.comparator
+    def student_lrn(cls):
+        from .student_identity import StudentReferenceLookup
+        return StudentReferenceLookup(cls.student_id)

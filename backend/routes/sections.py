@@ -3,6 +3,8 @@ from backend.config.database import get_db
 from backend.models.section import Section
 from backend.schemas.section import SectionCreate, SectionResponse, SectionUpdate
 from backend.utils.deps import verify_role
+from backend.schemas.teacher import AssignTeacherSectionRequest
+from backend.schemas.common import MessageResult
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -18,13 +20,15 @@ def get_sections(
 
 
 @router.post("/", response_model=SectionResponse, status_code=201)
-def create_section(
-    payload: SectionCreate,
-    db: Session = Depends(get_db),
-    current_user=Depends(verify_role(["super-admin", "admin"])),
-):
-    section = Section(**payload.model_dump())
+def create_section(payload: SectionCreate, db: Session = Depends(get_db), current_user=Depends(verify_role(["super-admin"]))):
+    from backend.utils.teachers import assign_teacher
+    if db.query(Section).filter_by(section_name=payload.section_name).first():
+        raise HTTPException(400, "Section name already exists.")
+    section = Section(section_name=payload.section_name)
     db.add(section)
+    db.flush()
+    if payload.adviser_teacher_id:
+        assign_teacher(db, current_user, section.section_id, payload.adviser_teacher_id)
     db.commit()
     db.refresh(section)
     return section
@@ -37,130 +41,22 @@ from backend.models.log import SystemLog
 
 
 @router.put("/{section_id}/assign", response_model=SectionResponse)
-def assign_teacher(
-    section_id: int,
-    payload: SectionUpdate,
-    db: Session = Depends(get_db),
-    current_user=Depends(verify_role(["super-admin", "admin", "chairman"])),
-):
-    section = db.query(Section).filter(Section.section_id == section_id).first()
-    if not section:
-        raise HTTPException(status_code=404, detail="Section not found")
-
-    incoming_teacher_id = payload.adviser_teacher_id
-
-    try:
-        # 1. Identify incumbent teacher
-        incumbent_teacher_id = section.adviser_teacher_id
-        if not incumbent_teacher_id:
-            active_st = (
-                db.query(SectionTeacher)
-                .filter(
-                    SectionTeacher.section_id == section_id,
-                    SectionTeacher.status == "Active",
-                )
-                .first()
-            )
-            if active_st:
-                incumbent_teacher_id = active_st.teacher_id
-
-        # 2. Archive incumbent if different from incoming
-        if incumbent_teacher_id and incumbent_teacher_id != incoming_teacher_id:
-            incumbent_teacher = (
-                db.query(Teacher)
-                .filter(Teacher.teacher_id == incumbent_teacher_id)
-                .first()
-            )
-            if incumbent_teacher:
-                incumbent_teacher.class_name = None
-                db.query(SectionTeacher).filter(
-                    SectionTeacher.teacher_id == incumbent_teacher_id,
-                    SectionTeacher.status == "Active",
-                ).update({"status": "Inactive"}, synchronize_session=False)
-
-                incumbent_user = (
-                    db.query(User)
-                    .filter(User.user_id == incumbent_teacher.user_id)
-                    .first()
-                )
-                if incumbent_user:
-                    incumbent_user.is_active = False
-
-        # 3. Assign incoming teacher
-        if incoming_teacher_id:
-            incoming_teacher = (
-                db.query(Teacher)
-                .filter(Teacher.teacher_id == incoming_teacher_id)
-                .first()
-            )
-            if not incoming_teacher:
-                raise HTTPException(status_code=404, detail="Incoming teacher not found")
-
-            incoming_user = (
-                db.query(User)
-                .filter(User.user_id == incoming_teacher.user_id)
-                .first()
-            )
-            if incoming_user:
-                incoming_user.is_active = True
-
-            db.query(SectionTeacher).filter(
-                SectionTeacher.teacher_id == incoming_teacher_id,
-                SectionTeacher.status == "Active",
-            ).update({"status": "Inactive"}, synchronize_session=False)
-
-            section.adviser_teacher_id = incoming_teacher_id
-            incoming_teacher.class_name = section.section_name
-
-            assignment = (
-                db.query(SectionTeacher)
-                .filter(
-                    SectionTeacher.section_id == section_id,
-                    SectionTeacher.teacher_id == incoming_teacher_id,
-                )
-                .first()
-            )
-            if assignment:
-                assignment.status = "Active"
-                assignment.role = "Primary Adviser"
-            else:
-                db.add(
-                    SectionTeacher(
-                        section_id=section_id,
-                        teacher_id=incoming_teacher_id,
-                        role="Primary Adviser",
-                        status="Active",
-                    )
-                )
-        else:
-            section.adviser_teacher_id = None
-            db.query(SectionTeacher).filter(
-                SectionTeacher.section_id == section_id,
-                SectionTeacher.status == "Active",
-            ).update({"status": "Inactive"}, synchronize_session=False)
-
-        db.commit()
-        db.refresh(section)
-        return section
-    except HTTPException:
-        db.rollback()
-        raise
-    except Exception as e:
-        db.rollback()
-        raise HTTPException(
-            status_code=500, detail=f"Failed to assign teacher to section: {str(e)}"
-        )
+def assign_teacher(section_id: int, payload: AssignTeacherSectionRequest, db: Session = Depends(get_db), current_user=Depends(verify_role(["super-admin"]))):
+    from backend.utils.teachers import assign_teacher as assign
+    section = assign(db, current_user, section_id, payload.teacher_id, payload.role.value if payload.role else "Primary Adviser")
+    db.commit()
+    return section
 
 
-@router.delete("/{section_id}")
-def delete_section(
-    section_id: int,
-    db: Session = Depends(get_db),
-    current_user=Depends(verify_role(["super-admin"])),
-):
-    section = db.query(Section).filter(Section.section_id == section_id).first()
-    if not section:
-        raise HTTPException(status_code=404, detail="Section not found")
+@router.delete("/{section_id}", response_model=MessageResult)
+def delete_section(section_id: int, db: Session = Depends(get_db), current_user=Depends(verify_role(["super-admin"]))):
+    section = db.get(Section, section_id)
+    if section is None:
+        raise HTTPException(404, "Section not found.")
+    from backend.models import Student
+    if db.query(Student).filter_by(section_id=section_id).first():
+        raise HTTPException(409, "Transfer the section's students before deleting it.")
+    db.query(SectionTeacher).filter_by(section_id=section_id).delete(synchronize_session=False)
     db.delete(section)
     db.commit()
     return {"message": "Section deleted successfully"}

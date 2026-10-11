@@ -1,4 +1,4 @@
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, func
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import relationship
 
 from .base import Base
@@ -12,7 +12,8 @@ class SystemLog(Base):
         Integer, ForeignKey("users.user_id", ondelete="SET NULL"), nullable=True
     )
     action_type = Column(String(50), nullable=False)
-    details = Column(String(255), nullable=True)
+    # Legacy rollover snapshots/chunks are JSON documents stored in the audit trail.
+    details = Column(Text, nullable=True)
     timestamp = Column(DateTime, server_default=func.now())
 
     user = relationship("User")

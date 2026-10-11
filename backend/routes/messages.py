@@ -1,259 +1,109 @@
-
-from backend.config.database import get_db
-from backend.models.message import Message, SenderRole
-from backend.models.parent import FamilyAccess, Parent
-from backend.models.section import Section
-from backend.models.student import Student
-from backend.models.teacher import Teacher
-from backend.models.user import User, UserRole
-from backend.schemas.message import MessageCreate, MessageResponse
-from backend.utils.deps import verify_role
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
+from sqlalchemy import func
+from backend.config.database import get_db
+from backend.models import FamilyAccess, Message, Parent, Student, Teacher, User
+from backend.models.message import SenderRole
+from backend.schemas.message import ContactsResponse, ConversationRequest, MessageCreate, MessageResponse, NotifyStudentRequest, NotifyStudentResponse, PersistedMessageResponse, SuccessResponse, UnreadResponse
+from backend.utils.access import authorize_student, current_teacher, resolve_student, teacher_sections
+from backend.utils.deps import verify_role
+from backend.utils.messaging import authorize_conversation
 
 router = APIRouter(prefix="/api/messages", tags=["Messages"])
 
 
-from backend.models.section_teacher import SectionTeacher
-
-
-@router.get("/contacts")
-def get_contacts(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(verify_role(["admin", "teacher", "user", "parent"])),
-):
-    if current_user.role in [UserRole.ADMIN, "teacher"]:
-        teacher = (
-            db.query(Teacher).filter(Teacher.user_id == current_user.user_id).first()
-        )
-        if not teacher:
-            return {"myId": None, "contacts": []}
-
-        # Find teacher's active section IDs
-        st_sec_ids = [
-            st.section_id
-            for st in db.query(SectionTeacher.section_id)
-            .filter(SectionTeacher.teacher_id == teacher.teacher_id, SectionTeacher.status == "Active")
-            .all()
-        ]
-        s_sec_ids = [
-            s.section_id
-            for s in db.query(Section.section_id)
-            .filter(Section.adviser_teacher_id == teacher.teacher_id)
-            .all()
-        ]
-        sec_ids = list(set(st_sec_ids + s_sec_ids))
-
-        if not sec_ids:
-            return {"myId": teacher.teacher_id, "contacts": []}
-
-        # Teachers see parents of students in their section
-        query = (
-            db.query(Parent, Student)
-            .join(FamilyAccess, Parent.parent_id == FamilyAccess.parent_id)
-            .join(Student, FamilyAccess.student_lrn == Student.lrn_number)
-            .filter(
-                Student.section_id.in_(sec_ids),
-                Student.is_active == True,
-                Parent.user_id.isnot(None),  # Only parents with actual login accounts
-            )
-            .all()
-        )
-
-        contacts_map = {}
-        for parent, student in query:
-            if parent.parent_id not in contacts_map:
-                contacts_map[parent.parent_id] = {
-                    "id": parent.parent_id,
-                    "name": f"{parent.fullname or parent.user.username} ({student.first_name}'s Parent)",
-                    "latest_message_time": None,
-                }
-            else:
-                if f"{student.first_name}'s Parent" not in contacts_map[parent.parent_id]["name"]:
-                    contacts_map[parent.parent_id]["name"] = contacts_map[
-                        parent.parent_id
-                    ]["name"].replace(
-                        "'s Parent)", f" & {student.first_name}'s Parent)"
-                    )
-
-        contacts = list(contacts_map.values())
-        return {"myId": teacher.teacher_id, "contacts": contacts}
-
+@router.get("/contacts", response_model=ContactsResponse)
+def contacts(db: Session = Depends(get_db), user: User = Depends(verify_role(["admin", "user"]))):
+    result = []
+    if user.role.value == "admin":
+        teacher = current_teacher(db, user)
+        parents = db.query(Parent).join(FamilyAccess).join(Student).join(User, Parent.user_id == User.user_id).filter(Student.section_id.in_(teacher_sections(db, teacher)), Student.is_active.is_(True), User.is_active.is_(True), User.role == "user").distinct().all()
+        for parent in parents:
+            children = db.query(Student).join(FamilyAccess).filter(FamilyAccess.parent_id == parent.parent_id, Student.section_id.in_(teacher_sections(db, teacher)), Student.is_active.is_(True)).distinct().all()
+            names = " & ".join(sorted({child.first_name for child in children if child.first_name}))
+            name = parent.fullname or parent.user.username
+            latest = db.query(func.max(Message.created_at)).filter_by(parent_id=parent.parent_id, teacher_id=teacher.teacher_id, is_archived=False).scalar()
+            result.append({"id": parent.parent_id, "name": f"{name} ({names}'s Parent)" if names else name, "latest_message_time": latest})
+        own_id = teacher.teacher_id
     else:
-        # Parents see teachers of their linked children
-        parent = db.query(Parent).filter(Parent.user_id == current_user.user_id).first()
-        if not parent:
+        parent = db.query(Parent).filter_by(user_id=user.user_id).first()
+        if parent is None:
             return {"myId": None, "contacts": []}
-
-        # Find linked students' section IDs
-        linked_sec_ids = [
-            s.section_id
-            for s in db.query(Student.section_id)
-            .join(FamilyAccess, Student.lrn_number == FamilyAccess.student_lrn)
-            .filter(
-                FamilyAccess.parent_id == parent.parent_id,
-                Student.is_active == True,
-                Student.section_id.isnot(None),
-            )
-            .all()
-        ]
-
-        if not linked_sec_ids:
-            return {"myId": parent.parent_id, "contacts": []}
-
-        # Query teachers assigned to those sections
-        active_teachers = (
-            db.query(Teacher)
-            .join(SectionTeacher, Teacher.teacher_id == SectionTeacher.teacher_id)
-            .filter(
-                SectionTeacher.section_id.in_(linked_sec_ids),
-                SectionTeacher.status == "Active",
-            )
-            .all()
-        )
-        legacy_teachers = (
-            db.query(Teacher)
-            .join(Section, Teacher.teacher_id == Section.adviser_teacher_id)
-            .filter(Section.section_id.in_(linked_sec_ids))
-            .all()
-        )
-
-        contacts = []
-        seen = set()
-        for teacher in active_teachers + legacy_teachers:
-            if teacher.teacher_id not in seen:
-                seen.add(teacher.teacher_id)
-                contacts.append(
-                    {
-                        "id": teacher.teacher_id,
-                        "name": f"Teacher {teacher.first_name} {teacher.last_name}",
-                    }
-                )
-
-        return {"myId": parent.parent_id, "contacts": contacts}
+        own_id = parent.parent_id
+        for teacher in db.query(Teacher).join(User).filter(User.is_active.is_(True)).all():
+            try:
+                authorize_conversation(db, user, teacher.teacher_id, parent.parent_id)
+                latest = db.query(func.max(Message.created_at)).filter_by(parent_id=parent.parent_id, teacher_id=teacher.teacher_id, is_archived=False).scalar()
+                result.append({"id": teacher.teacher_id, "name": f"Teacher {teacher.first_name or ''} {teacher.last_name or ''}".strip(), "latest_message_time": latest})
+            except HTTPException:
+                continue
+    result.sort(key=lambda item: (-(item["latest_message_time"].timestamp()) if item["latest_message_time"] else float('inf'), item["name"]))
+    return {"myId": own_id, "contacts": result}
 
 
 @router.get("/history", response_model=list[MessageResponse])
-def get_chat_history(
-    teacher_id: int = Query(...),
-    parent_id: int = Query(...),
-    db: Session = Depends(get_db),
-    current_user: User = Depends(verify_role(["admin", "teacher", "user", "parent"])),
-):
-    messages = (
-        db.query(Message)
-        .filter(
-            Message.teacher_id == teacher_id,
-            Message.parent_id == parent_id,
-            Message.is_archived == False,
-        )
-        .order_by(Message.created_at.asc())
-        .all()
-    )
-
-    return messages
+def history(teacher_id: int = Query(..., gt=0), parent_id: int = Query(..., gt=0), db: Session = Depends(get_db), user: User = Depends(verify_role(["admin", "user", "super-admin"]))):
+    authorize_conversation(db, user, teacher_id, parent_id, read_only=True)
+    return db.query(Message).filter_by(teacher_id=teacher_id, parent_id=parent_id, is_archived=False).order_by(Message.created_at, Message.message_id).all()
 
 
-@router.post("/", status_code=201)
-@router.post("/send", status_code=201)
-def send_message(
-    payload: MessageCreate,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(verify_role(["admin", "teacher", "user", "parent"])),
-):
-    content = payload.content
-    if not content:
-        raise HTTPException(status_code=400, detail="Message cannot be empty.")
-
-    new_message = Message(
-        teacher_id=payload.teacher_id,
-        parent_id=payload.parent_id,
-        sender_role=payload.sender_role,
-        subject=payload.subject,
-        body=content,
-    )
-    db.add(new_message)
+@router.post("/", response_model=PersistedMessageResponse, status_code=201)
+@router.post("/send", response_model=PersistedMessageResponse, status_code=201)
+def send(payload: MessageCreate, db: Session = Depends(get_db), user: User = Depends(verify_role(["admin", "user"]))):
+    authorize_conversation(db, user, payload.teacher_id, payload.parent_id)
+    role = SenderRole.TEACHER if user.role.value == "admin" else SenderRole.PARENT
+    if payload.sender_role is not None and payload.sender_role != role:
+        raise HTTPException(403, "Sender role does not match your account.")
+    if not payload.content or len(payload.content) > 5000:
+        raise HTTPException(400, "Messages must contain between 1 and 5000 characters.")
+    record = Message(teacher_id=payload.teacher_id, parent_id=payload.parent_id, sender_role=role, subject=payload.subject, body=payload.content)
+    db.add(record)
     db.commit()
-    return {"message": "Message sent!"}
+    db.refresh(record)
+    return PersistedMessageResponse.model_validate(record)
 
 
-@router.get("/unread-count")
-def get_unread_count(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(verify_role(["admin", "teacher", "user", "parent"])),
-):
-    if current_user.role in [UserRole.ADMIN, "teacher"]:
-        teacher = (
-            db.query(Teacher).filter(Teacher.user_id == current_user.user_id).first()
-        )
-        if not teacher:
-            return {"unreadCount": 0}
+@router.post("/notify-student", response_model=NotifyStudentResponse, status_code=201)
+def notify(payload: NotifyStudentRequest, db: Session = Depends(get_db), user: User = Depends(verify_role(["admin"]))):
+    student = resolve_student(db, payload.student_id)
+    authorize_student(db, user, student)
+    if not student.is_active:
+        raise HTTPException(403, "Student is archived.")
+    teacher = current_teacher(db, user)
+    parents = db.query(Parent).join(FamilyAccess).join(User, Parent.user_id == User.user_id).filter(FamilyAccess.student_id == student.student_id, User.is_active.is_(True), User.role == "user").distinct().all()
+    if not parents:
+        raise HTTPException(404, "No active parent account is linked to this student.")
+    for parent in parents:
+        db.add(Message(teacher_id=teacher.teacher_id, parent_id=parent.parent_id, sender_role=SenderRole.TEACHER, body=f"The official profile for {student.first_name} has been updated. Please review the changes in Child Information."))
+    db.commit()
+    return {"message": "Profile notification sent to linked parents.", "recipients": len(parents)}
 
-        count = (
-            db.query(Message)
-            .filter(
-                Message.teacher_id == teacher.teacher_id,
-                Message.sender_role == SenderRole.PARENT,
-                Message.is_read == False,
-                Message.is_archived == False,
-            )
-            .count()
-        )
-        return {"unreadCount": count}
 
+@router.get("/unread-count", response_model=UnreadResponse)
+def unread(db: Session = Depends(get_db), user: User = Depends(verify_role(["admin", "user"]))):
+    query = db.query(Message).filter_by(is_read=False, is_archived=False)
+    if user.role.value == "admin":
+        query = query.filter_by(teacher_id=current_teacher(db, user).teacher_id, sender_role=SenderRole.PARENT)
     else:
-        parent = db.query(Parent).filter(Parent.user_id == current_user.user_id).first()
-        if not parent:
+        parent = db.query(Parent).filter_by(user_id=user.user_id).first()
+        if parent is None:
             return {"unreadCount": 0}
-
-        count = (
-            db.query(Message)
-            .filter(
-                Message.parent_id == parent.parent_id,
-                Message.sender_role == SenderRole.TEACHER,
-                Message.is_read == False,
-                Message.is_archived == False,
-            )
-            .count()
-        )
-        return {"unreadCount": count}
+        query = query.filter_by(parent_id=parent.parent_id, sender_role=SenderRole.TEACHER)
+    count = 0
+    for message in query.all():
+        try:
+            authorize_conversation(db, user, message.teacher_id, message.parent_id)
+            count += 1
+        except HTTPException:
+            pass
+    return {"unreadCount": count}
 
 
-from pydantic import BaseModel, ConfigDict
-
-
-class MarkReadPayload(BaseModel):
-    teacher_id: int
-    parent_id: int
-    model_config = ConfigDict(extra="ignore")
-
-
-@router.put("/read")
-@router.put("/mark-read")
-def mark_as_read(
-    payload: MarkReadPayload,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(verify_role(["admin", "teacher", "user", "parent"])),
-):
-    sender_role_to_mark = (
-        SenderRole.PARENT
-        if current_user.role in [UserRole.ADMIN, "teacher"]
-        else SenderRole.TEACHER
-    )
-
-    messages = (
-        db.query(Message)
-        .filter(
-            Message.teacher_id == payload.teacher_id,
-            Message.parent_id == payload.parent_id,
-            Message.sender_role == sender_role_to_mark,
-            Message.is_read == False,
-        )
-        .all()
-    )
-
-    for msg in messages:
-        msg.is_read = True
-
+@router.put("/read", response_model=SuccessResponse)
+@router.put("/mark-read", response_model=SuccessResponse)
+def mark_read(payload: ConversationRequest, db: Session = Depends(get_db), user: User = Depends(verify_role(["admin", "user"]))):
+    authorize_conversation(db, user, payload.teacher_id, payload.parent_id)
+    sender = SenderRole.PARENT if user.role.value == "admin" else SenderRole.TEACHER
+    db.query(Message).filter_by(teacher_id=payload.teacher_id, parent_id=payload.parent_id, sender_role=sender, is_archived=False).update({"is_read": True})
     db.commit()
     return {"success": True}

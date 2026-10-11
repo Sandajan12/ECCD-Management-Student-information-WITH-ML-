@@ -1,209 +1,231 @@
-import React, { useContext, useState, useEffect } from 'react';
-import { 
-  Box, Drawer, List, ListItem, ListItemButton, ListItemIcon, ListItemText, 
-  Typography, Button, Badge, AppBar, Toolbar, IconButton, useTheme, useMediaQuery 
-} from '@mui/material';
-import BarChartIcon from '@mui/icons-material/BarChart';
-import PeopleIcon from '@mui/icons-material/People';
-import AssignmentIcon from '@mui/icons-material/Assignment';
-import SettingsIcon from '@mui/icons-material/Settings';
-import AccessibilityIcon from '@mui/icons-material/Accessibility';
-import LogoutIcon from '@mui/icons-material/Logout';
-import ChildCareIcon from '@mui/icons-material/ChildCare';
-import MessageIcon from '@mui/icons-material/Message';
-import HomeIcon from '@mui/icons-material/Home';
-import MenuIcon from '@mui/icons-material/Menu';
-import { useLocation, useNavigate, Outlet } from 'react-router-dom'; 
-
-import { SettingsContext } from '../context/SettingsContext';
-import api from '../services/api';
-
-const drawerWidth = 260;
-
-const MainLayout: React.FC = () => {
-  const { settings } = useContext(SettingsContext);
-  const location = useLocation();
-  const navigate = useNavigate();
-  const theme = useTheme();
-  const isMobile = useMediaQuery(theme.breakpoints.down('md'));
-
-  const userString = localStorage.getItem('user');
-  const user = userString ? JSON.parse(userString) : { role: '' };
-  const role = user.role.toLowerCase();
-
-  const [unreadCount, setUnreadCount] = useState(0);
-  const [mobileOpen, setMobileOpen] = useState(false);
-
+import { useEffect, useState } from "react";
+import { NavLink, Outlet } from "react-router-dom";
+import { useAuth } from "../context/AuthContext";
+import { useSettings } from "../context/SettingsContext";
+import API from "../services/api";
+import SyncStatus from "../components/SyncStatus";
+import { Button } from "../components/ui";
+interface NavItem {
+  title: string;
+  path: string;
+  icon: string;
+}
+export default function MainLayout() {
+  const { user, token, login, logout } = useAuth();
+  const { settings } = useSettings();
+  const [open, setOpen] = useState(false);
+  const [unread, setUnread] = useState(0);
+  const role = user?.role;
   useEffect(() => {
-    if (role === 'admin' || role === 'user' || role === 'teacher' || role === 'parent') {
-      const fetchUnreadCount = async () => {
-        try {
-          const response = await api.get('/api/messages/unread-count');
-          if (response.status === 200) {
-            setUnreadCount(response.data.unreadCount || 0);
-          }
-        } catch (error) {
-          console.error("Error fetching unread count", error);
-        }
-      };
-
-      fetchUnreadCount();
-      const interval = setInterval(fetchUnreadCount, 3000);
-      return () => clearInterval(interval);
-    }
+    if (role !== "admin" || !user || !token) return;
+    let mounted = true;
+    const refreshAccess = () => {
+      void API.get<{
+        allow_eccd_question_management: boolean;
+        section_id: number | null;
+        section_name: string | null;
+      }>("/api/teachers/access-controls")
+        .then(({ data }) => {
+          if (
+            mounted &&
+            (user.allow_eccd_question_management !==
+              data.allow_eccd_question_management ||
+              user.section_id !== data.section_id)
+          )
+            login({
+              success: true,
+              requireOtp: false,
+              requiresPasswordChange: false,
+              token,
+              user: {
+                ...user,
+                allow_eccd_question_management:
+                  data.allow_eccd_question_management,
+                section_id: data.section_id,
+                section_name: data.section_name,
+              },
+            });
+        })
+        .catch(() => {});
+    };
+    refreshAccess();
+    window.addEventListener("focus", refreshAccess);
+    return () => {
+      mounted = false;
+      window.removeEventListener("focus", refreshAccess);
+    };
+  }, [user, role, token, login]);
+  const items: NavItem[] =
+    role === "super-admin"
+      ? [
+          { title: "Dashboard", path: "/super-admin/dashboard", icon: "◫" },
+          {
+            title: "Teacher Accounts",
+            path: "/super-admin/teachers",
+            icon: "♙",
+          },
+          {
+            title: "Student Records",
+            path: "/super-admin/students",
+            icon: "♧",
+          },
+          { title: "System Audit Log", path: "/super-admin/audit", icon: "≡" },
+          {
+            title: "ECCD Questions",
+            path: "/super-admin/eccd-questions",
+            icon: "☑",
+          },
+          { title: "Settings", path: "/super-admin/settings", icon: "⚙" },
+        ]
+      : role === "admin"
+        ? [
+            { title: "Dashboard", path: "/teacher/dashboard", icon: "◫" },
+            { title: "My Students", path: "/teacher/students", icon: "♧" },
+            {
+              title: "Assessments",
+              path: "/teacher/eccdassessment",
+              icon: "☑",
+            },
+            ...(user?.allow_eccd_question_management
+              ? [
+                  {
+                    title: "ECCD Questions",
+                    path: "/teacher/eccd-questions",
+                    icon: "☷",
+                  },
+                ]
+              : []),
+            { title: "Messages", path: "/teacher/messages", icon: "✉" },
+            { title: "Settings", path: "/teacher/settings", icon: "⚙" },
+          ]
+        : [
+            { title: "Overview", path: "/parent/dashboard", icon: "⌂" },
+            {
+              title: "ECCD Management",
+              path: "/parent/eccdassessment",
+              icon: "☑",
+            },
+            {
+              title: "Child Information",
+              path: "/parent/childinformation",
+              icon: "♧",
+            },
+            { title: "Messages", path: "/parent/messages", icon: "✉" },
+          ];
+  useEffect(() => {
+    if (role === "super-admin") return;
+    let mounted = true;
+    const refresh = () => {
+      void API.get<{ unreadCount: number }>("/api/messages/unread-count")
+        .then((res) => {
+          if (mounted) setUnread(res.data.unreadCount);
+        })
+        .catch(() => {});
+    };
+    refresh();
+    const timer = setInterval(refresh, 15000);
+    window.addEventListener("ames-messages-read", refresh);
+    return () => {
+      mounted = false;
+      clearInterval(timer);
+      window.removeEventListener("ames-messages-read", refresh);
+    };
   }, [role]);
-
-  const chairmanMenuItems = [
-    { text: 'Dashboard', icon: <BarChartIcon />, path: "/super-admin/dashboard" },
-    { text: 'Teacher Accounts', icon: <PeopleIcon />, path: "/super-admin/teachers" },
-    { text: 'Student Records', icon: <ChildCareIcon />, path: "/super-admin/students" },
-    { text: 'System Audit Log', icon: <SettingsIcon />, path: '/super-admin/audit' },
-    { text: 'ECCD Questions', icon: <AssignmentIcon />, path: '/super-admin/eccd-questions' },
-    { text: 'Settings', icon: <AccessibilityIcon/>, path: '/super-admin/settings' }
-  ];
-
-  const teacherMenuItems = [
-    { text: 'Dashboard', icon: <BarChartIcon />, path: "/teacher/dashboard" },
-    { text: 'My Students', icon: <PeopleIcon />, path: "/teacher/students" },
-    { text: 'Assessments', icon: <AssignmentIcon />, path: "/teacher/eccdassessment" },
-    { text: 'Messages', icon: <MessageIcon />, path: "/teacher/messages" },
-    ...(user.allow_eccd_question_management
-      ? [{ text: 'ECCD Questions', icon: <AssignmentIcon />, path: "/teacher/eccd-questions" }]
-      : []),
-    { text: 'Settings', icon: <SettingsIcon />, path: '/teacher/settings' },
-  ];
-
-  const parentMenuItems = [
-    { text: 'Overview', icon: <HomeIcon />, path: '/parent/dashboard' },
-    { text: 'ECCD Management', icon: <ChildCareIcon />, path: '/parent/eccdassessment' },
-    { text: 'Child Information', icon: <AssignmentIcon />, path: "/parent/childinformation" },
-    { text: 'Messages', icon: <MessageIcon />, path: "/parent/messages" },
-  ];
-
-  let activeMenuItems: Array<{text: string, icon: React.ReactNode, path: string}> = [];
-  if (role === 'super-admin' || role === 'chairman') activeMenuItems = chairmanMenuItems;
-  else if (role === 'admin' || role === 'teacher') activeMenuItems = teacherMenuItems;
-  else if (role === 'user' || role === 'parent') activeMenuItems = parentMenuItems;
-
-  const handleDrawerToggle = () => {
-    setMobileOpen(!mobileOpen);
-  };
-
-  const handleLogout = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
-    navigate('/login', { replace: true });
-  };
-
-  const drawerContent = (
-    <>
-      <Box sx={{ 
-        p: 3, borderBottom: '1px solid rgba(255,255,255,0.08)', mb: 2, 
-        display: 'flex', flexDirection: 'column', alignItems: 'center', 
-        textAlign: 'center', minHeight: 140, justifyContent: 'center'
-      }}>
-        {settings.logo_url && (
-          <Box component="img" src={settings.logo_url} alt="System Logo" 
-               sx={{ width: 70, height: 70, objectFit: 'cover', mb: 2, borderRadius: '50%', border: '3px solid rgba(255,255,255,0.2)', boxShadow: '0 4px 12px rgba(0,0,0,0.3)', backgroundColor: 'white' }} />
-        )}
-        <Typography variant="h6" sx={{ fontWeight: '800', fontSize: '1.1rem', color: '#F9FAFB', letterSpacing: '0.5px', lineHeight: 1.3, width: '100%', display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden', textOverflow: 'ellipsis', wordBreak: 'break-word' }}>
-          {settings.system_title}
-        </Typography>
-      </Box>
-
-      <Box sx={{ overflow: 'auto', flexGrow: 1 }}>
-        <List>
-          {activeMenuItems.map((item) => {
-            const isActive = location.pathname.includes(item.path);
-            
-            return (
-              <ListItem key={item.text} disablePadding>
-                <ListItemButton
-                  onClick={() => {
-                      navigate(item.path);
-                      if (isMobile) setMobileOpen(false);
-                  }}
-                  sx={{
-                    backgroundColor: isActive ? settings.primary_color : 'transparent',
-                    borderRadius: '0 24px 24px 0', mr: 2, mb: 0.5,
-                    '&:hover': { backgroundColor: isActive ? settings.primary_color : 'rgba(255,255,255,0.08)' },
-                  }}
-                >
-                  <ListItemIcon sx={{ color: isActive ? 'white' : '#9CA3AF' }}>
-                      {item.text === 'Messages' ? (
-                          <Badge badgeContent={unreadCount} color="error" sx={{ '& .MuiBadge-badge': { fontWeight: 'bold' } }}>
-                              {item.icon}
-                          </Badge>
-                      ) : (
-                          item.icon
-                      )}
-                  </ListItemIcon>
-                  <ListItemText primary={item.text} sx={{ color: isActive ? 'white' : '#D1D5DB', '& .MuiTypography-root': { fontWeight: isActive ? 'bold' : 'normal' } }} />
-                </ListItemButton>
-              </ListItem>
-            );
-          })}
-        </List>
-      </Box>
-
-      <Box sx={{ p: 2, mt: 'auto' }}>
-        <Button onClick={handleLogout} variant="contained" color="error" startIcon={<LogoutIcon />} fullWidth 
-                sx={{ borderRadius: 3, borderColor: 'rgba(255,255,255,0.2)', color: 'white', textTransform: 'none', '&:hover': { bgcolor: '#d32f2f' } }}>
-            Logout
-        </Button>
-      </Box>
-    </>
-  );
-
   return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', backgroundColor: theme.palette.background.default }}>
-      {isMobile && (
-        <AppBar position="fixed" elevation={1} sx={{ zIndex: theme.zIndex.drawer + 1, backgroundColor: '#111827' }}>
-          <Toolbar>
-            <IconButton color="inherit" aria-label="open drawer" edge="start" onClick={handleDrawerToggle} sx={{ mr: 2 }}>
-              <MenuIcon />
-            </IconButton>
-            <Typography variant="h6" noWrap component="div" sx={{ fontWeight: 'bold' }}>
-              {settings.system_title || 'AMES System'}
-            </Typography>
-          </Toolbar>
-        </AppBar>
+    <div className="min-h-dvh">
+      <header className="sticky top-0 z-30 flex items-center gap-3 bg-slate-900 px-4 py-3 text-white lg:hidden">
+        <button
+          aria-label="Open navigation"
+          aria-expanded={open}
+          className="rounded-lg p-2"
+          onClick={() => setOpen(true)}
+        >
+          ☰
+        </button>
+        <span className="min-w-0 truncate text-sm font-semibold">
+          {settings.school_name || settings.system_title}
+        </span>
+      </header>
+      {open && (
+        <button
+          aria-label="Close navigation"
+          className="fixed inset-0 z-40 bg-slate-950/50 lg:hidden"
+          onClick={() => setOpen(false)}
+        />
       )}
-      <Box sx={{ display: 'flex', flexGrow: 1, pt: isMobile ? '64px' : 0 }}>
-        <Box component="nav" sx={{ width: { md: drawerWidth }, flexShrink: { md: 0 } }}>
-          {isMobile ? (
-            <Drawer
-              variant="temporary"
-              open={mobileOpen}
-              onClose={handleDrawerToggle}
-              ModalProps={{ keepMounted: true }}
-              sx={{
-                display: { xs: 'block', md: 'none' },
-                '& .MuiDrawer-paper': { boxSizing: 'border-box', width: drawerWidth, backgroundColor: '#111827', color: 'white' },
-              }}
-            >
-              {drawerContent}
-            </Drawer>
+      <aside
+        aria-label="Main navigation"
+        className={`fixed inset-y-0 left-0 z-50 flex w-64 max-w-[85vw] flex-col bg-slate-900 p-4 text-slate-300 transition-transform lg:translate-x-0 ${open ? "translate-x-0" : "-translate-x-full"}`}
+      >
+        <div className="mb-6 border-b border-white/10 px-2 pb-5 pt-2 text-center">
+          {settings.logo_url ? (
+            <img
+              className="mx-auto mb-3 size-12 rounded-full bg-white object-cover"
+              src={settings.logo_url}
+              alt="School logo"
+            />
           ) : (
-            <Drawer
-              variant="permanent"
-              sx={{
-                display: { xs: 'none', md: 'block' },
-                '& .MuiDrawer-paper': { boxSizing: 'border-box', width: drawerWidth, backgroundColor: '#111827', color: 'white', borderRight: 'none' },
-              }}
-              open
-            >
-              {drawerContent}
-            </Drawer>
+            <div className="mx-auto mb-3 grid size-12 place-items-center rounded-2xl bg-blue-600 text-xl text-white">
+              A
+            </div>
           )}
-        </Box>
-
-        <Box component="main" sx={{ flexGrow: 1, p: { xs: 2, md: 3 }, width: { xs: '100%', md: `calc(100% - ${drawerWidth}px)` }, overflowX: 'hidden' }}>
+          <p className="text-sm font-semibold leading-6 text-white">
+            {settings.school_name || settings.system_title}
+          </p>
+          <p className="mt-1 text-xs text-slate-400">
+            {role === "super-admin"
+              ? "Chairman"
+              : role === "admin"
+                ? "Teacher"
+                : "Parent"}{" "}
+            Portal
+          </p>
+        </div>
+        <nav className="space-y-1">
+          {items.map((item) => (
+            <NavLink
+              key={item.path}
+              to={item.path}
+              onClick={() => setOpen(false)}
+              className={({ isActive }) =>
+                `flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition ${isActive ? "bg-brand text-white shadow-sm" : "hover:bg-white/10 hover:text-white"}`
+              }
+            >
+              <span aria-hidden className="w-5 text-lg">
+                {item.icon}
+              </span>
+              <span>{item.title}</span>
+              {item.title === "Messages" && unread > 0 && (
+                <span className="ml-auto rounded-full bg-red-500 px-2 text-xs text-white">
+                  {unread}
+                </span>
+              )}
+            </NavLink>
+          ))}
+        </nav>
+        <div className="mt-auto space-y-3 pt-6">
+          <div className="truncate px-2 text-xs text-slate-400">
+            {user?.username}
+          </div>
+          <Button
+            className="w-full bg-red-600 text-white hover:bg-red-700"
+            variant="danger"
+            onClick={() => void logout()}
+          >
+            Logout
+          </Button>
+        </div>
+      </aside>
+      <main className="min-w-0 p-4 sm:p-6 lg:ml-64 lg:p-8">
+        <div className="mx-auto w-full max-w-screen-2xl">
+          <div className="mb-6 hidden items-center justify-between text-xs text-slate-500 lg:flex">
+            <span>{settings.school_name || settings.system_title}</span>
+            <span>School year {settings.current_school_year || "—"}</span>
+          </div>
+          <SyncStatus />
           <Outlet />
-        </Box>
-      </Box>
-    </Box>
+        </div>
+      </main>
+    </div>
   );
-};
-
-export default MainLayout;
+}

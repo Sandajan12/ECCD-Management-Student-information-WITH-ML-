@@ -25,6 +25,9 @@ class User(Base):
     )
     created_at = Column(DateTime, server_default=func.now())
     is_active = Column(Boolean, default=True)
+    # Existing accounts are backfilled False; new teacher provisioning opts in in Phase 2.
+    is_first_login = Column(Boolean, default=False, server_default="false", nullable=False)
+    is_registration_pending = Column(Boolean, default=False, server_default="false", nullable=False)
     otp_code = Column(String(10), nullable=True)
     otp_expires_at = Column(DateTime, nullable=True)
 
@@ -34,3 +37,4 @@ class User(Base):
     parent = relationship(
         "Parent", back_populates="user", uselist=False, cascade="all, delete-orphan"
     )
+    trusted_devices = relationship("UserTrustedDevice", back_populates="user", cascade="all, delete-orphan")

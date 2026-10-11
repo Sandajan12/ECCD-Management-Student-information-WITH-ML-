@@ -8,3 +8,7 @@ from .section_teacher import SectionTeacher
 from .student import Student
 from .teacher import Teacher
 from .user import User
+from .email_verification import EmailVerification, OtpPurpose
+from .settings import SystemSettings
+from .trusted_device import UserTrustedDevice
+from . import student_reference

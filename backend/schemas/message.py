@@ -1,6 +1,7 @@
 from datetime import datetime
 from typing import Optional
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+from .common import ApiModel, PositiveId
 
 from backend.models.message import SenderRole
 
@@ -21,10 +22,10 @@ class MessageBase(BaseModel):
 
 
 class MessageCreate(BaseModel):
-    parent_id: int
-    teacher_id: int
-    sender_role: SenderRole
-    subject: Optional[str] = None
+    parent_id: PositiveId
+    teacher_id: PositiveId
+    sender_role: SenderRole | None = None
+    subject: Optional[str] = Field(default=None, max_length=255)
     body: Optional[str] = None
     message_body: Optional[str] = None
     sent_at: Optional[str] = None
@@ -77,3 +78,45 @@ class MessageResponse(BaseModel):
             if "created_at" in data and data["created_at"] and not data.get("sent_at"):
                 data["sent_at"] = data["created_at"].isoformat() if hasattr(data["created_at"], "isoformat") else str(data["created_at"])
         return data
+
+
+class NotifyStudentRequest(ApiModel):
+    student_id: PositiveId
+
+
+class NotifyStudentResponse(ApiModel):
+    message: str
+    recipients: int = Field(ge=1)
+
+
+class ConversationRequest(ApiModel):
+    teacher_id: PositiveId
+    parent_id: PositiveId
+
+
+class PersistedMessageResponse(MessageResponse):
+    message: str = "Message sent!"
+
+
+class Contact(ApiModel):
+    id: PositiveId
+    name: str
+    latest_message_time: datetime | None = None
+
+
+class ContactsResponse(ApiModel):
+    myId: PositiveId | None
+    contacts: list[Contact]
+
+
+class UnreadResponse(ApiModel):
+    unreadCount: int = Field(ge=0)
+
+
+class SuccessResponse(ApiModel):
+    success: bool = True
+
+
+class SocketMessageRequest(ApiModel):
+    room: str = Field(pattern=r"^teacher-[1-9][0-9]*-parent-[1-9][0-9]*$")
+    message_id: PositiveId
