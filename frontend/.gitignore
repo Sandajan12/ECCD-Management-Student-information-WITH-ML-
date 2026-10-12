@@ -20,6 +20,18 @@ build/
 .env.local
 .env.*.local
 
+# Generated tool caches and browser-test evidence (not test sources).
+.turbo/
+.cache/
+.vite/
+.vite-temp/
+*.tsbuildinfo
+test-results/
+nav-test-results/
+playwright-report/
+blob-report/
+coverage/
+
 # Editor files
 .vscode/*
 !.vscode/extensions.json

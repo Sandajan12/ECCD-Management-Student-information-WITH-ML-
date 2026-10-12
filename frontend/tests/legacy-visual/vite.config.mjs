@@ -8,6 +8,7 @@ import tailwind from "tailwindcss";
 import autoprefixer from "autoprefixer";
 const root = fileURLToPath(new URL(".", import.meta.url));
 const appRoot = resolve(root, "../..");
+const legacyRoot = resolve(appRoot, "../AMES-SYSTEM/frontend");
 const settings = {
   school_name: "Example School",
   principal_name: "Example Principal",
@@ -27,7 +28,12 @@ export default defineConfig({
       resolveId(source, importer) {
         if (source === "virtual:legacy-global.css")
           return "\0legacy-global.css";
-        if (!importer?.includes("AMES-SYSTEM-LEGACY")) return;
+        if (
+          !importer
+            ?.replaceAll("\\", "/")
+            .startsWith(legacyRoot.replaceAll("\\", "/") + "/")
+        )
+          return;
         source = source.replace(/\.(jsx?|tsx?)$/, "");
         if (source.endsWith("context/SettingsContext"))
           return "\0reference-settings";
@@ -38,7 +44,6 @@ export default defineConfig({
       },
       async load(id) {
         if (id === "\0legacy-global.css") {
-          const legacyRoot = resolve(appRoot, "../AMES-SYSTEM-LEGACY/frontend");
           // Read the original stylesheet; the same font files are loaded locally.
           const source = (
             await readFile(resolve(legacyRoot, "src/index.css"), "utf8")

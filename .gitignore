@@ -8,6 +8,16 @@
 *.env
 !*.env.example
 
+# Private keys and credential containers; keep the public reference CA certificate.
+*.pem
+*.key
+*.p8
+*.p12
+*.pfx
+id_rsa
+id_ed25519
+!AMES-SYSTEM/backend/ca.pem
+
 # 2. Legacy Migration Reference & Raw Database Dumps
 _legacy_reference/
 *.sql
@@ -59,6 +69,18 @@ frontend/playwright-report/
 dist/
 *.local
 
+# Generated caches and browser-test reports at any workspace depth.
+.turbo/
+.cache/
+.vite/
+.vite-temp/
+*.tsbuildinfo
+test-results/
+nav-test-results/
+playwright-report/
+blob-report/
+coverage/
+
 # 6. Package Manager Logs
 npm-debug.log*
 yarn-debug.log*
@@ -66,6 +88,8 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 *.log
+npm-cache/
+.npm/
 
 # 7. Operating System & Editor Files
 .DS_Store
@@ -117,3 +141,6 @@ backend/assets/templates/*.xls
 !backend/assets/templates/ECCD_Checklist_Blank_Template.xlsx
 !backend/assets/templates/ECCD_Summary_Matrix_Template.xlsx
 !backend/tests/fixtures/phase1_baseline.sql
+
+# Local read-only migration reference; never add the embedded repository.
+/AMES-SYSTEM/

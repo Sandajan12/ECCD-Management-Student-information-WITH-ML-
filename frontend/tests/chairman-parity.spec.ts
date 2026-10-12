@@ -289,7 +289,7 @@ test("Chairman teacher form retains drafts and question workspace opens the lega
   await page.goto("/super-admin/eccd-questions");
   await page.getByRole("button", { name: "Manage Questions" }).first().click();
   await expect(
-    page.getByRole("columnheader", { name: "Question / Indicator" }),
+    page.getByRole("columnheader", { name: "QUESTION / INDICATOR" }),
   ).toBeVisible();
   await page.getByRole("button", { name: "Home-based assessment" }).click();
   await expect(
@@ -299,6 +299,7 @@ test("Chairman teacher form retains drafts and question workspace opens the lega
 
 interface DialogCase {name: string; path: string; open: (page: Page) => Promise<void>}
 const dialogs: DialogCase[] = [
+  {name:"Create New Section",path:"teachers",open:async page=>{await page.getByRole("button",{name:"Add New Teacher"}).click();await page.getByRole("combobox").click();await page.getByRole("option",{name:"+ Add New Section",exact:true}).click();}},
   {name:"New Teacher",path:"teachers",open:async page=>{await page.getByRole("button",{name:"Add New Teacher"}).click();}},
   {name:"Edit Teacher",path:"teachers",open:async page=>{await page.getByTitle("Edit Teacher").click();}},
   {name:"Archived Teacher Accounts",path:"teachers",open:async page=>{await page.getByRole("button",{name:"View Archive"}).click();}},
@@ -313,12 +314,14 @@ for (const dialog of dialogs) test(`Chairman dialog ${dialog.name} matches legac
   await Promise.all([page.goto(`/super-admin/${dialog.path}`),reference.goto(`http://localhost:5187/chairman/${dialog.path}?role=super-admin`)]);
   if(dialog.path !== "eccd-questions") {await expect(page.getByRole("row").nth(1)).toBeVisible();await expect(reference.getByRole("row").nth(1)).toBeVisible();} else {await expect(page.getByRole("button",{name:"Manage Questions"})).toHaveCount(3);await expect(reference.getByRole("button",{name:"Manage Questions"})).toHaveCount(3);}
   await dialog.open(page);await dialog.open(reference);
-  await expect(page.getByRole("dialog")).toBeVisible();await expect(reference.getByRole("dialog")).toBeVisible();
+  await expect(page.getByRole("dialog").last()).toBeVisible();await expect(reference.getByRole("dialog").last()).toBeVisible();
   await ready(page);await ready(reference);await page.mouse.move(0,0);await reference.mouse.move(0,0);
-  await reference.evaluate(async()=>{await Promise.all(document.getAnimations().filter(animation=>animation.effect?.getComputedTiming().iterations !== Infinity).map(animation=>animation.finished));});
-  await page.evaluate(async()=>{await Promise.all(document.getAnimations().filter(animation=>animation.effect?.getComputedTiming().iterations !== Infinity).map(animation=>animation.finished));});
-  const actual=await page.getByRole("dialog").boundingBox(),expected=await reference.locator(".MuiDialog-paper").boundingBox();
+  await reference.evaluate(async()=>{await Promise.allSettled(document.getAnimations().filter(animation=>animation.effect?.getComputedTiming().iterations !== Infinity).map(animation=>animation.finished));});
+  await page.evaluate(async()=>{await Promise.allSettled(document.getAnimations().filter(animation=>animation.effect?.getComputedTiming().iterations !== Infinity).map(animation=>animation.finished));});
+  const actual=await page.getByRole("dialog").last().boundingBox(),expected=await reference.locator(".MuiDialog-paper").last().boundingBox();
   await writeFile(info.outputPath("dialog-measurements.json"),JSON.stringify({actual,expected},null,2));
+  const controls = async (target: Page) => target.locator('[role="dialog"] label,[role="dialog"] .MuiTypography-caption,[role="dialog"] input,[role="dialog"] button,dialog label,dialog input,dialog button').evaluateAll(elements=>elements.map(element=>{const r=element.getBoundingClientRect(),s=getComputedStyle(element);return {text:element.textContent?.trim(),tag:element.tagName,x:r.x,y:r.y,width:r.width,height:r.height,padding:s.padding,fontSize:s.fontSize,fontWeight:s.fontWeight,lineHeight:s.lineHeight,color:s.color};}));
+  await writeFile(info.outputPath("dialog-controls.json"),JSON.stringify({actual:await controls(page),expected:await controls(reference)},null,2));
   const baseline=info.snapshotPath(`chairman-dialog-${dialog.name.replaceAll(" ","-")}.png`);await mkdir(dirname(baseline),{recursive:true});await writeFile(baseline,await reference.screenshot());
   expect(await page.screenshot()).toMatchSnapshot(`chairman-dialog-${dialog.name.replaceAll(" ","-")}.png`,{threshold:.1,maxDiffPixels:0});
   await reference.close();

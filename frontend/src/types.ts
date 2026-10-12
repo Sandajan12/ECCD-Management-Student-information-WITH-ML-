@@ -118,6 +118,40 @@ export interface Section {
   role: string | null;
   status: string | null;
 }
+export type AssignmentRole = "Primary Adviser" | "Substitute";
+export interface TeacherFormValues {
+  first_name: string;
+  last_name: string;
+  username: string;
+  email: string;
+  employee_id: string;
+  section_id: string;
+}
+export interface TeacherUpdatePayload {
+  first_name: string;
+  last_name: string;
+  username: string;
+  email: string;
+  employee_id: string;
+  class_name: string;
+}
+export interface TeacherCreatePayload extends Omit<
+  TeacherUpdatePayload,
+  "class_name"
+> {
+  section_id: number;
+  password: string;
+}
+export interface SectionCreatePayload {
+  section_name: string;
+}
+export interface TeacherPermissionPayload {
+  allow_eccd_question_management: boolean;
+}
+export interface TeacherAssignmentPayload {
+  teacher_id: number;
+  role: AssignmentRole;
+}
 export interface Question {
   question_id: number;
   domain_id: number;

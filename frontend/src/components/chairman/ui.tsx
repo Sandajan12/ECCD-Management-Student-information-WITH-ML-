@@ -42,15 +42,28 @@ export function Button({
       "bg-[#d32f2f] text-white hover:bg-[#c62828] disabled:bg-black/[.12]",
     text: "text-[#4543c0] hover:bg-[#4543c0]/[.04]",
   };
-  const resolvedColors = colors[variant].split(" ").filter(token=>!(token.startsWith("text-") && /(?:^|\s)text-\[?#/.test(className)) && !(token.startsWith("bg-") && /(?:^|\s)bg-/.test(className))).join(" ");
+  const resolvedColors = colors[variant]
+    .split(" ")
+    .filter(
+      (token) =>
+        !(token.startsWith("text-") && /(?:^|\s)text-\[?#/.test(className)) &&
+        !(token.startsWith("bg-") && /(?:^|\s)bg-/.test(className)),
+    )
+    .join(" ");
   return (
     <button
       {...props}
       type={type}
-      className={`relative inline-flex min-w-16 shrink-0 items-center justify-center rounded-lg align-middle leading-[1.75] tracking-normal normal-case transition-[background-color,box-shadow,border-color] duration-250 outline-none! focus-visible:shadow-[0_0_0_3px_color-mix(in_srgb,var(--primary-color)_25%,transparent)] disabled:pointer-events-none disabled:text-black/[.26] ${small ? variant === "secondary" ? "px-[9px] py-[3px] text-[13px]" : "px-2 py-1 text-[13px]" : variant === "secondary" ? "px-[15px] py-[5px] text-sm" : "px-4 py-1.5 text-sm"} ${className.includes("font-") ? "" : "font-medium"} ${resolvedColors} ${className}`}
+      className={`relative inline-flex min-w-16 shrink-0 items-center justify-center rounded-lg align-middle leading-[1.75] tracking-normal normal-case transition-[background-color,box-shadow,border-color] duration-250 outline-none! focus-visible:shadow-[0_0_0_3px_color-mix(in_srgb,var(--primary-color)_25%,transparent)] disabled:pointer-events-none disabled:text-black/[.26] ${small ? (variant === "secondary" ? "px-[9px] py-[3px] text-[13px]" : "px-2 py-1 text-[13px]") : variant === "secondary" ? "px-[15px] py-[5px] text-sm" : "px-4 py-1.5 text-sm"} ${className.includes("font-") ? "" : "font-medium"} ${resolvedColors} ${className}`}
     >
       {startIcon && (
-        <span className={small ? "mr-2 -ml-0.5 inline-flex [&_svg]:size-[18px]" : "mr-2 -ml-1 inline-flex [&_svg]:size-5"}>
+        <span
+          className={
+            small
+              ? "mr-2 -ml-0.5 inline-flex [&_svg]:size-[18px]"
+              : "mr-2 -ml-1 inline-flex [&_svg]:size-5"
+          }
+        >
           {startIcon}
         </span>
       )}
@@ -80,6 +93,7 @@ export function IconButton({
   );
 }
 interface FieldProps extends InputHTMLAttributes<HTMLInputElement> {
+  captionLabel?: boolean;
   label?: string;
   floating?: boolean;
   adornment?: ReactNode;
@@ -88,6 +102,7 @@ interface FieldProps extends InputHTMLAttributes<HTMLInputElement> {
   small?: boolean;
 }
 export function Field({
+  captionLabel = false,
   label,
   floating = false,
   adornment,
@@ -107,9 +122,13 @@ export function Field({
       {label && !floating && (
         <label
           htmlFor={fieldId}
-          className="mb-2 block text-xs font-bold leading-6"
+          className={`mb-2 block leading-6 ${captionLabel ? "text-base font-normal" : "text-xs font-bold"}`}
         >
-          {label}
+          {captionLabel ? (
+            <span className="text-xs font-bold leading-[1.66]">{label}</span>
+          ) : (
+            label
+          )}
         </label>
       )}
       <div
@@ -187,12 +206,14 @@ interface SelectProps extends Omit<
   SelectHTMLAttributes<HTMLSelectElement>,
   "onChange" | "value"
 > {
+  captionLabel?: boolean;
   label?: string;
   floating?: boolean;
   containerClassName?: string;
   small?: boolean;
   value?: string | number;
   onChange?: (event: { target: { value: string } }) => void;
+  optionAction?: (value: string, closeMenu: () => void) => ReactNode;
 }
 interface OptionProps {
   value?: string | number;
@@ -200,6 +221,7 @@ interface OptionProps {
   disabled?: boolean;
 }
 export function Select({
+  captionLabel = false,
   label,
   floating = true,
   containerClassName = "",
@@ -210,6 +232,7 @@ export function Select({
   value,
   onChange,
   disabled,
+  optionAction,
   ...props
 }: SelectProps) {
   const generated = useId();
@@ -217,6 +240,7 @@ export function Select({
   const listId = generated + "-menu";
   const ref = useRef<HTMLButtonElement>(null);
   const menu = useRef<HTMLDivElement>(null);
+  const [portalHost, setPortalHost] = useState<HTMLElement | null>(null);
   const [position, setPosition] = useState<{
     left: number;
     top: number;
@@ -232,17 +256,25 @@ export function Select({
   const selected = options.find((option) => option.value === String(value));
   const close = () => {
     setPosition(null);
-    ref.current?.focus();
+    document.getElementById(fieldId)?.focus();
   };
   const open = () => {
     if (disabled) return;
     const rect = ref.current!.getBoundingClientRect();
+    const menuHeight = Math.min(
+      options.length * (window.innerWidth < 600 ? 48 : 36) + 16,
+      window.innerHeight - 96,
+    );
+    setPortalHost(ref.current?.closest("dialog") || document.body);
     setPosition({
       left: Math.max(
         16,
         Math.min(rect.left, window.innerWidth - rect.width - 16),
       ),
-      top: Math.min(rect.bottom, window.innerHeight - 64),
+      top: Math.max(
+        16,
+        Math.min(rect.bottom, window.innerHeight - menuHeight - 16),
+      ),
       width: rect.width,
     });
   };
@@ -264,9 +296,13 @@ export function Select({
         <label
           id={generated + "-label"}
           htmlFor={fieldId}
-          className="mb-2 block text-xs font-bold leading-6"
+          className={`mb-2 block leading-6 ${captionLabel ? "text-base font-normal" : "text-xs font-bold"}`}
         >
-          {label}
+          {captionLabel ? (
+            <span className="text-xs font-bold leading-[1.66]">{label}</span>
+          ) : (
+            label
+          )}
         </label>
       )}
       <div className={`group relative rounded-[4px] ${className}`}>
@@ -319,6 +355,18 @@ export function Select({
                 event.preventDefault();
                 close();
               } else if (
+                event.key === "ArrowRight" ||
+                event.key === "ArrowLeft"
+              ) {
+                const selector =
+                  event.key === "ArrowRight"
+                    ? 'button:not([role="option"])'
+                    : '[role="option"]';
+                document.activeElement?.parentElement
+                  ?.querySelector<HTMLElement>(selector)
+                  ?.focus();
+                event.preventDefault();
+              } else if (
                 ["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)
               ) {
                 event.preventDefault();
@@ -359,27 +407,54 @@ export function Select({
               }}
             >
               {options.map((option) => (
-                <button
-                  type="button"
-                  role="option"
-                  aria-selected={option.value === String(value)}
-                  disabled={option.disabled}
+                <div
                   key={option.value}
-                  className={`relative flex min-h-12 w-full items-center px-4 py-1.5 text-left text-base leading-[1.5] whitespace-nowrap outline-none! hover:bg-black/[.04] focus:bg-black/[.12] disabled:opacity-38 legacy-sm:min-h-0 ${option.value === String(value) ? "bg-[#4543c0]/[.08] hover:bg-[#4543c0]/[.12] focus:bg-[#4543c0]/[.20]" : ""}`}
-                  onClick={() => {
-                    onChange?.({ target: { value: option.value } });
-                    close();
-                  }}
+                  className="flex items-center"
+                  role="presentation"
                 >
-                  {option.label}
-                  <LegacyRipple />
-                </button>
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected={option.value === String(value)}
+                    disabled={option.disabled}
+                    className={`relative flex min-h-12 min-w-0 grow items-center px-4 py-1.5 text-left text-base leading-[1.5] whitespace-nowrap outline-none! hover:bg-black/[.04] focus:bg-black/[.12] disabled:opacity-38 legacy-sm:min-h-0 ${option.value === String(value) ? "bg-[#4543c0]/[.08] hover:bg-[#4543c0]/[.12] focus:bg-[#4543c0]/[.20]" : ""}`}
+                    onClick={() => {
+                      onChange?.({ target: { value: option.value } });
+                      close();
+                    }}
+                  >
+                    {option.label}
+                    <LegacyRipple />
+                  </button>
+                  {optionAction?.(option.value, close)}
+                </div>
               ))}
             </div>
           </div>,
-          ref.current?.closest("dialog") || document.body,
+          portalHost || document.body,
         )}
     </div>
+  );
+}
+export function Switch({
+  className = "",
+  ...props
+}: InputHTMLAttributes<HTMLInputElement>) {
+  return (
+    <span
+      className={`relative z-0 inline-flex h-[38px] w-[58px] shrink-0 overflow-hidden align-middle ${className}`}
+    >
+      <input
+        {...props}
+        type="checkbox"
+        role="switch"
+        className="peer absolute inset-0 z-10 size-full cursor-pointer opacity-0 disabled:cursor-default"
+      />
+      <span className="pointer-events-none absolute inset-x-3 top-3 h-3.5 rounded-full border border-transparent bg-black opacity-38 transition-[background-color,opacity] duration-150 peer-checked:bg-[#4543c0] peer-checked:opacity-50 peer-disabled:opacity-12" />
+      <span className="pointer-events-none absolute left-0 top-0 z-[1] rounded-full p-[9px] text-white transition-transform duration-150 peer-checked:translate-x-5 peer-checked:text-[#4543c0] peer-focus-visible:bg-[#4543c0]/12 peer-disabled:text-[#f5f5f5]">
+        <span className="block size-5 rounded-full border border-transparent bg-current shadow-[0px_2px_1px_-1px_rgba(0,0,0,.2),0px_1px_1px_0px_rgba(0,0,0,.14),0px_1px_3px_0px_rgba(0,0,0,.12)]" />
+      </span>
+    </span>
   );
 }
 export interface CheckboxProps extends InputHTMLAttributes<HTMLInputElement> {
@@ -512,8 +587,11 @@ export function Modal({
   useEffect(() => {
     const dialog = ref.current;
     dialog?.showModal();
-    const initial=dialog?.querySelector<HTMLElement>("[data-chairman-autofocus]");
-    if(initial)initial.focus();else dialog?.focus();
+    const initial = dialog?.querySelector<HTMLElement>(
+      "[data-chairman-autofocus]",
+    );
+    if (initial) initial.focus();
+    else dialog?.focus();
     return () => dialog?.close();
   }, []);
   return (
@@ -553,7 +631,9 @@ export function Modal({
           {children}
         </div>
         {footer && (
-          <footer className={`flex shrink-0 justify-end gap-2 p-2 ${footerClassName}`}>
+          <footer
+            className={`flex shrink-0 justify-end gap-2 p-2 ${footerClassName}`}
+          >
             {footer}
           </footer>
         )}

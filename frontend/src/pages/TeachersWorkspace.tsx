@@ -1,8 +1,18 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import API, { downloadFile, errorMessage } from "../services/api";
 import { confirmDraft, readDraft, useDurableForm } from "../utils/drafts";
 import { useSessionField } from "../utils/sessionDrafts";
-import type { Section, Teacher } from "../types";
+import type {
+  AssignmentRole,
+  Section,
+  Teacher,
+  TeacherFormValues,
+  TeacherUpdatePayload,
+  TeacherCreatePayload,
+  SectionCreatePayload,
+  TeacherPermissionPayload,
+  TeacherAssignmentPayload,
+} from "../types";
 import {
   Button,
   Empty,
@@ -10,6 +20,7 @@ import {
   Modal,
   Notice,
   Select,
+  Switch,
 } from "../components/chairman/ui";
 import Icon from "../components/chairman/Icon";
 import { IconButton } from "../components/chairman/ui";
@@ -17,20 +28,100 @@ import {
   PasswordRules,
   passwordValid,
 } from "../components/ForceChangePassword";
+interface TeacherFormProps {
+  onSection: () => void;
+  onDeleteSection: (section: Section) => void;
+  onBusyChange: (busy: boolean) => void;
+  createdSection?: Section;
+  teacher?: Teacher;
+  sections: Section[];
+  onSaved: () => void;
+}
+interface HandoverProps {
+  section: Section;
+  busy: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}
+function incumbentSection(
+  sections: Section[],
+  sectionId: string,
+  teacherId?: number,
+): Section | undefined {
+  return sections.find(
+    (section) =>
+      String(section.section_id) === sectionId &&
+      section.adviser_teacher_id != null &&
+      section.adviser_teacher_id !== teacherId &&
+      section.role === "Primary Adviser" &&
+      section.status === "Active",
+  );
+}
+function SectionHandover({
+  section,
+  busy,
+  onCancel,
+  onConfirm,
+}: HandoverProps) {
+  const name =
+    [section.first_name, section.last_name].filter(Boolean).join(" ") ||
+    "another teacher";
+  return (
+    <Modal
+      title={
+        <span className="flex items-center gap-2 font-bold text-[#ed6c02]">
+          <Icon name="AdminPanelSettings" />
+          Confirm Section Handover
+        </span>
+      }
+      className="rounded-2xl p-2"
+      bodyClassName="pt-2"
+      locked={busy}
+      onClose={onCancel}
+      footerClassName="p-4"
+      footer={
+        <>
+          <Button
+            variant="text"
+            className="px-2! font-bold text-[#777]"
+            disabled={busy}
+            onClick={onCancel}
+          >
+            Cancel
+          </Button>
+          <Button
+            className="bg-[#ed6c02] font-bold hover:bg-[#e65100]"
+            disabled={busy}
+            onClick={onConfirm}
+          >
+            Confirm Handover
+          </Button>
+        </>
+      }
+    >
+      <p className="text-base leading-[1.5]">
+        Section <strong>{section.section_name}</strong> is currently assigned to{" "}
+        <strong>{name}</strong>.
+      </p>
+      <p className="mt-4 text-sm leading-[1.43] text-[#777]">
+        Assigning this section will detach the current Primary Adviser. Teachers
+        without another active assignment are archived. The replacement teacher
+        becomes the section's Primary Adviser. Student evaluations are
+        preserved.
+      </p>
+    </Modal>
+  );
+}
 function TeacherForm({
   teacher,
   sections,
   onSaved,
-  onCancel,
   onSection,
-}: {
-  onCancel: () => void;
-  onSection: () => void;
-  teacher?: Teacher;
-  sections: Section[];
-  onSaved: () => void;
-}) {
-  const { values, change, save, key } = useDurableForm(
+  onDeleteSection,
+  onBusyChange,
+  createdSection,
+}: TeacherFormProps) {
+  const { values, change, save, key } = useDurableForm<TeacherFormValues>(
     `teacher_${teacher?.user_id || "new"}`,
     {
       first_name: teacher?.first_name || "",
@@ -47,180 +138,297 @@ function TeacherForm({
   );
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const submitting = useRef(false);
+  const selectedCreation = useRef<number | null>(null);
+  const [handover, setHandover] = useState<Section | null>(null);
+  useEffect(() => {
+    if (
+      createdSection &&
+      selectedCreation.current !== createdSection.section_id
+    ) {
+      selectedCreation.current = createdSection.section_id;
+      change({ ...values, section_id: String(createdSection.section_id) });
+    }
+  }, [createdSection, values, change]);
+  const submit = async () => {
+    if (submitting.current) return;
+    const section = sections.find(
+      (item) => String(item.section_id) === values.section_id,
+    );
+    if (
+      !values.first_name.trim() ||
+      !values.email.trim() ||
+      !values.employee_id.trim() ||
+      !section ||
+      (teacher && !values.username.trim())
+    ) {
+      setError("All fields are required. Please fill in all the blanks.");
+      return;
+    }
+    if (!teacher && !passwordValid(password)) {
+      setError(
+        "Use at least 8 characters, uppercase, lowercase, and a number. Maximum 72 UTF-8 bytes.",
+      );
+      return;
+    }
+    submitting.current = true;
+    setBusy(true);
+    onBusyChange(true);
+    setError("");
+    try {
+      const data: TeacherUpdatePayload = {
+        first_name: values.first_name.trim(),
+        last_name: values.last_name.trim(),
+        email: values.email.trim(),
+        username: teacher ? values.username.trim() : values.email.trim(),
+        employee_id: values.employee_id.trim(),
+        class_name: section.section_name,
+      };
+      if (teacher) {
+        const result = await save(
+          `/api/teachers/${teacher.user_id}`,
+          "put",
+          data,
+        );
+        if (result === "saved") onSaved();
+        else setError("Draft saved. We will retry after reconnection.");
+      } else {
+        const version = readDraft<unknown>(key)?.revision;
+        const payload: TeacherCreatePayload = {
+          first_name: data.first_name,
+          last_name: data.last_name,
+          email: data.email,
+          username: data.username,
+          employee_id: data.employee_id,
+          section_id: section.section_id,
+          password,
+        };
+        const response = await API.post("/api/teachers/", payload);
+        if (response.status !== 200 && response.status !== 201)
+          throw new Error("The server did not confirm this save.");
+        if (version) confirmDraft(key, version);
+        confirmPasswordDraft();
+        onSaved();
+      }
+      setHandover(null);
+    } catch (err) {
+      setHandover(null);
+      setError(errorMessage(err));
+    } finally {
+      submitting.current = false;
+      setBusy(false);
+      onBusyChange(false);
+    }
+  };
   return (
-    <form
-      className="space-y-5"
-      onSubmit={async (e) => {
-        e.preventDefault();
-        if (!teacher && !passwordValid(password)) {setError("Use at least 8 characters, uppercase, lowercase, and a number. Maximum 72 UTF-8 bytes.");return;}
-        setBusy(true);
-        setError("");
-        try {
-          const data = {
-            ...values,
-            username: values.username || undefined,
-            section_id: values.section_id ? Number(values.section_id) : null,
-          };
-          if (teacher) {
-            const result = await save(
-              `/api/teachers/${teacher.user_id}`,
-              "put",
-              data,
-            );
-            if (result === "saved") onSaved();
-            else setError("Draft saved. We will retry after reconnection.");
-          } else {
-            const version = readDraft<unknown>(key)?.revision;
-            await API.post("/api/teachers/", { ...data, password });
-            if (version) confirmDraft(key, version);
-            confirmPasswordDraft();
-            onSaved();
+    <>
+      <form
+        id="chairman-teacher-form"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (submitting.current) return;
+          setError("");
+          if (
+            !values.first_name.trim() ||
+            !values.email.trim() ||
+            !values.employee_id.trim() ||
+            !values.section_id ||
+            (teacher && !values.username.trim())
+          ) {
+            setError("All fields are required. Please fill in all the blanks.");
+            return;
           }
-        } catch (err) {
-          setError(errorMessage(err));
-        } finally {
-          setBusy(false);
-        }
-      }}
-    >
-      <Notice tone="error">{error}</Notice>
-      <div className="mt-4 grid grid-cols-1 gap-4 legacy-sm:grid-cols-2">
-        {(teacher
-          ? ([
-              "first_name",
-              "last_name",
-              "username",
-              "email",
-              "employee_id",
-            ] as const)
-          : (["first_name", "email", "employee_id"] as const)
-        ).map((name) => (
-          <Field
-            key={name}
-            containerClassName={
-              !teacher && name !== "employee_id" ? "col-span-full" : ""
-            }
-            className="bg-[#f9f9f9]"
-            label={
-              {
-                first_name: teacher ? "First Name" : "Full Name",
-                last_name: "Last Name (optional)",
-                username: "Username",
-                email: "Email",
-                employee_id: "Employee ID",
-              }[name]
-            }
-            value={values[name]}
-            type={name === "email" ? "email" : "text"}
-            required={name === "first_name" || name === "email"}
-            onChange={(e) => change({ ...values, [name]: e.target.value })}
-          />
-        ))}
-        <Select
-          label="Class Name / Section"
-          floating={false}
-          className={`bg-[#f9f9f9] ${values.section_id ? "" : "[&_button>span]:text-[#aaa]"}`}
-          value={values.section_id}
-          onChange={(e) => {
-            if (e.target.value === "ADD_NEW") onSection();
-            else change({ ...values, section_id: e.target.value });
-          }}
-        >
-          <option value="">Select a Section</option>
-          {sections.map((section) => (
-            <option key={section.section_id} value={section.section_id}>
-              {section.section_name}
-            </option>
+          if (!teacher && !passwordValid(password)) {
+            setError(
+              "Use at least 8 characters, uppercase, lowercase, and a number. Maximum 72 UTF-8 bytes.",
+            );
+            return;
+          }
+          const incumbent = incumbentSection(
+            sections,
+            values.section_id,
+            teacher?.teacher_id,
+          );
+          if (incumbent) setHandover(incumbent);
+          else void submit();
+        }}
+      >
+        <Notice tone="error">{error}</Notice>
+        <div className="mt-4 grid grid-cols-1 gap-4 legacy-sm:grid-cols-2">
+          {(teacher
+            ? ([
+                "first_name",
+                "last_name",
+                "username",
+                "email",
+                "employee_id",
+              ] as const)
+            : (["first_name", "email", "employee_id"] as const)
+          ).map((name) => (
+            <Field
+              key={name}
+              captionLabel
+              containerClassName={
+                !teacher && name !== "employee_id" ? "col-span-full" : ""
+              }
+              className="bg-[#f9f9f9]"
+              label={
+                {
+                  first_name: teacher ? "First Name" : "Full Name",
+                  last_name: "Last Name (optional)",
+                  username: "Username",
+                  email: "Email",
+                  employee_id: "Employee ID",
+                }[name]
+              }
+              value={values[name]}
+              type={name === "email" ? "email" : "text"}
+              required={name !== "last_name"}
+              disabled={busy}
+              maxLength={
+                name === "first_name" || name === "last_name"
+                  ? 100
+                  : name === "email" && teacher
+                    ? 100
+                    : 50
+              }
+              onChange={(e) => change({ ...values, [name]: e.target.value })}
+            />
           ))}
-          <option value="ADD_NEW">+ Add New Section</option>
-        </Select>
-        {!teacher && (
-          <Field
-            containerClassName="col-span-full"
-            className="bg-[#f9f9f9]"
-            label="Password"
-            type="password"
-            autoComplete="new-password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-          />
-        )}
-      </div>
-      {!teacher && password && <PasswordRules value={password} />}
-      <div className="flex justify-center gap-2 pt-6 pb-1">
-        <Button variant="text" className="mr-4 text-[#777]" onClick={onCancel}>
-          Cancel
-        </Button>
-        <Button
-          type="submit"
-          className="px-8"
-          disabled={busy}
-        >
-          {busy ? "Saving..." : teacher ? "Save Changes" : "Save"}
-        </Button>
-      </div>
-    </form>
+          <Select
+            label="Class Name / Section"
+            captionLabel
+            floating={false}
+            className={`bg-[#f9f9f9] ${values.section_id ? "" : "[&_button>span]:text-[#aaa]"}`}
+            value={values.section_id}
+            disabled={busy}
+            optionAction={(value, closeMenu) => {
+              const section = sections.find(
+                (item) => String(item.section_id) === value,
+              );
+              return section ? (
+                <IconButton
+                  small
+                  aria-label={`Delete section ${section.section_name}`}
+                  className="mr-4 p-0.5! text-[#d32f2f]"
+                  onMouseDown={(event) => event.stopPropagation()}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onDeleteSection(section);
+                    closeMenu();
+                  }}
+                >
+                  <Icon name="Delete" className="size-5" />
+                </IconButton>
+              ) : null;
+            }}
+            onChange={(e) => {
+              if (e.target.value === "ADD_NEW") onSection();
+              else change({ ...values, section_id: e.target.value });
+            }}
+          >
+            <option value="" disabled>
+              Select a Section
+            </option>
+            {sections.map((section) => (
+              <option key={section.section_id} value={section.section_id}>
+                {section.section_name}
+              </option>
+            ))}
+            <option value="ADD_NEW">+ Add New Section</option>
+          </Select>
+          {!teacher && (
+            <Field
+              containerClassName="col-span-full"
+              className="bg-[#f9f9f9]"
+              label="Password"
+              captionLabel
+              type="password"
+              autoComplete="new-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              disabled={busy}
+            />
+          )}
+        </div>
+        {!teacher && password && <PasswordRules value={password} />}
+      </form>
+      {handover && (
+        <SectionHandover
+          section={handover}
+          busy={busy}
+          onCancel={() => setHandover(null)}
+          onConfirm={() => void submit()}
+        />
+      )}
+    </>
   );
 }
 function SectionForm({
-  teachers,
   onSaved,
+  onBusyChange,
 }: {
-  teachers: Teacher[];
-  onSaved: () => void;
+  onSaved: (sectionName: string) => void;
+  onBusyChange: (busy: boolean) => void;
 }) {
-  const { values, change, save } = useDurableForm("section_new", {
+  const { values, change, save, key } = useDurableForm("section_new", {
     section_name: "",
-    teacher_id: "",
   });
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const submitting = useRef(false);
+  useEffect(() => {
+    const synced = (event: Event) => {
+      if ((event as CustomEvent<string>).detail === key)
+        onSaved(values.section_name.trim());
+    };
+    window.addEventListener("ames-record-synced", synced);
+    return () => window.removeEventListener("ames-record-synced", synced);
+  }, [key, values.section_name, onSaved]);
   return (
     <form
-      className="space-y-5"
+      id="chairman-section-form"
+      className="pt-2"
       onSubmit={async (e) => {
         e.preventDefault();
+        if (submitting.current) return;
+        if (!values.section_name.trim()) {
+          setError("Section Identifier is required.");
+          return;
+        }
+        submitting.current = true;
         setBusy(true);
+        onBusyChange(true);
+        setError("");
         try {
-          const result = await save("/api/chairman/sections", "post", {
-            section_name: values.section_name,
-            teacher_id: values.teacher_id ? Number(values.teacher_id) : null,
-          });
-          if (result === "saved") onSaved();
+          const payload: SectionCreatePayload = {
+            section_name: values.section_name.trim(),
+          };
+          const result = await save("/api/chairman/sections", "post", payload);
+          if (result === "saved") onSaved(payload.section_name);
           else setError("Saved for reconnection.");
         } catch (err) {
           setError(errorMessage(err));
         } finally {
+          submitting.current = false;
           setBusy(false);
+          onBusyChange(false);
         }
       }}
     >
       <Notice tone="error">{error}</Notice>
       <Field
-        label="Section name"
+        label="Section Identifier (e.g. A, B, Mabini)"
+        captionLabel
+        placeholder="Enter Identifier"
+        className="bg-[#f9f9f9]"
+        disabled={busy}
         maxLength={50}
         value={values.section_name}
         onChange={(e) => change({ ...values, section_name: e.target.value })}
         required
       />
-      <Select
-        label="Primary Adviser (optional)"
-        value={values.teacher_id}
-        onChange={(e) => change({ ...values, teacher_id: e.target.value })}
-      >
-        <option value="">Unassigned</option>
-        {teachers
-          .filter((t) => t.is_active)
-          .map((t) => (
-            <option key={t.teacher_id} value={t.teacher_id}>
-              {t.first_name} {t.last_name}
-            </option>
-          ))}
-      </Select>
-      <Button disabled={busy} type="submit">
-        Create section
-      </Button>
     </form>
   );
 }
@@ -228,16 +436,20 @@ function ManageAccess({
   teacher,
   sections,
   onSaved,
+  onBusyChange,
 }: {
   teacher: Teacher;
   sections: Section[];
   onSaved: () => void;
+  onBusyChange: (busy: boolean) => void;
 }) {
   const { values, change, save } = useDurableForm(
     `teacher_assignment_${teacher.teacher_id}`,
     {
       section_id: String(teacher.section_id || ""),
-      role: "Primary Adviser",
+      role: (teacher.role === "Substitute"
+        ? "Substitute"
+        : "Primary Adviser") as AssignmentRole,
     },
   );
   const permissionForm = useDurableForm(
@@ -247,6 +459,41 @@ function ManageAccess({
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
+  const submitting = useRef(false);
+  const [handover, setHandover] = useState<Section | null>(null);
+  const assign = async () => {
+    if (submitting.current || !values.section_id) return;
+    submitting.current = true;
+    setBusy(true);
+    onBusyChange(true);
+    setError("");
+    setMessage("");
+    try {
+      const payload: TeacherAssignmentPayload = {
+        teacher_id: teacher.teacher_id,
+        role: values.role,
+      };
+      const result = await save(
+        `/api/chairman/sections/${values.section_id}/assign-teacher`,
+        "post",
+        payload,
+      );
+      setHandover(null);
+      setMessage(
+        result === "saved"
+          ? "Section assignment saved."
+          : "Section assignment saved for reconnection.",
+      );
+      if (result === "saved") onSaved();
+    } catch (err) {
+      setHandover(null);
+      setError(errorMessage(err));
+    } finally {
+      submitting.current = false;
+      setBusy(false);
+      onBusyChange(false);
+    }
+  };
   return (
     <div className="space-y-4">
       <Notice tone="error">{error}</Notice>
@@ -259,6 +506,7 @@ function ManageAccess({
           <Select
             label="Section"
             value={values.section_id}
+            disabled={busy}
             onChange={(e) => change({ ...values, section_id: e.target.value })}
           >
             <option value="">Choose section</option>
@@ -271,7 +519,14 @@ function ManageAccess({
           <Select
             label="Assignment role"
             value={values.role}
-            onChange={(e) => change({ ...values, role: e.target.value })}
+            disabled={busy}
+            onChange={(e) => {
+              if (
+                e.target.value === "Primary Adviser" ||
+                e.target.value === "Substitute"
+              )
+                change({ ...values, role: e.target.value });
+            }}
           >
             <option>Primary Adviser</option>
             <option>Substitute</option>
@@ -283,23 +538,17 @@ function ManageAccess({
           </Notice>
           <Button
             disabled={busy || !values.section_id}
-            onClick={async () => {
-              setBusy(true);
-              try {
-                const result = await save(
-                  `/api/chairman/sections/${values.section_id}/assign-teacher`,
-                  "post",
-                  { teacher_id: teacher.teacher_id, role: values.role },
-                );
-                if (result === "saved") {
-                  setMessage("Section assignment saved.");
-                  onSaved();
-                } else setMessage("Section assignment saved for reconnection.");
-              } catch (err) {
-                setError(errorMessage(err));
-              } finally {
-                setBusy(false);
-              }
+            onClick={() => {
+              const incumbent =
+                values.role === "Primary Adviser"
+                  ? incumbentSection(
+                      sections,
+                      values.section_id,
+                      teacher.teacher_id,
+                    )
+                  : undefined;
+              if (incumbent) setHandover(incumbent);
+              else void assign();
             }}
           >
             Assign teacher
@@ -308,16 +557,8 @@ function ManageAccess({
       </details>
       <div>
         <h3 className="mb-2 text-sm font-bold">System Permissions</h3>
-        <label className="flex items-center justify-between gap-4 rounded-lg border border-[#e0e0e0] p-4 text-sm">
-          <input
-            type="checkbox"
-            className="peer order-2 size-5 shrink-0 accent-[#4543c0]"
-            checked={permissionForm.values.permission}
-            onChange={(e) =>
-              permissionForm.change({ permission: e.target.checked })
-            }
-          />
-          <span>
+        <div className="flex items-center justify-between rounded-lg border border-[#e0e0e0] bg-white p-4 text-sm">
+          <span className="pr-4">
             <span className="block text-base font-semibold">
               Enable ECCD Question Management
             </span>
@@ -326,37 +567,54 @@ function ManageAccess({
               ECCD questions and developmental domains.
             </span>
           </span>
-        </label>
-        <Button
-          className="mt-4"
-          disabled={busy}
-          onClick={async () => {
-            setBusy(true);
-            try {
-              const result = await permissionForm.save(
-                `/api/chairman/teachers/${teacher.teacher_id}/permissions`,
-                "put",
-                {
-                  allow_eccd_question_management:
-                    permissionForm.values.permission,
-                },
-              );
-              setMessage(
-                result === "saved"
-                  ? "Question access saved. The teacher can refresh their session to see it."
-                  : "Saved for reconnection.",
-              );
-              if (result === "saved") onSaved();
-            } catch (err) {
-              setError(errorMessage(err));
-            } finally {
-              setBusy(false);
-            }
-          }}
-        >
-          Save question access
-        </Button>
+          <Switch
+            aria-label="Enable ECCD Question Management"
+            checked={permissionForm.values.permission}
+            disabled={busy}
+            onChange={async (event) => {
+              if (submitting.current) return;
+              submitting.current = true;
+              const next = { permission: event.target.checked };
+              permissionForm.change(next);
+              setBusy(true);
+              onBusyChange(true);
+              setError("");
+              setMessage("");
+              try {
+                const payload: TeacherPermissionPayload = {
+                  allow_eccd_question_management: next.permission,
+                };
+                const result = await permissionForm.save(
+                  `/api/chairman/teachers/${teacher.teacher_id}/permissions`,
+                  "put",
+                  payload,
+                  next,
+                );
+                setMessage(
+                  result === "saved"
+                    ? `ECCD Question Management permission ${next.permission ? "enabled" : "disabled"} successfully.`
+                    : "Saved for reconnection.",
+                );
+                if (result === "saved") onSaved();
+              } catch (err) {
+                setError(errorMessage(err));
+              } finally {
+                submitting.current = false;
+                setBusy(false);
+                onBusyChange(false);
+              }
+            }}
+          />
+        </div>
       </div>
+      {handover && (
+        <SectionHandover
+          section={handover}
+          busy={busy}
+          onCancel={() => setHandover(null)}
+          onConfirm={() => void assign()}
+        />
+      )}
     </div>
   );
 }
@@ -372,6 +630,11 @@ export default function TeachersWorkspace() {
   const [form, setForm] = useState<Teacher | "new" | null>(null);
   const [access, setAccess] = useState<Teacher | null>(null);
   const [sectionOpen, setSectionOpen] = useState(false);
+  const [formBusy, setFormBusy] = useState(false);
+  const [sectionBusy, setSectionBusy] = useState(false);
+  const [accessBusy, setAccessBusy] = useState(false);
+  const [createdSectionName, setCreatedSectionName] = useState("");
+  const confirmationSubmitting = useRef(false);
   const [confirmation, setConfirmation] = useState<{
     title: string;
     text: string;
@@ -390,6 +653,12 @@ export default function TeachersWorkspace() {
       setTeachers(rows.data);
       if (!archived) setActiveTeachers(rows.data);
       setSections(secs.data);
+      setAccess((current) =>
+        current
+          ? rows.data.find((item) => item.teacher_id === current.teacher_id) ||
+            current
+          : null,
+      );
     } catch (err) {
       setError(errorMessage(err));
     }
@@ -414,14 +683,16 @@ export default function TeachersWorkspace() {
     }
   };
   const teacherTable = (rows: Teacher[], archive = false) => (
-    <div className={`overflow-x-auto rounded-[4px] bg-white ${archive ? "" : "border border-[#e0e0e0]"}`}>
-      <table className="w-full min-w-[650px]">
+    <div
+      className={`overflow-x-auto rounded-[4px] bg-white ${archive ? "" : "border border-[#e0e0e0]"}`}
+    >
+      <table className="w-full">
         <thead className="bg-[#f9f9f9]">
           <tr>
             {["Teacher Name", "Class Name", "Email", "Action"].map((label) => (
               <th
                 key={label}
-                className={`font-bold! ${label === "Action" ? "text-right!" : ""}`}
+                className={`whitespace-normal! font-bold! ${label === "Action" ? "text-right!" : ""}`}
               >
                 {label}
               </th>
@@ -437,7 +708,7 @@ export default function TeachersWorkspace() {
               <td>{t.class_name || t.section_name}</td>
               <td>{t.email}</td>
               <td className="text-right">
-                <div className="flex items-center justify-end whitespace-nowrap">
+                <div className="text-right">
                   {!archive && (
                     <>
                       <Button
@@ -453,7 +724,10 @@ export default function TeachersWorkspace() {
                         title="Edit Teacher"
                         aria-label={`Edit ${t.first_name}`}
                         className="text-[#4543c0]"
-                        onClick={() => setForm(t)}
+                        onClick={() => {
+                          setCreatedSectionName("");
+                          setForm(t);
+                        }}
                       >
                         <Icon name="Edit" />
                       </IconButton>
@@ -498,7 +772,10 @@ export default function TeachersWorkspace() {
           ))}
           {!rows.length && (
             <tr>
-              <td colSpan={4} className={`${archive ? "py-8!" : "py-6!"} text-center text-[#777]`}>
+              <td
+                colSpan={4}
+                className={`${archive ? "py-8!" : "py-6!"} text-center text-[#777]`}
+              >
                 No {archive ? "archived" : "active"} teachers found.
               </td>
             </tr>
@@ -512,7 +789,7 @@ export default function TeachersWorkspace() {
       <h1 className="mb-8 text-[34px] font-bold leading-[1.235]">
         Teacher's Account Management
       </h1>
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
+      <div className="mb-6 flex items-center justify-between">
         <h2 className="text-xl font-semibold leading-[1.6]">
           Registered Teachers{" "}
           <span className="rounded-[4px] bg-[#eee] px-2 text-sm font-normal leading-[1.43]">
@@ -529,7 +806,10 @@ export default function TeachersWorkspace() {
           </Button>
           <Button
             startIcon={<Icon name="Add" />}
-            onClick={() => setForm("new")}
+            onClick={() => {
+              setCreatedSectionName("");
+              setForm("new");
+            }}
           >
             Add New Teacher
           </Button>
@@ -635,11 +915,46 @@ export default function TeachersWorkspace() {
         <Modal
           title={form === "new" ? "New Teacher" : "Edit Teacher"}
           titleClassName="justify-center [&_h2]:font-bold"
+          locked={formBusy || sectionOpen || !!confirmation}
+          footerClassName="justify-center! p-6"
+          footer={
+            <>
+              <Button
+                variant="text"
+                className="mr-4 px-2! text-[#777]"
+                disabled={formBusy}
+                onClick={() => setForm(null)}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                form="chairman-teacher-form"
+                className="px-8!"
+                disabled={formBusy}
+              >
+                {form === "new" ? "Save" : "Save Changes"}
+              </Button>
+            </>
+          }
           onClose={() => setForm(null)}
         >
           <TeacherForm
-            onCancel={() => setForm(null)}
+            key={form === "new" ? "new" : form.user_id}
             onSection={() => setSectionOpen(true)}
+            onDeleteSection={(section) => {
+              setError("");
+              setConfirmation({
+                title: "Delete section?",
+                text: "Transfer all students out of this section first. The server will reject deletion while any students remain assigned.",
+                path: `/api/chairman/sections/${section.section_id}`,
+                method: "delete",
+              });
+            }}
+            onBusyChange={setFormBusy}
+            createdSection={sections.find(
+              (section) => section.section_name === createdSectionName,
+            )}
             teacher={form === "new" ? undefined : form}
             sections={sections}
             onSaved={() => {
@@ -654,12 +969,35 @@ export default function TeachersWorkspace() {
         <Modal
           title="Create New Section"
           titleClassName="[&_h2]:font-bold"
-          bodyClassName="border-y border-black/12 pt-5"
+          bodyClassName="border-y border-black/12 pt-4 pb-4!"
+          locked={sectionBusy}
+          footerClassName="p-4"
+          footer={
+            <>
+              <Button
+                variant="text"
+                className="px-2! font-bold text-[#777]"
+                disabled={sectionBusy}
+                onClick={() => setSectionOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                form="chairman-section-form"
+                className="font-bold"
+                disabled={sectionBusy}
+              >
+                Create Section
+              </Button>
+            </>
+          }
           onClose={() => setSectionOpen(false)}
         >
           <SectionForm
-            teachers={teachers}
-            onSaved={() => {
+            onBusyChange={setSectionBusy}
+            onSaved={(sectionName) => {
+              setCreatedSectionName(sectionName);
               setSectionOpen(false);
               void refresh();
             }}
@@ -679,8 +1017,14 @@ export default function TeachersWorkspace() {
           }
           className="rounded-xl"
           bodyClassName="border-y border-black/12 py-5"
+          locked={accessBusy}
+          footerClassName="p-4"
           footer={
-            <Button className="px-6" onClick={() => setAccess(null)}>
+            <Button
+              className="px-6!"
+              disabled={accessBusy}
+              onClick={() => setAccess(null)}
+            >
               Done
             </Button>
           }
@@ -702,6 +1046,8 @@ export default function TeachersWorkspace() {
             Manage Sections
           </Button>
           <ManageAccess
+            key={access.teacher_id}
+            onBusyChange={setAccessBusy}
             teacher={access}
             sections={sections}
             onSaved={() => void refresh()}
@@ -709,14 +1055,31 @@ export default function TeachersWorkspace() {
         </Modal>
       )}
       {confirmation && (
-        <Modal title={confirmation.title} onClose={() => setConfirmation(null)}>
+        <Modal
+          title={confirmation.title}
+          locked={busy}
+          onClose={() => setConfirmation(null)}
+          footer={
+            <Button
+              variant="text"
+              className="px-2!"
+              disabled={busy}
+              onClick={() => setConfirmation(null)}
+            >
+              Cancel
+            </Button>
+          }
+        >
           <p className="text-sm text-slate-600">{confirmation.text}</p>
           <Notice tone="error">{error}</Notice>
           <Button
             variant="danger"
             disabled={busy}
             onClick={async () => {
+              if (confirmationSubmitting.current) return;
+              confirmationSubmitting.current = true;
               setBusy(true);
+              setError("");
               try {
                 await API.request({
                   url: confirmation.path,
@@ -729,6 +1092,7 @@ export default function TeachersWorkspace() {
               } catch (err) {
                 setError(errorMessage(err));
               } finally {
+                confirmationSubmitting.current = false;
                 setBusy(false);
               }
             }}
