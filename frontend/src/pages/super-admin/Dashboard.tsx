@@ -1,4 +1,4 @@
-// Visual source: legacy pages/chairman/Dashboard.jsx (cards, filters and charts).
+// Visual source: AMES-SYSTEM/frontend/src/pages/chairman/Dashboard.jsx.
 import { useEffect, useState } from "react";
 import {
   Cell,
@@ -27,6 +27,20 @@ interface Stats {
   stats: Record<string, string>;
   functionalMastery?: { kaya: number; dikaya: number };
 }
+interface Selection {
+  section: string;
+  domain: string;
+  period: string;
+  schoolYear: string;
+}
+interface DomainPerformance {
+  name: string;
+  percentage: number;
+}
+interface RequestState {
+  loading: boolean;
+  error: string;
+}
 export default function Dashboard() {
   const { settings } = useSettings();
   const [filters, setFilters] = useState<Filters>({
@@ -34,7 +48,7 @@ export default function Dashboard() {
     domains: [],
     schoolYears: [],
   });
-  const [selection, setSelection] = useState({
+  const [selection, setSelection] = useState<Selection>({
     section: "All",
     domain: "All",
     period: "All",
@@ -42,64 +56,117 @@ export default function Dashboard() {
   });
   const [stats, setStats] = useState<Stats | null>(null);
   const [pie, setPie] = useState<Slice[]>([]);
-  const [performance, setPerformance] = useState<
-    { name: string; percentage: number }[]
-  >([]);
-  const [error, setError] = useState("");
+  const [performance, setPerformance] = useState<DomainPerformance[]>([]);
+  const [filterRequest, setFilterRequest] = useState<RequestState>({
+    loading: true,
+    error: "",
+  });
+  const [statsRequest, setStatsRequest] = useState<RequestState>({
+    loading: true,
+    error: "",
+  });
+  const [pieRequest, setPieRequest] = useState<RequestState>({
+    loading: true,
+    error: "",
+  });
+  const [performanceRequest, setPerformanceRequest] = useState<RequestState>({
+    loading: true,
+    error: "",
+  });
+  const { section, domain, period, schoolYear } = selection;
   useEffect(() => {
+    let current = true;
     void API.get<Filters>("/api/analytics/filters")
-      .then((res) => setFilters(res.data))
-      .catch((err) => setError(errorMessage(err)));
+      .then((res) => {
+        if (current) {
+          setFilters(res.data);
+          setFilterRequest({ loading: false, error: "" });
+        }
+      })
+      .catch((err: unknown) => {
+        if (current)
+          setFilterRequest({ loading: false, error: errorMessage(err) });
+      });
+    return () => {
+      current = false;
+    };
   }, []);
   useEffect(() => {
     let current = true;
+    setStatsRequest({ loading: true, error: "" });
+    void API.get<Stats>("/api/analytics/stats", {
+      params: { section, schoolYear },
+    })
+      .then((res) => {
+        if (current) {
+          setStats(res.data);
+          setStatsRequest({ loading: false, error: "" });
+        }
+      })
+      .catch((err: unknown) => {
+        if (current)
+          setStatsRequest({ loading: false, error: errorMessage(err) });
+      });
+    return () => {
+      current = false;
+    };
+  }, [section, schoolYear]);
+  useEffect(() => {
+    let current = true;
+    setPieRequest({ loading: true, error: "" });
+    void API.get<Slice[]>("/api/analytics/pie-data", {
+      params: { section, domain, period, schoolYear },
+    })
+      .then((res) => {
+        if (current) {
+          setPie(res.data);
+          setPieRequest({ loading: false, error: "" });
+        }
+      })
+      .catch((err: unknown) => {
+        if (current)
+          setPieRequest({ loading: false, error: errorMessage(err) });
+      });
+    return () => {
+      current = false;
+    };
+  }, [section, domain, period, schoolYear]);
+  useEffect(() => {
+    let current = true;
+    setPerformanceRequest({ loading: filters.domains.length > 0, error: "" });
     const load = async () => {
       try {
-        const [s, p, domains] = await Promise.all([
-          API.get<Stats>("/api/analytics/stats", { params: selection }),
-          API.get<Slice[]>("/api/analytics/pie-data", { params: selection }),
-          Promise.all(
-            filters.domains.map(async (domain) => {
-              const data = (
-                await API.get<Slice[]>("/api/analytics/pie-data", {
-                  params: { ...selection, domain },
-                })
-              ).data;
-              const sum = data.reduce((total, item) => total + item.value, 0);
-              return {
-                name: domain.replace(" Domain", ""),
-                percentage: sum
-                  ? Math.round(
-                      ((data.find((row) => row.name === "KAYA")?.value || 0) *
-                        100) /
-                        sum,
-                    )
-                  : 0,
-              };
-            }),
-          ),
-        ]);
+        const domains = await Promise.all(
+          filters.domains.map(async (domain) => {
+            const data = (
+              await API.get<Slice[]>("/api/analytics/pie-data", {
+                params: { section, period, schoolYear, domain },
+              })
+            ).data;
+            const kaya = data.find((row) => row.name === "KAYA")?.value || 0;
+            const dikaya =
+              data.find((row) => row.name === "DI-KAYA")?.value || 0;
+            const sum = kaya + dikaya;
+            return {
+              name: domain.replace(" Domain", ""),
+              percentage: sum ? Math.round((kaya * 100) / sum) : 0,
+            };
+          }),
+        );
         if (current) {
-          setStats(s.data);
-          setPie(p.data);
           setPerformance(domains.sort((a, b) => b.percentage - a.percentage));
-          setError("");
+          setPerformanceRequest({ loading: false, error: "" });
         }
       } catch (err) {
-        if (current) setError(errorMessage(err));
+        if (current)
+          setPerformanceRequest({ loading: false, error: errorMessage(err) });
       }
     };
     void load();
     return () => {
       current = false;
     };
-  }, [
-    selection.section,
-    selection.period,
-    selection.schoolYear,
-    selection.domain,
-    filters.domains,
-  ]);
+  }, [section, period, schoolYear, filters.domains]);
   const s = stats?.stats || {};
   const hasData =
     Number(s.totalStudents) > 0 &&
@@ -163,18 +230,24 @@ export default function Dashboard() {
           </div>
         </div>
       </div>
-      <Notice tone="error">{error}</Notice>
-      <div className="mt-2 mb-8 grid gap-6 legacy-sm:grid-cols-2 legacy-md:grid-cols-4">
+      <Notice tone="error">
+        {statsRequest.error && `Statistics: ${statsRequest.error}`}
+      </Notice>
+      <div
+        aria-label="Summary statistics"
+        aria-busy={statsRequest.loading}
+        className="mt-2 mb-8 grid gap-6 legacy-sm:grid-cols-2 legacy-md:grid-cols-4"
+      >
         {cards.map((card) => (
           <section
             key={card.title}
-            className="flex h-full flex-col justify-center rounded-2xl bg-white shadow-[0_4px_20px_rgba(0,0,0,.03)]"
+            className="flex h-full flex-col justify-center overflow-hidden rounded-2xl bg-white shadow-[0_4px_20px_rgba(0,0,0,.03)]"
           >
-            <div className="flex items-center p-6">
+            <div className="flex items-center p-6 legacy-md:max-legacy-lg:flex-col legacy-md:max-legacy-lg:items-start legacy-md:max-legacy-lg:gap-4">
               <div className={`mr-4 flex shrink-0 rounded-xl p-3 ${card.bg}`}>
                 {card.icon}
               </div>
-              <div>
+              <div className="min-w-0 max-w-full [overflow-wrap:anywhere]">
                 <p className="text-xs font-bold leading-[1.2] text-[#6b7280]">
                   {card.title}
                 </p>
@@ -193,13 +266,26 @@ export default function Dashboard() {
           </section>
         ))}
       </div>
-      <div className="grid gap-6 legacy-md:grid-cols-3">
-        <section className="flex min-w-0 flex-col rounded-2xl bg-white p-6 shadow-[0_4px_20px_rgba(0,0,0,.03)] legacy-md:col-span-2">
+      <div className="grid gap-6 legacy-md:grid-cols-12">
+        <section
+          aria-labelledby="chairman-progress-title"
+          aria-busy={pieRequest.loading}
+          className="flex min-w-0 flex-col overflow-hidden rounded-2xl bg-white p-6 shadow-[0_4px_20px_rgba(0,0,0,.03)] legacy-md:col-span-8"
+        >
           <div className="mb-6">
-            <h2 className="mb-4 text-xl font-bold leading-[1.6] text-[#1f2937]">
+            <h2
+              id="chairman-progress-title"
+              className="mb-4 text-xl font-bold leading-[1.6] text-[#1f2937]"
+            >
               ECCD Progress Overview
             </h2>
-            <div className="flex flex-nowrap gap-4 overflow-x-auto py-2">
+            <Notice tone="error">
+              {filterRequest.error && `Filters: ${filterRequest.error}`}
+            </Notice>
+            <div
+              aria-busy={filterRequest.loading}
+              className="flex flex-nowrap gap-4 overflow-x-auto py-2"
+            >
               {(["schoolYear", "section", "domain", "period"] as const).map(
                 (key) => (
                   <Select
@@ -243,6 +329,9 @@ export default function Dashboard() {
               )}
             </div>
           </div>
+          <Notice tone="error">
+            {pieRequest.error && `ECCD progress: ${pieRequest.error}`}
+          </Notice>
           <div className="flex min-h-[300px] grow items-center justify-center">
             {pie.reduce((sum, item) => sum + item.value, 0) > 0 ? (
               <ResponsiveContainer
@@ -271,6 +360,10 @@ export default function Dashboard() {
                   <Legend verticalAlign="bottom" height={36} />
                 </PieChart>
               </ResponsiveContainer>
+            ) : pieRequest.loading ? (
+              <p role="status" className="text-sm text-[#777]">
+                Loading ECCD progress...
+              </p>
             ) : (
               <div className="flex h-full flex-col items-center justify-center opacity-60">
                 <Icon
@@ -287,15 +380,28 @@ export default function Dashboard() {
             )}
           </div>
         </section>
-        <section className="flex min-w-0 flex-col rounded-2xl bg-white p-6 shadow-[0_4px_20px_rgba(0,0,0,.03)]">
+        <section
+          aria-labelledby="chairman-performance-title"
+          aria-busy={performanceRequest.loading}
+          className="flex min-w-0 flex-col overflow-hidden rounded-2xl bg-white p-6 shadow-[0_4px_20px_rgba(0,0,0,.03)] legacy-md:col-span-4"
+        >
           <div className="mb-6">
-            <h2 className="text-xl font-bold leading-[1.6]">
+            <h2
+              id="chairman-performance-title"
+              className="text-xl font-bold leading-[1.6]"
+            >
               Domain Performance Breakdown
             </h2>
             <span className="text-xs font-bold leading-[1.66] tracking-[.5px] text-[#3b82f6] uppercase">
-              {selection.section === "All" ? "Showing: All Sections" : `Showing: Section ${selection.section}`}
+              {selection.section === "All"
+                ? "Showing: All Sections"
+                : `Showing: Section ${selection.section}`}
             </span>
           </div>
+          <Notice tone="error">
+            {performanceRequest.error &&
+              `Domain performance: ${performanceRequest.error}`}
+          </Notice>
           <div className="flex grow flex-col gap-6 overflow-y-auto">
             {performance.length ? (
               performance.map((domain) => (
@@ -306,21 +412,28 @@ export default function Dashboard() {
                   </div>
                   <div
                     role="progressbar"
+                    aria-label={domain.name}
                     aria-valuenow={domain.percentage}
                     aria-valuemin={0}
                     aria-valuemax={100}
-                    className="h-2.5 overflow-hidden rounded-[20px] bg-[#f3f4f6]"
+                    className="relative z-0 block h-2.5 overflow-hidden rounded-[20px] bg-[#f3f4f6]"
                   >
                     <div
-                      className="h-full bg-[#3b82f6] transition-[width] duration-400"
-                      style={{ width: `${domain.percentage}%` }}
+                      className="absolute inset-y-0 left-0 w-full origin-left bg-[#3b82f6] transition-transform duration-400 ease-linear"
+                      style={{
+                        transform: `translateX(${domain.percentage - 100}%)`,
+                      }}
                     />
                   </div>
                 </div>
               ))
             ) : (
               <p className="mt-8 text-center text-sm leading-[1.43] text-[#777]">
-                Loading domain data...
+                {performanceRequest.loading || filterRequest.loading
+                  ? "Loading domain data..."
+                  : performanceRequest.error || filterRequest.error
+                    ? "Domain data is unavailable."
+                    : "No domain data available."}
               </p>
             )}
           </div>
