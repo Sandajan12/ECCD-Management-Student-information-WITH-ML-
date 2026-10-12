@@ -1,26 +1,29 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "../../context/AuthContext";
+import { useTeacher } from "../../context/TeacherContext";
 import API, { downloadFile, errorMessage } from "../../services/api";
-import type { DomainProgress, Period, Student } from "../../types";
+import type { DomainProgress, Student } from "../../types";
 import { studentName } from "../../types";
-import {
-  Checklist,
-  PeriodTabs,
-} from "../../components/eccd/AssessmentChecklist";
 import { useAssessment } from "../../hooks/useAssessment";
-import {
-  Button,
-  Empty,
-  Loading,
-  Notice,
-  PageHeader,
-  Progress,
-  Select,
-} from "../../components/ui";
+import TeacherChecklist from "../../components/teacher/TeacherChecklist";
+import TeacherDialog from "../../components/teacher/TeacherDialog";
+import TeacherSkeleton from "../../components/teacher/TeacherSkeleton";
+import { Button, Empty, Notice, PageHeader, Select } from "../../components/ui";
 
+interface ClassDomain extends DomainProgress {
+  questions: {
+    question_id: number;
+    question_text: string;
+    sequence_order: number;
+  }[];
+}
 export default function EccdAssessment() {
   const { user } = useAuth();
+  const { section } = useTeacher();
   const rosterKey = `ames_roster_${user?.id}`;
+  const studentKey = `ames_assessment_student_${user?.id}`;
+  const domainKey = `ames_teacher_domain_${user?.id}`;
+  const domainCacheKey = `ames_teacher_domains_${user?.id}`;
   const [students, setStudents] = useState<Student[]>(() => {
     try {
       return JSON.parse(localStorage.getItem(rosterKey) || "[]") as Student[];
@@ -28,162 +31,318 @@ export default function EccdAssessment() {
       return [];
     }
   });
-  const [id, setId] = useState(
-    Number(localStorage.getItem(`ames_assessment_student_${user?.id}`)) || 0,
+  const [id, setId] = useState<number>(
+    () => Number(localStorage.getItem(studentKey)) || 0,
   );
-  const [period, setPeriod] = useState<Period>("PRE");
-  const [domainId, setDomainId] = useState(0);
-  const [classProgress, setClassProgress] = useState<DomainProgress[]>([]);
-  const [downloadError, setDownloadError] = useState("");
-  const [downloadBusy, setDownloadBusy] = useState(false);
-  const { data, error, loading, refresh } = useAssessment(id, false);
+  const [domainId, setDomainId] = useState<number>(
+    () => Number(localStorage.getItem(domainKey)) || 0,
+  );
+  const [domains, setDomains] = useState<ClassDomain[]>(() => {
+    try {
+      return JSON.parse(
+        localStorage.getItem(domainCacheKey) || "[]",
+      ) as ClassDomain[];
+    } catch {
+      return [];
+    }
+  });
+  const selectDomain = (id: number) => {
+    setDomainId(id);
+    localStorage.setItem(domainKey, String(id));
+  };
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string>("");
+  const [busy, setBusy] = useState<boolean>(false);
+  const [downloadBusy, setDownloadBusy] = useState<boolean>(false);
+  const [menu, setMenu] = useState<boolean>(false);
+  const [downloadOpen, setDownloadOpen] = useState<boolean>(false);
+  const [downloadId, setDownloadId] = useState<number>(0);
+  const [online, setOnline] = useState<boolean>(navigator.onLine);
+  const downloadLock = useRef<boolean>(false);
+  const version = useRef<number>(0);
+  const selectedStudents = students.filter(
+    (s) => !section || s.section_id === section.section_id,
+  );
+  const activeId = selectedStudents.some((s) => s.student_id === id) ? id : 0;
+  const {
+    data,
+    error: assessmentError,
+    loading: assessmentLoading,
+    refresh,
+  } = useAssessment(activeId, false);
+  const load = useCallback(async () => {
+    const request = ++version.current;
+    const results = await Promise.allSettled([
+      API.get<Student[]>("/api/eccd/students"),
+      API.get<ClassDomain[]>("/api/eccd/domains-progress"),
+    ]);
+    if (request !== version.current) return;
+    const failures: string[] = [];
+    const roster = results[0];
+    if (roster.status === "fulfilled") {
+      setStudents(roster.value.data);
+      localStorage.setItem(rosterKey, JSON.stringify(roster.value.data));
+    } else failures.push(errorMessage(roster.reason));
+    const progress = results[1];
+    if (progress.status === "fulfilled") {
+      setDomains(progress.value.data);
+      localStorage.setItem(domainCacheKey, JSON.stringify(progress.value.data));
+    } else failures.push(errorMessage(progress.reason));
+    setError(failures.join(" "));
+    setLoading(false);
+  }, [rosterKey, domainCacheKey]);
   useEffect(() => {
-    void API.get<Student[]>("/api/eccd/students")
-      .then((res) => {
-        setStudents(res.data);
-        localStorage.setItem(rosterKey, JSON.stringify(res.data));
-        setId((current) =>
-          res.data.some((s) => s.student_id === current)
-            ? current
-            : res.data[0]?.student_id || 0,
-        );
-      })
-      .catch((err) => setDownloadError(errorMessage(err)));
-    void API.get<DomainProgress[]>("/api/eccd/domains-progress")
-      .then((res) => setClassProgress(res.data))
-      .catch(() => {});
-  }, [rosterKey]);
-  const domain =
-    data?.domains.find((d) => d.domain_id === domainId) || data?.domains[0];
-  const download = async (all = false) => {
+    void load();
+    const updated = () => void load();
+    const connected = () => {
+      setOnline(true);
+      void load();
+    };
+    const disconnected = () => setOnline(false);
+    window.addEventListener("ames-record-synced", updated);
+    window.addEventListener("online", connected);
+    window.addEventListener("offline", disconnected);
+    return () => {
+      ++version.current;
+      window.removeEventListener("ames-record-synced", updated);
+      window.removeEventListener("online", connected);
+      window.removeEventListener("offline", disconnected);
+    };
+  }, [load]);
+  const download = async (target?: number) => {
+    if (downloadLock.current) return;
+    downloadLock.current = true;
     setDownloadBusy(true);
+    setError("");
     try {
       await downloadFile(
-        all ? "/api/teachers/download-all" : `/api/teachers/download/${id}`,
-        all ? "ECCD_Checklists.zip" : "ECCD_Checklist.xlsx",
+        target
+          ? `/api/teachers/download/${target}`
+          : "/api/teachers/download-all",
+        target ? "ECCD_Checklist.xlsx" : "ECCD_Checklists.zip",
       );
+      setDownloadOpen(false);
     } catch (err) {
-      setDownloadError(errorMessage(err));
+      setError(errorMessage(err));
     } finally {
+      downloadLock.current = false;
       setDownloadBusy(false);
     }
   };
+  const domain = data?.domains.find((d) => d.domain_id === domainId);
   return (
-    <>
+    <div className="mx-auto w-full max-w-7xl space-y-6 pb-6">
       <PageHeader
-        title="ECCD Assessments"
-        subtitle="Record developmental milestones across the three testing periods."
+        title="ECCD Assessment"
+        subtitle="Evaluate and monitor student progress across ECCD domains."
         actions={
           <>
-            <Button
-              variant="secondary"
-              disabled={!id || downloadBusy}
-              onClick={() => void download()}
+            <span
+              className={`self-center rounded-full px-3 py-2 text-xs font-bold ${online ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}
             >
-              Download checklist
-            </Button>
-            <Button
-              variant="secondary"
-              disabled={downloadBusy}
-              onClick={() => void download(true)}
-            >
-              Download all
-            </Button>
+              {online ? "Online" : "Offline"}
+            </span>
+            <div className="relative">
+              <Button
+                aria-expanded={menu}
+                disabled={downloadBusy}
+                onClick={() => setMenu(!menu)}
+              >
+                {downloadBusy ? "Downloading…" : "Download Records"}
+              </Button>
+              {menu && (
+                <div className="absolute right-0 z-20 mt-2 w-max max-w-[80vw] rounded-xl bg-white p-2 shadow-lg">
+                  <Button
+                    className="w-full"
+                    variant="secondary"
+                    onClick={() => {
+                      setMenu(false);
+                      setDownloadId(activeId);
+                      setDownloadOpen(true);
+                    }}
+                  >
+                    Download Single Student
+                  </Button>
+                  <Button
+                    className="mt-2 w-full"
+                    variant="secondary"
+                    onClick={() => {
+                      setMenu(false);
+                      void download();
+                    }}
+                  >
+                    Download All Students (ZIP)
+                  </Button>
+                </div>
+              )}
+            </div>
           </>
         }
       />
-      <div className="mb-5 space-y-3">
-        <Notice tone="error">{error || downloadError}</Notice>
-      </div>
-      <div className="card mb-6">
-        <div className="grid items-end gap-5 md:grid-cols-2">
-          <Select
-            label="Select student"
-            value={id || ""}
-            onChange={(e) => {
-              const next = Number(e.target.value);
-              localStorage.setItem(
-                `ames_assessment_student_${user?.id}`,
-                String(next),
-              );
-              setId(next);
-            }}
+      <Notice tone="error">{error || assessmentError}</Notice>
+      {!domainId && (
+        <>
+          <p className="text-xs text-slate-500">
+            Completion rates cover all assigned sections. Select a domain to
+            assess a student in the active section.
+          </p>
+          {loading ? (
+            <TeacherSkeleton cards={4} />
+          ) : !domains.length ? (
+            <Empty>No assessment domains found.</Empty>
+          ) : (
+            <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+              {domains.map((item, index) => (
+                <section
+                  key={item.domain_id}
+                  className="card flex flex-col gap-4"
+                >
+                  <div className="flex items-start gap-3">
+                    <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-blue-50 text-lg font-extrabold text-blue-600">
+                      {index + 1}
+                    </span>
+                    <div>
+                      <h2 className="text-lg font-bold">{item.domain_name}</h2>
+                      <p className="mt-1 text-xs text-slate-500">
+                        {item.questions.length} Indicators Checklist
+                      </p>
+                    </div>
+                  </div>
+                  <div className="space-y-3 border-t border-slate-100 pt-4">
+                    {(
+                      ["pre_progress", "mid_progress", "post_progress"] as const
+                    ).map((key, index) => (
+                      <div key={key}>
+                        <div className="mb-1 flex justify-between text-xs">
+                          <span>
+                            {["Pre-Test", "Mid-Test", "Post-Test"][index]}
+                          </span>
+                          <strong>{item[key] ?? 0}%</strong>
+                        </div>
+                        <progress
+                          aria-label={`${item.domain_name} ${key}`}
+                          max={100}
+                          value={item[key] ?? 0}
+                          className={`h-2 w-full ${index === 0 ? "accent-blue-500" : index === 1 ? "accent-amber-500" : "accent-emerald-500"}`}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                  <Button
+                    className="mt-auto w-full"
+                    onClick={() => selectDomain(item.domain_id)}
+                  >
+                    Assess Domain
+                  </Button>
+                </section>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+      {!!domainId && (
+        <>
+          <Button
+            variant="secondary"
+            disabled={busy}
+            onClick={() => selectDomain(0)}
           >
-            {!students.length && (
-              <option value="">No students available</option>
-            )}
+            ← Back to Domains
+          </Button>
+          <div className="card grid gap-4 legacy-sm:grid-cols-2">
+            <Select
+              label="Select Student to Assess"
+              value={activeId || ""}
+              disabled={busy}
+              onChange={(e) => {
+                const next = Number(e.target.value);
+                setId(next);
+                localStorage.setItem(studentKey, String(next));
+              }}
+            >
+              <option value="">Select Student to Assess</option>
+              {selectedStudents.map((s) => (
+                <option key={s.student_id} value={s.student_id}>
+                  {studentName(s)} ({s.masked_lrn})
+                </option>
+              ))}
+            </Select>
+            <Select
+              label="Development Domain"
+              value={domainId}
+              disabled={busy}
+              onChange={(e) => selectDomain(Number(e.target.value))}
+            >
+              {domains.map((d) => (
+                <option key={d.domain_id} value={d.domain_id}>
+                  {d.domain_name}
+                </option>
+              ))}
+            </Select>
+          </div>
+          {!activeId ? (
+            <Empty>
+              Please select a student from the dropdown above to begin
+              assessment.
+            </Empty>
+          ) : assessmentLoading && !data ? (
+            <TeacherSkeleton cards={4} />
+          ) : data && domain ? (
+            <TeacherChecklist
+              key={`${activeId}_${domainId}`}
+              data={data}
+              domain={domain}
+              onBusy={setBusy}
+              onSaved={() => {
+                void refresh();
+                void load();
+              }}
+            />
+          ) : (
+            <Empty>
+              Assessment data could not be loaded. Your saved drafts remain
+              available.
+            </Empty>
+          )}
+        </>
+      )}
+      {downloadOpen && (
+        <TeacherDialog
+          title="Select Student to Download"
+          locked={downloadBusy}
+          onClose={() => setDownloadOpen(false)}
+        >
+          <Select
+            label="Select Student"
+            value={downloadId || ""}
+            disabled={downloadBusy}
+            onChange={(e) => setDownloadId(Number(e.target.value))}
+          >
+            <option value="">Select student</option>
             {students.map((s) => (
               <option key={s.student_id} value={s.student_id}>
-                {studentName(s)} • {s.masked_lrn}
+                {studentName(s)} ({s.masked_lrn})
               </option>
             ))}
           </Select>
-          <PeriodTabs period={period} select={setPeriod} />
-        </div>
-      </div>
-      {loading && !data ? (
-        <Loading />
-      ) : !data ? (
-        <Empty>Add a student to start an assessment.</Empty>
-      ) : (
-        <div className="grid gap-6 xl:grid-cols-[1fr_3fr]">
-          <aside className="card space-y-2">
-            <h2 className="mb-4 text-sm font-semibold uppercase tracking-wider text-slate-500">
-              Development domains
-            </h2>
-            {data.domains.map((d) => (
-              <button
-                key={d.domain_id}
-                className={`w-full rounded-xl p-3 text-left text-sm ${domain?.domain_id === d.domain_id ? "bg-blue-50 font-semibold text-blue-700" : "hover:bg-slate-50"}`}
-                onClick={() => setDomainId(d.domain_id)}
-              >
-                {d.domain_name}
-                <span className="mt-2 block">
-                  <Progress
-                    value={Math.round(
-                      (d.questions.filter((q) => !!q.answers?.[period]).length /
-                        Math.max(1, d.questions.length)) *
-                        100,
-                    )}
-                  />
-                </span>
-              </button>
-            ))}
-          </aside>
-          <section className="card">
-            {domain && (
-              <Checklist
-                key={`${id}_${period}_${domain.domain_id}`}
-                data={data}
-                domain={domain}
-                period={period}
-                onSaved={() => void refresh()}
-              />
-            )}
-          </section>
-        </div>
-      )}
-      {classProgress.length > 0 && (
-        <section className="card mt-6">
-          <h2 className="mb-4 font-semibold">Class assessment completion</h2>
-          <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
-            {classProgress.map((d) => (
-              <div key={d.domain_id}>
-                <p className="mb-2 text-sm">{d.domain_name}</p>
-                <Progress
-                  value={
-                    period === "PRE"
-                      ? d.pre_progress
-                      : period === "MID"
-                        ? d.mid_progress
-                        : d.post_progress
-                  }
-                />
-              </div>
-            ))}
+          <Notice tone="error">{error}</Notice>
+          <div className="flex justify-end gap-3">
+            <Button
+              variant="secondary"
+              disabled={downloadBusy}
+              onClick={() => setDownloadOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              disabled={!downloadId || downloadBusy}
+              onClick={() => void download(downloadId)}
+            >
+              {downloadBusy ? "Downloading…" : "Download"}
+            </Button>
           </div>
-        </section>
+        </TeacherDialog>
       )}
-    </>
+    </div>
   );
 }

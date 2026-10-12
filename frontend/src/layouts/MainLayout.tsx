@@ -8,13 +8,17 @@ import SyncStatus from "../components/SyncStatus";
 import LegacyRipple from "../components/LegacyRipple";
 import LegacyIcon from "../components/LegacyIcon";
 import type { LegacyIconName } from "../components/LegacyIcon";
+import type { ReactNode } from "react";
 interface NavItem {
   title: string;
   path: string;
   icon: LegacyIconName;
 }
+interface MainLayoutProps {
+  children?: ReactNode;
+}
 // Legacy visual source: components/MainLayout.jsx, MUI md = 900px.
-export default function MainLayout() {
+export default function MainLayout({ children }: MainLayoutProps) {
   const { user, token, login, logout } = useAuth();
   const { settings } = useSettings();
   const [open, setOpen] = useState(false);
@@ -81,7 +85,8 @@ export default function MainLayout() {
             mounted &&
             (user.allow_eccd_question_management !==
               data.allow_eccd_question_management ||
-              user.section_id !== data.section_id)
+              user.section_id !== data.section_id ||
+              user.section_name !== data.section_name)
           )
             login({
               success: true,
@@ -190,7 +195,7 @@ export default function MainLayout() {
         .catch(() => {});
     };
     refresh();
-    const timer = setInterval(refresh, 15000);
+    const timer = setInterval(refresh, role === "admin" ? 3000 : 15000);
     window.addEventListener("ames-messages-read", refresh);
     return () => {
       mounted = false;
@@ -317,7 +322,7 @@ export default function MainLayout() {
           className={`min-w-0 flex-1 overflow-x-hidden overflow-y-auto bg-[#f9fafb] p-3 legacy-sm:p-4 legacy-md:ml-64 legacy-md:h-screen legacy-md:p-6 ${role === "user" ? "pb-[4.75rem] legacy-sm:pb-[4.75rem] legacy-md:pb-6" : "pb-4 legacy-md:pb-6"}`}
         >
           <SyncStatus />
-          <Outlet />
+          {children || <Outlet />}
         </main>
       </div>
       {role === "user" && (

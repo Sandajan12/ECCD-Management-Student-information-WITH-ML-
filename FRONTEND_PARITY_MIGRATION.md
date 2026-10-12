@@ -5,9 +5,9 @@ Audit date: **2026-10-12** (Asia/Shanghai). Last document update: **2026-10-13**
 Audit baseline commit: `374b1668270482d947424a301add63de06efe5c7`.
 The audited working tree also contained the pre-existing deletion of `AMES-SYSTEM-LEGACY` and the untracked `AMES-SYSTEM/` reference directory. The commit alone therefore does not capture the complete audited reference.
 
-Current position: **Plan 1: Completed / Passed — compilation-only acceptance gate, 2026-10-13.** Steps 1–7 and findings G01–G15 are signed off for the user's requested source/tracker and build verification scope. Application TypeScript, full frontend lint and production build all exit 0. No browser or screenshot suite was run for this gate. Earlier batch evidence is retained; unperformed interactive, screenshot and live-backend checks are not claimed as passed. Teacher and Parent portal migration remain deferred.
+Current position: **Plan 2: Teacher shell, dashboard, roster/profile, assessments and settings implemented, verification pending — 2026-10-13.** Source parity review and application TypeScript/production build passed for the five user-authorized objectives. Rendered and interactive parity remain unverified; no browser, screenshot, lint or backend tests were run in this Teacher batch. Plan 1 retains its prior Completed / Passed compilation-only sign-off. Parent migration and shared chat presentation remain deferred.
 
-Directory milestone: **Role-Based Directory Refactoring & Workspace Unbundling completed, 2026-10-13.** All role routes import direct implementations under `pages/chairman/`, `pages/teacher/`, and `pages/parent/`. Re-export shims and deprecated workspace modules are removed. Shared assessment controls and child-selection components live under `components/eccd/` and `components/parent/`; data hooks live under `hooks/`. `pnpm tsc --noEmit -p tsconfig.app.json` and `pnpm build` both exit 0 (the build retains its non-blocking bundle-size warning). No browser or screenshot checks were run; Plan 2 has not begun.
+Directory milestone: **Role-Based Directory Refactoring & Workspace Unbundling completed, 2026-10-13.** All role routes import direct implementations under `pages/chairman/`, `pages/teacher/`, and `pages/parent/`. Re-export shims and deprecated workspace modules are removed. Shared parent assessment controls and child-selection components live under `components/eccd/` and `components/parent/`; Teacher presentation now lives under `components/teacher/`, with the landing page at `pages/teacher/TeacherDashboard.tsx`. Data hooks remain under `hooks/`. The compilation/build milestone and subsequent Plan 2 evidence are recorded separately below.
 
 This is the single progress document for the three role-based frontend parity batches. Resume using the [progress tracker and source-update instructions](#progress-tracker-and-source-update-instructions) at the bottom.
 
@@ -19,6 +19,7 @@ The original audit was read-only. No application source files were modified.
 
 - Current application: `frontend/`.
 - Available legacy reference: [AMES-SYSTEM/frontend](AMES-SYSTEM/frontend). `legacy/`, `_legacy_reference/`, and `AMES-SYSTEM-LEGACY/` were absent at audit time.
+- Teacher implementation reference on 2026-10-13: the available [AMES-SYSTEM-LEGACY/frontend](AMES-SYSTEM-LEGACY/frontend), including `components/MainLayout.jsx` and the four `pages/teacher/*.jsx` screens. `AMES-SYSTEM/frontend/` is absent in this checkout. Both reference paths and the complete backend remain strictly read-only. Historical audit paths above describe that earlier checkout.
 - The active UI uses React, TypeScript, and Tailwind 4. The reference combines MUI, its theme, and Tailwind 3.
 - At audit time, visual tests imported the missing `AMES-SYSTEM-LEGACY/`. Batch 1 corrected the harness to `AMES-SYSTEM/frontend/` and verified ECCD reference rendering.
 - At audit time, `pnpm.cmd` and installed frontend dependencies were unavailable. Batch 1 restored the pinned tool through Corepack, dependencies, and Chromium. Current verification evidence appears in the tracker below; baseline findings remain a historical source audit.
@@ -58,7 +59,7 @@ These are the findings at the audit baseline. Stable finding IDs connect this an
 | G25 | Routes and guards | Chairman URLs remain `/chairman/*`; parent overview alias; shared public/protected guards | Chairman URLs redirect to `/super-admin/*`; public redirects live within auth pages | Chairman access works through aliases, but URL behavior differs. `/parent/overview` alias is missing. |
 | G26 | Application feedback | Shared `RequestFeedback` and `ErrorBoundary` | No equivalent wrappers in `App.tsx` | Shared error/feedback behavior needs inventory and restoration where applicable. |
 
-Primary evidence: [Teacher management](frontend/src/pages/chairman/TeacherManagement.tsx), [Chairman questions](frontend/src/pages/chairman/EccdQuestionsManagement.tsx), [Chairman settings](frontend/src/pages/chairman/SystemSettings.tsx), and [Teacher dashboard](frontend/src/pages/teacher/Dashboard.tsx). Source line numbers can change; recheck the code before resolving a finding.
+Primary evidence: [Teacher management](frontend/src/pages/chairman/TeacherManagement.tsx), [Chairman questions](frontend/src/pages/chairman/EccdQuestionsManagement.tsx), [Chairman settings](frontend/src/pages/chairman/SystemSettings.tsx), and [Teacher dashboard](frontend/src/pages/teacher/TeacherDashboard.tsx). Source line numbers can change; recheck the code before resolving a finding.
 
 ### Responsive parity requires two breakpoint systems
 
@@ -80,7 +81,7 @@ Paths in this inventory are relative to the respective frontend `src/` directori
 | | `pages/chairman/SystemAuditLog.jsx` -> `pages/chairman/SystemAuditLog.tsx` | Search; timestamp/name/action table; action-details dialog. |
 | | `pages/chairman/EccdQuestionsManagement.jsx` -> `pages/chairman/EccdQuestionsManagement.tsx` | Domain cards; question table; domain/question editors; home-based toggle; deletion confirmation; loading/error states. |
 | | `pages/chairman/SystemSettings.jsx` -> `pages/chairman/SystemSettings.tsx` | Identity/logo/theme; account/password criteria/OTP; encrypted export/restore; opening month; rollover/revert confirmations. |
-| **Plan 2: Teacher** | `pages/teacher/TeacherDashboard.jsx` -> `pages/teacher/Dashboard.tsx` | Class/year header; statistic cards; development filters/chart; unread-message panel. |
+| **Plan 2: Teacher** | `pages/teacher/TeacherDashboard.jsx` -> `pages/teacher/TeacherDashboard.tsx` | Class/year header; statistic cards; development filters/chart; unread-message panel. |
 | | `pages/teacher/StudentManagement.jsx` -> `pages/teacher/StudentManagement.tsx` | Avatar roster; enrollment; profile/family editing; archives; notifications; workbook import and row-error feedback. |
 | | `pages/teacher/EccdAssessment.jsx` -> `pages/teacher/EccdAssessment.tsx` | Domain overview; student selection; three-period matrix; evaluation dates/ages; cascade presentation; sticky save controls; exports. |
 | | `pages/teacher/TeacherSettings.jsx` -> `pages/teacher/TeacherSettings.tsx` | Four view switches, two edit switches; password challenge/verification. |
@@ -279,6 +280,44 @@ The original broader acceptance criteria below are retained as historical requir
 - Run functional tests against isolated data; do not exercise restore or rollover against live school records.
 - Record responsive corrections and retained current-runtime extensions explicitly.
 
+## Execution Plan 2: Teacher — authorized source parity batch, 2026-10-13
+
+Implementation plan followed before editing:
+
+1. Preserve the existing protected Teacher URLs and create `TeacherLayout.tsx` around the shared shell. Add breadcrumbs, account identity, assignment-scoped section selection and school-year badges.
+2. Restore Educational Overview, the four icon metrics and the chart/unread-message 8/4 hierarchy at 900px. Keep filters in the chart, with independent error/loading states. Add requested roster-derived boys/girls counts and domain checklist progress without inventing backend metrics.
+3. Restore the avatar roster's Student Name / Age / Parent Guardian / Progress / Action order, legacy age display, two-panel student/family profile and New Student / Archived Students / Import Info Sheet flows.
+4. Restore domain overview cards, Back to Domains, student/domain selection, the PRE/MID/POST indicator matrix, active-period radio controls, KAYA carry-forward into unsaved later periods, assessment dates and sticky save controls. Retain the existing durable-form engine and integer student identifiers.
+5. Restore grouped immediate parent-access switches and account/password criteria/OTP dialog. Preserve the six current permission columns, adviser inheritance, session-only credential drafts and confirmed replacement sessions.
+6. Run only application TypeScript and the production build; record implementation and its verification limits here.
+
+### Plan 2 implementation checklist
+
+- [x] Read current domain context, Teacher legacy components and existing backend contracts without editing the backend/reference.
+- [x] **Batch 1 — shell/dashboard:** dedicated Teacher layout; legacy navigation including Messages and permission-gated ECCD Questions; breadcrumbs/account badge; persisted section context; Educational Overview and chart/feed hierarchy; enrollment and checklist completion widgets.
+- [x] **Roster/profile:** avatars; separate age/guardian/profile-completeness columns; search/year filtering; active-section context; two-panel profile/family form; scoped enrollment/edit drafts; archive/restore/delete confirmations; notifications and downloads; durable workbook import with row errors.
+- [x] **Assessment workflow:** domain progress cards; student and domain controls; three-period matrix; BoY/EoY labels; active-period KAYA/DI-KAYA radios; saved/draft status; carry-forward; strict server-compatible date bounds; local answer counts and display age; sticky save and single/all download flows.
+- [x] **Settings:** account/assignment display; four view and two edit switches grouped as student-record and ECCD permissions; immediate PUT with busy locks and durable retry; password criteria; cancel/resume/resend OTP; server-controlled OTP-disabled flow and replacement session.
+- [x] Application TypeScript and Vite production build passed, without adding dependencies or running browser/screenshot/backend/lint suites.
+- [ ] Rendered/responsive interaction and live-API verification — outside the requested compilation-only verification scope.
+- [ ] Shared chat presentation (G23) and broader Parent/shared follow-up — outside the five authorized objectives.
+
+### Teacher API adaptations and parity limits
+
+| Area | Implemented behavior / retained contract |
+| --- | --- |
+| Backend/reference boundary | Only frontend source and this tracker changed. `services/api.ts`, backend routes/models/schemas/configurations and legacy source are untouched. |
+| Section choices | `/api/sections/` alone returns the whole school. Match it against assignment-scoped `/api/teachers/dashboard-filters` section names; retain Primary Adviser/Substitute assignments. Cache choices and selected ID per signed-in owner and retain them on network failure. |
+| Dashboard metric scope | Existing `/api/teachers/dashboard-stats` metrics and `/api/eccd/domains-progress` completion cover all assigned sections. Explicit labels preserve that scope. `/api/teachers/dashboard-pie` accepts selected section/domain/period; boys/girls counts come from the selected active roster. Checklist progress is per domain, not an invented overall checklist-completion ratio. |
+| Dashboard extensions | Enrollment and Checklist 1/Checklist 2 domain completion widgets are requested additions below the legacy chart/feed. Primary legacy metrics and hierarchy remain present. Loading skeletons are requested additions; the reference initially displays placeholder metrics. |
+| Assessment engine | Retain `useAssessment` and `useDurableForm`; drafts use existing `eccd_draft_<studentId>_<period>_<domainId>_<ownerId>` keys. Only confirmed HTTP 200/201 revisions are evicted; offline saves stay queued. Teacher matrix is separate from the unchanged Parent checklist presentation. Saved later periods and pending later requests are protected from carry-forward. |
+| Assessment dates/scoring | Backend requires strict PRE < MID < POST; date bounds use adjacent saved periods plus birth date. Matrix summaries show actual KAYA/DI-KAYA answer counts and display age. Teacher assessment responses do not include Parent standard/scaled scores; official scoring remains backend-authoritative and accessible in the existing checklist export. |
+| Student profile | Preserve current writable student/family fields, masked LRNs, integer IDs, server-assigned school year and assignment-limited enrollment. The legacy photo picker has no persistence path in the current API; show initials rather than present an upload that cannot be saved. |
+| Access controls | Use only `allow_parent_edit_home_based_eccd` for the home checklist, adapting the legacy field label to the current six-column contract. Failed switches retain their intended draft values with local errors/retry; reconnection uses the existing global synchronization service. |
+| Authentication | Keep current-password verification, backend challenges, expiry/error responses, OTP-disabled response handling, explicit device forgetting and replacement-session login. Cancelling OTP closes the dialog while preserving challenge/code/password inputs; credentials clear only after confirmed success. |
+| Teacher unread badge | Match the legacy three-second refresh for Teachers; retain existing read-event refresh and leave Parent timing unchanged. The broader G24 finding remains open for Parent follow-up. |
+| Responsive scope | Use fluid containers, rounded cards, 600/900px legacy layout boundaries and contained table scrolling. No pixel-equality or tested viewport claim is made. |
+
 ## Progress tracker and source-update instructions
 
 ### Mandatory update rule for future migration work
@@ -300,7 +339,7 @@ The original broader acceptance criteria below are retained as historical requir
 | --- | --- | --- |
 | Audit and strategy | Complete as a source audit; browser verification pending | Original audit preserved in this file. Type check could not run; no screenshot-parity claim. |
 | Plan 1: Chairman | **Completed / Passed** | Final compilation-only gate, 2026-10-13: application typecheck, full lint and production build exit 0; Steps 1–7 and G01–G15 signed off. Earlier Batches 1–3 browser evidence is preserved, not rerun. No new screenshot, interactive restore/rollover or live-backend acceptance claim. Existing chunk-size advisory retained. |
-| Plan 2: Teacher | Deferred | Inventory only; detailed implementation plan and acceptance evidence pending. |
+| Plan 2: Teacher | **Implemented, verification pending** | Five authorized objectives implemented; application TypeScript and production build pass. Source/contract parity reviewed; runtime/rendered verification excluded. Shared chat presentation remains future work. |
 | Plan 3: Parent | Deferred | Inventory only; detailed implementation plan and acceptance evidence pending. |
 
 ### Plan 1 execution checklist
@@ -367,15 +406,15 @@ Allowed statuses: **Open**, **Verification pending**, **Decision pending**, **In
 | G13 ECCD configuration execution | Plan 1 | Verified | Batch 1: no undefined toggle callback; synchronous duplicate-event tests send one PUT/POST; editor locks before await and unlocks on failure. Confirmed saves evict only their scoped draft; 403/reload recovery, disconnected toggle/reconnection, role/permission redirects and domain/question edit/delete refresh pass in desktop/mobile Chromium. |
 | G14 Chairman settings presentation | Plan 1 | Verified | Final compilation-only gate: Batch 5 four-section layout, card-local feedback, appearance extensions and centered confirmation/account OTP definitions reviewed; typecheck, full lint and bundle pass. Existing backup/restore authentication retained; no restore, rollover or screenshot test performed. |
 | G15 Opening month initialization | Plan 1 | Verified | Final compilation-only gate: August default, normalized hydration/load state, stale-response guard, draft-aware month selection and revision-specific confirmation reviewed; typecheck, full lint and bundle pass. No delayed-hydration browser test performed. |
-| G16 Teacher dashboard | Plan 2 | Open | Defer screen rewrite until Chairman acceptance. |
-| G17 Teacher roster/profile | Plan 2 | Open | Defer screen rewrite until Chairman acceptance. |
-| G18 Teacher assessments | Plan 2 | Open | Preserve assessment engine while restoring legacy presentation. |
-| G19 Teacher access settings | Plan 2 | Open | Restore separate view/edit switch groups. |
+| G16 Teacher dashboard | Plan 2 | Implemented, verification pending | Educational Overview, class/year badges, four icon metrics, chart-contained filters and unread-message panel restored. Enrollment and domain checklist widgets added with accurate API scopes; independent loading/errors. Application typecheck/build pass; rendered/live-API checks excluded. |
+| G17 Teacher roster/profile | Plan 2 | Implemented, verification pending | Avatar table, distinct age/guardian/progress columns, two-panel editable profile/family workspace, archive/import/notification flows restored; scoped drafts retained. Application typecheck/build pass; runtime/visual checks excluded. |
+| G18 Teacher assessments | Plan 2 | Implemented, verification pending | Domain overview and three-period matrix restored; carry-forward, strict date bounds, answer counts, sticky save and download dialogs added around existing durable saves. Cached roster/domain/section/period context survives reload/offline use. Application typecheck/build pass; runtime verification excluded. |
+| G19 Teacher access settings | Plan 2 | Implemented, verification pending | Six immediately persisted switches, grouped visibility/edit controls, durable failure/pending retry and password/OTP flow restored. Session replacement and server OTP behavior retained. Application typecheck/build pass; runtime verification excluded. |
 | G20 Parent dashboard | Plan 3 | Open | Restore child header and four-card summary with publication locks. |
 | G21 Parent profile | Plan 3 | Open | Restore profile/family panels with granular permission gates. |
 | G22 Parent assessments | Plan 3 | Open | Compare official matrix and home checklist states. |
 | G23 Messaging responsiveness | Shared / Plans 2-3 | Open | Correct 900/1024px split discrepancy and verify composer/bubbles. |
-| G24 Unread badge timing | Shared / Plans 2-3 | Decision pending | Compare observable refresh behavior before changing transport/polling. |
+| G24 Unread badge timing | Shared / Plans 2-3 | Implemented, verification pending | Teacher sidebar now uses the inspected legacy three-second interval and existing read-event refresh. Parent still uses fifteen seconds; Parent timing and runtime verification remain follow-up work. |
 | G25 Routes and guards | Shared / role batches | Decision pending | Preserve active-runtime requirements; document URL decisions and missing parent alias. |
 | G26 Application feedback | Shared / Plan 1 foundation | Open | Inspect legacy wrappers before restoring equivalent behavior. |
 | G27 Chairman select render-ref lint failure | Shared / Plan 1 Step 2 | Verified | Batch 2 resolves the dialog portal host during the opening event and stores it in state instead of reading a ref during render. Full frontend lint passes. Teacher and ECCD suites (34 + 22 checks) pass after the shared change. |
@@ -385,11 +424,11 @@ Allowed statuses: **Open**, **Verification pending**, **Decision pending**, **In
 | Check | Latest result | Scope or limitation |
 | --- | --- | --- |
 | Current/reference source comparison | Performed, Batches 1/2/3 | Original source audit plus scoped rendered comparisons described below; whole application parity is not proven. |
-| Application TypeScript | Passed, final gate 2026-10-13 | `pnpm.cmd tsc --noEmit -p tsconfig.app.json` from `frontend/`; exit 0, zero TypeScript errors across the application workspace. |
+| Application TypeScript | Passed, Plan 2 Teacher batch 2026-10-13 | `pnpm.cmd tsc --noEmit -p tsconfig.app.json` from `frontend/`; exit 0, zero TypeScript errors across the complete application. |
 | New test/config TypeScript | Passed, Batch 3 | `pnpm.cmd exec tsc --ignoreConfig --noEmit --target ES2023 --module ESNext --moduleResolution Bundler --skipLibCheck --types node tests/dashboard-parity.spec.ts playwright.dashboard.config.ts`. Prior Batch 1/2 test checks remain recorded in their logs. |
 | Changed-file lint | Passed, Batch 4 | Targeted ESLint covers StudentRecords, SystemAuditLog, AuditWorkspace, dateUtils and Snackbar. Full lint evidence remains Batch 3. |
 | Full frontend lint | Passed, final gate 2026-10-13 | `pnpm.cmd lint`; exit 0, no errors or warnings; no lint suppressions added. |
-| Production build | Passed, final gate 2026-10-13 | `pnpm.cmd build`; exit 0, TypeScript project build and Vite 8.3.0 succeed; 731 modules transformed, no missing exports or module/chunk-resolution errors. JS 888.45 kB / 267.05 kB gzip; existing chunk-size advisory remains. |
+| Production build | Passed, Plan 2 Teacher batch 2026-10-13 | `pnpm.cmd build`; exit 0, TypeScript project build and Vite 8.3.0 succeed; 736 modules transformed with no missing exports or module/chunk-resolution errors. JS 917.91 kB / 274.09 kB gzip; existing chunk-size advisory remains. |
 | Student records/audit fast checks | Passed, Batch 4 | Read-only source comparison and current API inspection; six Node assertions cover school-year baseline, month/day boundary, invalid/missing DOB and invalid opening-month fallback. No browser or screenshot checks run; live transfer/export and responsive UI verification pending. |
 | Scoped Chairman visual/functional tests | Passed: 22 tests, Batch 1 | `corepack.cmd pnpm exec playwright test --config playwright.eccd.config.ts`, desktop and mobile Chromium. Direct reference screenshots: desktop domain overview, both add dialogs desktop/mobile. Mobile overview checks structure/heading geometry rather than full-page pixel parity. Eight functional scenarios per project include edit/delete; responsive checks run all ten widths. |
 | Teacher Management component/browser tests | Passed: 34 tests, Batch 2 | `corepack.cmd pnpm exec playwright test --config playwright.teachers.config.ts`. Twelve functional/control scenarios plus five existing/expanded baseline checks per desktop/mobile project. Full overview and New/Edit Teacher/Create New Section screenshots pass zero-difference comparisons at threshold 0.1. Both switch states use isolated control screenshots at identical whole-pixel positions on white backgrounds; modal heights differ due to retained assignment controls. Backend responses are mocked, not PostgreSQL integration tests. |
@@ -440,6 +479,8 @@ Append new entries in chronological order. Each entry should include **date, fil
 
 | 2026-10-13 | **Final Plan 1 completion — Completed / Passed:** documentation-only update to `FRONTEND_PARITY_MIGRATION.md`. Checked off Steps 1–7 for the user-authorized compilation-only gate, marked G01–G15 Verified with source/batch evidence, updated phase/current/next-action fields and recorded acceptance-scope and route decisions. No application source fix or new commit claimed. | Plan 1 Steps 1–7; G01–G15; previous G27 evidence retained. | From `frontend/`: `pnpm.cmd tsc --noEmit -p tsconfig.app.json`, `pnpm.cmd lint` and `pnpm.cmd build` all exit 0. Zero application type errors, lint errors, missing exports or bundle-resolution errors; Vite 8.3.0 transforms 731 modules. Existing 500 kB chunk advisory retained (JS 888.45 kB, gzip 267.05 kB). No screenshot or browser suite run; historical records retained. | Nothing remains for this defined compilation-only gate. Additional rendered, interactive and live-backend coverage is outside the sign-off. Plans 2/3 and shared G25/G26 follow-up remain deferred pending user direction. Legacy/reference files untouched; existing unrelated working-tree edits preserved. |
 
+| 2026-10-13 | **Plan 2 — Teacher shell/dashboard and full five-objective source parity batch:** updated `frontend/src/App.tsx`, `layouts/MainLayout.tsx`, `pages/teacher/StudentManagement.tsx`, `EccdAssessment.tsx` and `TeacherSettings.tsx`; replaced `pages/teacher/Dashboard.tsx` with `TeacherDashboard.tsx`; added `layouts/TeacherLayout.tsx`, `context/TeacherContext.tsx`, `components/teacher/TeacherDialog.tsx`, `TeacherSkeleton.tsx`, `TeacherStudentForm.tsx`, `TeacherChecklist.tsx` and `teacher.css`; updated this tracker. Restored navigation/context, Educational Overview/chart/feed, avatar roster/profile workspace, domain cards/three-period matrix/sticky saves, immediate granular access switches and account challenge dialog. Persisted active section, domain, period, import section options and existing drafts/files; adapted current IDs/permissions/API scopes. | Plan 2 Batch 1 and expanded roster/assessment/settings objectives; G16–G19 Implemented, verification pending; Teacher portion of G24 implemented. | Final `pnpm.cmd tsc --noEmit -p tsconfig.app.json` and `pnpm.cmd build` both exit 0. Vite 8.3.0 transforms 736 modules; JS 917.91 kB / gzip 274.09 kB. No broken imports/chunk references; existing 500 kB advisory retained. Only current changed frontend files formatted. No dependencies, tests or visual harness changes; no browser/screenshot/lint/backend suites run. Read-only contract review and final diff confirm backend, legacy sources, API service and shared draft/file/session hooks unchanged. | Rendered/responsive/live-API verification remains excluded and is not claimed. Shared chat G23, Parent portion of G24, G25/G26 and Plan 3 remain future work. Detailed API adaptations and unsupported photo-persistence limit recorded above. No commit created. Next action: retain this completed source/compilation deliverable and await authorization for additional scope. |
+
 ### Next action
 
-**Plan 1 is Completed / Passed for the requested compilation-only acceptance gate.** No further Plan 1 work is required within that scope. Obtain user direction before starting the detailed Teacher phase; Parent migration remains deferred. Future authorization may include the excluded interactive/rendered checks and shared G25/G26 work, but this sign-off does not imply those checks ran. Preserve the restriction on screenshot/headless browser loops and keep all legacy references read-only.
+**The five authorized Teacher objectives are implemented and pass the requested compilation/build checks.** G16–G19 remain **Implemented, verification pending** for rendered and interactive parity; no additional checks are required for this compilation-only deliverable. Await user direction for shared chat presentation, runtime verification, G25/G26 or Plan 3. Preserve the prohibition on screenshot/headless browser comparison loops and keep backend and both legacy paths read-only.

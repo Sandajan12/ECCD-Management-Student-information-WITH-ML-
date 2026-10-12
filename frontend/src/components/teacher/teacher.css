@@ -1,0 +1,41 @@
+/* Teacher-only presentation, adapted from the read-only MUI reference. */
+.teacher-portal .card {
+  border-radius: 1rem;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.04);
+}
+.teacher-portal .field {
+  background: white;
+  border-radius: 0.75rem;
+}
+.teacher-portal th {
+  background: #fbfbfb;
+  font-weight: 700;
+}
+.teacher-portal td {
+  vertical-align: middle;
+}
+.teacher-portal .teacher-progress {
+  accent-color: #10b981;
+}
+.teacher-dialog {
+  max-height: 90dvh;
+  width: calc(100% - 2rem);
+  border: 0;
+  border-radius: 1rem;
+  padding: 0;
+  margin: auto;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+}
+.teacher-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.5);
+}
+.teacher-dialog .field {
+  background: #fff;
+}
+@media (prefers-reduced-motion: reduce) {
+  .teacher-portal *,
+  .teacher-dialog * {
+    animation: none !important;
+    transition: none !important;
+  }
+}

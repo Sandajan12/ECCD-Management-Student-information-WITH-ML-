@@ -1,386 +1,373 @@
-import { useCallback, useEffect, useState } from "react";
-import { useAuth } from "../../context/AuthContext";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useTeacher } from "../../context/TeacherContext";
+import { useSettings } from "../../context/SettingsContext";
 import { useDurableFile } from "../../utils/fileDrafts";
+import { confirmDraft, readDraft, useDurableForm } from "../../utils/drafts";
+import { calculateRosterAge } from "../../utils/dateUtils";
 import API, { downloadFile, errorMessage } from "../../services/api";
-import type { ImportResult, Section, Student } from "../../types";
+import type { ImportResult, Student } from "../../types";
 import { studentName } from "../../types";
-import StudentForm from "../../components/StudentForm";
-import {
-  Button,
-  Empty,
-  Field,
-  Loading,
-  Modal,
-  Notice,
-  PageHeader,
-  Progress,
-  Select,
-} from "../../components/ui";
-type ConfirmAction = {
+import TeacherStudentForm from "../../components/teacher/TeacherStudentForm";
+import TeacherDialog from "../../components/teacher/TeacherDialog";
+import TeacherSkeleton from "../../components/teacher/TeacherSkeleton";
+import Icon from "../../components/chairman/Icon";
+import { Button, Field, Notice, PageHeader, Select } from "../../components/ui";
+
+interface Confirmation {
   title: string;
   description: string;
-  run: () => Promise<unknown>;
-};
+  action: () => Promise<unknown>;
+  label: string;
+}
+interface ImportOptions {
+  section_id: string;
+}
 export default function StudentManagement() {
-  const { user } = useAuth();
-  const chairman = user?.role === "super-admin";
+  const { section, sections } = useTeacher();
+  const { settings } = useSettings();
   const [students, setStudents] = useState<Student[]>([]);
-  const [sections, setSections] = useState<Section[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [message, setMessage] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [search, setSearch] = useState("");
-  const [section, setSection] = useState("All");
-  const [year, setYear] = useState("All");
-  const [archived, setArchived] = useState(false);
-  const [selected, setSelected] = useState<number[]>([]);
+  const [archivedRows, setArchivedRows] = useState<Student[]>([]);
+  const [archiveOpen, setArchiveOpen] = useState<boolean>(false);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string>("");
+  const [message, setMessage] = useState<string>("");
+  const [busy, setBusy] = useState<boolean>(false);
+  const lock = useRef<boolean>(false);
+  const request = useRef<number>(0);
+  const detailRequest = useRef<number>(0);
+  const [search, setSearch] = useState<string>("");
+  const [year, setYear] = useState<string>("All");
   const [student, setStudent] = useState<Student | null>(null);
-  const [add, setAdd] = useState(false);
-  const [transfer, setTransfer] = useState(false);
-  const [destination, setDestination] = useState("");
-  const [confirm, setConfirm] = useState<ConfirmAction | null>(null);
-  const [importOpen, setImportOpen] = useState(false);
-  const {
-    file,
-    choose: setFile,
-    upload: uploadFile,
-  } = useDurableFile("student_import");
+  const [add, setAdd] = useState<boolean>(false);
+  const [confirm, setConfirm] = useState<Confirmation | null>(null);
+  const [importOpen, setImportOpen] = useState<boolean>(false);
+  const importOptions = useDurableForm<ImportOptions>(
+    "student_import_options",
+    { section_id: "" },
+  );
+  const { file, choose, upload } = useDurableFile("student_import");
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const refresh = useCallback(async () => {
-    try {
-      const [rows, sectionRes] = await Promise.all([
-        API.get<Student[]>(
-          chairman
-            ? "/api/chairman/students"
-            : archived
-              ? "/api/students/archived"
-              : "/api/students/",
-        ),
-        API.get<Section[]>(
-          chairman ? "/api/chairman/sections" : "/api/sections/",
-        ),
-      ]);
-      setStudents(rows.data);
-      setSections(sectionRes.data);
-      setError("");
-    } catch (err) {
-      setError(errorMessage(err));
-    } finally {
-      setLoading(false);
-    }
-  }, [chairman, archived]);
+    const version = ++request.current;
+    setLoading(true);
+    const results = await Promise.allSettled([
+      API.get<Student[]>("/api/students/"),
+      API.get<Student[]>("/api/students/archived"),
+    ]);
+    if (version !== request.current) return;
+    const failures: string[] = [];
+    results.forEach((result, index) => {
+      if (result.status === "fulfilled")
+        (index === 0 ? setStudents : setArchivedRows)(result.value.data);
+      else failures.push(errorMessage(result.reason));
+    });
+    setError(failures.join(" "));
+    setLoading(false);
+  }, []);
   useEffect(() => {
     void refresh();
     const synced = () => void refresh();
     window.addEventListener("ames-record-synced", synced);
-    return () => window.removeEventListener("ames-record-synced", synced);
+    window.addEventListener("online", synced);
+    return () => {
+      ++request.current;
+      ++detailRequest.current;
+      window.removeEventListener("ames-record-synced", synced);
+      window.removeEventListener("online", synced);
+    };
   }, [refresh]);
-  const visible = students.filter(
-    (s) =>
-      s.is_active === !archived &&
-      (section === "All" || String(s.section_id) === section) &&
-      (year === "All" || s.school_year === year) &&
-      `${studentName(s)} ${s.masked_lrn} ${s.parent_names || ""}`
-        .toLowerCase()
-        .includes(search.toLowerCase()),
-  );
-  const years = [
-    ...new Set(
-      students.map((s) => s.school_year).filter((v): v is string => !!v),
-    ),
-  ]
-    .sort()
-    .reverse();
-  const act = async (fn: () => Promise<unknown>, success: string) => {
+  const act = async (action: () => Promise<unknown>, success: string) => {
+    if (lock.current) return false;
+    lock.current = true;
     setBusy(true);
     setError("");
     try {
-      await fn();
+      await action();
       setMessage(success);
       await refresh();
+      return true;
     } catch (err) {
       setError(errorMessage(err));
+      return false;
     } finally {
+      lock.current = false;
       setBusy(false);
     }
   };
   const openStudent = async (id: number) => {
+    const version = ++detailRequest.current;
     try {
-      setStudent((await API.get<Student>(`/api/students/${id}`)).data);
+      const res = await API.get<Student>(`/api/students/${id}`);
+      if (version === detailRequest.current) setStudent(res.data);
     } catch (err) {
-      setError(errorMessage(err));
+      if (version === detailRequest.current) setError(errorMessage(err));
     }
   };
+  const years = [
+    ...new Set(
+      [...students, ...archivedRows]
+        .map((s) => s.school_year)
+        .filter((v): v is string => !!v),
+    ),
+  ]
+    .sort()
+    .reverse();
+  const rows = (archived: boolean) =>
+    (archived ? archivedRows : students).filter(
+      (s) =>
+        (!section || s.section_id === section.section_id) &&
+        (year === "All" || s.school_year === year) &&
+        `${studentName(s)} ${s.masked_lrn} ${s.parent_names || ""}`
+          .toLowerCase()
+          .includes(search.toLowerCase()),
+    );
+  const rosterTable = (archived: boolean) => (
+    <div className="overflow-x-auto rounded-2xl bg-white shadow-sm">
+      <table className="w-full">
+        <thead>
+          <tr>
+            <th>Student Name</th>
+            <th>Age</th>
+            <th>Parent Guardian</th>
+            <th>{archived ? "School Year" : "Progress"}</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows(archived).map((s) => (
+            <tr key={s.student_id} className="hover:bg-slate-50">
+              <td>
+                <button
+                  className="flex items-center gap-3 text-left"
+                  onClick={() => void openStudent(s.student_id)}
+                >
+                  <span className="grid size-10 shrink-0 place-items-center rounded-full bg-slate-50 font-semibold text-slate-500">
+                    {s.first_name?.charAt(0)}
+                    {s.last_name?.charAt(0)}
+                  </span>
+                  <span>
+                    <strong className="uppercase">
+                      {s.last_name}, {s.first_name}{" "}
+                      {s.middle_name ? `${s.middle_name.charAt(0)}.` : ""}
+                    </strong>
+                    <span className="mt-1 block text-xs text-slate-400">
+                      {s.masked_lrn} · {s.section_name}
+                    </span>
+                  </span>
+                </button>
+              </td>
+              <td className="whitespace-nowrap">
+                {s.date_of_birth
+                  ? calculateRosterAge(
+                      s.date_of_birth,
+                      s.school_year || settings.current_school_year,
+                      settings.school_year_start_month,
+                    )
+                  : s.decimal_age !== null
+                    ? `${s.decimal_age} yrs`
+                    : "N/A"}
+              </td>
+              <td className="uppercase">{s.parent_names || "N/A"}</td>
+              <td>
+                {archived ? (
+                  s.school_year || "N/A"
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <progress
+                      className="teacher-progress h-2 min-w-20 flex-1"
+                      aria-label={`${studentName(s)} profile completeness`}
+                      max={100}
+                      value={s.profile_completeness || 0}
+                    />
+                    <span className="text-xs font-bold text-slate-500">
+                      {s.profile_completeness || 0}%
+                    </span>
+                  </div>
+                )}
+              </td>
+              <td>
+                <div className="flex gap-2">
+                  <Button
+                    variant="secondary"
+                    className="rounded-full bg-transparent p-2 text-blue-600"
+                    aria-label={`Edit ${studentName(s)}`}
+                    title="Edit Student"
+                    disabled={busy}
+                    onClick={() => void openStudent(s.student_id)}
+                  >
+                    <Icon name="Edit" />
+                    <span className="sr-only">Edit</span>
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    className="rounded-full bg-transparent p-2 text-amber-600"
+                    aria-label={`${archived ? "Restore" : "Archive"} ${studentName(s)}`}
+                    title={archived ? "Restore Student" : "Archive Student"}
+                    disabled={busy}
+                    onClick={() =>
+                      setConfirm({
+                        title: archived ? "Restore Student" : "Archive Student",
+                        description:
+                          "The student's assessment records will be retained.",
+                        label: archived ? "Restore" : "Archive",
+                        action: () =>
+                          API.put(
+                            `/api/students/${s.student_id}/${archived ? "unarchive" : "archive"}`,
+                          ),
+                      })
+                    }
+                  >
+                    <Icon name={archived ? "Unarchive" : "Archive"} />
+                    <span className="sr-only">
+                      {archived ? "Restore" : "Archive"}
+                    </span>
+                  </Button>
+                  {archived && (
+                    <Button
+                      variant="danger"
+                      className="rounded-full bg-transparent p-2"
+                      aria-label={`Delete ${studentName(s)}`}
+                      title="Delete Student"
+                      disabled={busy}
+                      onClick={() =>
+                        setConfirm({
+                          title: "Delete Student Permanently?",
+                          description:
+                            "This permanently removes this student and their assessment records.",
+                          label: "Delete",
+                          action: () =>
+                            API.delete(`/api/students/${s.student_id}`),
+                        })
+                      }
+                    >
+                      <Icon name="Delete" />
+                      <span className="sr-only">Delete</span>
+                    </Button>
+                  )}
+                </div>
+              </td>
+            </tr>
+          ))}
+          {!rows(archived).length && (
+            <tr>
+              <td colSpan={5} className="py-12 text-center text-slate-500">
+                No {archived ? "archived" : "active"} students found.
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
   return (
-    <>
+    <div className="space-y-5">
       <PageHeader
-        title={chairman ? "Student Records" : "My Students"}
-        subtitle="Manage student details and follow their learning journey."
+        title="Manage Students"
+        subtitle="View and manage detailed students profile."
         actions={
           <>
-            <Button
-              variant="secondary"
-              onClick={() => {
-                setArchived(!archived);
-                setSelected([]);
-              }}
-            >
-              {archived ? "Active students" : "Archived students"}
+            <Button variant="secondary" onClick={() => setArchiveOpen(true)}>
+              View Archive
             </Button>
-            {!chairman && (
-              <Button
-                variant="secondary"
-                onClick={() => {
-                  setImportOpen(true);
-                  setImportResult(null);
-                }}
-              >
-                Import Excel
-              </Button>
-            )}
             <Button
-              disabled={busy}
-              variant="secondary"
-              onClick={() =>
-                void act(
-                  () =>
-                    downloadFile(
-                      chairman
-                        ? `/api/chairman/export-eccd?section=${section}&schoolYear=${year}`
-                        : "/api/teachers/download-all",
-                      "ECCD_Records.zip",
-                    ),
-                  "Download ready.",
-                )
-              }
-            >
-              Download ECCD
-            </Button>
-            <Button onClick={() => setAdd(true)}>+ Add student</Button>
-          </>
-        }
-      />
-      <div className="mb-5 space-y-3">
-        <Notice tone="error">{error}</Notice>
-        <Notice tone="success">{message}</Notice>
-      </div>
-      <div className="card">
-        <div className="mb-5 grid gap-4 sm:grid-cols-3">
-          <Field
-            label="Search students"
-            placeholder="Name, masked LRN, or parent"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-          <Select
-            label="Section"
-            value={section}
-            onChange={(e) => {
-              setSection(e.target.value);
-              setSelected([]);
-            }}
-          >
-            <option value="All">All sections</option>
-            {sections.map((s) => (
-              <option key={s.section_id} value={s.section_id}>
-                {s.section_name}
-              </option>
-            ))}
-          </Select>
-          <Select
-            label="School year"
-            value={year}
-            onChange={(e) => {
-              setYear(e.target.value);
-              setSelected([]);
-            }}
-          >
-            <option>All</option>
-            {years.map((y) => (
-              <option key={y}>{y}</option>
-            ))}
-          </Select>
-        </div>
-        {chairman && selected.length > 0 && (
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl bg-indigo-50 p-4 text-sm text-indigo-800">
-            <span>
-              {selected.length} students selected • Assessment records will be
-              preserved
-            </span>
-            <Button onClick={() => setTransfer(true)}>Transfer students</Button>
-          </div>
-        )}
-        {loading ? (
-          <Loading />
-        ) : !visible.length ? (
-          <Empty>
-            No {archived ? "archived" : "active"} students match these filters.
-          </Empty>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-slate-50">
-                <tr>
-                  {chairman && (
-                    <th>
-                      <input
-                        aria-label="Select all visible students"
-                        type="checkbox"
-                        checked={
-                          visible.length > 0 &&
-                          visible.every((s) => selected.includes(s.student_id))
-                        }
-                        onChange={(e) =>
-                          setSelected(
-                            e.target.checked
-                              ? visible.map((s) => s.student_id)
-                              : [],
-                          )
-                        }
-                      />
-                    </th>
-                  )}
-                  <th>Student</th>
-                  <th>LRN</th>
-                  <th>Section / year</th>
-                  <th>Profile</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {visible.map((s) => (
-                  <tr key={s.student_id} className="hover:bg-slate-50">
-                    {chairman && (
-                      <td>
-                        <input
-                          aria-label={`Select ${studentName(s)}`}
-                          type="checkbox"
-                          checked={selected.includes(s.student_id)}
-                          onChange={(e) =>
-                            setSelected(
-                              e.target.checked
-                                ? [...selected, s.student_id]
-                                : selected.filter((id) => id !== s.student_id),
-                            )
-                          }
-                        />
-                      </td>
-                    )}
-                    <td>
-                      <button
-                        className="text-left font-semibold text-blue-700"
-                        onClick={() => void openStudent(s.student_id)}
-                      >
-                        {studentName(s)}
-                      </button>
-                      <p className="mt-1 text-xs text-slate-500">
-                        {s.gender} • Age {s.decimal_age ?? "—"} •{" "}
-                        {s.parent_names || "No parent account linked"}
-                      </p>
-                    </td>
-                    <td className="whitespace-nowrap text-slate-500">
-                      {s.masked_lrn}
-                    </td>
-                    <td>
-                      {s.section_name}
-                      <p className="text-xs text-slate-500">{s.school_year}</p>
-                    </td>
-                    <td className="min-w-32">
-                      <Progress value={s.profile_completeness} />
-                    </td>
-                    <td>
-                      <div className="flex flex-wrap gap-2">
-                        <Button
-                          variant="secondary"
-                          onClick={() => void openStudent(s.student_id)}
-                        >
-                          Details
-                        </Button>
-                        <Button
-                          variant="secondary"
-                          onClick={() =>
-                            setConfirm({
-                              title: archived
-                                ? "Restore student?"
-                                : "Archive student?",
-                              description:
-                                "Assessment records will be retained.",
-                              run: () =>
-                                API.put(
-                                  `/api/students/${s.student_id}/${archived ? "unarchive" : "archive"}`,
-                                ),
-                            })
-                          }
-                        >
-                          {archived ? "Restore" : "Archive"}
-                        </Button>
-                        {archived && (
-                          <Button
-                            variant="danger"
-                            onClick={() =>
-                              setConfirm({
-                                title: "Permanently delete student?",
-                                description:
-                                  "This removes the student and their assessment records permanently.",
-                                run: () =>
-                                  API.delete(`/api/students/${s.student_id}`),
-                              })
-                            }
-                          >
-                            Delete
-                          </Button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-        {!chairman && !archived && students.length > 0 && (
-          <div className="mt-5">
-            <Button
-              variant="danger"
+              className="bg-amber-600"
+              disabled={busy || !students.length}
               onClick={() =>
                 setConfirm({
-                  title: "Archive all students?",
+                  title: "Archive All Students?",
                   description:
-                    "All active students in your assigned sections will be archived. Their records remain available in Archived students.",
-                  run: () => API.put("/api/students/archive-all"),
+                    "This archives all active students across your assigned sections, including those outside the current filters. Assessment records remain available in View Archive.",
+                  label: "Yes, Archive All",
+                  action: () => API.put("/api/students/archive-all"),
                 })
               }
             >
-              Archive all students
+              Archive All
             </Button>
-          </div>
-        )}
-      </div>
-      {student && (
-        <Modal title="Student Record Details" onClose={() => setStudent(null)}>
-          <div className="flex flex-wrap justify-between gap-3">
-            <span className="badge">
-              {student.section_name} • {student.school_year}
-            </span>
+            <Button disabled={!sections.length} onClick={() => setAdd(true)}>
+              Add Student
+            </Button>
             <Button
-              variant="secondary"
-              onClick={() =>
-                void act(
-                  () =>
-                    downloadFile(
-                      `/api/teachers/download/${student.student_id}`,
-                      "ECCD_Checklist.xlsx",
-                    ),
-                  "Download ready.",
-                )
-              }
+              className="bg-violet-600"
+              onClick={() => {
+                setImportOpen(true);
+                if (!readDraft<ImportOptions>(importOptions.key))
+                  importOptions.change({
+                    section_id: String(section?.section_id || ""),
+                  });
+              }}
             >
-              Download checklist
+              Import Info Sheet
             </Button>
-            {!chairman && (
+          </>
+        }
+      />
+      <Notice tone="error">{error}</Notice>
+      <Notice tone="success">{message}</Notice>
+      <div className="grid gap-4 legacy-sm:grid-cols-2">
+        <Field
+          label="Search Students"
+          placeholder="Name, masked LRN, or guardian"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+        <Select
+          label="School Year"
+          value={year}
+          onChange={(e) => setYear(e.target.value)}
+        >
+          <option>All</option>
+          {years.map((y) => (
+            <option key={y}>{y}</option>
+          ))}
+        </Select>
+      </div>
+      {loading ? <TeacherSkeleton cards={4} /> : rosterTable(false)}
+      {archiveOpen && (
+        <TeacherDialog
+          title="Archived Students"
+          wide
+          onClose={() => setArchiveOpen(false)}
+        >
+          {rosterTable(true)}
+          <Button onClick={() => setArchiveOpen(false)}>Close</Button>
+        </TeacherDialog>
+      )}
+      {student && (
+        <TeacherDialog
+          title="Student Profile"
+          wide
+          locked={busy}
+          onClose={() => {
+            ++detailRequest.current;
+            setStudent(null);
+          }}
+        >
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <span className="badge">
+              {student.section_name} · {student.school_year} ·{" "}
+              {student.is_active ? "Active" : "Archived"}
+            </span>
+            <div className="flex flex-wrap gap-2">
               <Button
                 variant="secondary"
+                disabled={busy}
+                onClick={() =>
+                  void act(
+                    () =>
+                      downloadFile(
+                        `/api/teachers/download/${student.student_id}`,
+                        "ECCD_Checklist.xlsx",
+                      ),
+                    "Download ready.",
+                  )
+                }
+              >
+                Download checklist
+              </Button>
+              <Button
+                variant="secondary"
+                disabled={busy || !student.is_active}
                 onClick={() =>
                   void act(
                     () =>
@@ -391,127 +378,105 @@ export default function StudentManagement() {
                   )
                 }
               >
-                Notify parent
+                Send to Parents
               </Button>
-            )}
+            </div>
           </div>
-          <StudentForm
+          <Notice tone="error">{error}</Notice>
+          <Notice tone="success">{message}</Notice>
+          <TeacherStudentForm
             key={student.student_id}
             student={student}
+            sections={sections}
+            onBusy={setBusy}
+            onCancel={() => setStudent(null)}
             onSaved={() => {
               setStudent(null);
+              setMessage("Student details saved.");
               void refresh();
             }}
           />
-        </Modal>
+        </TeacherDialog>
       )}
       {add && (
-        <Modal title="Add New Student" onClose={() => setAdd(false)}>
-          <StudentForm
+        <TeacherDialog
+          title="New Student"
+          locked={busy}
+          onClose={() => setAdd(false)}
+        >
+          <TeacherStudentForm
             sections={sections}
+            sectionId={section?.section_id}
+            onBusy={setBusy}
+            onCancel={() => setAdd(false)}
             onSaved={() => {
               setAdd(false);
+              setMessage("Student successfully added!");
               void refresh();
             }}
           />
-        </Modal>
-      )}
-      {transfer && (
-        <Modal title="Transfer Students" onClose={() => setTransfer(false)}>
-          <Notice>
-            All existing PRE, MID, and POST evaluation records will be preserved
-            when students move to the new section.
-          </Notice>
-          <Select
-            label="Destination section"
-            value={destination}
-            onChange={(e) => setDestination(e.target.value)}
-          >
-            <option value="">Choose a section</option>
-            {sections.map((s) => (
-              <option key={s.section_id} value={s.section_id}>
-                {s.section_name}
-              </option>
-            ))}
-          </Select>
-          <Button
-            disabled={!destination || busy}
-            onClick={async () => {
-              setBusy(true);
-              try {
-                await API.put("/api/chairman/students/transfer", {
-                  student_ids: selected,
-                  new_section_id: Number(destination),
-                });
-                setSelected([]);
-                setTransfer(false);
-                setMessage(
-                  "Students transferred. All evaluation records preserved.",
-                );
-                await refresh();
-              } catch (err) {
-                setError(errorMessage(err));
-              } finally {
-                setBusy(false);
-              }
-            }}
-          >
-            Confirm transfer
-          </Button>
-          <Notice tone="error">{error}</Notice>
-        </Modal>
+        </TeacherDialog>
       )}
       {confirm && (
-        <Modal title={confirm.title} onClose={() => setConfirm(null)}>
+        <TeacherDialog
+          title={confirm.title}
+          locked={busy}
+          onClose={() => setConfirm(null)}
+        >
           <p className="text-sm text-slate-600">{confirm.description}</p>
           <Notice tone="error">{error}</Notice>
-          <Button
-            disabled={busy}
-            variant="danger"
-            onClick={async () => {
-              setBusy(true);
-              try {
-                await confirm.run();
-                setConfirm(null);
-                setSelected([]);
-                setMessage("Records updated.");
-                await refresh();
-              } catch (err) {
-                setError(errorMessage(err));
-              } finally {
-                setBusy(false);
-              }
-            }}
-          >
-            Confirm
-          </Button>
-        </Modal>
+          <div className="flex justify-end gap-3">
+            <Button
+              variant="secondary"
+              disabled={busy}
+              onClick={() => setConfirm(null)}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              disabled={busy}
+              onClick={async () => {
+                if (await act(confirm.action, "Records updated."))
+                  setConfirm(null);
+              }}
+            >
+              {busy ? "Saving…" : confirm.label}
+            </Button>
+          </div>
+        </TeacherDialog>
       )}
       {importOpen && (
-        <Modal
-          title="Import DepEd Excel Records"
+        <TeacherDialog
+          title="Import Info Sheet"
+          locked={busy}
           onClose={() => setImportOpen(false)}
         >
           <p className="text-sm text-slate-500">
-            Use the official .xlsx checklist with an Info Sheet and the seven
-            domain sheets. Successful rows are saved even when other rows need
-            correction.
+            Use the official .xlsx checklist containing an Info Sheet and the
+            seven domain sheets. Successful rows are saved even when other rows
+            need correction.
           </p>
           <Field
             label="Excel workbook"
             type="file"
             accept=".xlsx"
-            onChange={(e) => setFile(e.target.files?.[0] || null)}
+            disabled={busy}
+            onChange={(e) => {
+              choose(e.target.files?.[0] || null);
+              setImportResult(null);
+            }}
           />
           {file && (
-            <p className="text-sm text-slate-500">
-              Selected workbook: {file.name}
-            </p>
+            <p className="break-words text-sm text-emerald-700">{file.name}</p>
           )}
           <Select
-            label="Import into section"
-            value={destination}
-            onChange={(e) => setDestination(e.target.value)}
+            label="Import into assigned section"
+            value={importOptions.values.section_id}
+            disabled={busy}
+            onChange={(e) =>
+              importOptions.change({ section_id: e.target.value })
+            }
           >
             <option value="">Use assigned section</option>
             {sections.map((s) => (
@@ -521,49 +486,69 @@ export default function StudentManagement() {
             ))}
           </Select>
           <Notice tone="error">{error}</Notice>
+          <Notice tone="success">{message}</Notice>
           {importResult && (
-            <>
-              <Notice tone="success">
-                {importResult.successCount} imported •{" "}
-                {importResult.failedCount} failed
-              </Notice>
+            <div className="space-y-3">
+              <h3 className="font-bold">Import Summary</h3>
+              <p className="text-sm">
+                {importResult.successCount} Successfully Imported ·{" "}
+                {importResult.failedCount} Failed to Import
+              </p>
               <ul className="space-y-2 text-sm text-red-700">
-                {importResult.errors.map((row, i) => (
-                  <li key={i}>
+                {importResult.errors.map((row, index) => (
+                  <li key={index}>
                     Row {row.row}: {row.error}
                   </li>
                 ))}
               </ul>
-            </>
+            </div>
           )}
-          <Button
-            disabled={!file || busy}
-            onClick={async () => {
-              if (!file) return;
-              setBusy(true);
-              setError("");
-              try {
-                const result = await uploadFile<ImportResult>(
-                  "/api/teachers/import-students",
-                  destination ? { section_id: destination } : {},
-                );
-                if (result) setImportResult(result);
-                else
-                  setMessage(
-                    "Workbook saved on this device and queued for reconnection.",
+          <div className="flex justify-end gap-3">
+            <Button
+              variant="secondary"
+              disabled={busy}
+              onClick={() => setImportOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              disabled={!file || busy}
+              onClick={async () => {
+                if (!file || lock.current) return;
+                lock.current = true;
+                setBusy(true);
+                setError("");
+                setMessage("");
+                try {
+                  const snapshot = readDraft<ImportOptions>(importOptions.key);
+                  const result = await upload<ImportResult>(
+                    "/api/teachers/import-students",
+                    importOptions.values.section_id
+                      ? { section_id: importOptions.values.section_id }
+                      : {},
                   );
-                await refresh();
-              } catch (err) {
-                setError(errorMessage(err));
-              } finally {
-                setBusy(false);
-              }
-            }}
-          >
-            {busy ? "Importing…" : "Import workbook"}
-          </Button>
-        </Modal>
+                  if (result) {
+                    setImportResult(result);
+                    if (!result.failedCount && snapshot)
+                      confirmDraft(importOptions.key, snapshot.revision);
+                  } else
+                    setMessage(
+                      "Workbook saved on this device and queued for reconnection.",
+                    );
+                  await refresh();
+                } catch (err) {
+                  setError(errorMessage(err));
+                } finally {
+                  lock.current = false;
+                  setBusy(false);
+                }
+              }}
+            >
+              {busy ? "Importing…" : "Import"}
+            </Button>
+          </div>
+        </TeacherDialog>
       )}
-    </>
+    </div>
   );
 }

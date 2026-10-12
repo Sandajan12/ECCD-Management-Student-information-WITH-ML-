@@ -1,314 +1,472 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useAuth } from "../../context/AuthContext";
+import { useTeacher } from "../../context/TeacherContext";
 import API, { errorMessage } from "../../services/api";
-import { useDurableForm } from "../../utils/drafts";
+import { readDraft, useDurableForm } from "../../utils/drafts";
 import { useSessionField } from "../../utils/sessionDrafts";
 import type { Permissions, SessionResponse } from "../../types";
-import { PERMISSION_LABELS } from "../../types";
 import { Button, Field, Notice, PageHeader } from "../../components/ui";
 import {
   passwordValid,
   PasswordRules,
 } from "../../components/ForceChangePassword";
+import TeacherDialog from "../../components/teacher/TeacherDialog";
+import TeacherSkeleton from "../../components/teacher/TeacherSkeleton";
 
-function AccountSettings({ chairman }: { chairman: boolean }) {
+interface PermissionControl {
+  key: keyof Permissions;
+  title: string;
+  description: string;
+  color: string;
+}
+const profileControls: PermissionControl[] = [
+  {
+    key: "allow_parent_view_student_info",
+    title: "Student Profile Viewing",
+    description: "Allow parents to view student information",
+    color: "#2563eb",
+  },
+  {
+    key: "allow_parent_edit_student_info",
+    title: "Student Profile Editing",
+    description: "Allow parents to update child information",
+    color: "#9333ea",
+  },
+];
+const assessmentControls: PermissionControl[] = [
+  {
+    key: "allow_parent_view_eccd_pre",
+    title: "Pre-Test Scores Visibility",
+    description: "Make Pre-test evaluation results visible",
+    color: "#0288d1",
+  },
+  {
+    key: "allow_parent_view_eccd_mid",
+    title: "Mid-Test Scores Visibility",
+    description: "Make Mid-test evaluation results visible",
+    color: "#ed6c02",
+  },
+  {
+    key: "allow_parent_view_eccd_post",
+    title: "Post-Test Scores Visibility",
+    description: "Make Post-test evaluation results visible",
+    color: "#2e7d32",
+  },
+  {
+    key: "allow_parent_edit_home_based_eccd",
+    title: "Home-Based Checklist Edit",
+    description: "Allow parents to fill out home checklist",
+    color: "#2e7d32",
+  },
+];
+interface ParentAccessProps {
+  initial: Permissions;
+}
+function ParentAccess({ initial }: ParentAccessProps) {
+  const { values, change, save, key } = useDurableForm(
+    "parent_permissions",
+    initial,
+  );
+  const [error, setError] = useState<string>(
+    () => readDraft<Permissions>(key)?.error || "",
+  );
+  const [message, setMessage] = useState<string>("");
+  const [busy, setBusy] = useState<boolean>(false);
+  const lock = useRef<boolean>(false);
+  const persist = async (next: Permissions) => {
+    if (lock.current) return;
+    lock.current = true;
+    setBusy(true);
+    setError("");
+    setMessage("");
+    change(next);
+    try {
+      const result = await save(
+        "/api/teachers/access-controls",
+        "put",
+        next,
+        next,
+      );
+      setMessage(
+        result === "saved"
+          ? "Access controls updated."
+          : "Saved on this device. Pending reconnection.",
+      );
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      lock.current = false;
+      setBusy(false);
+    }
+  };
+  const controls = (items: PermissionControl[]) => (
+    <div className="grid gap-5 legacy-sm:grid-cols-2">
+      {items.map((control) => (
+        <label
+          key={control.key}
+          className="flex items-center justify-between gap-4 rounded-xl bg-slate-50 p-4"
+        >
+          <span>
+            <span className="block text-sm font-bold text-slate-700">
+              {control.title}
+            </span>
+            <span className="mt-1 block text-xs leading-5 text-slate-500">
+              {control.description}
+            </span>
+          </span>
+          <span className="relative inline-flex shrink-0">
+            <input
+              type="checkbox"
+              role="switch"
+              aria-label={control.title}
+              checked={values[control.key]}
+              disabled={busy}
+              onChange={(e) =>
+                void persist({ ...values, [control.key]: e.target.checked })
+              }
+              className="peer sr-only"
+            />
+            <span
+              className="block h-5 w-10 rounded-full bg-slate-300 transition peer-focus-visible:ring-2 peer-focus-visible:ring-blue-500 peer-focus-visible:ring-offset-4 peer-disabled:opacity-50"
+              style={
+                values[control.key]
+                  ? { backgroundColor: control.color }
+                  : undefined
+              }
+            />
+            <span
+              className={`absolute top-0.5 size-4 rounded-full bg-white shadow-sm transition-transform ${values[control.key] ? "translate-x-[1.375rem]" : "translate-x-0.5"}`}
+            />
+          </span>
+        </label>
+      ))}
+    </div>
+  );
+  return (
+    <section className="space-y-4">
+      <div>
+        <h2 className="text-2xl font-extrabold">Global Parent Access</h2>
+        <p className="mt-1 text-sm text-slate-500">
+          Control what information parents can see or change across all your
+          students.
+        </p>
+      </div>
+      <div className="card space-y-5">
+        <Notice tone="error">{error}</Notice>
+        <Notice tone="success">{message}</Notice>
+        <p className="text-xs leading-5 text-slate-500">
+          Students inherit these settings from their active Primary Adviser.
+          Substitute assignments retain the Primary Adviser’s settings.
+        </p>
+        <h3 className="font-bold text-slate-700">Student Record Permissions</h3>
+        {controls(profileControls)}
+        <hr className="border-slate-100" />
+        <h3 className="font-bold text-slate-700">
+          ECCD Assessment Visibility &amp; Editing
+        </h3>
+        {controls(assessmentControls)}
+        {busy && (
+          <p role="status" className="text-xs text-slate-500">
+            Saving access controls…
+          </p>
+        )}
+        {error && (
+          <Button
+            variant="secondary"
+            disabled={busy}
+            onClick={() => void persist(values)}
+          >
+            Retry changes
+          </Button>
+        )}
+      </div>
+    </section>
+  );
+}
+function TeacherAccount() {
   const { user, login, logout } = useAuth();
   const prefix = `ames_account_${user?.id}`;
-  const [current, setCurrent, confirmCurrent] = useSessionField(
+  const [current, setCurrent, confirmCurrent] = useSessionField<string>(
     `${prefix}_current`,
     "",
   );
-  const [email, setEmail, confirmEmail] = useSessionField(
-    `${prefix}_email`,
-    "",
-  );
-  const [password, setPassword, confirmPasswordDraft] = useSessionField(
+  const [password, setPassword, confirmPassword] = useSessionField<string>(
     `${prefix}_password`,
     "",
   );
-  const [confirm, setConfirm, confirmConfirmation] = useSessionField(
-    `${prefix}_confirm`,
-    "",
-  );
-  const [challenge, setChallenge, confirmChallenge] = useSessionField(
+  const [confirmation, setConfirmation, confirmConfirmation] =
+    useSessionField<string>(`${prefix}_confirm`, "");
+  const [challenge, setChallenge, confirmChallenge] = useSessionField<string>(
     `${prefix}_challenge`,
     "",
   );
-  const [otp, setOtp, confirmOtp] = useSessionField(`${prefix}_otp`, "");
-  const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState("");
-  const [error, setError] = useState("");
-  const commit = async (challengeToken?: string) => {
-    const payload = chairman
-      ? {
-          currentPassword: current,
-          ...(email.trim() && { newEmail: email.trim() }),
-          ...(password && { newPassword: password, confirmPassword: confirm }),
-          ...(challengeToken && { challengeToken, otp }),
-        }
-      : {
-          oldPassword: current,
-          newPassword: password,
-          confirmPassword: confirm,
-          ...(challengeToken && { challengeToken, otp }),
-        };
-    const res = chairman
-      ? await API.put<SessionResponse>("/api/chairman/account", payload)
-      : await API.post<SessionResponse>(
-          "/api/teachers/change-password-verify",
-          payload,
-        );
+  const [otp, setOtp, confirmOtp] = useSessionField<string>(
+    `${prefix}_otp`,
+    "",
+  );
+  const [open, setOpen] = useState<boolean>(!!challenge);
+  const [busy, setBusy] = useState<boolean>(false);
+  const [error, setError] = useState<string>("");
+  const [message, setMessage] = useState<string>("");
+  const lock = useRef<boolean>(false);
+  const valid =
+    !!current && passwordValid(password) && password === confirmation;
+  const commit = async (token?: string) => {
+    const res = await API.post<SessionResponse>(
+      "/api/teachers/change-password-verify",
+      {
+        oldPassword: current,
+        newPassword: password,
+        confirmPassword: confirmation,
+        ...(token && { challengeToken: token, otp }),
+      },
+    );
+    if (res.status !== 200 && res.status !== 201)
+      throw new Error("The server did not confirm this update.");
     localStorage.removeItem("ames_device_token");
     login(res.data);
     setCurrent("");
     setPassword("");
-    setConfirm("");
-    setEmail("");
-    setOtp("");
+    setConfirmation("");
     setChallenge("");
+    setOtp("");
     confirmCurrent();
-    confirmEmail();
-    confirmPasswordDraft();
+    confirmPassword();
     confirmConfirmation();
     confirmChallenge();
     confirmOtp();
-    setMessage("Account updated successfully. Your new session is active.");
+    setOpen(false);
+    setMessage("Password successfully updated! Your new session is active.");
+  };
+  const run = async (action: () => Promise<void>) => {
+    if (lock.current) return;
+    lock.current = true;
+    setBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      await action();
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      lock.current = false;
+      setBusy(false);
+    }
+  };
+  const requestChallenge = async () => {
+    const res = await API.post<{ challengeToken?: string; email?: string }>(
+      "/api/teachers/change-password-request",
+      { oldPassword: current },
+    );
+    if (res.data.challengeToken) {
+      setChallenge(res.data.challengeToken);
+      setOpen(true);
+      setMessage("Verification code sent to your email.");
+    } else await commit();
   };
   return (
-    <section className="card">
-      <h2 className="mb-2 text-lg font-semibold">Account security</h2>
-      <p className="mb-5 break-words text-sm text-slate-500">
-        Signed in as {user?.email || user?.username}
-      </p>
-      <form
-        className="space-y-5"
-        onSubmit={async (e) => {
-          e.preventDefault();
-          setBusy(true);
-          setError("");
-          setMessage("");
-          try {
-            if (challenge) await commit(challenge);
-            else if (!chairman || email.trim()) {
-              const res = await API.post<{ challengeToken?: string }>(
-                chairman
-                  ? "/api/auth/send-otp"
-                  : "/api/teachers/change-password-request",
-                chairman
-                  ? { email: email.trim(), currentPassword: current }
-                  : { oldPassword: current },
-              );
-              if (res.data.challengeToken) {
-                setChallenge(res.data.challengeToken);
-                setMessage("A verification code was sent to your email.");
-              } else await commit();
-            } else await commit();
-          } catch (err) {
-            setError(errorMessage(err));
-          } finally {
-            setBusy(false);
-          }
-        }}
-      >
+    <section className="space-y-4">
+      <div>
+        <h2 className="text-2xl font-extrabold">Account Settings</h2>
+        <p className="mt-1 text-sm text-slate-500">
+          Change or update your account password.
+        </p>
+      </div>
+      <div className="card">
         <Notice tone="error">{error}</Notice>
         <Notice tone="success">{message}</Notice>
-        <Field
-          label="Current password"
-          type="password"
-          autoComplete="current-password"
-          required
-          value={current}
-          onChange={(e) => {
-            setCurrent(e.target.value);
-            setChallenge("");
+        <form
+          className="mt-4 grid gap-6 legacy-md:grid-cols-[7fr_5fr]"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (!valid) return;
+            if (challenge) setOpen(true);
+            else void run(requestChallenge);
           }}
-        />
-        {chairman && (
-          <Field
-            label="New email (optional)"
-            type="email"
-            value={email}
-            onChange={(e) => {
-              setEmail(e.target.value);
-              setChallenge("");
-            }}
-          />
-        )}
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Field
-            label={chairman ? "New password (optional)" : "New password"}
-            type="password"
-            autoComplete="new-password"
-            value={password}
-            required={!chairman}
-            onChange={(e) => {
-              setPassword(e.target.value);
-              setChallenge("");
-            }}
-          />
-          <Field
-            label="Confirm new password"
-            type="password"
-            autoComplete="new-password"
-            value={confirm}
-            onChange={(e) => setConfirm(e.target.value)}
-            required={!!password}
-          />
-        </div>
-        <PasswordRules value={password} />
-        {challenge && (
-          <Field
-            label="Email verification code"
-            inputMode="numeric"
-            maxLength={6}
-            pattern="[0-9]{6}"
-            value={otp}
-            onChange={(e) => setOtp(e.target.value)}
-            required
-          />
-        )}
-        <Button
-          type="submit"
-          disabled={
-            busy ||
-            (!!password &&
-              (!passwordValid(password) || password !== confirm)) ||
-            (chairman && !password && !email.trim())
-          }
         >
-          {busy
-            ? "Saving…"
-            : challenge
-              ? "Verify & save changes"
-              : "Save account changes"}
-        </Button>
+          <fieldset disabled={busy} className="space-y-5">
+            <Field
+              label="Current Password (Required)"
+              type="password"
+              autoComplete="current-password"
+              required
+              placeholder="Enter current password to save"
+              value={current}
+              onChange={(e) => {
+                setCurrent(e.target.value);
+                setChallenge("");
+              }}
+            />
+            <Field
+              label="New Password"
+              type="password"
+              autoComplete="new-password"
+              required
+              placeholder="Enter new password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+            <Field
+              label="Confirm New Password"
+              type="password"
+              autoComplete="new-password"
+              required
+              placeholder="Confirm new password"
+              value={confirmation}
+              onChange={(e) => setConfirmation(e.target.value)}
+            />
+            {confirmation && confirmation !== password && (
+              <Notice tone="error">New passwords do not match.</Notice>
+            )}
+            <Button type="submit" disabled={busy || !valid}>
+              {busy
+                ? "Saving…"
+                : challenge
+                  ? "Continue Verification"
+                  : "Change Password"}
+            </Button>
+          </fieldset>
+          <div className="legacy-md:pt-20">
+            <PasswordRules value={password} />
+          </div>
+        </form>
         <Button
-          className="ml-2"
+          className="mt-5"
           variant="secondary"
+          disabled={busy}
           onClick={() => void logout(true)}
         >
-          Sign out & forget this device
+          Sign out &amp; forget this device
         </Button>
-      </form>
-    </section>
-  );
-}
-function ParentPermissionSettings({ initial }: { initial: Permissions }) {
-  const { values, change, save } = useDurableForm(
-    "parent_permissions",
-    initial,
-  );
-  const [error, setError] = useState("");
-  const [message, setMessage] = useState("");
-  const [busy, setBusy] = useState(false);
-  return (
-    <section className="card">
-      <h2 className="mb-2 text-lg font-semibold">Parent access controls</h2>
-      <p className="mb-5 text-sm leading-6 text-slate-500">
-        These permissions are inherited by students where you are the active
-        Primary Adviser. Substitute assignments retain the Primary Adviser’s
-        settings.
-      </p>
-      <form
-        className="space-y-5"
-        onSubmit={async (e) => {
-          e.preventDefault();
-          setBusy(true);
-          try {
-            const result = await save("/api/teachers/access-controls", "put");
-            setMessage(
-              result === "saved"
-                ? "Parent permissions saved."
-                : "Saved on this device. Pending reconnection.",
-            );
-            setError("");
-          } catch (err) {
-            setError(errorMessage(err));
-          } finally {
-            setBusy(false);
-          }
-        }}
-      >
-        <Notice tone="error">{error}</Notice>
-        <Notice tone="success">{message}</Notice>
-        <div className="grid gap-3 sm:grid-cols-2">
-          {(Object.keys(PERMISSION_LABELS) as (keyof Permissions)[]).map(
-            (key) => (
-              <label
-                key={key}
-                className="flex items-start gap-3 rounded-xl bg-slate-50 p-4 text-sm"
+      </div>
+      {open && (
+        <TeacherDialog
+          title="Verification Required"
+          locked={busy}
+          onClose={() => setOpen(false)}
+        >
+          <p className="text-sm leading-6 text-slate-500">
+            A verification code has been sent to {user?.email || "your email"}.
+            Please enter it below to confirm your password change.
+          </p>
+          <Notice tone="error">{error}</Notice>
+          <form
+            className="space-y-5"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (valid && /^[0-9]{6}$/.test(otp))
+                void run(() => commit(challenge));
+            }}
+          >
+            <Field
+              label="Verification Code (OTP)"
+              autoFocus
+              autoComplete="one-time-code"
+              inputMode="numeric"
+              pattern="[0-9]{6}"
+              maxLength={6}
+              required
+              disabled={busy}
+              value={otp}
+              onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))}
+            />
+            <div className="flex flex-wrap justify-end gap-3">
+              <Button
+                variant="secondary"
+                disabled={busy}
+                onClick={() => setOpen(false)}
               >
-                <input
-                  type="checkbox"
-                  className="mt-0.5 size-5 accent-blue-600"
-                  checked={values[key]}
-                  onChange={(e) =>
-                    change({ ...values, [key]: e.target.checked })
-                  }
-                />
-                <span>{PERMISSION_LABELS[key]}</span>
-              </label>
-            ),
-          )}
-        </div>
-        <Button type="submit" disabled={busy}>
-          {busy ? "Saving…" : "Save parent access"}
-        </Button>
-      </form>
+                Cancel
+              </Button>
+              <Button
+                variant="secondary"
+                disabled={busy}
+                onClick={() => void run(requestChallenge)}
+              >
+                Resend Code
+              </Button>
+              <Button
+                type="submit"
+                className="bg-emerald-600"
+                disabled={busy || !valid || !/^[0-9]{6}$/.test(otp)}
+              >
+                {busy ? "Verifying…" : "Verify & Update"}
+              </Button>
+            </div>
+          </form>
+        </TeacherDialog>
+      )}
     </section>
   );
 }
 export default function TeacherSettings() {
-  const { user, login, token } = useAuth();
-  const [permissions, setPermissions] = useState<Permissions | null>(null);
-  const [error, setError] = useState("");
+  const { user } = useAuth();
+  const { sections } = useTeacher();
+  const [permissions, setPermissions] = useState<Permissions | null>(
+    () =>
+      readDraft<Permissions>(`ames_draft_${user?.id}_parent_permissions`)
+        ?.values || null,
+  );
+  const [error, setError] = useState<string>("");
   useEffect(() => {
-    void API.get<Permissions & { allow_eccd_question_management: boolean }>(
-      "/api/teachers/access-controls",
-    )
+    let current = true;
+    void API.get<Permissions>("/api/teachers/access-controls")
       .then((res) => {
-        setPermissions(res.data);
-        if (
-          user &&
-          token &&
-          user.allow_eccd_question_management !==
-            res.data.allow_eccd_question_management
-        )
-          login({
-            success: true,
-            requireOtp: false,
-            requiresPasswordChange: false,
-            token,
-            user: {
-              ...user,
-              allow_eccd_question_management:
-                res.data.allow_eccd_question_management,
-            },
-          });
+        if (!current) return;
+        setPermissions({
+          allow_parent_view_student_info:
+            res.data.allow_parent_view_student_info,
+          allow_parent_view_eccd_pre: res.data.allow_parent_view_eccd_pre,
+          allow_parent_view_eccd_mid: res.data.allow_parent_view_eccd_mid,
+          allow_parent_view_eccd_post: res.data.allow_parent_view_eccd_post,
+          allow_parent_edit_student_info:
+            res.data.allow_parent_edit_student_info,
+          allow_parent_edit_home_based_eccd:
+            res.data.allow_parent_edit_home_based_eccd,
+        });
       })
-      .catch((err) => setError(errorMessage(err)));
+      .catch((err) => {
+        if (current) setError(errorMessage(err));
+      });
+    return () => {
+      current = false;
+    };
   }, [user?.id]);
   return (
-    <>
+    <div className="mx-auto w-full max-w-[56.25rem] space-y-8 py-4">
       <PageHeader
         title="Settings"
-        subtitle="Control parent access and keep your account secure."
+        subtitle="Manage teacher and parent access settings."
       />
+      <section className="card flex flex-wrap items-center gap-4">
+        <span className="grid size-14 place-items-center rounded-full bg-blue-50 text-xl font-bold text-blue-700">
+          {user?.username.slice(0, 1).toUpperCase()}
+        </span>
+        <div className="min-w-0">
+          <h2 className="font-bold break-words">{user?.username}</h2>
+          <p className="text-sm break-words text-slate-500">{user?.email}</p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {sections.length ? (
+              sections.map((s) => (
+                <span key={s.section_id} className="badge">
+                  {s.section_name}
+                </span>
+              ))
+            ) : (
+              <span className="text-xs text-slate-500">
+                No section assigned.
+              </span>
+            )}
+          </div>
+        </div>
+      </section>
       <Notice tone="error">{error}</Notice>
-      <div className="space-y-6">
-        {permissions && (
-          <ParentPermissionSettings
-            initial={
-              Object.fromEntries(
-                (Object.keys(PERMISSION_LABELS) as (keyof Permissions)[]).map(
-                  (key) => [key, permissions[key]],
-                ),
-              ) as unknown as Permissions
-            }
-          />
-        )}
-        <AccountSettings chairman={false} />
-      </div>
-    </>
+      {permissions ? (
+        <ParentAccess key={user?.id} initial={permissions} />
+      ) : (
+        !error && <TeacherSkeleton cards={2} />
+      )}
+      <TeacherAccount key={user?.id} />
+    </div>
   );
 }
