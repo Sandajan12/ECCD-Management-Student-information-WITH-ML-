@@ -1,6 +1,6 @@
 # Phase 3: authentication and core layout visual review
 
-The available legacy reference is now `AMES-SYSTEM/frontend/` and remains read-only. The original authentication/shared-navigation review below is historical; current Chairman Batches 1/2 evidence is recorded at the end. Dashboard content, other workspace pages and chat content require their own visual audits.
+The available legacy reference is now `AMES-SYSTEM/frontend/` and remains read-only. The original authentication/shared-navigation review below is historical; current Chairman Batches 1/2/3 evidence is recorded at the end. Other workspace pages and chat content require their own visual audits.
 
 | Current file | Legacy source inspected | Extracted visual properties and Tailwind equivalents | Review status |
 | --- | --- | --- | --- |
@@ -55,3 +55,15 @@ Teacher Management findings G04-G07 are verified within this batch. Run `corepac
 - **22 ECCD regression checks pass** after the final shared-control changes. Both scoped runners use separate ignored artifact directories (`test-results/teachers` and `test-results/eccd`); generated reference baselines remain under `test-results/legacy-baselines`.
 
 Current backend safety takes precedence over legacy destructive behavior: assigned students block section deletion; handover archives an incumbent only when no other active assignment remains. Assignment controls remain in an expandable group. No legacy, backend, student-ID, LRN, session-auth or draft-hook files changed. These are mocked component/browser checks; full backend integration, archive/restore/account-deletion confirmation visuals and overall Chairman acceptance remain pending. Teacher and Parent portal migration remain deferred. See [FRONTEND_PARITY_MIGRATION.md](../FRONTEND_PARITY_MIGRATION.md) for the live checklist and source-update log.
+
+## Chairman Plan 1, Batch 3 — 2026-10-12
+
+Dashboard finding G03 and Step 5 are verified within this batch. From `frontend/`, run `pnpm.cmd exec playwright test --config playwright.dashboard.config.ts` on Windows (`pnpm exec playwright test --config playwright.dashboard.config.ts` elsewhere). The runner starts the existing read-only reference harness and active Vite UI, with mocked APIs and no backend/database dependency.
+
+- **18 desktop/mobile Chromium checks pass.** Populated and empty overview viewport screenshots and complete chart/ranking card screenshots match the reference at zero differing pixels, threshold 0.1. Native device-resolution captures wait for Recharts' 400ms delay and 1500ms animation. Mobile doughnut card captures alone position the original card at a common viewport origin with its measured width/height, preventing full-page screenshot resizing from restarting SVG animations; original geometry is recorded separately. Whole-mobile-page screenshot equality is not claimed.
+- Independent delayed/HTTP 503 requests for statistics, pie data, rankings and filter choices leave other successful data visible. Section/year-only statistics, four-filter pie data, section/period/year rankings, rendered filter changes and descending ranking percentages pass. Five obsolete responses cannot overwrite the latest statistics, pie or rankings.
+- Doughnut SVG paths match the reference, including 80/120 radii and 5-degree slice spacing. Labels, tooltip, 36px bottom legend, 300px minimum container and chart-contained dropdowns pass. Translated full-width ranking bars retain the original left transform origin, clipping and 400ms linear transition.
+- Ten widths (320, 390, 599, 600, 899, 900, 1024, 1199, 1200 and 1280px) retain dropdown access, contained long domain names and the 900px 8/4 grid. Statistic-card icons/content stack between 900px and 1199px and narrow text wraps to correct legacy overflow; desktop 1280px and mobile reference layouts remain unchanged.
+- Application/test TypeScript, full frontend lint and production build pass. The existing build size advisory remains. Screenshots, geometry/style records and fresh reference baselines are recreated under ignored `test-results/dashboard` and `test-results/legacy-baselines`.
+
+Analytics route aliases, the legacy sources, backend contracts, auth, integer IDs, masked LRNs and durable draft behavior are preserved. The batch modifies only the dashboard, its scoped tests/config and documentation. Prior Chairman findings retain their recorded evidence; full Chairman/shared-auth/backend integration acceptance and the remaining screens are pending. See [FRONTEND_PARITY_MIGRATION.md](../FRONTEND_PARITY_MIGRATION.md) for the authoritative checklist and source-update log.

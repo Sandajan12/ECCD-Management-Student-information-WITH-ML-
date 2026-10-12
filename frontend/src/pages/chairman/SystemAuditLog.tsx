@@ -1,7 +1,9 @@
-import { useEffect, useState } from "react";
-import API, { errorMessage } from "../services/api";
-import { Field, Modal, Notice } from "../components/chairman/ui";
-import Icon from "../components/chairman/Icon";
+import { useCallback, useEffect, useState } from "react";
+import API, { errorMessage } from "../../services/api";
+import { Field, Modal } from "../../components/chairman/ui";
+import Snackbar from "../../components/chairman/Snackbar";
+import type { SnackbarMessage } from "../../components/chairman/Snackbar";
+import Icon from "../../components/chairman/Icon";
 interface Audit {
   id: number;
   action: string;
@@ -9,20 +11,49 @@ interface Audit {
   details: string | null;
   timestamp: string | null;
 }
-export default function AuditWorkspace() {
+interface AuditPayload {
+  id: number;
+  action: string;
+  performed_by: string;
+  details: string | null;
+  timestamp: string | null;
+}
+interface LegacyAuditPayload {
+  log_id: number;
+  action_type: string;
+  teacher_name: string | null;
+  details: string | null;
+  timestamp: string | null;
+}
+function mapAudit(row: AuditPayload | LegacyAuditPayload): Audit {
+  return {
+    id: "log_id" in row ? row.log_id : row.id,
+    action: "action_type" in row ? row.action_type : row.action,
+    performed_by:
+      ("teacher_name" in row ? row.teacher_name : row.performed_by) ?? "System",
+    details: row.details,
+    timestamp: row.timestamp,
+  };
+}
+export default function SystemAuditLog() {
   const [rows, setRows] = useState<Audit[]>([]);
   const [search, setSearch] = useState("");
-  const [error, setError] = useState("");
+  const [notification, setNotification] = useState<SnackbarMessage | null>(
+    null,
+  );
+  const dismiss = useCallback(() => setNotification(null), []);
   const [selected, setSelected] = useState<Audit | null>(null);
   useEffect(() => {
-    void API.get<Audit[]>("/api/analytics/logs")
-      .then((res) => setRows(res.data))
-      .catch((err) => setError(errorMessage(err)));
+    void API.get<(AuditPayload | LegacyAuditPayload)[]>("/api/analytics/logs")
+      .then((res) => setRows(res.data.map(mapAudit)))
+      .catch((err) =>
+        setNotification({ severity: "error", message: errorMessage(err) }),
+      );
   }, []);
-  const visible = rows.filter((r) =>
-    `${r.action} ${r.performed_by} ${r.details}`
-      .toLowerCase()
-      .includes(search.toLowerCase()),
+  const visible = rows.filter(
+    (r) =>
+      r.action.toLowerCase().includes(search.toLowerCase()) ||
+      r.performed_by.toLowerCase().includes(search.toLowerCase()),
   );
   const date = (timestamp: string | null) =>
     timestamp
@@ -33,7 +64,7 @@ export default function AuditWorkspace() {
           hour: "2-digit",
           minute: "2-digit",
         })
-      : "N/A";
+      : "";
   return (
     <div className="p-6">
       <section className="mx-auto min-h-[80vh] max-w-[1200px] rounded-2xl bg-white p-6 shadow-[0_4px_20px_rgba(0,0,0,.05)] legacy-md:p-10">
@@ -51,7 +82,6 @@ export default function AuditWorkspace() {
             endAdornment={<Icon name="Search" />}
           />
         </div>
-        <Notice tone="error">{error}</Notice>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[650px]">
             <thead className="bg-[#f3f4f6]">
@@ -59,7 +89,7 @@ export default function AuditWorkspace() {
                 {["Timestamp", "Fullname", "Action Type"].map((title, i) => (
                   <th
                     key={title}
-                    className={`border-0! font-bold! text-[#6b7280]! ${i === 0 ? "w-[30%] rounded-l-lg" : i === 1 ? "w-[40%]" : "w-[30%] rounded-r-lg"}`}
+                    className={`border-0! py-4! font-bold! text-[#6b7280]! ${i === 0 ? "w-[30%] rounded-l-lg" : i === 1 ? "w-[40%]" : "w-[30%] rounded-r-lg"}`}
                   >
                     {title}
                   </th>
@@ -78,7 +108,6 @@ export default function AuditWorkspace() {
                       setSelected(row);
                     }
                   }}
-                  onMouseDown={event=>event.preventDefault()}
                   tabIndex={0}
                   aria-label={`View ${row.action}`}
                 >
@@ -104,6 +133,7 @@ export default function AuditWorkspace() {
           </table>
         </div>
       </section>
+      <Snackbar notification={notification} onClose={dismiss} />
       {selected && (
         <Modal
           title="Audit Action Details"
@@ -121,10 +151,10 @@ export default function AuditWorkspace() {
               ["Date & Time", date(selected.timestamp)],
               ["Action Type", selected.action],
             ].map(([label, value]) => (
-              <div key={label} className="flex justify-between">
+              <div key={label} className="flex justify-between gap-4">
                 <span className="font-bold text-[#777]">{label}:</span>
                 <span
-                  className={`font-bold ${label === "Action Type" ? "text-brand" : "text-[#111827]"}`}
+                  className={`min-w-0 break-words text-right font-bold ${label === "Action Type" ? "text-brand" : "text-[#111827]"}`}
                 >
                   {value}
                 </span>
@@ -135,7 +165,8 @@ export default function AuditWorkspace() {
                 SPECIFIC DETAILS:
               </p>
               <div className="rounded-lg border border-[#f3f4f6] bg-[#f9fafb] p-4 text-sm leading-[1.6] whitespace-pre-wrap text-[#4b5563]">
-                {selected.details || "No specific details were recorded for this action."}
+                {selected.details ||
+                  "No specific details were recorded for this action."}
               </div>
             </div>
           </div>

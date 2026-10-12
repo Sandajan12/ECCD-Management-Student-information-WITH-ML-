@@ -1,5 +1,24 @@
 # AMES SYSTEM - AI Context & System Architecture
 
+## Role-based page directories and workspace extraction (2026-10-13)
+
+The active frontend page implementations now live directly in
+`frontend/src/pages/chairman/`, `pages/teacher/`, and `pages/parent/`.
+The old `super-admin/`, `admin/`, and `user/` page directories, re-export shims,
+`Dashboards.tsx`, and all `*Workspace.tsx` modules have been removed.
+`App.tsx` imports the role pages directly; existing URL paths and role guards
+remain unchanged. Teacher settings, student management, ECCD assessments and
+question management each have their own page implementation.
+
+Shared teacher/parent assessment controls live in
+`components/eccd/AssessmentChecklist.tsx`, with data loading in
+`hooks/useAssessment.ts`. Parent child selection/linking lives in
+`components/parent/ChildSelection.tsx` and `hooks/useChildren.ts`.
+Dashboard statistic cards share `components/StatCard.tsx`.
+The extraction preserves API payloads, permission gates, scoped draft keys and
+reconnection behavior. Application TypeScript and the production build passed;
+no browser or screenshot checks were run. Plan 2 remains deferred.
+
 ## Phase 3 authentication/layout visual parity (2026-10-11)
 
 The current authentication pages and core layout have been refactored from the

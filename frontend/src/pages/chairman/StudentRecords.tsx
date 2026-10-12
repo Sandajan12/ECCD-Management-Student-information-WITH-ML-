@@ -1,28 +1,34 @@
 // Visual source: legacy pages/chairman/StudentRecords.jsx.
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useSettings } from "../../context/SettingsContext";
 import type { ReactNode } from "react";
 import API, { downloadFile, errorMessage } from "../../services/api";
 import type { Section, Student } from "../../types";
 import { studentName } from "../../types";
 import { useDurableForm } from "../../utils/drafts";
+import { calculateRosterAge } from "../../utils/dateUtils";
+import Snackbar from "../../components/chairman/Snackbar";
+import type { SnackbarMessage } from "../../components/chairman/Snackbar";
 import {
   Button,
   Checkbox,
   Field,
   Modal,
-  Notice,
   Select,
 } from "../../components/chairman/ui";
 import Icon from "../../components/chairman/Icon";
-function InfoRow({ label, value }: { label: string; value: ReactNode }) {
+interface InfoRowProps {
+  label: string;
+  value: ReactNode;
+}
+function InfoRow({ label, value }: InfoRowProps) {
   return (
-    <div className="mb-3 flex text-[14.4px] leading-[1.5]">
-      <span className="w-[140px] shrink-0 font-bold text-[#4b5563]">
+    <div className="mb-3 flex flex-col gap-1 text-[14.4px] leading-[1.5] legacy-sm:flex-row legacy-sm:gap-0">
+      <span className="shrink-0 font-bold text-[#4b5563] legacy-sm:basis-[140px]">
         {label}:
       </span>
       <span className="min-w-0 flex-1 break-words text-[#111827]">
-        {value || "N/A"}
+        {value === null || value === undefined || value === "" ? "N/A" : value}
       </span>
     </div>
   );
@@ -34,15 +40,32 @@ interface TransferProps {
   onSaved: () => void;
 }
 function TransferStudents({ ids, sections, onClose, onSaved }: TransferProps) {
-  const { values, change, save } = useDurableForm(
+  const { values, change, save, key } = useDurableForm(
     `student_transfer_${[...ids].sort((a, b) => a - b).join("_")}`,
     { new_section_id: String(sections[0]?.section_id || "") },
   );
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
+  const saving = useRef(false);
+  const [notification, setNotification] = useState<SnackbarMessage | null>(
+    null,
+  );
+  const dismiss = useCallback(() => setNotification(null), []);
+  useEffect(() => {
+    const synced = (event: Event) => {
+      if ((event as CustomEvent<string>).detail === key) onSaved();
+    };
+    window.addEventListener("ames-record-synced", synced);
+    return () => window.removeEventListener("ames-record-synced", synced);
+  }, [key, onSaved]);
   const submit = async () => {
+    if (
+      saving.current ||
+      !ids.length ||
+      !sections.some((s) => String(s.section_id) === values.new_section_id)
+    )
+      return;
+    saving.current = true;
     setBusy(true);
-    setError("");
     try {
       const result = await save("/api/chairman/students/transfer", "put", {
         student_ids: ids,
@@ -50,12 +73,15 @@ function TransferStudents({ ids, sections, onClose, onSaved }: TransferProps) {
       });
       if (result === "saved") onSaved();
       else
-        setError(
-          "Transfer saved on this device. It will synchronize after reconnection.",
-        );
+        setNotification({
+          severity: "info",
+          message:
+            "Transfer saved on this device. It will synchronize after reconnection.",
+        });
     } catch (err) {
-      setError(errorMessage(err));
+      setNotification({ severity: "error", message: errorMessage(err) });
     } finally {
+      saving.current = false;
       setBusy(false);
     }
   };
@@ -66,7 +92,7 @@ function TransferStudents({ ids, sections, onClose, onSaved }: TransferProps) {
       footerClassName="p-4 pt-0"
       className="rounded-xl"
       titleClassName="bg-[#4f46e5] text-white [&_h2]:font-bold"
-      bodyClassName="p-6"
+      bodyClassName="px-6 pt-0 pb-6"
       closeButton
       locked={busy}
       onClose={onClose}
@@ -74,7 +100,7 @@ function TransferStudents({ ids, sections, onClose, onSaved }: TransferProps) {
         <>
           <Button
             variant="text"
-            className="text-[#6b7280]"
+            className="px-2! text-[#6b7280]"
             disabled={busy}
             onClick={onClose}
           >
@@ -82,7 +108,12 @@ function TransferStudents({ ids, sections, onClose, onSaved }: TransferProps) {
           </Button>
           <Button
             className="bg-[#4f46e5] font-bold"
-            disabled={busy || !values.new_section_id}
+            disabled={
+              busy ||
+              !sections.some(
+                (s) => String(s.section_id) === values.new_section_id,
+              )
+            }
             onClick={() => void submit()}
           >
             {busy ? "Transferring..." : "Confirm Transfer"}
@@ -90,47 +121,45 @@ function TransferStudents({ ids, sections, onClose, onSaved }: TransferProps) {
         </>
       }
     >
-      <p className="mb-4 text-sm leading-[1.43] text-[#374151]">
-        You have selected <strong>{ids.length}</strong> student(s) to transfer.
-        Select the destination section:
-      </p>
-      <Select
-        label="Destination Section"
-        containerClassName="mt-2"
-        value={values.new_section_id}
-        onChange={(e) => change({ new_section_id: e.target.value })}
-      >
-        {sections.map((section) => (
-          <option key={section.section_id} value={section.section_id}>
-            {section.section_name}{" "}
-            {section.first_name
-              ? `(Adviser: ${section.first_name} ${section.last_name || ""})`
-              : "(No Adviser)"}
-          </option>
-        ))}
-      </Select>
-      <p className="mt-3 text-xs leading-[1.66] text-[#777]">
-        All assessment evaluations will be preserved.
-      </p>
-      <Notice tone="error">{error}</Notice>
+      <div className="flex flex-col">
+        <p className="mb-4 text-sm leading-[1.43] text-[#374151]">
+          You have selected <strong>{ids.length}</strong> student(s) to
+          transfer. Select the destination section:
+        </p>
+        <Select
+          label="Destination Section"
+          containerClassName="mt-2"
+          value={values.new_section_id}
+          disabled={busy}
+          onChange={(e) => change({ new_section_id: e.target.value })}
+        >
+          {sections.map((section) => (
+            <option key={section.section_id} value={section.section_id}>
+              {section.section_name}{" "}
+              {section.first_name
+                ? `(Adviser: ${section.first_name} ${section.last_name || ""})`
+                : "(No Adviser)"}
+            </option>
+          ))}
+        </Select>
+      </div>
+      <Snackbar notification={notification} onClose={dismiss} />
     </Modal>
   );
 }
 export default function StudentRecords() {
   const { settings } = useSettings();
   const rosterAge = (record: Student): string => {
-    if (!record.date_of_birth) return record.decimal_age ? `${record.decimal_age} yrs` : "N/A";
-    const birthday = new Date(record.date_of_birth);
-    const schoolYear = record.school_year || settings.current_school_year;
-    const yearStart = Number(schoolYear?.split("-")[0]);
-    const month = settings.school_year_start_month || 8;
-    const baseline = yearStart ? new Date(yearStart,month-1,1) : new Date();
-    if (Number.isNaN(birthday.getTime())) return "N/A";
-    let years = baseline.getFullYear()-birthday.getFullYear();
-    let months = baseline.getMonth()-birthday.getMonth();
-    if (baseline.getDate()<birthday.getDate()) months--;
-    if(months<0){years--;months+=12;}
-    return `${(years+months/12).toFixed(1)} yrs`;
+    const age = calculateRosterAge(
+      record.date_of_birth,
+      record.school_year || settings.current_school_year,
+      settings.school_year_start_month || 8,
+    );
+    return age !== "N/A"
+      ? age
+      : record.decimal_age
+        ? `${record.decimal_age} yrs`
+        : "N/A";
   };
   const [students, setStudents] = useState<Student[]>([]);
   const [sections, setSections] = useState<Section[]>([]);
@@ -142,11 +171,14 @@ export default function StudentRecords() {
   const [transfer, setTransfer] = useState(false);
   const [download, setDownload] = useState(false);
   const downloadForm = useDurableForm("chairman_eccd_export", {
-    section: "All",
+    section: "All Sections",
   });
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const [message, setMessage] = useState("");
+  const exporting = useRef(false);
+  const [notification, setNotification] = useState<SnackbarMessage | null>(
+    null,
+  );
+  const dismiss = useCallback(() => setNotification(null), []);
   const refresh = useCallback(async () => {
     try {
       const [rows, secs] = await Promise.all([
@@ -156,7 +188,7 @@ export default function StudentRecords() {
       setStudents(rows.data);
       setSections(secs.data);
     } catch (err) {
-      setError(errorMessage(err));
+      setNotification({ severity: "error", message: errorMessage(err) });
     }
   }, []);
   useEffect(() => {
@@ -168,7 +200,7 @@ export default function StudentRecords() {
   const visible = students.filter(
     (s) =>
       s.is_active &&
-      (section === "All" || String(s.section_id) === section) &&
+      (section === "All" || s.section_name === section) &&
       (year === "All" || s.school_year === year) &&
       `${studentName(s)} ${s.masked_lrn}`
         .toLowerCase()
@@ -180,22 +212,35 @@ export default function StudentRecords() {
         .map((s) => s.school_year)
         .filter((value): value is string => !!value),
     ),
-  ]
-    .sort()
-    .reverse();
+  ];
+  const rosterSections = [
+    ...new Set(
+      students
+        .map((s) => s.section_name)
+        .filter((name): name is string => !!name),
+    ),
+  ];
+  // Older scoped export drafts stored section IDs; resolve them without discarding the draft.
+  const exportSection =
+    downloadForm.values.section === "All"
+      ? "All Sections"
+      : (sections.find(
+          (s) => String(s.section_id) === downloadForm.values.section,
+        )?.section_name ?? downloadForm.values.section);
+  // Filters preserve selected IDs, as in the reference. The header describes
+  // only the visible rows, even when the selection also contains hidden rows.
+  const visibleSelectedCount = visible.filter((s) =>
+    selected.includes(s.student_id),
+  ).length;
   const allSelected =
-    visible.length > 0 && visible.every((s) => selected.includes(s.student_id));
+    visible.length > 0 && visibleSelectedCount === visible.length;
   const toggleAll = (checked: boolean) =>
-    setSelected(
-      checked
-        ? [...new Set([...selected, ...visible.map((s) => s.student_id)])]
-        : selected.filter((id) => !visible.some((s) => s.student_id === id)),
-    );
+    setSelected(checked ? visible.map((s) => s.student_id) : []);
   const openStudent = async (id: number) => {
     try {
       setStudent((await API.get<Student>(`/api/students/${id}`)).data);
     } catch (err) {
-      setError(errorMessage(err));
+      setNotification({ severity: "error", message: errorMessage(err) });
     }
   };
   const heading = (text: string) => (
@@ -225,8 +270,7 @@ export default function StudentRecords() {
           </Button>
         </div>
       </div>
-      <Notice tone="error">{error}</Notice>
-      <Notice tone="success">{message}</Notice>
+      {!download && <Snackbar notification={notification} onClose={dismiss} />}
       <div className="mb-8 flex flex-col items-stretch gap-4 rounded-lg bg-white p-4 shadow-[0_1px_3px_rgba(0,0,0,.1)] legacy-md:flex-row legacy-md:items-center">
         <Field
           aria-label="Search students"
@@ -244,13 +288,12 @@ export default function StudentRecords() {
           value={section}
           onChange={(e) => {
             setSection(e.target.value);
-            setSelected([]);
           }}
         >
           <option value="All">All Sections</option>
-          {sections.map((s) => (
-            <option key={s.section_id} value={s.section_id}>
-              {s.section_name}
+          {rosterSections.map((name) => (
+            <option key={name} value={name}>
+              {name}
             </option>
           ))}
         </Select>
@@ -261,7 +304,6 @@ export default function StudentRecords() {
           value={year}
           onChange={(e) => {
             setYear(e.target.value);
-            setSelected([]);
           }}
         >
           <option value="All">All School Years</option>
@@ -281,8 +323,8 @@ export default function StudentRecords() {
 
                   checked={allSelected}
                   indeterminate={
-                    !allSelected &&
-                    visible.some((s) => selected.includes(s.student_id))
+                    visibleSelectedCount > 0 &&
+                    visibleSelectedCount < visible.length
                   }
                   onChange={(e) => toggleAll(e.target.checked)}
                 />
@@ -300,7 +342,6 @@ export default function StudentRecords() {
             {visible.map((s) => (
               <tr
                 key={s.student_id}
-                onMouseDown={event=>event.preventDefault()}
                 tabIndex={0}
                 className={`cursor-pointer hover:bg-[#f3f4f6] [&:last-child>td]:border-0 ${selected.includes(s.student_id) ? "bg-[#4543c0]/[.08]" : ""}`}
                 onClick={() => void openStudent(s.student_id)}
@@ -322,17 +363,19 @@ export default function StudentRecords() {
                     aria-label={`Select ${studentName(s)}`}
                     checked={selected.includes(s.student_id)}
                     onChange={(e) =>
-                      setSelected(
+                      setSelected((previous) =>
                         e.target.checked
-                          ? [...selected, s.student_id]
-                          : selected.filter((id) => id !== s.student_id),
+                          ? [...previous, s.student_id]
+                          : previous.filter((id) => id !== s.student_id),
                       )
                     }
                   />
                 </td>
                 <td className="font-medium! text-[#111827]">{s.masked_lrn}</td>
                 <td className="text-[#374151]">{studentName(s)}</td>
-                <td className="text-[#374151]">{s.section_name || "N/A"}</td>
+                <td className="text-[#374151]">
+                  {s.section_name || "Unassigned"}
+                </td>
                 <td className="text-[#374151]">{s.school_year || "N/A"}</td>
               </tr>
             ))}
@@ -438,7 +481,7 @@ export default function StudentRecords() {
             <>
               <Button
                 variant="text"
-                className="text-[#6b7280]"
+                className="px-2! text-[#6b7280]"
                 disabled={busy}
                 onClick={() => setDownload(false)}
               >
@@ -448,20 +491,44 @@ export default function StudentRecords() {
                 className="min-w-[110px] bg-brand"
                 disabled={busy}
                 onClick={async () => {
+                  if (exporting.current) return;
+                  if (
+                    exportSection !== "All Sections" &&
+                    !rosterSections.includes(exportSection)
+                  ) {
+                    setNotification({
+                      severity: "error",
+                      message:
+                        "Select an available section before downloading.",
+                    });
+                    return;
+                  }
+                  exporting.current = true;
                   setBusy(true);
-                  setError("");
                   try {
-                    await downloadFile(
-                      `/api/chairman/export-eccd?section=${downloadForm.values.section}&schoolYear=${year}`,
-                      downloadForm.values.section === "All"
-                        ? "ECCD_Records.zip"
-                        : "ECCD_Records.xlsx",
+                    const currentYear = new Date().getFullYear();
+                    const fallback =
+                      exportSection === "All Sections"
+                        ? `ALL_SECTIONS_${currentYear}-${currentYear + 1}.zip`
+                        : `${exportSection.replace(/[^a-zA-Z0-9-_]/g, "_").toUpperCase()}_${currentYear}-${currentYear + 1}.xlsx`;
+                    // Legacy export scope is independent of the roster year filter.
+                    // The API validates sections and splits oversized cohorts.
+                    const filename = await downloadFile(
+                      `/api/chairman/export-eccd?${new URLSearchParams({ section: exportSection })}`,
+                      fallback,
                     );
                     setDownload(false);
-                    setMessage("Download ready.");
+                    setNotification({
+                      severity: "success",
+                      message: `Successfully downloaded ${filename}`,
+                    });
                   } catch (err) {
-                    setError(errorMessage(err));
+                    setNotification({
+                      severity: "error",
+                      message: errorMessage(err),
+                    });
                   } finally {
+                    exporting.current = false;
                     setBusy(false);
                   }
                 }}
@@ -480,17 +547,18 @@ export default function StudentRecords() {
             small={false}
             aria-label="Download section"
             className="rounded-lg bg-[#f9fafb]"
-            value={downloadForm.values.section}
+            value={exportSection}
+            disabled={busy}
             onChange={(e) => downloadForm.change({ section: e.target.value })}
           >
-            <option value="All">All Sections</option>
-            {sections.map((s) => (
-              <option key={s.section_id} value={s.section_id}>
-                {s.section_name}
+            <option value="All Sections">All Sections</option>
+            {rosterSections.map((name) => (
+              <option key={name} value={name}>
+                {name}
               </option>
             ))}
           </Select>
-          <Notice tone="error">{error}</Notice>
+          <Snackbar notification={notification} onClose={dismiss} />
         </Modal>
       )}
       {transfer && (
@@ -501,9 +569,10 @@ export default function StudentRecords() {
           onSaved={() => {
             setTransfer(false);
             setSelected([]);
-            setMessage(
-              "Students transferred. All evaluation records preserved.",
-            );
+            setNotification({
+              severity: "success",
+              message: "Students transferred successfully!",
+            });
             void refresh();
           }}
         />

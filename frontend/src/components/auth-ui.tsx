@@ -201,21 +201,32 @@ export function RememberDevice({
     </label>
   );
 }
+interface OtpFieldsProps {
+  value: string;
+  onChange: (value: string) => void;
+  compact?: boolean;
+  disabled?: boolean;
+  autoFocus?: boolean;
+}
 export function OtpFields({
   value,
   onChange,
   compact = false,
-}: {
-  value: string;
-  onChange: (value: string) => void;
-  compact?: boolean;
-}) {
+  disabled = false,
+  autoFocus = false,
+}: OtpFieldsProps) {
   const refs = useRef<(HTMLInputElement | null)[]>([]);
   const update = (index: number, text: string) => {
     if (!/^\d*$/.test(text)) return;
     if (text.length > 1) {
-      onChange(text.slice(0, 6));
-      refs.current[Math.min(text.length, 5)]?.focus();
+      const start = text.length >= 6 ? 0 : index;
+      const digits = Array.from({ length: 6 }, (_, i) => value[i] || " ");
+      const pasted = text.slice(0, 6 - start);
+      Array.from(pasted).forEach((digit, offset) => {
+        digits[start + offset] = digit;
+      });
+      onChange(digits.join("").trimEnd());
+      refs.current[Math.min(start + pasted.length, 5)]?.focus();
       return;
     }
     const digits = Array.from({ length: 6 }, (_, i) => value[i] || " ");
@@ -226,6 +237,7 @@ export function OtpFields({
   return (
     <fieldset
       aria-label="6-digit verification code"
+      disabled={disabled}
       className={`flex min-w-0 justify-center gap-2 ${compact ? "mb-5" : "mb-6"}`}
     >
       {Array.from({ length: 6 }, (_, index) => (
@@ -242,7 +254,9 @@ export function OtpFields({
             inputMode="numeric"
             autoComplete={index === 0 ? "one-time-code" : "off"}
             maxLength={6}
+            autoFocus={autoFocus && index === 0}
             value={value[index]?.trim() || ""}
+            onFocus={(e) => e.target.select()}
             onChange={(e) => update(index, e.target.value)}
             onPaste={(e) => {
               const text = e.clipboardData.getData("text").trim();
@@ -252,8 +266,21 @@ export function OtpFields({
               }
             }}
             onKeyDown={(e) => {
-              if (e.key === "Backspace" && !value[index]?.trim() && index > 0)
-                refs.current[index - 1]?.focus();
+              if (e.key === "Backspace") {
+                e.preventDefault();
+                const target =
+                  value[index]?.trim() || index === 0 ? index : index - 1;
+                update(target, "");
+                refs.current[target]?.focus();
+              } else if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+                e.preventDefault();
+                refs.current[
+                  Math.max(
+                    0,
+                    Math.min(5, index + (e.key === "ArrowLeft" ? -1 : 1)),
+                  )
+                ]?.focus();
+              }
             }}
             className={`w-full min-w-0 rounded bg-transparent px-0 text-center font-bold text-[#333] outline-none focus-visible:outline-none ${compact ? "py-2 text-[1.4rem] leading-[1.4375]" : "py-2.5 text-2xl leading-[1.4375]"}`}
           />

@@ -3,10 +3,11 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useRef,
   useState,
 } from "react";
 import type { ReactNode } from "react";
-import API from "../services/api";
+import API, { errorMessage } from "../services/api";
 export interface SystemSettings {
   system_title: string;
   school_name: string;
@@ -33,7 +34,7 @@ const defaults: SystemSettings = {
   profile_pic_url: "",
   login_background: "",
   current_school_year: "",
-  school_year_start_month: 6,
+  school_year_start_month: 8,
   previous_school_year: null,
   last_rollover_timestamp: null,
   canRevertSchoolYear: false,
@@ -41,17 +42,39 @@ const defaults: SystemSettings = {
 };
 interface SettingsState {
   settings: SystemSettings;
+  isLoaded: boolean;
+  settingsError: string;
   fetchGlobalSettings: () => Promise<void>;
 }
 export const SettingsContext = createContext<SettingsState>({
   settings: defaults,
+  isLoaded: false,
+  settingsError: "",
   fetchGlobalSettings: async () => {},
 });
 export function SettingsProvider({ children }: { children: ReactNode }) {
   const [settings, setSettings] = useState<SystemSettings>(defaults);
+  const [isLoaded, setIsLoaded] = useState(false);
+  const [settingsError, setSettingsError] = useState("");
+  const requestId = useRef(0);
   const fetchGlobalSettings = useCallback(async () => {
-    const response = await API.get<SystemSettings>("/api/settings");
-    setSettings(response.data);
+    const request = ++requestId.current;
+    try {
+      const response = await API.get<SystemSettings>("/api/settings");
+      if (request !== requestId.current) return;
+      const month = Number(response.data.school_year_start_month);
+      setSettings({
+        ...defaults,
+        ...response.data,
+        school_year_start_month:
+          Number.isInteger(month) && month >= 1 && month <= 12 ? month : 8,
+      });
+      setIsLoaded(true);
+      setSettingsError("");
+    } catch (error) {
+      if (request === requestId.current) setSettingsError(errorMessage(error));
+      throw error;
+    }
   }, []);
   useEffect(() => {
     void fetchGlobalSettings().catch(() => {});
@@ -68,7 +91,9 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     document.title = settings.system_title;
   }, [settings]);
   return (
-    <SettingsContext.Provider value={{ settings, fetchGlobalSettings }}>
+    <SettingsContext.Provider
+      value={{ settings, isLoaded, settingsError, fetchGlobalSettings }}
+    >
       {children}
     </SettingsContext.Provider>
   );

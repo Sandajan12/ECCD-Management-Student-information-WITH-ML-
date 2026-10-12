@@ -173,7 +173,7 @@ function ConfigForm({
     </form>
   );
 }
-export default function QuestionsWorkspace() {
+export default function EccdQuestionsManagement() {
   const [domains, setDomains] = useState<Domain[]>([]);
   const [id, setId] = useState(0);
   const [error, setError] = useState("");

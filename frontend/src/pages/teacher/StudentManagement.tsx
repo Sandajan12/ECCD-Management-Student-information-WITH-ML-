@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
-import { useAuth } from "../context/AuthContext";
-import { useDurableFile } from "../utils/fileDrafts";
-import API, { downloadFile, errorMessage } from "../services/api";
-import type { ImportResult, Section, Student } from "../types";
-import { studentName } from "../types";
-import StudentForm from "../components/StudentForm";
+import { useAuth } from "../../context/AuthContext";
+import { useDurableFile } from "../../utils/fileDrafts";
+import API, { downloadFile, errorMessage } from "../../services/api";
+import type { ImportResult, Section, Student } from "../../types";
+import { studentName } from "../../types";
+import StudentForm from "../../components/StudentForm";
 import {
   Button,
   Empty,
@@ -15,13 +15,13 @@ import {
   PageHeader,
   Progress,
   Select,
-} from "../components/ui";
+} from "../../components/ui";
 type ConfirmAction = {
   title: string;
   description: string;
   run: () => Promise<unknown>;
 };
-export default function StudentsWorkspace() {
+export default function StudentManagement() {
   const { user } = useAuth();
   const chairman = user?.role === "super-admin";
   const [students, setStudents] = useState<Student[]>([]);

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import API, { downloadFile, errorMessage } from "../services/api";
-import { confirmDraft, readDraft, useDurableForm } from "../utils/drafts";
-import { useSessionField } from "../utils/sessionDrafts";
+import API, { downloadFile, errorMessage } from "../../services/api";
+import { confirmDraft, readDraft, useDurableForm } from "../../utils/drafts";
+import { useSessionField } from "../../utils/sessionDrafts";
 import type {
   AssignmentRole,
   Section,
@@ -12,7 +12,7 @@ import type {
   SectionCreatePayload,
   TeacherPermissionPayload,
   TeacherAssignmentPayload,
-} from "../types";
+} from "../../types";
 import {
   Button,
   Empty,
@@ -21,13 +21,13 @@ import {
   Notice,
   Select,
   Switch,
-} from "../components/chairman/ui";
-import Icon from "../components/chairman/Icon";
-import { IconButton } from "../components/chairman/ui";
+} from "../../components/chairman/ui";
+import Icon from "../../components/chairman/Icon";
+import { IconButton } from "../../components/chairman/ui";
 import {
   PasswordRules,
   passwordValid,
-} from "../components/ForceChangePassword";
+} from "../../components/ForceChangePassword";
 interface TeacherFormProps {
   onSection: () => void;
   onDeleteSection: (section: Section) => void;
@@ -618,7 +618,7 @@ function ManageAccess({
     </div>
   );
 }
-export default function TeachersWorkspace() {
+export default function TeacherManagement() {
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [sections, setSections] = useState<Section[]>([]);
   const [archived, setArchived] = useState(false);

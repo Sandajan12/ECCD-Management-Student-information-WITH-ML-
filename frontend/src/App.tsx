@@ -5,31 +5,31 @@ import { SettingsProvider } from "./context/SettingsContext";
 import LoginPage from "./pages/LoginPage";
 import RegisterParentPage from "./pages/RegisterParentPage";
 
-// Super-Admin Pages
-import SuperAdminDashboard from "./pages/super-admin/Dashboard";
-import TeacherManagement from "./pages/super-admin/TeacherManagement";
-import StudentRecords from "./pages/super-admin/StudentRecords";
-import SystemAuditLog from "./pages/super-admin/SystemAuditLog";
-import EccdQuestionsManagement from "./pages/super-admin/EccdQuestionsManagement";
-import SystemSettings from "./pages/super-admin/SystemSettings";
+// Chairman / Super-Admin Pages
+import ChairmanDashboard from "./pages/chairman/Dashboard";
+import TeacherManagement from "./pages/chairman/TeacherManagement";
+import StudentRecords from "./pages/chairman/StudentRecords";
+import SystemAuditLog from "./pages/chairman/SystemAuditLog";
+import EccdQuestionsManagement from "./pages/chairman/EccdQuestionsManagement";
+import SystemSettings from "./pages/chairman/SystemSettings";
 
-// Admin / Teacher Pages
-import AdminDashboard from "./pages/admin/Dashboard";
-import StudentManagement from "./pages/admin/StudentManagement";
-import EccdAssessment from "./pages/admin/EccdAssessment";
-import MessageParent from "./pages/admin/MessageParent";
-import TeacherSettings from "./pages/admin/TeacherSettings";
+// Teacher Pages
+import TeacherDashboard from "./pages/teacher/Dashboard";
+import StudentManagement from "./pages/teacher/StudentManagement";
+import EccdAssessment from "./pages/teacher/EccdAssessment";
+import MessageParent from "./pages/teacher/MessageParent";
+import TeacherSettings from "./pages/teacher/TeacherSettings";
 
-// User / Parent Pages
-import UserDashboard from "./pages/user/Dashboard";
-import ParentEccdAssessment from "./pages/user/ParentEccdAssessment";
-import ChildManagement from "./pages/user/ChildManagement";
-import MessageTeacher from "./pages/user/MessageTeacher";
+// Parent Pages
+import ParentDashboard from "./pages/parent/Dashboard";
+import ParentEccdAssessment from "./pages/parent/ParentEccdAssessment";
+import ChildManagement from "./pages/parent/ChildManagement";
+import MessageTeacher from "./pages/parent/MessageTeacher";
 
 import ProtectedRoute from "./components/ProtectedRoute";
 import MainLayout from "./layouts/MainLayout";
 import ChairmanLayout from "./layouts/ChairmanLayout";
-import QuestionsWorkspace from "./pages/QuestionsWorkspace";
+import EccdQuestionManagement from "./pages/teacher/EccdQuestionManagement";
 import "./App.css";
 
 function App() {
@@ -78,7 +78,7 @@ function App() {
               <Route element={<ChairmanLayout />}>
                 <Route
                   path="/super-admin/dashboard"
-                  element={<SuperAdminDashboard />}
+                  element={<ChairmanDashboard />}
                 />
                 <Route
                   path="/super-admin/teachers"
@@ -105,7 +105,10 @@ function App() {
               element={<ProtectedRoute allowedRoles={["admin", "teacher"]} />}
             >
               <Route element={<MainLayout />}>
-                <Route path="/teacher/dashboard" element={<AdminDashboard />} />
+                <Route
+                  path="/teacher/dashboard"
+                  element={<TeacherDashboard />}
+                />
                 <Route
                   path="/teacher/students"
                   element={<StudentManagement />}
@@ -123,7 +126,7 @@ function App() {
                       allowedRoles={["admin", "teacher"]}
                       requiredPermission="allow_eccd_question_management"
                     >
-                      <QuestionsWorkspace />
+                      <EccdQuestionManagement />
                     </ProtectedRoute>
                   }
                 />
@@ -135,7 +138,7 @@ function App() {
               element={<ProtectedRoute allowedRoles={["user", "parent"]} />}
             >
               <Route element={<MainLayout />}>
-                <Route path="/parent/dashboard" element={<UserDashboard />} />
+                <Route path="/parent/dashboard" element={<ParentDashboard />} />
                 <Route
                   path="/parent/eccdassessment"
                   element={<ParentEccdAssessment />}

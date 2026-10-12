@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
-import API, { errorMessage } from "../services/api";
-import { useDurableForm } from "../utils/drafts";
-import type { Domain, Question } from "../types";
+import API, { errorMessage } from "../../services/api";
+import { useDurableForm } from "../../utils/drafts";
+import type { Domain, Question } from "../../types";
 import {
   Button,
   Empty,
@@ -11,7 +11,7 @@ import {
   PageHeader,
   Select,
   TextArea,
-} from "../components/ui";
+} from "../../components/ui";
 function HomeBasedToggle({
   question,
   onSaved,
@@ -160,7 +160,7 @@ function ConfigForm({
     </form>
   );
 }
-export default function QuestionsWorkspace() {
+export default function EccdQuestionManagement() {
   const [domains, setDomains] = useState<Domain[]>([]);
   const [id, setId] = useState(0);
   const [error, setError] = useState("");

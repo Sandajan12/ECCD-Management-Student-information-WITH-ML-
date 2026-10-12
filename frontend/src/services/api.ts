@@ -63,10 +63,26 @@ export const isNetworkError = (error: unknown): boolean =>
 export async function downloadFile(
   path: string,
   fallback: string,
-): Promise<void> {
+): Promise<string> {
   const res = await API.get<Blob>(path, {
     responseType: "blob",
     timeout: 120000,
+  }).catch(async (error: unknown) => {
+    // Downloads also return JSON error details. Decode those so backup/export
+    // cards show the server's rejection rather than a connection-error message.
+    if (
+      axios.isAxiosError<unknown>(error) &&
+      error.response?.data instanceof Blob
+    ) {
+      try {
+        error.response.data = JSON.parse(
+          await error.response.data.text(),
+        ) as unknown;
+      } catch {
+        // Retain the original error when the response is not JSON.
+      }
+    }
+    throw error;
   });
   const disposition = String(res.headers["content-disposition"] || "");
   const filename =
@@ -78,5 +94,6 @@ export async function downloadFile(
   link.download = filename ? decodeURIComponent(filename) : fallback;
   link.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+  return link.download;
 }
 export default API;
