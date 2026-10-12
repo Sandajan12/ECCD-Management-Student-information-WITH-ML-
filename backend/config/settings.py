@@ -14,10 +14,15 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     ENABLE_OTP: bool = True
+    ENVIRONMENT: str = "production"
     BACKUP_ENCRYPTION_KEY: str
     BACKUP_IV: str
     LRN_ENCRYPTION_KEY: SecretStr | None = None
     LRN_HMAC_SECRET: SecretStr | None = None
+
+    @property
+    def otp_enabled(self) -> bool:
+        return self.ENABLE_OTP
 
     @field_validator("LRN_ENCRYPTION_KEY")
     @classmethod

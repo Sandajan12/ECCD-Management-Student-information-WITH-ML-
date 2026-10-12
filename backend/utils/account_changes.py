@@ -9,7 +9,7 @@ from backend.utils.security import get_password_hash, verify_password
 
 
 def change_password(db: Session, user: User, payload: PasswordChangeVerify) -> dict:
-    if settings.ENABLE_OTP:
+    if settings.otp_enabled:
         consume_challenge(db, payload.challengeToken or "", payload.otp or "", (OtpPurpose.PASSWORD_CHANGE,), user.user_id)
     elif not verify_password(payload.oldPassword or "", user.password_hash):
         raise HTTPException(401, "Incorrect current password.")
@@ -31,7 +31,7 @@ def update_chairman(db: Session, user: User, payload: AccountUpdateRequest) -> d
     if payload.newEmail and payload.newEmail != user.email:
         if db.query(User).filter(User.email == payload.newEmail, User.user_id != user.user_id).first():
             raise HTTPException(400, "Email is already registered.")
-        if settings.ENABLE_OTP:
+        if settings.otp_enabled:
             consume_challenge(db, payload.challengeToken or "", payload.otp or "", (OtpPurpose.EMAIL_CHANGE,), user.user_id, str(payload.newEmail))
         user.email = str(payload.newEmail)
     if payload.newPassword:

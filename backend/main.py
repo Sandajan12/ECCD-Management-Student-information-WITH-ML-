@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+import logging
 import socketio
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -11,6 +12,7 @@ from backend.migrations.phase2 import check_phase2
 from backend.utils.realtime import sio
 from backend.utils.reference_data import seed_reference_data
 from backend.schemas.common import MessageResult
+from backend.config.settings import settings as runtime_settings
 
 @asynccontextmanager
 async def lifespan(api):
@@ -20,6 +22,10 @@ async def lifespan(api):
         check_phase2(connection)
     with SessionLocal() as db:
         seed_reference_data(db)
+    if runtime_settings.otp_enabled:
+        logging.getLogger("uvicorn.error").info("[AUTH] Email OTP enabled; SMTP delivery active.")
+    else:
+        logging.getLogger("uvicorn.error").info("[DEV] OTP bypass enabled; SMTP delivery skipped.")
     yield
 
 api = FastAPI(title="AMES System", lifespan=lifespan)

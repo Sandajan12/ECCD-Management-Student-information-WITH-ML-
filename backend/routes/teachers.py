@@ -105,7 +105,7 @@ async def request_password_change(payload: PasswordChangeRequest, db: Session = 
     from backend.models.email_verification import OtpPurpose
     if not verify_password(payload.oldPassword, current_user.password_hash):
         raise HTTPException(401, "Incorrect current password.")
-    if not settings.ENABLE_OTP:
+    if not settings.otp_enabled:
         return {"message": "Email verification is disabled for local development.", "email": current_user.email}
     token, otp = issue_challenge(db, current_user, OtpPurpose.PASSWORD_CHANGE)
     db.commit()

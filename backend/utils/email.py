@@ -1,4 +1,6 @@
+import asyncio
 import os
+import logging
 
 from dotenv import load_dotenv
 from fastapi_mail import ConnectionConfig, FastMail, MessageSchema, MessageType
@@ -22,11 +24,15 @@ def get_connection_config():
         MAIL_STARTTLS=mail_starttls,
         MAIL_SSL_TLS=mail_ssl_tls,
         USE_CREDENTIALS=True,
-        VALIDATE_CERTS=True
+        VALIDATE_CERTS=True,
+        MAIL_DEBUG=0,
+        SUPPRESS_SEND=0,
+        TIMEOUT=15,
     )
 
 async def send_otp_email(email: str, otp: str):
-    if not settings.ENABLE_OTP:
+    if not settings.otp_enabled:
+        logging.getLogger("uvicorn.error").info("[DEV] Bypassed OTP for %s", email)
         return
 
     html = f"""
@@ -48,4 +54,5 @@ async def send_otp_email(email: str, otp: str):
     )
     
     fm = FastMail(get_connection_config())
-    await fm.send_message(message)
+    await asyncio.wait_for(fm.send_message(message), timeout=30)
+    logging.getLogger("uvicorn.error").info("[AUTH] OTP sent via email to %s", email)

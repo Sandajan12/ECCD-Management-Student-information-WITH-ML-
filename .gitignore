@@ -25,6 +25,7 @@ _legacy_reference/
 
 # 3. Virtual Environments & Dependencies
 .venv/
+.venv312/
 venv/
 env/
 ENV/
@@ -144,3 +145,4 @@ backend/assets/templates/*.xls
 
 # Local read-only migration reference; never add the embedded repository.
 /AMES-SYSTEM/
+/AMES-SYSTEM-LEGACY/

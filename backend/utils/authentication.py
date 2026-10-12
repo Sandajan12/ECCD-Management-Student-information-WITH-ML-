@@ -6,7 +6,7 @@ import json
 import secrets
 
 from fastapi import HTTPException, Request, Response
-from jose import JWTError, jwt
+from jose import ExpiredSignatureError, JWTError, jwt
 from sqlalchemy.orm import Session
 from backend.config.settings import settings
 from backend.models import EmailVerification, Section, SectionTeacher, Teacher, User, UserTrustedDevice
@@ -103,7 +103,8 @@ def revoke_credentials(db: Session, user: User) -> None:
 
 def issue_challenge(db: Session, user: User, purpose: OtpPurpose, email: str | None = None, remember: bool = False) -> tuple[str, str]:
     email = email or user.email
-    nonce, otp = secrets.token_hex(32), f"{secrets.randbelow(900000) + 100000:06d}"
+    nonce = secrets.token_hex(32)
+    otp = f"{secrets.randbelow(900000) + 100000:06d}" if settings.otp_enabled else "123456"
     expiry = now() + timedelta(minutes=10)
     token = jwt.encode({"tokenType": "otp-challenge", "purpose": purpose.value, "userId": user.user_id, "email": email,
                        "nonce": nonce, "credentialVersion": credential_version(user), "rememberDevice": remember, "exp": expiry}, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
@@ -120,11 +121,17 @@ def consume_challenge(db: Session, token: str, otp: str, purposes: tuple[OtpPurp
         purpose = OtpPurpose(decoded["purpose"])
         if decoded.get("tokenType") != "otp-challenge" or purpose not in purposes or (user_id is not None and decoded["userId"] != user_id) or (email is not None and decoded["email"] != email):
             raise ValueError()
+    except ExpiredSignatureError:
+        raise HTTPException(400, "Code expired. Please request a new code.") from None
     except (JWTError, KeyError, ValueError):
         raise HTTPException(400, "Invalid or expired verification challenge.") from None
     row = db.query(EmailVerification).filter_by(challenge_hash=digest(token), user_id=decoded["userId"], purpose=purpose, email=decoded["email"]).with_for_update().first()
-    if row is None or row.expires_at <= now() or row.attempts >= 5:
-        raise HTTPException(400, "Invalid, expired or exhausted verification code.")
+    if row is None:
+        raise HTTPException(400, "Invalid verification code. Please request a new code.")
+    if row.expires_at <= now():
+        raise HTTPException(400, "Code expired. Please request a new code.")
+    if row.attempts >= 5:
+        raise HTTPException(400, "Too many incorrect attempts. Please request a new code.")
     if not hmac.compare_digest(row.otp_hash or "", signed_digest(f"{decoded['nonce']}:{otp}")):
         row.attempts += 1
         db.commit()

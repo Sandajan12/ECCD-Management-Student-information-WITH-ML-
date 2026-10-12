@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
@@ -34,9 +36,10 @@ async def login(data: LoginRequest, request: Request, response: Response, db: Se
     remembered = trusted_token(db, user, device_tokens(request, data.deviceToken))
     if remembered:
         return {**build_session(db, user), "deviceToken": remembered}
-    if not settings.ENABLE_OTP:
+    if not settings.otp_enabled:
         result = complete_login(db, user, data.rememberDevice, request, response)
         db.commit()
+        logging.getLogger("uvicorn.error").info("[DEV] Bypassed OTP for %s", user.email)
         return result
     token, otp = issue_challenge(db, user, OtpPurpose.LOGIN, remember=data.rememberDevice)
     db.commit()
@@ -70,7 +73,7 @@ async def register_parent(data: RegisterParentRequest, request: Request, respons
             raise HTTPException(400, "This email or username is already registered.")
         response.status_code = 200
     else:
-        user = User(username=username, email=data.email, password_hash=get_password_hash(data.password), role=UserRole.USER, is_active=not settings.ENABLE_OTP, is_registration_pending=settings.ENABLE_OTP, is_first_login=False)
+        user = User(username=username, email=data.email, password_hash=get_password_hash(data.password), role=UserRole.USER, is_active=not settings.otp_enabled, is_registration_pending=settings.otp_enabled, is_first_login=False)
         db.add(user)
         try:
             db.flush()
@@ -78,7 +81,7 @@ async def register_parent(data: RegisterParentRequest, request: Request, respons
             db.rollback()
             raise HTTPException(400, "This email or username is already registered.") from None
         db.add(Parent(user_id=user.user_id, fullname=f"{data.firstName.strip()} {data.lastName.strip()}", relationship_type=data.relationship))
-    if not settings.ENABLE_OTP:
+    if not settings.otp_enabled:
         user.is_active, user.is_registration_pending = True, False
         result = complete_login(db, user, data.rememberDevice, request, response)
         db.commit()
@@ -116,7 +119,7 @@ async def send_otp(data: SendOtpRequest, db: Session = Depends(get_db), user: Us
         raise HTTPException(401, "Incorrect current password.")
     if db.query(User).filter(User.email == data.email).first():
         raise HTTPException(400, "Email is already registered.")
-    if not settings.ENABLE_OTP:
+    if not settings.otp_enabled:
         return {"message": "Email verification is disabled for local development."}
     token, otp = issue_challenge(db, user, OtpPurpose.EMAIL_CHANGE, str(data.email))
     db.commit()

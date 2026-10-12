@@ -163,6 +163,39 @@ class BackendTests(unittest.TestCase):
         with self.sessions() as db:
             self.assertEqual(db.query(EmailVerification).count(),0)
 
+    def test_otp_expiry_resend_and_email_delivery_failure(self):
+        codes = []
+        async def delivered_email(address, code):
+            codes.append(code)
+        with patch.object(settings, 'ENABLE_OTP', True), patch('backend.routes.auth.send_otp_email', side_effect=delivered_email):
+            first = self.login('chairman').json()['challengeToken']
+            second = self.login('chairman').json()['challengeToken']
+            stale = self.client.post('/api/auth/verify-otp', json={'challengeToken': first, 'otp': codes[0]})
+            self.assertEqual(stale.status_code, 400)
+            invalid = self.client.post('/api/auth/verify-otp', json={'challengeToken': second, 'otp': '000000'})
+            self.assertEqual(invalid.status_code, 400)
+            self.assertEqual(invalid.json()['detail'], 'Invalid verification code.')
+            with self.sessions() as db:
+                row = db.query(EmailVerification).filter_by(challenge_hash=digest(second)).one()
+                self.assertEqual(row.otp, '')
+                self.assertNotEqual(row.otp_hash, codes[-1])
+                row.expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+                db.commit()
+            expired = self.client.post('/api/auth/verify-otp', json={'challengeToken': second, 'otp': codes[-1]})
+            self.assertEqual(expired.status_code, 400)
+            self.assertIn('Code expired', expired.json()['detail'])
+            from backend.utils.authentication import now
+            with patch('backend.utils.authentication.now', return_value=now() - timedelta(minutes=11)):
+                expired_token = self.login('chairman').json()['challengeToken']
+            expired = self.client.post('/api/auth/verify-otp', json={'challengeToken': expired_token, 'otp': codes[-1]})
+            self.assertEqual(expired.status_code, 400)
+            self.assertIn('Code expired', expired.json()['detail'])
+        with patch.object(settings, 'ENABLE_OTP', True), patch('backend.routes.auth.send_otp_email', new_callable=AsyncMock, side_effect=RuntimeError('SMTP unavailable')):
+            failed = self.login('chairman')
+            self.assertEqual(failed.status_code, 502)
+            self.assertNotIn('challengeToken', failed.json())
+            self.assertEqual(failed.json()['detail'], 'Unable to deliver the verification email. Please retry.')
+
     def test_pending_registration_retry_and_activation(self):
         payload={'email':'pending@example.com','firstName':'Pending','lastName':'Parent','password':PASSWORD}
         with patch.object(settings,'ENABLE_OTP',True),patch('backend.routes.auth.send_otp_email',new_callable=AsyncMock,side_effect=RuntimeError('mail offline')):
