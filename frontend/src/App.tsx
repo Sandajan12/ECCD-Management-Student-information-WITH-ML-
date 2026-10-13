@@ -14,7 +14,7 @@ import EccdQuestionsManagement from "./pages/chairman/EccdQuestionsManagement";
 import SystemSettings from "./pages/chairman/SystemSettings";
 
 // Teacher Pages
-import TeacherDashboard from "./pages/teacher/TeacherDashboard";
+import TeacherDashboard from "./pages/teacher/Dashboard";
 import StudentManagement from "./pages/teacher/StudentManagement";
 import EccdAssessment from "./pages/teacher/EccdAssessment";
 import MessageParent from "./pages/teacher/MessageParent";
@@ -30,7 +30,7 @@ import ProtectedRoute from "./components/ProtectedRoute";
 import MainLayout from "./layouts/MainLayout";
 import ChairmanLayout from "./layouts/ChairmanLayout";
 import TeacherLayout from "./layouts/TeacherLayout";
-import EccdQuestionManagement from "./pages/teacher/EccdQuestionManagement";
+import EccdQuestionManagement from "./pages/chairman/EccdQuestionsManagement";
 import "./App.css";
 
 function App() {

@@ -1,5 +1,5 @@
 // Legacy visual source: pages/auth/Register.jsx (RegisterParentPage.jsx re-exports it).
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Link, Navigate, useNavigate } from "react-router-dom";
 import { useSessionField } from "../utils/sessionDrafts";
 import { useAuth, roleHome } from "../context/AuthContext";
@@ -49,6 +49,7 @@ export default function RegisterParentPage() {
     false,
   );
   const [busy, setBusy] = useState(false);
+  const submitting = useRef(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   if (user) return <Navigate to={roleHome(user.role)} replace />;
@@ -65,6 +66,7 @@ export default function RegisterParentPage() {
     ).data;
   const accept = (data: AuthResponse) => {
     if (data.requireOtp) {
+      setOtp("");
       setChallenge(data);
       setError(
         data.emailSent
@@ -107,13 +109,36 @@ export default function RegisterParentPage() {
           className="w-full"
           onSubmit={async (e) => {
             e.preventDefault();
-            if (busy) return;
+            if (submitting.current) return;
             setError("");
             setMessage("");
             if (challenge && !/^\d{6}$/.test(otp)) {
               setError("Please enter the complete 6-digit verification code.");
               return;
             }
+            if (!challenge) {
+              if (!form.firstName.trim() || !form.lastName.trim()) {
+                setError("First and last names are required.");
+                return;
+              }
+              if ([form.firstName, form.lastName].some(name => name.trim().length > 100 || !/^[\p{L}\p{M} .'-]+$/u.test(name.trim()) || !/\p{L}/u.test(name))) {
+                setError("Names may contain only letters, spaces, hyphens, apostrophes and periods, up to 100 characters.");
+                return;
+              }
+              if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim()) || form.email.trim().length > 100) {
+                setError("Please enter a valid email address, up to 100 characters.");
+                return;
+              }
+              if (!passwordValid(form.password) || new TextEncoder().encode(form.password).length > 72) {
+                setError("Please satisfy all password requirements. Passwords must not exceed 72 UTF-8 bytes.");
+                return;
+              }
+              if (form.password !== form.confirm) {
+                setError("Passwords do not match!");
+                return;
+              }
+            }
+            submitting.current = true;
             setBusy(true);
             try {
               accept(
@@ -130,6 +155,7 @@ export default function RegisterParentPage() {
             } catch (err) {
               setError(errorMessage(err));
             } finally {
+              submitting.current = false;
               setBusy(false);
             }
           }}
@@ -166,12 +192,17 @@ export default function RegisterParentPage() {
                 disabled={busy}
                 className="relative mt-2 w-full rounded-lg px-2 py-1.5 text-sm leading-[1.75] font-medium text-[#4543c0] outline-none hover:bg-[#4543c0]/4 focus-visible:bg-[#4543c0]/12 focus-visible:outline-none disabled:text-black/26"
                 onClick={async () => {
+                  if (submitting.current) return;
+                  submitting.current = true;
+                  setError("");
+                  setMessage("");
                   setBusy(true);
                   try {
                     accept(await register());
                   } catch (err) {
                     setError(errorMessage(err));
                   } finally {
+                    submitting.current = false;
                     setBusy(false);
                   }
                 }}

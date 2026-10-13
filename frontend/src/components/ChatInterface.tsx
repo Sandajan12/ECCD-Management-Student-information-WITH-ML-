@@ -121,8 +121,10 @@ function Composer({
 }
 export default function ChatInterface({
   currentUserRole,
+  preferredContactName,
 }: {
   currentUserRole: "teacher" | "parent";
+  preferredContactName?: string;
 }) {
   const { token } = useAuth();
   const [contacts, setContacts] = useState<Contact[]>([]);
@@ -136,6 +138,15 @@ export default function ChatInterface({
   const currentRoom = useRef("");
   const socket = useRef<Socket | null>(null);
   const bottom = useRef<HTMLDivElement>(null);
+  const selectedPreference = useRef("");
+  useEffect(() => {
+    if (currentUserRole !== "parent" || !preferredContactName || selectedPreference.current === preferredContactName || window.innerWidth < 1024) return;
+    const adviser = contacts.find(contact => contact.name.replace(/^Teacher\s+/i, "").trim().toLowerCase() === preferredContactName.trim().toLowerCase());
+    if (adviser) {
+      setActive(adviser);
+      selectedPreference.current = preferredContactName;
+    }
+  }, [contacts, currentUserRole, preferredContactName]);
   const teacherId = currentUserRole === "teacher" ? ownId : active?.id;
   const parentId = currentUserRole === "parent" ? ownId : active?.id;
   const room =
