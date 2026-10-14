@@ -38,7 +38,7 @@ class Student(Base):
         ),
         nullable=True,
     )
-    section_name = Column(String(50), nullable=True)
+    section_name = Column(String(100), nullable=True)
     address = Column(String(100), nullable=True)
     handedness = Column(Enum(Handedness), nullable=True)
     num_of_siblings = Column(Integer, nullable=True)

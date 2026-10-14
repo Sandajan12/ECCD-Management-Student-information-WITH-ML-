@@ -29,4 +29,12 @@ def phase1_metadata() -> MetaData:
                 Index("idx_family_student", target.c.student_id)
             else:
                 Index("idx_student_period", target.c.student_id, target.c.testing_period)
+    # Historical Phase 1 retains its original widths. Batch 1 widens these
+    # explicitly after Phase 2; evolving ORM metadata must not rewrite history.
+    metadata.tables["teachers"].c.class_name.type = String(50)
+    metadata.tables["students"].c.section_name.type = String(50)
+    for table in (metadata.tables["messages"], metadata.tables["system_logs"]):
+        for index in list(table.indexes):
+            if index.name in ("idx_messages_thread", "idx_logs_timestamp"):
+                table.indexes.remove(index)
     return metadata

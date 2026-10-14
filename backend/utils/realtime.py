@@ -1,6 +1,9 @@
 """Socket.IO transports persisted messages; the database remains authoritative."""
 import re
 import socketio
+from starlette.concurrency import run_in_threadpool
+from starlette.datastructures import QueryParams
+from starlette.responses import JSONResponse
 from fastapi import HTTPException
 from pydantic import ValidationError
 from backend.config.database import SessionLocal
@@ -9,10 +12,53 @@ from backend.models.message import SenderRole
 from backend.schemas.message import MessageResponse, SocketMessageRequest
 from backend.utils.authentication import session_user
 from backend.utils.messaging import authorize_conversation
+from backend.config.settings import settings
+from backend.utils.rate_limits import limits, client_key, POLICIES
+from backend.utils.uploads import JSON_LIMIT
 
-sio = socketio.AsyncServer(async_mode="asgi", cors_allowed_origins=["http://localhost:5173", "http://127.0.0.1:5173"])
+sio = socketio.AsyncServer(async_mode="asgi", cors_allowed_origins=settings.allowed_origins, max_http_buffer_size=JSON_LIMIT)
 connections: dict[str, str] = {}
 generations: dict[str, int] = {}
+socket_clients: dict[str, str] = {}
+
+
+class SocketHandshakeMiddleware:
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] in ("http", "websocket") and scope["path"].rstrip("/") == "/socket.io" and scope.get("method", "GET") != "OPTIONS" and "sid" not in QueryParams(scope.get("query_string", b"").decode()):
+            status, message, retry = 429, POLICIES["socket-connect"].message, 0
+            try:
+                retry = await run_in_threadpool(limits.hit, "socket-connect", client_key(scope))
+            except Exception:
+                status, message = 503, "Connection service is temporarily unavailable."
+            if retry or status == 503:
+                if scope["type"] == "http":
+                    response = JSONResponse({"success": False, "status": status, "message": message}, status_code=status, headers={"Retry-After": str(retry)} if retry else {})
+                    await response(scope, receive, send)
+                else:
+                    await send({"type": "websocket.close", "code": 1008, "reason": message})
+                return
+            scope["ames.handshake_checked"] = True
+        await self.app(scope, receive, send)
+
+
+async def socket_budget(sid):
+    try:
+        for namespace, key in (("socket-packets", sid), ("socket-events", socket_clients.get(sid, "unknown"))):
+            retry = await run_in_threadpool(limits.hit, namespace, key)
+            if retry:
+                result = {"success": False, "status": 429, "message": POLICIES[namespace].message, "retryAfter": retry}
+                await sio.emit("rate_limit_error", result, to=sid)
+                await sio.disconnect(sid)
+                return result
+    except Exception:
+        result = {"success": False, "status": 503, "message": "Connection service is temporarily unavailable."}
+        await sio.emit("rate_limit_error", result, to=sid)
+        await sio.disconnect(sid)
+        return result
+    return None
 
 
 def parse_room(room: object) -> tuple[int, int]:
@@ -24,6 +70,14 @@ def parse_room(room: object) -> tuple[int, int]:
 
 @sio.event
 async def connect(sid, environ, auth):
+    scope = environ.get("asgi.scope", {})
+    key = client_key(scope)
+    if not scope.get("ames.handshake_checked"):
+        try:
+            if await run_in_threadpool(limits.hit, "socket-connect", key):
+                return False
+        except Exception:
+            return False
     token = auth.get("token") if isinstance(auth, dict) else None
     if not isinstance(token, str):
         return False
@@ -33,6 +87,7 @@ async def connect(sid, environ, auth):
             if user.role.value not in ("admin", "user"):
                 return False
         connections[sid] = token
+        socket_clients[sid] = key
         return True
     except HTTPException:
         return False
@@ -42,6 +97,8 @@ async def connect(sid, environ, auth):
 async def disconnect(sid, reason=None):
     connections.pop(sid, None)
     generations.pop(sid, None)
+    socket_clients.pop(sid, None)
+    limits.forget_socket(sid)
 
 
 async def failed(sid, message):
@@ -52,6 +109,8 @@ async def failed(sid, message):
 
 @sio.event
 async def join_room(sid, room):
+    if result := await socket_budget(sid):
+        return result
     generation = generations[sid] = generations.get(sid, 0) + 1
     try:
         teacher_id, parent_id = parse_room(room)
@@ -71,6 +130,8 @@ async def join_room(sid, room):
 
 @sio.event
 async def leave_room(sid, room):
+    if result := await socket_budget(sid):
+        return result
     try:
         parse_room(room)
         with SessionLocal() as db:
@@ -84,6 +145,8 @@ async def leave_room(sid, room):
 
 @sio.event
 async def send_message(sid, data):
+    if result := await socket_budget(sid):
+        return result
     try:
         payload = SocketMessageRequest.model_validate(data)
         teacher_id, parent_id = parse_room(payload.room)
@@ -118,3 +181,10 @@ async def send_message(sid, data):
 async def disconnect_all() -> None:
     for sid in list(connections):
         await sio.disconnect(sid)
+
+
+@sio.on("*")
+async def unknown_event(event, sid, *data):
+    if result := await socket_budget(sid):
+        return result
+    return await failed(sid, "Unsupported chat event.")

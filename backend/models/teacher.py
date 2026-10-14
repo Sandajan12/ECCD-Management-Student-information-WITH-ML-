@@ -17,7 +17,7 @@ class Teacher(Base):
     first_name = Column(String(100), nullable=True)
     last_name = Column(String(100), nullable=True)
     employee_id = Column(String(50), unique=True, nullable=True)
-    class_name = Column(String(50), nullable=True)
+    class_name = Column(String(100), nullable=True)
     allow_parent_view_student_info = Column(Boolean, default=True)
     allow_parent_view_eccd_pre = Column(Boolean, default=False)
     allow_parent_view_eccd_mid = Column(Boolean, default=False)

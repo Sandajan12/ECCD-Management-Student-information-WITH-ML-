@@ -10,6 +10,7 @@ from uuid import uuid4
 from zipfile import ZipFile
 
 import openpyxl
+from cryptography.fernet import Fernet
 from openpyxl.utils.datetime import CALENDAR_MAC_1904, to_excel
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, inspect, select, text
@@ -80,12 +81,24 @@ class BackendTests(unittest.TestCase):
         api.dependency_overrides[get_db] = database
         self.otp_setting = patch.object(settings, 'ENABLE_OTP', False)
         self.otp_setting.start()
+        # Backup tests must not depend on or replace local/deployed secrets.
+        self.backup_setting = patch.object(settings, 'BACKUP_ENCRYPTION_KEY', Fernet.generate_key().decode())
+        self.backup_setting.start()
+        # Explicit fixture-only bypass, never enabled through HTTP or ENV.
+        from backend.utils.rate_limits import limits
+        limits.reset()
+        self.rate_setting = patch.object(limits, 'bypass', True)
+        self.rate_setting.start()
         self.client = TestClient(app)
 
     def tearDown(self):
         self.client.close()
         api.dependency_overrides.clear()
         self.otp_setting.stop()
+        self.backup_setting.stop()
+        self.rate_setting.stop()
+        from backend.utils.rate_limits import limits
+        limits.reset()
         self.test_engine.dispose()
         if not re.fullmatch(r'phase2_test_[a-f0-9]{32}',self.schema):
             raise AssertionError('Unsafe test schema cleanup target')
@@ -132,7 +145,7 @@ class BackendTests(unittest.TestCase):
             email.assert_not_awaited()
 
     def test_first_login_enforced_and_old_session_revoked(self):
-        provision=self.call('POST','/api/chairman/teachers',json={'email':'newteacher@example.com','password':PASSWORD,'first_name':'New','last_name':'Teacher','section_id':1})
+        provision=self.call('POST','/api/chairman/teachers',json={'email':'newteacher@example.com','password':PASSWORD,'first_name':'New','last_name':'Teacher','employee_id':'NEW-001','section_id':1})
         self.assertEqual(provision.status_code,201)
         login=self.login('newteacher',rememberDevice=True).json()
         token=login['token']

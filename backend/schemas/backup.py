@@ -44,7 +44,7 @@ class TeacherBackupRow(BackupRow):
     first_name: str | None = Field(max_length=100)
     last_name: str | None = Field(max_length=100)
     employee_id: str | None = Field(max_length=50)
-    class_name: str | None = Field(max_length=50)
+    class_name: str | None = Field(max_length=100)
     allow_parent_view_student_info: bool | None
     allow_parent_view_eccd_pre: bool | None
     allow_parent_view_eccd_mid: bool | None
@@ -91,7 +91,7 @@ class StudentBackupRow(BackupRow):
     date_of_birth: date | None
     gender: Gender | None
     section_id: PositiveId | None
-    section_name: str | None = Field(max_length=50)
+    section_name: str | None = Field(max_length=100)
     address: str | None = Field(max_length=100)
     handedness: Handedness | None
     num_of_siblings: int | None = Field(ge=0)

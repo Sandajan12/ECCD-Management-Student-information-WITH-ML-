@@ -7,6 +7,7 @@ from sqlalchemy import (
     Enum,
     ForeignKey,
     Integer,
+    Index,
     String,
     Text,
     func,
@@ -23,6 +24,7 @@ class SenderRole(str, enum.Enum):
 
 class Message(Base):
     __tablename__ = "messages"
+    __table_args__ = (Index("idx_messages_thread", "parent_id", "teacher_id", "is_archived", "created_at"),)
 
     message_id = Column(Integer, primary_key=True, autoincrement=True)
     parent_id = Column(

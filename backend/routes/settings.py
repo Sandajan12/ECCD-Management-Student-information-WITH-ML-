@@ -7,6 +7,7 @@ from backend.models import SystemLog, User
 from backend.schemas.settings import BackgroundResult, SettingsUpdateResult, SchoolSettingsResponse, SchoolSettingsUpdate, RolloverRequest, RolloverResponse, RolloverUndoResponse
 from backend.utils.deps import verify_role
 from backend.utils.rollover import settings_record, rollover, undo_availability, undo_rollover
+from backend.utils.uploads import branding_image
 
 router = APIRouter(prefix="/api/settings", tags=["Settings"])
 chairman_router = APIRouter(prefix="/api/chairman", tags=["School year"])
@@ -24,12 +25,16 @@ def get_settings(db: Session = Depends(get_db)):
 async def update_settings(request: Request, db: Session = Depends(get_db), user: User = Depends(verify_role(["super-admin"]))):
     if request.headers.get("content-type", "").startswith("application/json"):
         try:
-            data, form = await request.json(), None
+            data = await request.json()
         except ValueError:
             raise HTTPException(422, "Invalid JSON school settings.") from None
-    else:
-        form = await request.form()
+        return await save_settings(data, None, db, user)
+    async with request.form() as form:
         data = {key: value for key, value in form.items() if isinstance(value, str)}
+        return await save_settings(data, form, db, user)
+
+
+async def save_settings(data, form, db: Session, user: User):
     try:
         payload = SchoolSettingsUpdate.model_validate(data)
     except ValidationError:
@@ -41,9 +46,7 @@ async def update_settings(request: Request, db: Session = Depends(get_db), user:
     for field, existing, upload in (("logo_url", "existing_logo_url", "systemLogo"), ("profile_pic_url", "existing_profile_pic_url", "profilePic")):
         if form and form.get(upload) and hasattr(form[upload], "read"):
             file = form[upload]
-            if not (file.content_type or "").startswith("image/"):
-                raise HTTPException(400, "Branding files must be images.")
-            encoded = base64.b64encode(await file.read()).decode()
+            encoded = base64.b64encode(await branding_image(file)).decode()
             setattr(setting, field, f"data:{file.content_type};base64,{encoded}")
         elif existing in data:
             setattr(setting, field, data[existing])
@@ -54,9 +57,7 @@ async def update_settings(request: Request, db: Session = Depends(get_db), user:
 
 @router.post("/upload-background", response_model=BackgroundResult)
 async def upload_background(file: UploadFile = File(...), db: Session = Depends(get_db), user: User = Depends(verify_role(["super-admin"]))):
-    if not (file.content_type or "").startswith("image/"):
-        raise HTTPException(400, "File must be an image.")
-    url = f"data:{file.content_type};base64,{base64.b64encode(await file.read()).decode()}"
+    url = f"data:{file.content_type};base64,{base64.b64encode(await branding_image(file)).decode()}"
     setting = settings_record(db)
     setting.login_background = url
     db.commit()

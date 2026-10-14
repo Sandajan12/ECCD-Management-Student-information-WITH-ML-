@@ -90,7 +90,7 @@ def archive_all(db: Session = Depends(get_db), user: User = Depends(verify_role(
 
 @router.get("/my-child", response_model=list[ChildPublicResponse])
 @router.get("/linked", response_model=list[ChildPublicResponse])
-def linked_children(db: Session = Depends(get_db), user: User = Depends(verify_role(["user"]))):
+def linked_children(db: Session = Depends(get_db), user: User = Depends(verify_role(["user", "super-admin"]))):
     parent = db.query(Parent).filter_by(user_id=user.user_id).first()
     if parent is None:
         return []
@@ -122,6 +122,7 @@ def archive(identifier: str, db: Session = Depends(get_db), user: User = Depends
     student = resolve_student(db, identifier)
     authorize_student(db, user, student)
     student.is_active = False
+    db.add(SystemLog(user_id=user.user_id, action_type="Archived Student", details=f"Archived student ID {student.student_id} (LRN: {student.masked_lrn})."))
     db.commit()
     return {"message": "Student successfully archived!"}
 
@@ -132,6 +133,7 @@ def unarchive(identifier: str, db: Session = Depends(get_db), user: User = Depen
     student = resolve_student(db, identifier)
     authorize_student(db, user, student)
     student.is_active = True
+    db.add(SystemLog(user_id=user.user_id, action_type="Student Restored", details=f"Restored student ID {student.student_id} (LRN: {student.masked_lrn})."))
     db.commit()
     return {"message": "Student successfully unarchived!"}
 
@@ -141,9 +143,23 @@ def unarchive(identifier: str, db: Session = Depends(get_db), user: User = Depen
 def delete(identifier: str, db: Session = Depends(get_db), user: User = Depends(verify_role(["admin", "super-admin"]))):
     student = resolve_student(db, identifier)
     authorize_student(db, user, student)
+    db.add(SystemLog(user_id=user.user_id, action_type="Deleted Student", details=f"Permanently deleted student ID {student.student_id} (LRN: {student.masked_lrn})."))
     db.delete(student)
     db.commit()
     return {"message": "Student account permanently deleted."}
+
+
+def student_change_snapshot(db: Session, student: Student) -> dict[str, str]:
+    fields = {"first_name": "First Name", "middle_name": "Middle Name", "last_name": "Last Name", "date_of_birth": "Date of Birth", "gender": "Gender", "address": "Address", "emergency_contact": "Emergency Contact", "handedness": "Handedness", "num_of_siblings": "No. of Siblings", "birth_order": "Birth Order"}
+    def text(value: object) -> str:
+        return str(getattr(value, "value", value)).strip() if value is not None else ""
+    result = {label: text(getattr(student, field)) for field, label in fields.items()}
+    result["LRN"] = student.masked_lrn
+    for relationship, label in (("Father", "Father"), ("Mother", "Mother"), ("Guardian", "Guardian")):
+        parent = db.query(Parent).join(FamilyAccess).filter(FamilyAccess.student_id == student.student_id, FamilyAccess.relationship_type == relationship).first()
+        for field, suffix in (("fullname", "Name"), ("age", "Age"), ("occupation", "Occupation"), ("educational_attainment", "Education")):
+            result[f"{label}'s {suffix}"] = text(getattr(parent, field)) if parent else ""
+    return result
 
 
 @router.put("/update/{identifier}", response_model=MessageResult)
@@ -151,14 +167,35 @@ def delete(identifier: str, db: Session = Depends(get_db), user: User = Depends(
 def update(identifier: str, payload: StudentUpdate, db: Session = Depends(get_db), user: User = Depends(verify_role(["admin", "super-admin", "user"]))):
     student = resolve_student(db, identifier)
     authorize_student(db, user, student, parent_edit=user.role.value == "user")
+    before = student_change_snapshot(db, student)
+    old_lrn_hash = student.lrn_search_hash
+    if payload.lrn_number is not None:
+        if user.role.value == "user":
+            raise HTTPException(403, "Only school staff can correct a student's LRN.")
+        duplicate = db.query(Student).filter(Student.lrn_search_hash == hash_lrn(payload.lrn_number), Student.student_id != student.student_id).first()
+        if duplicate:
+            raise HTTPException(400, "Another student is already using this LRN.")
+        student.lrn_number = payload.lrn_number
     parent_fields = {"emergency_contact", "address", "handedness", "num_of_siblings", "birth_order"}
     for key, value in payload.model_dump(exclude_unset=True).items():
         if key in Student.__table__.columns and key not in ("section_id", "section_name", "school_year", "is_active") and (user.role.value != "user" or key in parent_fields):
             setattr(student, key, value)
     for relationship, prefix in (("Father", "father"), ("Mother", "mother"), ("Guardian", "legal_guardian")):
         upsert_guardian(db, student, relationship, getattr(payload, f"{prefix}_name"), getattr(payload, f"{prefix}_age"), getattr(payload, f"{prefix}_occ"), getattr(payload, f"{prefix}_educ"))
-    db.add(SystemLog(user_id=user.user_id, action_type="Updated Student Info", details=f"Updated student {student.student_id} (LRN: {student.masked_lrn})."))
-    db.commit()
+    try:
+        db.flush()
+        after = student_change_snapshot(db, student)
+        changes = [f"{field}: '{before[field]}' -> '{value}'" for field, value in after.items() if before[field] != value]
+        if old_lrn_hash != student.lrn_search_hash and before["LRN"] == after["LRN"]:
+            changes.append("LRN: corrected protected identifier (last four digits unchanged).")
+        actor = f"{user.role.value} {user.username} (User ID: {user.user_id})"
+        target = f"student ID {student.student_id} ({student.masked_lrn})"
+        details = f"{actor} updated records for {target}.\nSpecific changes:\n- " + "\n- ".join(changes) if changes else f"{actor} saved {target} but no data was changed."
+        db.add(SystemLog(user_id=user.user_id, action_type="Updated Student Info", details=details))
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(400, "Another student is already using this LRN.") from None
     return {"message": "Student details successfully updated!"}
 
 

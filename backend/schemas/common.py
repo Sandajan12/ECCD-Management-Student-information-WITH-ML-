@@ -1,6 +1,7 @@
 """Shared Pydantic V2 validation for the migrated functional contracts."""
 
 import re
+import unicodedata
 from typing import Annotated
 
 from pydantic import AfterValidator, BaseModel, BeforeValidator, ConfigDict, EmailStr, Field
@@ -31,9 +32,27 @@ def validate_school_year(value: str) -> str:
     return value
 
 
+def trim_text(value: object) -> object:
+    return value.strip() if isinstance(value, str) else value
+
+
+def validate_person_name(value: str) -> str:
+    if value and (not any(unicodedata.category(char).startswith("L") for char in value)
+                  or any(not unicodedata.category(char).startswith(("L", "M")) and char not in " .'-" for char in value)):
+        raise ValueError("Names may contain only letters, spaces, hyphens, apostrophes and periods")
+    return value
+
+
+def validate_contact(value: str) -> str:
+    if value and not re.fullmatch(r"09[0-9]{9}", value):
+        raise ValueError("Contact number must begin with 09 and contain exactly 11 digits")
+    return value
+
+
 PositiveId = Annotated[int, BeforeValidator(reject_boolean), Field(gt=0, le=2147483647)]
 Lrn = Annotated[str, Field(strict=True, pattern=r"^[0-9]{12}$")]
-Name = Annotated[str, Field(max_length=100)]
+Name = Annotated[str, BeforeValidator(trim_text), Field(strict=True, max_length=100), AfterValidator(validate_person_name)]
+EmergencyContact = Annotated[str, Field(strict=True, max_length=20), AfterValidator(validate_contact)]
 LoginEmail = Annotated[EmailStr, Field(max_length=100)]
 StrongPassword = Annotated[str, AfterValidator(validate_password)]
 SchoolYear = Annotated[str, Field(pattern=r"^[0-9]{4}-[0-9]{4}$"), AfterValidator(validate_school_year)]

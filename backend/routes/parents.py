@@ -43,7 +43,7 @@ def get_parent_children(db: Session = Depends(get_db), current_user: User = Depe
 def link_child_to_parent(payload: ParentLinkChildRequest, db: Session = Depends(get_db), current_user: User = Depends(verify_role(["user"]))):
     from backend.routes.students import link_child
     from backend.schemas.student import FamilyAccessCreate
-    return link_child(FamilyAccessCreate(**payload.model_dump()), db, current_user)
+    return link_child(FamilyAccessCreate(**payload.model_dump(exclude_unset=True)), db, current_user)
 
 
 @router.put("/children/{lrn}", response_model=MessageResult)

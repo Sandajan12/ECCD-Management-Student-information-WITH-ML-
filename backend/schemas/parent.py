@@ -1,11 +1,11 @@
 from datetime import date
 from typing import Any, Dict, List, Optional
-from pydantic import BaseModel, ConfigDict, Field, field_validator
-from .common import Lrn, PositiveId
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
+from .common import EmergencyContact, Lrn, Name, PositiveId
 
 
 class ParentBase(BaseModel):
-    fullname: Optional[str] = None
+    fullname: Name | None = None
     educational_attainment: Optional[str] = None
     occupation: Optional[str] = None
     age: Optional[int] = None
@@ -21,6 +21,7 @@ class ParentUpdate(ParentBase):
 
 
 class ParentResponse(ParentBase):
+    fullname: str | None = Field(default=None, max_length=100)
     parent_id: int
     user_id: Optional[int] = None
 
@@ -64,23 +65,32 @@ class ChildProfileResponse(BaseModel):
 
 
 class ParentChildUpdateRequest(BaseModel):
-    emergency_contact: Optional[str] = Field(default=None, max_length=20)
+    emergency_contact: EmergencyContact | None = Field(default=None, validation_alias=AliasChoices("emergency_contact", "emergencyContactNumber", "emergency_contact_number", "guardian_name"))
     address: Optional[str] = Field(default=None, max_length=100)
     handedness: Optional[str] = Field(default=None, pattern="^(Left|Right)$")
     num_of_siblings: Optional[int] = Field(default=None, ge=0)
     birth_order: Optional[str] = Field(default=None, max_length=50)
-    father_name: Optional[str] = Field(default=None, max_length=100)
+    father_name: Name | None = None
     father_age: Optional[int] = Field(default=None, ge=0)
     father_occ: Optional[str] = Field(default=None, max_length=50)
     father_educ: Optional[str] = Field(default=None, max_length=20)
-    mother_name: Optional[str] = Field(default=None, max_length=100)
+    mother_name: Name | None = None
     mother_age: Optional[int] = Field(default=None, ge=0)
     mother_occ: Optional[str] = Field(default=None, max_length=50)
     mother_educ: Optional[str] = Field(default=None, max_length=20)
+    legal_guardian_name: Name | None = None
+    legal_guardian_age: Optional[int] = Field(default=None, ge=0)
+    legal_guardian_occ: Optional[str] = Field(default=None, max_length=50)
+    legal_guardian_educ: Optional[str] = Field(default=None, max_length=20)
 
     model_config = ConfigDict(extra="ignore")
 
-    @field_validator("num_of_siblings", "father_age", "mother_age", mode="before")
+    @field_validator("handedness", mode="before")
+    @classmethod
+    def normalize_handedness(cls, value: object) -> object:
+        return value.strip().title() if isinstance(value, str) else value
+
+    @field_validator("num_of_siblings", "father_age", "mother_age", "legal_guardian_age", mode="before")
     @classmethod
     def coerce_empty_to_none(cls, v: Any) -> Optional[int]:
         if v is None or v == "" or str(v).strip() == "":

@@ -10,9 +10,16 @@ class LoginRequest(ApiModel):
     email: str = Field(min_length=1, max_length=100, validation_alias=AliasChoices("email", "username"))
     password: str = Field(min_length=1)
     rememberDevice: bool = False
+    rememberMe: bool = False
     deviceToken: str | None = Field(default=None, max_length=512)
+    trusted_device_token: str | None = Field(default=None, max_length=512)
     otp: OtpCode | None = None
     challengeToken: str | None = Field(default=None, max_length=3000)
+
+    @model_validator(mode="after")
+    def remember_requested(self) -> "LoginRequest":
+        self.rememberDevice = self.rememberDevice or self.rememberMe
+        return self
 
 
 class SessionUser(ApiModel):
@@ -24,7 +31,7 @@ class SessionUser(ApiModel):
     role: UserRole
     is_first_login: int = Field(default=0, ge=0, le=1)
     section_id: PositiveId | None = None
-    section_name: Name | None = None
+    section_name: str | None = Field(default=None, max_length=100)
     allow_eccd_question_management: bool = False
 
 
@@ -37,6 +44,7 @@ class LoginResponse(ApiModel):
     requiresOtp: Literal[False] = False
     requiresPasswordChange: bool = False
     deviceToken: str | None = None
+    email: LoginEmail | None = None
 
 
 class OtpChallengeResponse(ApiModel):
@@ -59,6 +67,12 @@ class RegisterParentRequest(ApiModel):
     relationship: str = Field(default="Guardian", max_length=50, validation_alias=AliasChoices("relationship", "relationship_type"))
     otp: OtpCode | Literal[""] = ""
     rememberDevice: bool = False
+    rememberMe: bool = False
+
+    @model_validator(mode="after")
+    def remember_requested(self) -> "RegisterParentRequest":
+        self.rememberDevice = self.rememberDevice or self.rememberMe
+        return self
 
 
 class VerifyOtpRequest(ApiModel):
@@ -80,6 +94,7 @@ class UpdatePasswordRequest(ApiModel):
 class LogoutRequest(ApiModel):
     forgetDevice: bool = False
     deviceToken: str | None = Field(default=None, max_length=512)
+    trusted_device_token: str | None = Field(default=None, max_length=512)
 
 
 class LogoutResponse(ApiModel):

@@ -11,14 +11,13 @@ from openpyxl.cell.cell import MergedCell
 from openpyxl.utils.datetime import from_excel
 from fastapi import HTTPException
 from fastapi.responses import StreamingResponse
-from pydantic import ValidationError
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from backend.models import EccdQuestion, FamilyAccess, Parent, Section, SectionTeacher, Student, StudentEccdEvaluation, Teacher, User
 from backend.models.eccd import EccdAnswer, TestingPeriod
 from backend.models.student import Gender, Handedness
 from backend.schemas.student import StudentCreate
+from backend.schemas.common import validate_person_name
 from backend.utils.access import authorize_student, current_teacher, get_active_adviser_for_student, resolve_student, teacher_sections
 from backend.utils.eccd_scorer import calculate_decimal_age, calculate_scores
 from backend.utils.lrn import decrypt_lrn, hash_lrn
@@ -62,7 +61,7 @@ def student_workbook(db: Session, student: Student):
     parents = []
     for parent, relationship in db.query(Parent, FamilyAccess.relationship_type).join(FamilyAccess).filter(FamilyAccess.student_id == student.student_id):
         # Do not mutate a linked parent's relationship while exporting.
-        proxy = Parent(fullname=parent.fullname, age=parent.age, occupation=parent.occupation, educational_attainment=parent.educational_attainment, relationship_type=relationship)
+        proxy = Parent(fullname=parent.fullname, age=parent.age, occupation=parent.occupation, educational_attainment=parent.educational_attainment, relationship_type=relationship if relationship is not None else parent.relationship_type)
         parents.append(proxy)
     evaluations = db.query(StudentEccdEvaluation).filter_by(student_id=student.student_id).all()
     questions = db.query(EccdQuestion).all()
@@ -196,6 +195,10 @@ def parse_date(value: object, epoch) -> date | None:
         except (ValueError, OverflowError):
             return None
     if isinstance(value, str):
+        try:
+            return datetime.fromisoformat(value.strip().replace("Z", "+00:00")).date()
+        except ValueError:
+            pass
         for pattern in ("%Y-%m-%d", "%m/%d/%Y", "%m/%d/%y", "%Y-%m-%dT%H:%M:%S"):
             try:
                 return datetime.strptime(value.strip(), pattern).date()
@@ -269,7 +272,11 @@ def import_students(db: Session, user: User, content: bytes, section_id: int | N
                 age = int(string(start + 1)) if string(start + 1) else None
                 if age is not None and age < 0:
                     raise ValueError("Guardian age must not be negative.")
-                upsert_guardian(db, student, relationship, string(start)[:100], age, string(start + 2)[:50] or None, string(start + 3)[:20] or None)
+                name = string(start)
+                validate_person_name(name)
+                if len(name) > 100:
+                    raise ValueError("Names must not exceed 100 characters.")
+                upsert_guardian(db, student, relationship, name, age, string(start + 2)[:50] or None, string(start + 3)[:20] or None)
             dates = {TestingPeriod.PRE: parse_date(cell(10), wb.epoch), TestingPeriod.MID: parse_date(cell(12), wb.epoch), TestingPeriod.POST: parse_date(cell(14), wb.epoch)}
             normalized_name = " ".join(string(1).split()).casefold()
             for question in questions:
@@ -295,7 +302,7 @@ def import_students(db: Session, user: User, content: bytes, section_id: int | N
                         evaluation.answer, evaluation.evaluation_date, evaluation.teacher_id = answer, dates[period], teacher.teacher_id
             db.commit()
             result["successCount"] += 1
-        except (ValueError, ValidationError, IntegrityError) as error:
+        except Exception as error:
             db.rollback()
             result["failedCount"] += 1
             message = str(error) if type(error) is ValueError else "Invalid student, guardian or assessment data. No row changes saved."

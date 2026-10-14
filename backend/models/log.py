@@ -1,4 +1,4 @@
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import Column, DateTime, ForeignKey, Index, Integer, String, Text, func
 from sqlalchemy.orm import relationship
 
 from .base import Base
@@ -6,6 +6,7 @@ from .base import Base
 
 class SystemLog(Base):
     __tablename__ = "system_logs"
+    __table_args__ = (Index("idx_logs_timestamp", "timestamp"),)
 
     log_id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(

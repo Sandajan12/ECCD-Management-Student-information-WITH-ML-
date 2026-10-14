@@ -5,8 +5,9 @@ from pydantic import ValidationError
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 from backend.config.settings import settings
-from backend.models import Base
+from backend.models import Base, SystemLog
 from backend.schemas.backup import BackupDocument
+from backend.utils.uploads import BACKUP_LIMIT
 
 
 def cipher() -> Fernet:
@@ -18,10 +19,15 @@ def cipher() -> Fernet:
 
 def export_backup(db: Session) -> bytes:
     document = {name: [dict(row) for row in db.execute(table.select()).mappings()] for name, table in Base.metadata.tables.items()}
-    return cipher().encrypt(BackupDocument.model_validate(document).model_dump_json().encode())
+    payload = cipher().encrypt(BackupDocument.model_validate(document).model_dump_json().encode())
+    if len(payload) > BACKUP_LIMIT:
+        raise HTTPException(413, "Backup exceeds the restore upload limit.")
+    return payload
 
 
-def restore_backup(db: Session, payload: bytes) -> None:
+def restore_backup(db: Session, payload: bytes, audit_user_id: int | None = None) -> None:
+    if len(payload) > BACKUP_LIMIT:
+        raise HTTPException(413, "Backup exceeds the restore upload limit.")
     try:
         document = BackupDocument.model_validate_json(cipher().decrypt(payload))
     except (InvalidToken, ValidationError, ValueError):
@@ -49,6 +55,8 @@ def restore_backup(db: Session, payload: bytes) -> None:
                 # PostgreSQL RESTART is transactional, unlike setval(). The name
                 # comes from PostgreSQL's own quoted pg_get_serial_sequence.
                 db.execute(text(f"ALTER SEQUENCE {sequence} RESTART WITH {(maximum or 0) + 1}"))
+        if audit_user_id is not None:
+            db.add(SystemLog(user_id=audit_user_id, action_type="BACKUP_RESTORE", details="Restored school data; live user accounts preserved, verification codes and trusted devices cleared."))
         db.commit()
     except Exception:
         db.rollback()

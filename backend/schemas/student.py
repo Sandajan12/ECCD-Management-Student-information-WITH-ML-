@@ -1,8 +1,8 @@
 from datetime import date, datetime
 
 from backend.models.student import Gender, Handedness
-from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator, model_validator
-from .common import ApiModel, Lrn, Name, PositiveId, SchoolYear
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, computed_field, field_validator, model_validator
+from .common import ApiModel, EmergencyContact, Lrn, Name, PositiveId, SchoolYear
 
 
 class StudentBase(BaseModel):
@@ -12,14 +12,21 @@ class StudentBase(BaseModel):
     date_of_birth: date | None = None
     gender: Gender | None = None
     section_id: PositiveId | None = None
-    section_name: str | None = Field(default=None, max_length=50)
+    section_name: str | None = Field(default=None, max_length=100)
     address: str | None = Field(default=None, max_length=100)
     handedness: Handedness | None = None
     num_of_siblings: int | None = Field(default=None, ge=0)
     birth_order: str | None = Field(default=None, max_length=50)
-    emergency_contact: str | None = Field(default=None, max_length=20)
+    emergency_contact: EmergencyContact | None = Field(default=None, validation_alias=AliasChoices("emergency_contact", "emergencyContactNumber", "emergency_contact_number", "guardian_name"))
     is_active: bool | None = True
     school_year: SchoolYear | None = None
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    @field_validator("gender", "handedness", mode="before")
+    @classmethod
+    def normalize_enum(cls, value: object) -> object:
+        return value.strip().title() if isinstance(value, str) else value
 
 
 class StudentCreate(StudentBase):
@@ -27,17 +34,18 @@ class StudentCreate(StudentBase):
 
 
 class StudentUpdate(StudentBase):
-    father_name: str | None = Field(default=None, max_length=100)
+    lrn_number: Lrn | None = None
+    father_name: Name | None = None
     father_age: int | None = Field(default=None, ge=0)
     father_occ: str | None = Field(default=None, max_length=50)
     father_educ: str | None = Field(default=None, max_length=20)
 
-    mother_name: str | None = Field(default=None, max_length=100)
+    mother_name: Name | None = None
     mother_age: int | None = Field(default=None, ge=0)
     mother_occ: str | None = Field(default=None, max_length=50)
     mother_educ: str | None = Field(default=None, max_length=20)
 
-    legal_guardian_name: str | None = Field(default=None, max_length=100)
+    legal_guardian_name: Name | None = None
     legal_guardian_age: int | None = Field(default=None, ge=0)
     legal_guardian_occ: str | None = Field(default=None, max_length=50)
     legal_guardian_educ: str | None = Field(default=None, max_length=20)
@@ -53,6 +61,10 @@ class StudentUpdate(StudentBase):
 
 
 class StudentResponse(StudentBase):
+    first_name: str | None = Field(default=None, max_length=100)
+    middle_name: str | None = Field(default=None, max_length=100)
+    last_name: str | None = Field(default=None, max_length=100)
+    emergency_contact: str | None = Field(default=None, max_length=20)
     lrn_number: str
 
     model_config = ConfigDict(from_attributes=True)
@@ -81,6 +93,10 @@ class StudentTransferRequest(BaseModel):
 
 class StudentRecordResponse(StudentBase):
     """ID-based response for Phase 2; never serializes the raw LRN or ciphertext."""
+    first_name: str | None = Field(default=None, max_length=100)
+    middle_name: str | None = Field(default=None, max_length=100)
+    last_name: str | None = Field(default=None, max_length=100)
+    emergency_contact: str | None = Field(default=None, max_length=20)
     student_id: PositiveId
     lrn_last4: str = Field(pattern=r"^[0-9]{4}$")
     decimal_age: float | None = None
@@ -116,8 +132,8 @@ class FamilyAccessResponse(FamilyAccessIdCreate):
 
 
 class EnrollmentRequest(StudentCreate):
-    first_name: str = Field(min_length=1, max_length=100)
-    last_name: str = Field(min_length=1, max_length=100)
+    first_name: Name = Field(min_length=1)
+    last_name: Name = Field(min_length=1)
     date_of_birth: date
     gender: Gender
 

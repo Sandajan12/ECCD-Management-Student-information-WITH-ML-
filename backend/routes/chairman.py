@@ -2,13 +2,13 @@ from backend.schemas.student import StudentIdTransferRequest
 from backend.schemas.auth import LoginResponse
 from backend.schemas.common import MessageResult
 from backend.schemas.operations import ChairmanSectionItem, TeacherListItem
-from backend.schemas.section import SectionCreate, SectionResponse
+from backend.schemas.section import SectionCreate, SectionCreatedResponse
 from backend.schemas.teacher import TeacherPermissionResponse
 from backend.schemas.teacher import AssignmentResponse, TransferResponse
 import re
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
@@ -35,10 +35,11 @@ def export_section(section_id: int, schoolYear: str = Query("All"), db: Session 
     return summary_response(db, current_user, section_id, schoolYear)
 
 
-@router.post("/sections", status_code=201, response_model=SectionResponse)
+@router.post("/sections", status_code=201, response_model=SectionCreatedResponse)
 def create_section_endpoint(payload: SectionCreate, db: Session = Depends(get_db), current_user=Depends(verify_role(["super-admin"]))):
     from backend.routes.sections import create_section
-    return create_section(payload, db, current_user)
+    section = create_section(payload, db, current_user)
+    return {**SectionCreatedResponse.model_validate(section).model_dump(), "message": "Section created successfully."}
 
 
 @router.delete("/sections/{section_id}", response_model=MessageResult)
@@ -64,9 +65,12 @@ def verify_current_password(
 
 
 @router.put("/account", response_model=LoginResponse)
-def update_account(request: AccountUpdateRequest, db: Session = Depends(get_db), current_user=Depends(verify_role(["super-admin"]))):
+def update_account(request: AccountUpdateRequest, response: Response, db: Session = Depends(get_db), current_user=Depends(verify_role(["super-admin"]))):
     from backend.utils.account_changes import update_chairman
-    return update_chairman(db, current_user, request)
+    from backend.utils.authentication import clear_device_cookies
+    result = update_chairman(db, current_user, request)
+    clear_device_cookies(response)
+    return result
 
 
 from backend.models.teacher import Teacher
@@ -152,11 +156,15 @@ def get_chairman_sections(
     for sec in sections:
         active_assignment = (
             db.query(SectionTeacher)
+            .join(Teacher, SectionTeacher.teacher_id == Teacher.teacher_id)
+            .join(User, Teacher.user_id == User.user_id)
             .filter(
                 SectionTeacher.section_id == sec.section_id,
                 SectionTeacher.status == "Active",
+                SectionTeacher.role == "Primary Adviser",
+                User.is_active.is_(True),
             )
-            .order_by((SectionTeacher.role == "Primary Adviser").desc())
+            .order_by(SectionTeacher.id.desc())
             .first()
         )
         teacher_info = None
@@ -185,6 +193,7 @@ def get_chairman_sections(
                 "last_name": teacher_info["last_name"] if teacher_info else None,
                 "role": teacher_info["role"] if teacher_info else None,
                 "status": teacher_info["status"] if teacher_info else None,
+                "is_active": True if teacher_info else None,
             }
         )
     return results

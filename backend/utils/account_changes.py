@@ -10,7 +10,7 @@ from backend.utils.security import get_password_hash, verify_password
 
 def change_password(db: Session, user: User, payload: PasswordChangeVerify) -> dict:
     if settings.otp_enabled:
-        consume_challenge(db, payload.challengeToken or "", payload.otp or "", (OtpPurpose.PASSWORD_CHANGE,), user.user_id)
+        consume_challenge(db, payload.challengeToken or "", payload.otp or "", (OtpPurpose.PASSWORD_CHANGE,), user.user_id, payload.email)
     elif not verify_password(payload.oldPassword or "", user.password_hash):
         raise HTTPException(401, "Incorrect current password.")
     if verify_password(payload.newPassword, user.password_hash):
@@ -42,4 +42,4 @@ def update_chairman(db: Session, user: User, payload: AccountUpdateRequest) -> d
     db.flush()
     result = build_session(db, user)
     db.commit()
-    return {**result, "message": "Account updated successfully."}
+    return {**result, "email": user.email, "message": "Account updated successfully."}

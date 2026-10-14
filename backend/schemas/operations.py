@@ -1,6 +1,6 @@
 """Typed contracts for administrative lists and spreadsheet operations."""
 from datetime import date, datetime
-from pydantic import Field
+from pydantic import Field, computed_field
 from .common import ApiModel, PositiveId
 
 
@@ -28,6 +28,7 @@ class ChairmanSectionItem(ApiModel):
     last_name: str | None = None
     role: str | None = None
     status: str | None = None
+    is_active: bool | None = None
 
 
 class ImportErrorItem(ApiModel):
@@ -78,8 +79,10 @@ class DomainProgressResult(ApiModel):
 
 class ProgressQuestion(ApiModel):
     question_id: PositiveId
+    domain_id: PositiveId
     question_text: str
     sequence_order: int
+    is_home_based: bool | None
 
 
 class ParentProgressDomain(ApiModel):
@@ -96,14 +99,26 @@ class AuditLogItem(ApiModel):
     id: PositiveId
     action: str
     performed_by: str
+    teacher_name: str
     details: str | None = None
     timestamp: datetime | None = None
+
+    @computed_field
+    @property
+    def log_id(self) -> int:
+        return self.id
+
+    @computed_field
+    @property
+    def action_type(self) -> str:
+        return self.action
 
 
 class AnalyticsStats(ApiModel):
     stats: dict[str, str]
     functionalMastery: dict[str, int] | None = None
     messages: list['RecentMessage'] | None = None
+    allow_eccd_question_management: bool | None = None
 
 
 class RecentMessage(ApiModel):

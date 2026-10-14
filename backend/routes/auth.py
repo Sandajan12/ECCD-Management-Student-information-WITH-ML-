@@ -11,7 +11,7 @@ from backend.models.user import UserRole
 from backend.models.email_verification import OtpPurpose
 from backend.schemas.auth import LoginRequest, LoginResponse, LogoutRequest, LogoutResponse, OtpChallengeResponse, RegisterParentRequest, UpdatePasswordRequest, VerifyOtpRequest
 from backend.schemas.account import SendOtpRequest, ChallengeResult
-from backend.utils.authentication import build_session, complete_login, consume_challenge, device_tokens, digest, issue_challenge, require_active, revoke_credentials, trusted_token
+from backend.utils.authentication import build_session, clear_device_cookies, complete_login, consume_challenge, device_tokens, digest, issue_challenge, require_active, revoke_credentials, set_device_cookies, trusted_token
 from backend.utils.deps import get_first_login_user, verify_role
 from backend.utils.email import send_otp_email
 from backend.utils.security import get_password_hash, verify_password
@@ -33,8 +33,9 @@ async def login(data: LoginRequest, request: Request, response: Response, db: Se
         db.delete(row)
         db.commit()
         return result
-    remembered = trusted_token(db, user, device_tokens(request, data.deviceToken))
+    remembered = trusted_token(db, user, device_tokens(request, data.deviceToken, data.trusted_device_token))
     if remembered:
+        set_device_cookies(response, remembered)
         return {**build_session(db, user), "deviceToken": remembered}
     if not settings.otp_enabled:
         result = complete_login(db, user, data.rememberDevice, request, response)
@@ -107,8 +108,7 @@ def update_password(data: UpdatePasswordRequest, response: Response, db: Session
     db.flush()
     result = build_session(db, user)
     db.commit()
-    response.delete_cookie("device_token")
-    response.delete_cookie("trusted_device_token")
+    clear_device_cookies(response)
     return {**result, "message": "Password updated successfully."}
 
 
@@ -134,10 +134,9 @@ async def send_otp(data: SendOtpRequest, db: Session = Depends(get_db), user: Us
 def logout(data: LogoutRequest, request: Request, response: Response, db: Session = Depends(get_db)):
     if data.forgetDevice:
         from backend.models import UserTrustedDevice
-        hashes = [digest(token) for token in device_tokens(request, data.deviceToken)]
+        hashes = [digest(token) for token in device_tokens(request, data.deviceToken, data.trusted_device_token)]
         if hashes:
             db.query(UserTrustedDevice).filter(UserTrustedDevice.device_token_hash.in_(hashes)).delete()
             db.commit()
-        response.delete_cookie("device_token")
-        response.delete_cookie("trusted_device_token")
+        clear_device_cookies(response)
     return {"success": True}

@@ -63,6 +63,8 @@ def calculate_scores(evaluations: List[Dict[str, Any]], decimal_age: float) -> D
             if not domain_code and isinstance(domain_name, str):
                 cleaned_name = domain_name.replace(' Domain', '').strip()
                 domain_code = domain_mapping.get(cleaned_name)
+            if not domain_code:
+                domain_code = domain_mapping.get(ev.get("domain_id"))
             
             if domain_code and domain_code in raw_scores:
                 raw_scores[domain_code] += 1

@@ -14,6 +14,27 @@ from backend.models.email_verification import OtpPurpose
 from backend.utils.security import create_access_token
 
 
+class AuthError(HTTPException):
+    def __init__(self, status_code: int, detail: str, code: str):
+        super().__init__(status_code, detail)
+        self.code = code
+
+
+def device_cookie_options() -> dict:
+    production = settings.ENVIRONMENT.lower() == "production"
+    return {"httponly": True, "secure": production, "samesite": "none" if production else "lax", "path": "/"}
+
+
+def set_device_cookies(response: Response, token: str) -> None:
+    for name in ("device_token", "trusted_device_token"):
+        response.set_cookie(name, token, max_age=30 * 86400, **device_cookie_options())
+
+
+def clear_device_cookies(response: Response) -> None:
+    for name in ("device_token", "trusted_device_token"):
+        response.delete_cookie(name, **device_cookie_options())
+
+
 def now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -32,27 +53,29 @@ def credential_version(user: User) -> str:
 
 def require_active(db: Session, user: User | None) -> User:
     if user is None or not user.is_active or user.is_registration_pending:
-        raise HTTPException(403, "This account is inactive. Please contact the administrator.")
+        raise AuthError(403, "This account is inactive. Please contact the administrator.", "ACCOUNT_INACTIVE")
     if user.role is None or user.role.value not in ("super-admin", "admin", "user"):
         raise HTTPException(403, "Invalid account role.")
     if user.role.value == "admin" and not db.query(Teacher).filter_by(user_id=user.user_id).first():
-        raise HTTPException(403, "Teacher profile is unavailable.")
+        raise AuthError(403, "Teacher profile is unavailable.", "ACCOUNT_INACTIVE")
     return user
 
 
 def session_user(db: Session, token: str, allow_first_login: bool = False) -> User:
     try:
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
-        if payload.get("tokenType") != "session" or not isinstance(payload.get("id"), int):
-            raise ValueError()
-        user = db.get(User, payload["id"])
-        if user is None or payload.get("credentialVersion") != credential_version(user) or payload.get("role") != user.role.value:
-            raise ValueError()
+    except ExpiredSignatureError:
+        raise AuthError(401, "Session expired. Please sign in again.", "TOKEN_EXPIRED") from None
     except (JWTError, ValueError, AttributeError):
-        raise HTTPException(401, "Session expired. Please sign in again.") from None
+        raise AuthError(401, "Session expired. Please sign in again.", "INVALID_TOKEN") from None
+    if not isinstance(payload, dict) or payload.get("tokenType") != "session" or type(payload.get("id")) is not int or not 0 < payload["id"] <= 2147483647:
+        raise AuthError(401, "Session expired. Please sign in again.", "SESSION_REVOKED")
+    user = db.get(User, payload["id"])
     require_active(db, user)
+    if payload.get("credentialVersion") != credential_version(user) or payload.get("role") != user.role.value:
+        raise AuthError(401, "Session expired. Please sign in again.", "SESSION_REVOKED")
     if not allow_first_login and user.role.value == "admin" and user.is_first_login:
-        raise HTTPException(403, "Change your initial password before accessing the system.")
+        raise AuthError(403, "Change your initial password before accessing the system.", "PASSWORD_CHANGE_REQUIRED")
     return user
 
 
@@ -72,8 +95,8 @@ def build_session(db: Session, user: User) -> dict:
             "requiresPasswordChange": bool(teacher and user.is_first_login)}
 
 
-def device_tokens(request: Request, supplied: str | None = None) -> list[str]:
-    return list(dict.fromkeys(token for token in (supplied, request.headers.get("x-device-token"), request.cookies.get("device_token"), request.cookies.get("trusted_device_token")) if isinstance(token, str) and 0 < len(token) <= 512))
+def device_tokens(request: Request, supplied: str | None = None, legacy_supplied: str | None = None) -> list[str]:
+    return list(dict.fromkeys(token for token in (supplied, legacy_supplied, request.headers.get("x-device-token"), request.cookies.get("device_token"), request.cookies.get("trusted_device_token")) if isinstance(token, str) and 0 < len(token) <= 512))
 
 
 def trusted_token(db: Session, user: User, tokens: list[str]) -> str | None:
@@ -90,7 +113,7 @@ def complete_login(db: Session, user: User, remember: bool, request: Request, re
         token = secrets.token_hex(32)
         db.add(UserTrustedDevice(user_id=user.user_id, device_token_hash=digest(token), user_agent=request.headers.get("user-agent", "Unknown")[:255], expires_at=now() + timedelta(days=30)))
         result["deviceToken"] = token
-        response.set_cookie("device_token", token, max_age=30 * 86400, httponly=True, samesite="lax", secure=False)
+        set_device_cookies(response, token)
     return result
 
 

@@ -43,8 +43,13 @@ def generate_student_workbook(student, teacher, parents, evaluations, questions,
                'V28':f"{teacher.first_name or ''} {teacher.last_name or ''}".strip().upper(),
                'Y28':(setting.principal_name or '').upper()}
     for coordinate,value in headers.items(): write(coordinate,value)
-    for relationship,row in [('father',20),('mother',22)]:
-        parent = next((parent for parent in parents if (parent.relationship_type or '').lower()==relationship),None)
+    father = next((parent for parent in parents if (parent.relationship_type or '').strip().lower() == 'father'), None)
+    mother = next((parent for parent in parents if (parent.relationship_type or '').strip().lower() == 'mother'), None)
+    fallbacks = [parent for parent in parents if parent is not father and parent is not mother]
+    selected_father = father or (fallbacks[0] if fallbacks else None)
+    mother_index = 0 if father else 1
+    selected_mother = mother or (fallbacks[mother_index] if len(fallbacks) > mother_index else None)
+    for parent,row in [(selected_father,20),(selected_mother,22)]:
         for coordinate,value in ((f'W{row}',parent.fullname if parent else None),(f'AB{row}',parent.age if parent else None),
                                  (f'W{row+1}',parent.occupation if parent else None),(f'AA{row+1}',parent.educational_attainment if parent else None)):
             write(coordinate,value)

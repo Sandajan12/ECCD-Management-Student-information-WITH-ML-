@@ -5,7 +5,7 @@ from .common import PositiveId
 
 
 class SectionBase(BaseModel):
-    section_name: str = Field(min_length=1, max_length=50)
+    section_name: str = Field(min_length=1, max_length=100)
     adviser_teacher_id: PositiveId | None = Field(default=None, validation_alias=AliasChoices("adviser_teacher_id", "teacher_id"))
 
 
@@ -14,7 +14,7 @@ class SectionCreate(SectionBase):
 
 
 class SectionUpdate(BaseModel):
-    section_name: str | None = None
+    section_name: str | None = Field(default=None, min_length=1, max_length=100)
     adviser_teacher_id: int | None = None
 
 
@@ -23,3 +23,7 @@ class SectionResponse(SectionBase):
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class SectionCreatedResponse(SectionResponse):
+    message: str = "Section created successfully."

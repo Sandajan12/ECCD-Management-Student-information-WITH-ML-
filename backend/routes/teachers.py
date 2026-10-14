@@ -13,7 +13,7 @@ from backend.schemas.teacher import TeacherUpdate
 from backend.utils.deps import verify_role
 from backend.utils.security import verify_password
 from backend.utils.email import send_otp_email
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile
 from backend.schemas.operations import ImportResult, TeacherListItem
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
@@ -36,7 +36,8 @@ async def import_student_records(file: UploadFile = File(...), section_id: int |
     from backend.utils.excel import import_students
     if not file.filename or not file.filename.lower().endswith(".xlsx"):
         raise HTTPException(400, "Upload an .xlsx workbook containing InfoSheet and ECCD domain sheets.")
-    return import_students(db, current_user, await file.read(), section_id)
+    from backend.utils.uploads import EXCEL_LIMIT, read_upload
+    return import_students(db, current_user, await read_upload(file, EXCEL_LIMIT), section_id)
 
 
 @router.get("/active", response_model=list[TeacherListItem])
@@ -117,9 +118,12 @@ async def request_password_change(payload: PasswordChangeRequest, db: Session = 
 
 
 @router.post("/change-password-verify", response_model=LoginResponse)
-def verify_password_change(payload: PasswordChangeVerify, db: Session = Depends(get_db), current_user: User = Depends(verify_role(["admin"]))):
+def verify_password_change(payload: PasswordChangeVerify, response: Response, db: Session = Depends(get_db), current_user: User = Depends(verify_role(["admin"]))):
     from backend.utils.account_changes import change_password
-    return change_password(db, current_user, payload)
+    from backend.utils.authentication import clear_device_cookies
+    result = change_password(db, current_user, payload)
+    clear_device_cookies(response)
+    return result
 
 
 @router.get("/access-controls", response_model=TeacherAccessResponse)
@@ -180,8 +184,8 @@ def update_teacher(user_id: int, payload: TeacherUpdate, db: Session = Depends(g
     for key in ("first_name", "last_name", "employee_id"):
         if key in data:
             setattr(teacher, key, data[key])
-    if "class_name" in data:
-        if data["class_name"]:
+    if data.get("class_name") or data.get("section_id"):
+        if data.get("class_name"):
             section = db.query(Section).filter_by(section_name=data["class_name"]).first()
             if section is None:
                 section = Section(section_name=data["class_name"])
@@ -189,11 +193,13 @@ def update_teacher(user_id: int, payload: TeacherUpdate, db: Session = Depends(g
                 db.flush()
             assign_teacher(db, current_user, section.section_id, teacher.teacher_id)
         else:
-            for assignment in db.query(SectionTeacher).filter_by(teacher_id=teacher.teacher_id, status="Active"):
-                assignment.status = "Inactive"
-            for section in db.query(Section).filter_by(adviser_teacher_id=teacher.teacher_id):
-                section.adviser_teacher_id = None
-            teacher.class_name = None
+            assign_teacher(db, current_user, data["section_id"], teacher.teacher_id)
+    elif "class_name" in data:
+        for assignment in db.query(SectionTeacher).filter_by(teacher_id=teacher.teacher_id, status="Active"):
+            assignment.status = "Inactive"
+        for section in db.query(Section).filter_by(adviser_teacher_id=teacher.teacher_id):
+            section.adviser_teacher_id = None
+        teacher.class_name = None
     try:
         db.commit()
     except IntegrityError:
@@ -209,6 +215,11 @@ def archive_teacher(user_id: int, db: Session = Depends(get_db), current_user=De
     if user is None:
         raise HTTPException(404, "Teacher not found.")
     user.is_active = False
+    teacher = db.query(Teacher).filter_by(user_id=user_id).first()
+    if teacher:
+        db.query(SectionTeacher).filter_by(teacher_id=teacher.teacher_id, status="Active").update({"status": "Inactive"}, synchronize_session=False)
+        db.query(Section).filter_by(adviser_teacher_id=teacher.teacher_id).update({"adviser_teacher_id": None}, synchronize_session=False)
+        teacher.class_name = None
     from backend.utils.authentication import revoke_credentials
     revoke_credentials(db, user)
     db.commit()

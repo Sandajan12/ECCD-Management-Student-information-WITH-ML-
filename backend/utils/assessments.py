@@ -123,11 +123,18 @@ def parent_dashboard(db: Session, user: User, identifier: str) -> dict:
     authorize_student(db, user, student)
     records = db.query(StudentEccdEvaluation).filter_by(student_id=student.student_id).all()
     latest = next((period for period in reversed(PERIODS) if any(record.testing_period == period for record in records)), None)
-    result = {"currentPhase": "Not Started", "latestPhase": None, "excelsIn": "No Data", "needsSupportIn": "No Data", "assessmentMastered": False, "totalKaya": 0, "totalDiKaya": 0, "is_published": False}
+    reference_domains = db.query(EccdDomain).order_by(EccdDomain.domain_id).all()
+    cards = [{"domain_id": domain.domain_id, "domain_name": domain.domain_name.replace(" Domain", "").strip(),
+              "scoreText": "Not evaluated yet", "progress": 0, "statusText": "Pending", "statusColor": "warning",
+              "isExcelling": False, "needsSupport": False} for domain in reference_domains]
+    result = {"currentPhase": "Not Started", "latestPhase": None, "excelsIn": "No Data", "needsSupportIn": "No Data", "assessmentMastered": False, "totalKaya": 0, "totalDiKaya": 0, "is_published": False,
+              "overallStatus": "Assessment Pending", "overallStatusColor": "default", "domainCards": cards}
     if latest is None and any(released(permissions_for_student(db, student), period) for period in PERIODS):
         return result
     if latest is None or not released(permissions_for_student(db, student), latest):
-        return {**result, "currentPhase": "Pending Adviser Release", "excelsIn": "Pending Adviser Release", "needsSupportIn": "Pending Adviser Release", "totalKaya": None, "totalDiKaya": None, "interpretation": "Pending Adviser Release"}
+        for card in cards:
+            card.update(progress=None, scoreText="Pending Adviser Release", statusText="Pending Adviser Release")
+        return {**result, "currentPhase": "Pending Adviser Release", "excelsIn": "Pending Adviser Release", "needsSupportIn": "Pending Adviser Release", "totalKaya": None, "totalDiKaya": None, "interpretation": "Pending Adviser Release", "overallStatus": "Pending Adviser Release"}
     records = [record for record in records if record.testing_period == latest]
     domains = {}
     for record in records:
@@ -138,6 +145,15 @@ def parent_dashboard(db: Session, user: User, identifier: str) -> dict:
     passed = sum(kaya for kaya, total in domains.values())
     failed = len(records) - passed
     mastered = latest == TestingPeriod.POST and failed == 0 and bool(records)
+    for card in cards:
+        kaya, total = domains.get(card["domain_name"], (0, 0))
+        percentage = int(kaya * 100 / total + 0.5) if total else 0
+        status, color = ("Not Evaluated", "warning") if not total else ("Excelling", "success") if percentage >= 80 else ("Developing", "info") if percentage >= 50 else ("Needs Support", "error")
+        card.update(scoreText=f"{kaya} of {total} Skills Mastered" if total else "Not evaluated yet", progress=percentage,
+                    statusText=status, statusColor=color, isExcelling=bool(total and percentage >= 80), needsSupport=bool(total and percentage < 50))
+    overall_percentage = int(passed * 100 / len(records) + 0.5)
     return {"currentPhase": {TestingPeriod.PRE: "Pre-Test", TestingPeriod.MID: "Mid-Test", TestingPeriod.POST: "Post-Test"}[latest], "latestPhase": latest.value,
             "excelsIn": min(ratios, key=lambda name: (-ratios[name], name)), "needsSupportIn": "All Skills Mastered" if mastered else ("None (All Passed)" if failed == 0 else min(ratios, key=lambda name: (ratios[name], name))),
-            "assessmentMastered": mastered, "totalKaya": passed, "totalDiKaya": failed, "is_published": True}
+            "assessmentMastered": mastered, "totalKaya": passed, "totalDiKaya": failed, "is_published": True,
+            "overallStatus": "Needs Attention" if overall_percentage < 50 else "Developing Well",
+            "overallStatusColor": "warning" if overall_percentage < 50 else "success", "domainCards": cards}

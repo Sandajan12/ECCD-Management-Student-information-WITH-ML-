@@ -196,6 +196,17 @@ class ParentAssessmentResponse(AssessmentResponse):
     can_edit_home_based: bool
 
 
+class ParentDomainCard(ApiModel):
+    domain_id: PositiveId
+    domain_name: str
+    scoreText: str
+    progress: int | None
+    statusText: str
+    statusColor: str
+    isExcelling: bool
+    needsSupport: bool
+
+
 class ParentDashboardResponse(ApiModel):
     currentPhase: str
     latestPhase: str | None
@@ -206,6 +217,9 @@ class ParentDashboardResponse(ApiModel):
     totalDiKaya: int | None
     is_published: bool
     interpretation: str | None = None
+    overallStatus: str
+    overallStatusColor: str
+    domainCards: list[ParentDomainCard]
 
 
 class DomainProgress(ApiModel):
@@ -214,6 +228,7 @@ class DomainProgress(ApiModel):
     pre_progress: int | None
     mid_progress: int | None
     post_progress: int | None
+    questions: list[EccdQuestionResponse] = Field(default_factory=list)
 
 
 class EvaluationPublicResponse(EvaluationBase):

@@ -1,10 +1,13 @@
 
+import math
+
 from backend.config.database import get_db
 from backend.models.eccd import EccdDomain, EccdQuestion, StudentEccdEvaluation, TestingPeriod
 from backend.models.message import Message
 from backend.models.section import Section
 from backend.models.section_teacher import SectionTeacher
 from backend.models.student import Student
+from backend.models.settings import SystemSettings
 from backend.models.teacher import Teacher
 from backend.models.user import User, UserRole
 from backend.schemas.analytics import DashboardFilters, PieChartSlice
@@ -15,6 +18,7 @@ from sqlalchemy import desc, distinct, func, case
 from sqlalchemy.orm import Session, aliased
 
 router = APIRouter(prefix="/api/analytics", tags=["Analytics"])
+legacy_router = APIRouter(prefix="/api/logs", tags=["Audit logs"])
 
 
 def get_teacher_section_ids(teacher_id: int, db: Session) -> list[int]:
@@ -45,6 +49,9 @@ def get_dashboard_filters(
             .order_by(desc(Student.school_year))
             .all()
         ]
+        setting = db.get(SystemSettings, 1)
+        if setting and setting.current_school_year:
+            school_years = sorted(set(school_years + [setting.current_school_year]), reverse=True)
         return {"sections": sections, "domains": domains, "schoolYears": school_years}
     else:
         # Teacher view
@@ -63,7 +70,11 @@ def get_dashboard_filters(
             .order_by(Section.section_name)
             .all()
         ]
-        return {"sections": sections, "domains": domains, "schoolYears": []}
+        school_years = [row[0] for row in db.query(distinct(Student.school_year)).filter(Student.section_id.in_(sec_ids), Student.school_year.isnot(None)).order_by(desc(Student.school_year))]
+        setting = db.get(SystemSettings, 1)
+        if setting and setting.current_school_year:
+            school_years = sorted(set(school_years + [setting.current_school_year]), reverse=True)
+        return {"sections": sections, "domains": domains, "schoolYears": school_years}
 
 
 @router.get("/pie-data", response_model=list[PieChartSlice])
@@ -179,14 +190,14 @@ def get_dashboard_stats(
         dikaya_count = sum([r.count for r in eccd_rows if r.answer == "DI-KAYA"])
         
         total_eccd = kaya_count + dikaya_count
-        kaya_percentage = round((kaya_count / total_eccd) * 100) if total_eccd > 0 else 0
-        dikaya_percentage = round((dikaya_count / total_eccd) * 100) if total_eccd > 0 else 0
+        kaya_percentage = math.floor((kaya_count / total_eccd) * 100 + 0.5) if total_eccd > 0 else 0
+        dikaya_percentage = math.floor((dikaya_count / total_eccd) * 100 + 0.5) if total_eccd > 0 else 0
 
         priority_query = (
             db.query(Section.section_name.label("class_name"), func.count().label("dikaya_count"))
             .select_from(StudentEccdEvaluation)
             .join(Student, StudentEccdEvaluation.student_id == Student.student_id)
-            .join(Section, Student.section_id == Section.section_id)
+            .outerjoin(Section, Student.section_id == Section.section_id)
             .filter(StudentEccdEvaluation.answer == "DI-KAYA")
         )
         if schoolYear != "All":
@@ -198,7 +209,7 @@ def get_dashboard_stats(
             
         priority_row = priority_query.group_by(Section.section_name).order_by(desc("dikaya_count")).first()
         if priority_row:
-            priority_intervention = priority_row.class_name
+            priority_intervention = priority_row.class_name or "None"
             priority_subtitle = "Requires Support"
         else:
             priority_intervention = "Perfect"
@@ -259,12 +270,14 @@ def get_dashboard_stats(
 
         sec_ids = get_teacher_section_ids(teacher.teacher_id, db)
 
+        student_scope = [Student.section_id.in_(sec_ids)]
+        student_scope.append(Student.school_year == schoolYear if schoolYear != "All" else Student.is_active.is_(True))
+        if section != "All":
+            student_scope.append(Student.section.has(section_name=section))
+
         total_students = (
             db.query(Student)
-            .filter(
-                Student.section_id.in_(sec_ids),
-                Student.is_active == True,
-            )
+            .filter(*student_scope)
             .count()
             if sec_ids
             else 0
@@ -287,10 +300,7 @@ def get_dashboard_stats(
         total_submitted = (
             db.query(StudentEccdEvaluation)
             .join(Student)
-            .filter(
-                Student.section_id.in_(sec_ids),
-                Student.is_active == True,
-            )
+            .filter(*student_scope)
             .count()
             if sec_ids
             else 0
@@ -311,7 +321,8 @@ def get_dashboard_stats(
         
         latest_period_subquery = (
             db.query(EccdEvalAlias.testing_period)
-            .filter(EccdEvalAlias.student_id == StudentEccdEvaluation.student_id)
+            .filter(EccdEvalAlias.student_id == StudentEccdEvaluation.student_id,
+                    EccdEvalAlias.question_id == StudentEccdEvaluation.question_id)
             .order_by(period_sort_logic.desc())
             .limit(1)
             .correlate(StudentEccdEvaluation)
@@ -328,13 +339,12 @@ def get_dashboard_stats(
             .join(EccdQuestion, StudentEccdEvaluation.question_id == EccdQuestion.question_id)
             .join(EccdDomain, EccdQuestion.domain_id == EccdDomain.domain_id)
             .filter(
-                Student.section_id.in_(sec_ids),
-                Student.is_active == True,
+                *student_scope,
                 StudentEccdEvaluation.answer == "DI-KAYA",
                 StudentEccdEvaluation.testing_period == latest_period_subquery,
             )
             .group_by(EccdDomain.domain_id, EccdDomain.domain_name)
-            .order_by(desc("count"))
+            .order_by(desc("count"), EccdDomain.domain_name)
             .first()
             if sec_ids
             else None
@@ -374,22 +384,26 @@ def get_dashboard_stats(
                 "eccdProgress": progress,
                 "priorityDomain": priority_domain,
             },
-            "messages": messages_list
+            "messages": messages_list,
+            "allow_eccd_question_management": bool(teacher.allow_eccd_question_management),
         }
 
 from backend.models.log import SystemLog
 @router.get("/logs", response_model=list[AuditLogItem])
+@legacy_router.get("", response_model=list[AuditLogItem])
+@legacy_router.get("/", response_model=list[AuditLogItem])
 def get_system_logs(
     db: Session = Depends(get_db),
     current_user=Depends(verify_role(["super-admin", "chairman"])),
 ):
-    logs = db.query(SystemLog).order_by(SystemLog.timestamp.desc()).limit(100).all()
+    logs = db.query(SystemLog, User.username, Teacher.first_name, Teacher.last_name).outerjoin(User, SystemLog.user_id == User.user_id).outerjoin(Teacher, Teacher.user_id == User.user_id).order_by(SystemLog.timestamp.desc(), SystemLog.log_id.desc()).all()
     results = []
-    for log in logs:
+    for log, username, first_name, last_name in logs:
         results.append({
             "id": log.log_id,
             "action": log.action_type,
-            "performed_by": log.user.username if log.user else "System",
+            "performed_by": username or "System",
+            "teacher_name": " ".join(name for name in (first_name, last_name) if name) or username or "Unknown User",
             "details": log.details,
             "timestamp": log.timestamp.isoformat() if log.timestamp else None
         })

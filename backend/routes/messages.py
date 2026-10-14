@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, aliased
 from sqlalchemy import func
 from backend.config.database import get_db
-from backend.models import FamilyAccess, Message, Parent, Student, Teacher, User
+from backend.models import FamilyAccess, Message, Parent, SectionTeacher, Student, Teacher, User
 from backend.models.message import SenderRole
 from backend.schemas.message import ContactsResponse, ConversationRequest, MessageCreate, MessageResponse, NotifyStudentRequest, NotifyStudentResponse, PersistedMessageResponse, SuccessResponse, UnreadResponse
 from backend.utils.access import authorize_student, current_teacher, resolve_student, teacher_sections
@@ -80,23 +80,28 @@ def notify(payload: NotifyStudentRequest, db: Session = Depends(get_db), user: U
 
 
 @router.get("/unread-count", response_model=UnreadResponse)
+@router.get("/unread", response_model=UnreadResponse)
 def unread(db: Session = Depends(get_db), user: User = Depends(verify_role(["admin", "user"]))):
-    query = db.query(Message).filter_by(is_read=False, is_archived=False)
+    teacher_user, parent_user = aliased(User), aliased(User)
+    # EXISTS avoids multiplying messages when siblings or duplicate assignment
+    # records connect the same teacher and parent. No message bodies are loaded.
+    relationship = db.query(Student.student_id).join(FamilyAccess, FamilyAccess.student_id == Student.student_id).join(SectionTeacher, SectionTeacher.section_id == Student.section_id).filter(
+        FamilyAccess.parent_id == Message.parent_id,
+        SectionTeacher.teacher_id == Message.teacher_id,
+        SectionTeacher.status == "Active",
+        Student.is_active.is_(True),
+    ).correlate(Message).exists()
+    query = db.query(func.count(Message.message_id)).select_from(Message).join(Teacher, Teacher.teacher_id == Message.teacher_id).join(Parent, Parent.parent_id == Message.parent_id).join(teacher_user, teacher_user.user_id == Teacher.user_id).join(parent_user, parent_user.user_id == Parent.user_id).filter(
+        Message.is_read.is_(False), Message.is_archived.is_(False),
+        teacher_user.is_active.is_(True), teacher_user.role == "admin",
+        parent_user.is_active.is_(True), parent_user.role == "user",
+        relationship,
+    )
     if user.role.value == "admin":
-        query = query.filter_by(teacher_id=current_teacher(db, user).teacher_id, sender_role=SenderRole.PARENT)
+        query = query.filter(Teacher.user_id == user.user_id, Message.sender_role == SenderRole.PARENT)
     else:
-        parent = db.query(Parent).filter_by(user_id=user.user_id).first()
-        if parent is None:
-            return {"unreadCount": 0}
-        query = query.filter_by(parent_id=parent.parent_id, sender_role=SenderRole.TEACHER)
-    count = 0
-    for message in query.all():
-        try:
-            authorize_conversation(db, user, message.teacher_id, message.parent_id)
-            count += 1
-        except HTTPException:
-            pass
-    return {"unreadCount": count}
+        query = query.filter(Parent.user_id == user.user_id, Message.sender_role == SenderRole.TEACHER)
+    return {"unreadCount": query.scalar() or 0}
 
 
 @router.put("/read", response_model=SuccessResponse)

@@ -12,7 +12,7 @@ from backend.utils.authentication import issue_challenge
 
 
 def config(environment: str = "production", **flags) -> Settings:
-    return Settings(_env_file=None, DATABASE_URL="postgresql://localhost/test", SECRET_KEY="test-only",
+    return Settings(_env_file=None, DATABASE_URL="postgresql://localhost/test?sslmode=verify-full&sslrootcert=system", SECRET_KEY="SyntheticTestSecret0123456789abcdef",
                     BACKUP_ENCRYPTION_KEY="test-only", BACKUP_IV="test-only", ENVIRONMENT=environment, **flags)
 
 
@@ -24,6 +24,7 @@ class DevelopmentOtpTests(unittest.TestCase):
         from backend.config.settings import settings
         from backend.main import api
         from backend.utils.security import get_password_hash
+        from backend.utils.rate_limits import limits
 
         if engine.url.database != "ames_parity_dev" or engine.url.host not in ("localhost", "127.0.0.1", "::1"):
             self.skipTest("HTTP auth check is restricted to the separate local parity database")
@@ -39,6 +40,8 @@ class DevelopmentOtpTests(unittest.TestCase):
                 yield db
             previous = api.dependency_overrides.get(get_db)
             api.dependency_overrides[get_db] = database
+            rate_bypass = patch.object(limits, "bypass", True)
+            rate_bypass.start()
             client = TestClient(api)
             try:
                 with patch.object(settings, "ENABLE_OTP", True), patch("backend.utils.authentication.secrets.randbelow", return_value=554321), patch("backend.utils.email.FastMail") as mail:
@@ -70,6 +73,8 @@ class DevelopmentOtpTests(unittest.TestCase):
                         mail.return_value.send_message.assert_awaited_once()
             finally:
                 client.close()
+                rate_bypass.stop()
+                limits.reset()
                 if previous is None:
                     api.dependency_overrides.pop(get_db, None)
                 else:

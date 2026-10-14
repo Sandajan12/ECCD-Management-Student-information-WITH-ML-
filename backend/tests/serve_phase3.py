@@ -17,11 +17,20 @@ import openpyxl
 
 from backend.tests.test_phase2 import BackendTests
 from backend.utils import realtime
+from backend.migrations.parity_batch1 import apply_batch1
+from backend.migrations.parity_batch2 import apply_batch2
+
+
+def prepare_parity_schema(fixture):
+    with fixture.test_engine.begin() as connection:
+        apply_batch1(connection, fixture.schema)
+        apply_batch2(connection, fixture.schema)
 
 main = importlib.import_module('backend.main')
 BackendTests.setUpClass()
 fixture = BackendTests()
 fixture.setUp()
+prepare_parity_schema(fixture)
 main.engine = fixture.test_engine
 main.SessionLocal = fixture.sessions
 realtime.SessionLocal = fixture.sessions
@@ -35,6 +44,7 @@ async def reset(request: Request):
     # Keep the loop available for dependency/session cleanup during schema drop.
     await run_in_threadpool(fixture.tearDown)
     await run_in_threadpool(fixture.setUp)
+    await run_in_threadpool(prepare_parity_schema, fixture)
     main.engine = fixture.test_engine
     main.SessionLocal = fixture.sessions
     realtime.SessionLocal = fixture.sessions

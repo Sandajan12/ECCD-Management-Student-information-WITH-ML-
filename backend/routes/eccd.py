@@ -3,6 +3,7 @@ from backend.schemas.student import StudentPublicResponse
 from backend.schemas.common import MessageResult
 from backend.schemas.operations import DomainProgressResult, ParentProgressPeriod, SectionSummaryItem
 import io
+import math
 from datetime import date
 
 import openpyxl
@@ -30,15 +31,20 @@ from sqlalchemy.orm import Session
 router = APIRouter(prefix="/api/eccd", tags=["ECCD"])
 
 @router.get("/students", response_model=list[StudentPublicResponse])
-def get_teacher_students(db: Session = Depends(get_db), current_user=Depends(verify_role(["admin"]))):
-    from backend.routes.students import get_students
-    return get_students(db, current_user)
+def get_teacher_students(db: Session = Depends(get_db), current_user=Depends(verify_role(["admin", "super-admin"]))):
+    from backend.utils.access import teacher_sections
+    from backend.utils.students import public_student
+    teacher = db.query(Teacher).filter_by(user_id=current_user.user_id).first()
+    if teacher is None:
+        return []
+    students = db.query(Student).filter(Student.section_id.in_(teacher_sections(db, teacher)), Student.is_active.is_(True)).order_by(Student.last_name, Student.first_name, Student.student_id)
+    return [public_student(db, student) for student in students]
 
 
 @router.get("/domains-progress", response_model=list[DomainProgressResult])
 def get_domains_progress(
     db: Session = Depends(get_db),
-    current_user=Depends(verify_role(["admin", "teacher"])),
+    current_user=Depends(verify_role(["admin", "teacher", "super-admin"])),
 ):
     teacher = db.query(Teacher).filter(Teacher.user_id == current_user.user_id).first()
     if not teacher:
@@ -104,9 +110,9 @@ def get_domains_progress(
                 if post_count >= total_required_per_student:
                     post_completed_count += 1
                     
-        pre_progress = round((pre_completed_count / total_students) * 100) if total_students > 0 else 0
-        mid_progress = round((mid_completed_count / total_students) * 100) if total_students > 0 else 0
-        post_progress = round((post_completed_count / total_students) * 100) if total_students > 0 else 0
+        pre_progress = math.floor((pre_completed_count / total_students) * 100 + 0.5) if total_students > 0 else 0
+        mid_progress = math.floor((mid_completed_count / total_students) * 100 + 0.5) if total_students > 0 else 0
+        post_progress = math.floor((post_completed_count / total_students) * 100 + 0.5) if total_students > 0 else 0
         
         formatted_domains.append({
             "domain_id": domain.domain_id,
@@ -114,8 +120,10 @@ def get_domains_progress(
             "questions": [
                 {
                     "question_id": q.question_id,
+                    "domain_id": q.domain_id,
                     "question_text": q.question_text,
                     "sequence_order": q.sequence_order,
+                    "is_home_based": q.is_home_based,
                 } for q in domain_questions
             ],
             "pre_progress": pre_progress,
@@ -143,7 +151,13 @@ def get_parent_assessment_data(student_lrn: str, db: Session = Depends(get_db), 
 
 
 @router.post("/parent/evaluate", response_model=MessageResult)
-def evaluate_student_parent(payload: ParentEvaluationBatch, db: Session = Depends(get_db), current_user=Depends(verify_role(["user"]))):
+def evaluate_student_parent(payload: ParentEvaluationBatch, db: Session = Depends(get_db), current_user=Depends(verify_role(["user", "super-admin"]))):
+    from backend.models import FamilyAccess, Parent
+    from backend.utils.access import resolve_student
+    student = resolve_student(db, payload.student_lrn)
+    parent = db.query(Parent).filter_by(user_id=current_user.user_id).first()
+    if parent is None or not db.query(FamilyAccess).filter_by(parent_id=parent.parent_id, student_id=student.student_id).first():
+        raise HTTPException(403, "This child is not linked to your account.")
     from backend.utils.assessments import save_home_evaluation
     return save_home_evaluation(db, current_user, payload)
 
@@ -158,8 +172,9 @@ def get_parent_domains_progress_flat(student_lrn: str, db: Session = Depends(get
         for period in PERIODS:
             visible = data["summary"][period]["isReleased"]
             count = sum(question["answers"][period] is not None for question in domain["questions"])
-            progress[f"{period.value.lower()}_progress"] = round(count * 100 / len(domain["questions"])) if visible else None
-        result.append({"domain_id": domain["domain_id"], "domain_name": domain["domain_name"], **progress})
+            progress[f"{period.value.lower()}_progress"] = math.floor(count * 100 / len(domain["questions"]) + 0.5) if visible else None
+        questions = [{**question, "is_home_based": True} for question in domain["questions"]]
+        result.append({"domain_id": domain["domain_id"], "domain_name": domain["domain_name"], "questions": questions, **progress})
     return result
 
 
