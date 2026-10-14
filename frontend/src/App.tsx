@@ -27,7 +27,7 @@ import ChildManagement from "./pages/parent/ChildManagement";
 import MessageTeacher from "./pages/parent/MessageTeacher";
 
 import ProtectedRoute from "./components/ProtectedRoute";
-import MainLayout from "./layouts/MainLayout";
+import ParentLayout from "./layouts/ParentLayout";
 import ChairmanLayout from "./layouts/ChairmanLayout";
 import TeacherLayout from "./layouts/TeacherLayout";
 import EccdQuestionManagement from "./pages/chairman/EccdQuestionsManagement";
@@ -138,7 +138,11 @@ function App() {
             <Route
               element={<ProtectedRoute allowedRoles={["user", "parent"]} />}
             >
-              <Route element={<MainLayout />}>
+              <Route element={<ParentLayout />}>
+                <Route
+                  path="/parent/overview"
+                  element={<Navigate to="/parent/dashboard" replace />}
+                />
                 <Route path="/parent/dashboard" element={<ParentDashboard />} />
                 <Route
                   path="/parent/eccdassessment"

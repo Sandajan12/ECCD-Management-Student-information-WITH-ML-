@@ -1,4 +1,62 @@
+@import "./reference-utilities.css";
 /* Teacher-only presentation, adapted from the read-only MUI reference. */
+.teacher-portal .MuiTableCell-root {
+  letter-spacing: normal;
+  white-space: normal;
+}
+.teacher-portal td:not(.MuiTableCell-root) {
+  font-size: 1rem;
+  line-height: 1.5;
+}
+.teacher-portal th:not(.MuiTableCell-root) {
+  line-height: 1.5;
+  white-space: normal;
+}
+.teacher-portal table:not(.MuiTable-root) tr {
+  border-bottom-width: 0 !important;
+}
+.teacher-portal table:not(.MuiTable-root) > colgroup {
+  border-bottom-width: 0;
+}
+@media (min-width: 1024px) {
+  .teacher-portal th:not(.MuiTableCell-root) {
+    line-height: 1rem;
+  }
+}
+.teacher-portal input[type="date"]::-webkit-datetime-edit {
+  padding-block: 1px;
+}
+.teacher-portal *,
+.teacher-portal ::before,
+.teacher-portal ::after {
+  --tw-translate-x: 0;
+  --tw-translate-y: 0;
+  --tw-rotate: 0;
+  --tw-skew-x: 0;
+  --tw-skew-y: 0;
+  --tw-scale-x: 1;
+  --tw-scale-y: 1;
+  --tw-backdrop-brightness: ;
+  --tw-backdrop-contrast: ;
+  --tw-backdrop-grayscale: ;
+  --tw-backdrop-hue-rotate: ;
+  --tw-backdrop-invert: ;
+  --tw-backdrop-opacity: ;
+  --tw-backdrop-saturate: ;
+  --tw-backdrop-sepia: ;
+  --tw-ring-inset: ;
+  --tw-ring-offset-width: 0px;
+  --tw-ring-offset-color: #fff;
+  --tw-ring-color: rgb(59 130 246 / 0.5);
+  --tw-ring-offset-shadow: 0 0 #0000;
+  --tw-ring-shadow: 0 0 #0000;
+}
+.teacher-portal .active\:scale-95:active {
+  scale: none;
+}
+.teacher-portal .group:hover .group-hover\:-translate-x-0\.5 {
+  translate: none;
+}
 .teacher-portal .card {
   border-radius: 1rem;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.04);
@@ -6,13 +64,6 @@
 .teacher-portal .field {
   background: white;
   border-radius: 0.75rem;
-}
-.teacher-portal th {
-  background: #fbfbfb;
-  font-weight: 700;
-}
-.teacher-portal td {
-  vertical-align: middle;
 }
 .teacher-portal .teacher-progress {
   accent-color: #10b981;

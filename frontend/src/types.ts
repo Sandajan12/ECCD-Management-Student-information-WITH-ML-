@@ -155,6 +155,7 @@ export interface TeacherAssignmentPayload {
 export interface Question {
   question_id: number;
   domain_id: number;
+  domain_name?: string;
   question_text: string;
   sequence_order: number;
   is_home_based?: boolean;

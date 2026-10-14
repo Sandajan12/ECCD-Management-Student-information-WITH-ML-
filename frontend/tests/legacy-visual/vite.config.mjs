@@ -1,4 +1,4 @@
-import { defineConfig } from "vite";
+﻿import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { resolve } from "node:path";
@@ -8,7 +8,7 @@ import tailwind from "tailwindcss";
 import autoprefixer from "autoprefixer";
 const root = fileURLToPath(new URL(".", import.meta.url));
 const appRoot = resolve(root, "../..");
-const legacyRoot = resolve(appRoot, "../AMES-SYSTEM/frontend");
+const legacyRoot = resolve(appRoot, "../AMES-SYSTEM-LEGACY/frontend");
 const settings = {
   school_name: "Example School",
   principal_name: "Example Principal",
@@ -41,6 +41,7 @@ export default defineConfig({
         if (source.endsWith("services/api")) return "\0reference-api";
         if (source.endsWith("services/trustedDevice"))
           return "\0reference-device";
+        if (source.endsWith("services/socket")) return "\0reference-socket";
       },
       async load(id) {
         if (id === "\0legacy-global.css") {
@@ -65,9 +66,11 @@ export default defineConfig({
         if (id === "\0reference-settings")
           return `import {createContext,useContext} from 'react'; const state={setSettings:()=>{},settings:${JSON.stringify(settings)}}; document.documentElement.style.setProperty('--primary-color',state.settings.primary_color); export const SettingsContext=createContext(state); export const useSettings=()=>useContext(SettingsContext);`;
         if (id === "\0reference-auth")
-          return `export const useAuth=()=>({user:{role:new URLSearchParams(window.location.search).get('role')||'user'},requiresPasswordChange:window.location.pathname==='/first-login',login:()=>{},logout:()=>{}});`;
+          return `export const useAuth=()=>({user:{...JSON.parse(localStorage.getItem('user')||'{}'),role:new URLSearchParams(window.location.search).get('role')||'user'},requiresPasswordChange:window.location.pathname==='/first-login',login:()=>{},logout:()=>{}});`;
         if (id === "\0reference-api")
-          return `export const API_URL='http://127.0.0.1:8767'; export const apiFetch=async(url,options)=>window.location.pathname.startsWith('/chairman/')&&!String(url).includes('unread') ? fetch(url,options) : ({ok:true,json:async()=>({unreadCount:0})}); export default {post:async()=>({data:{success:true,requireOtp:true,challengeToken:'reference',emailSent:true}}),put:async()=>({data:{success:false}})};`;
+          return `export const API_URL='http://127.0.0.1:8767'; export const apiFetch=async(url,options)=>(['teacher','chairman','parent'].some(role=>window.location.pathname.startsWith('/'+role+'/'))) ? fetch(url,options) : ({ok:true,json:async()=>({unreadCount:0})}); export default {post:async()=>({data:{success:true,requireOtp:true,challengeToken:'reference',emailSent:true}}),put:async()=>({data:{success:false}})};`;
+        if (id === "\0reference-socket")
+          return `const socket={on:()=>{},off:()=>{},emit:()=>{}}; export const connectSocket=()=>socket; export const getSocket=()=>socket;`;
         if (id === "\0reference-device")
           return `export const getDeviceToken=()=>null; export const clearDeviceToken=()=>{};`;
       },

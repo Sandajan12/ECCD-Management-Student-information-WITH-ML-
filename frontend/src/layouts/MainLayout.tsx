@@ -195,7 +195,7 @@ export default function MainLayout({ children }: MainLayoutProps) {
         .catch(() => {});
     };
     refresh();
-    const timer = setInterval(refresh, role === "admin" ? 3000 : 15000);
+    const timer = setInterval(refresh, 3000);
     window.addEventListener("ames-messages-read", refresh);
     return () => {
       mounted = false;
@@ -203,9 +203,11 @@ export default function MainLayout({ children }: MainLayoutProps) {
       window.removeEventListener("ames-messages-read", refresh);
     };
   }, [role]);
-  const badge = (item: NavItem) =>
+  const badge = (item: NavItem, bottom = false) =>
     item.title === "Messages" && unread > 0 ? (
-      <span className="absolute -top-2 -right-2 grid min-w-4 rounded-full bg-[#d32f2f] px-1 text-center text-[0.65rem] leading-4 font-bold text-white">
+      <span
+        className={`absolute top-0 flex h-4 min-w-4 translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-[#d32f2f] px-1.5 text-center text-[0.65rem] leading-none text-white ${bottom ? "right-0 font-medium" : "right-1 font-bold"}`}
+      >
         {unread > 99 ? "99+" : unread}
       </span>
     ) : null;
@@ -319,7 +321,7 @@ export default function MainLayout({ children }: MainLayoutProps) {
         <main
           data-layout-content
           aria-hidden={mobile && open ? true : undefined}
-          className={`min-w-0 flex-1 overflow-x-hidden overflow-y-auto bg-[#f9fafb] p-3 legacy-sm:p-4 legacy-md:ml-64 legacy-md:h-screen legacy-md:p-6 ${role === "user" ? "pb-[4.75rem] legacy-sm:pb-[4.75rem] legacy-md:pb-6" : "pb-4 legacy-md:pb-6"}`}
+          className={`min-w-0 flex-1 overflow-x-hidden overflow-y-auto bg-[#f9fafb] p-3 legacy-sm:p-4 legacy-md:ml-64 legacy-md:h-screen legacy-md:p-6 ${role === "user" ? "pb-[4.75rem] legacy-sm:pb-4 legacy-md:pb-6" : "pb-4 legacy-md:pb-6"}`}
         >
           <SyncStatus />
           {children || <Outlet />}
@@ -344,7 +346,7 @@ export default function MainLayout({ children }: MainLayoutProps) {
                 <>
                   <span className="relative inline-flex items-center justify-center">
                     <LegacyIcon name={item.icon} className="size-[22px]" />
-                    {badge(item)}
+                    {badge(item, true)}
                   </span>
                   <span
                     className={`mt-1 text-[11px] leading-none ${isActive ? "font-bold" : "font-medium"}`}

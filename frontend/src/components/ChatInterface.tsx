@@ -12,19 +12,33 @@ import API, { errorMessage, isNetworkError } from "../services/api";
 import { confirmDraft, readDraft, storeDraft } from "../utils/drafts";
 import type { Draft } from "../utils/drafts";
 import type { ChatMessage, Contact } from "../types";
-import { Button, Empty, Field, Notice, TextArea } from "./ui";
+import { Notice } from "./ui";
+import {
+  Box,
+  Typography,
+  Paper,
+  TextField,
+  IconButton,
+  Avatar,
+  List,
+  ListItemButton,
+  ListItemText,
+} from "@mui/material";
+import SendIcon from "@mui/icons-material/Send";
+import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 interface MessageDraft {
   body: string;
 }
-function Composer({
-  teacherId,
-  parentId,
-  onSaved,
-}: {
+interface ComposerProps {
   teacherId: number;
   parentId: number;
-  onSaved: (m: ChatMessage) => void;
-}) {
+  onSaved: (message: ChatMessage) => void;
+}
+interface ChatInterfaceProps {
+  currentUserRole: "teacher" | "parent";
+  preferredContactName?: string;
+}
+function Composer({ teacherId, parentId, onSaved }: ComposerProps) {
   const { user } = useAuth();
   const key = `ames_draft_${user!.id}_message_${teacherId}_${parentId}`;
   const [body, setBody] = useState(
@@ -56,7 +70,7 @@ function Composer({
   };
   return (
     <form
-      className="space-y-3 border-t border-slate-100 p-4"
+      style={{ flexShrink: 0, padding: 0 }}
       onSubmit={async (e) => {
         e.preventDefault();
         if (busy || !body.trim()) return;
@@ -104,44 +118,86 @@ function Composer({
       }}
     >
       <Notice tone="error">{error}</Notice>
-      <TextArea
-        label="Message"
-        placeholder="Write a message…"
-        maxLength={5000}
-        value={body}
-        onChange={(e) => change(e.target.value)}
-      />
-      <div className="flex justify-end">
-        <Button disabled={busy || !body.trim()} type="submit">
-          {busy ? "Sending…" : "Send message"}
-        </Button>
-      </div>
+      <Box
+        sx={{
+          p: { xs: 1, sm: 1.5 },
+          bgcolor: "#ffffff",
+          borderTop: "1px solid #e2e8f0",
+          flexShrink: 0,
+        }}
+      >
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+          <TextField
+            fullWidth
+            placeholder="Type a message..."
+            variant="outlined"
+            size="small"
+            value={body}
+            disabled={busy}
+            onChange={(e) => change(e.target.value)}
+            slotProps={{
+              htmlInput: { "aria-label": "Message", maxLength: 5000 },
+            }}
+            sx={{
+              "& .MuiOutlinedInput-root": {
+                borderRadius: 6,
+                bgcolor: "#F8FAFC",
+                fontSize: { xs: "0.85rem", sm: "0.925rem" },
+              },
+            }}
+          />
+          <IconButton
+            type="submit"
+            aria-label="Send message"
+            disabled={busy || !body.trim()}
+            sx={{
+              bgcolor: "#4F46E5",
+              color: "white",
+              "&:hover": { bgcolor: "#4338CA" },
+              "&.Mui-disabled": { bgcolor: "#E2E8F0", color: "#94A3B8" },
+              width: { xs: 38, sm: 42 },
+              height: { xs: 38, sm: 42 },
+              flexShrink: 0,
+            }}
+          >
+            <SendIcon sx={{ fontSize: { xs: 18, sm: 20 } }} />
+          </IconButton>
+        </Box>
+      </Box>
     </form>
   );
 }
 export default function ChatInterface({
   currentUserRole,
   preferredContactName,
-}: {
-  currentUserRole: "teacher" | "parent";
-  preferredContactName?: string;
-}) {
+}: ChatInterfaceProps) {
   const { token } = useAuth();
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [active, setActive] = useState<Contact | null>(null);
   const [ownId, setOwnId] = useState<number | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [search, setSearch] = useState("");
   const [error, setError] = useState("");
-  const [connected, setConnected] = useState(false);
-  const [roomReady, setRoomReady] = useState(false);
+  const [, setConnected] = useState(false);
+  const [, setRoomReady] = useState(false);
   const currentRoom = useRef("");
   const socket = useRef<Socket | null>(null);
   const bottom = useRef<HTMLDivElement>(null);
   const selectedPreference = useRef("");
   useEffect(() => {
-    if (currentUserRole !== "parent" || !preferredContactName || selectedPreference.current === preferredContactName || window.innerWidth < 1024) return;
-    const adviser = contacts.find(contact => contact.name.replace(/^Teacher\s+/i, "").trim().toLowerCase() === preferredContactName.trim().toLowerCase());
+    if (
+      currentUserRole !== "parent" ||
+      !preferredContactName ||
+      selectedPreference.current === preferredContactName ||
+      window.innerWidth < 900
+    )
+      return;
+    const adviser = contacts.find(
+      (contact) =>
+        contact.name
+          .replace(/^Teacher\s+/i, "")
+          .trim()
+          .toLowerCase() === preferredContactName.trim().toLowerCase(),
+    );
     if (adviser) {
       setActive(adviser);
       selectedPreference.current = preferredContactName;
@@ -164,7 +220,7 @@ export default function ChatInterface({
       setActive((current) =>
         current && res.data.contacts.some((c) => c.id === current.id)
           ? current
-          : window.innerWidth >= 1024
+          : window.innerWidth >= 900
             ? res.data.contacts[0] || null
             : null,
       );
@@ -271,91 +327,273 @@ export default function ChatInterface({
   useEffect(() => {
     bottom.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }, [messages]);
+  const getInitials = (name: string) => name.charAt(0).toUpperCase() || "U";
+  const formatTime = (value: string) =>
+    new Date(value).toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
   return (
     <>
       <Notice tone="error">{error}</Notice>
-      <div className="mt-5 grid min-h-[65dvh] overflow-hidden rounded-2xl bg-white shadow-sm lg:grid-cols-[1fr_2fr]">
-        <aside
-          className={`border-r border-slate-100 p-4 ${active ? "hidden lg:block" : ""}`}
+      <Paper
+        sx={{
+          display: "flex",
+          height: {
+            xs: "calc(100dvh - 9rem)",
+            sm: "calc(100dvh - 10rem)",
+            md: "calc(100vh - 11rem)",
+          },
+          minHeight: { xs: "420px", md: "520px" },
+          borderRadius: 3,
+          overflow: "hidden",
+          boxShadow: "0 4px 20px rgba(0,0,0,0.06)",
+          border: "1px solid #e2e8f0",
+        }}
+      >
+        {/* LEFT SIDE: Contacts List */}
+        <Box
+          sx={{
+            width: { xs: "100%", md: "20rem" },
+            flexShrink: 0,
+            borderRight: "1px solid #e0e0e0",
+            display: { xs: active ? "none" : "flex", md: "flex" },
+            flexDirection: "column",
+            bgcolor: "#ffffff",
+            height: "100%",
+            overflow: "hidden",
+          }}
         >
-          <h2 className="mb-4 font-semibold">Conversations</h2>
-          <Field
-            label="Search contacts"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-          <div className="mt-4 space-y-2">
-            {contacts
-              .filter((c) =>
-                c.name.toLowerCase().includes(search.toLowerCase()),
-              )
-              .map((c) => (
-                <button
-                  key={c.id}
-                  className={`flex w-full items-center gap-3 rounded-xl p-3 text-left text-sm ${active?.id === c.id ? "bg-blue-50 text-blue-700" : "hover:bg-slate-50"}`}
-                  onClick={() => {
-                    setError("");
-                    setActive(c);
+          <Box
+            sx={{
+              p: { xs: 2, sm: 2.5 },
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              borderBottom: "1px solid #f1f5f9",
+            }}
+          >
+            <Typography
+              variant="h6"
+              sx={{
+                fontWeight: "bold",
+                fontSize: { xs: "1.05rem", sm: "1.2rem" },
+              }}
+            >
+              Conversations
+            </Typography>
+            <Typography
+              variant="caption"
+              sx={{
+                bgcolor: "#f1f5f9",
+                px: 1.5,
+                py: 0.5,
+                borderRadius: 3,
+                fontWeight: 600,
+                color: "text.secondary",
+              }}
+            >
+              {contacts.length}
+            </Typography>
+          </Box>
+          <List sx={{ overflowY: "auto", flex: 1, p: 0 }}>
+            {contacts.map((contact) => {
+              const isActive = active?.id === contact.id;
+              return (
+                <ListItemButton
+                  key={contact.id}
+                  onClick={() => setActive(contact)}
+                  sx={{
+                    borderLeft: isActive
+                      ? "4px solid #4F46E5"
+                      : "4px solid transparent",
+                    bgcolor: isActive ? "#EEF2FF" : "transparent",
+                    py: 1.5,
+                    px: 2,
+                    cursor: "pointer",
+                    transition: "all 0.15s ease",
+                    "&:hover": { bgcolor: isActive ? "#EEF2FF" : "#F9FAFB" },
                   }}
                 >
-                  <span className="grid size-10 shrink-0 place-items-center rounded-full bg-blue-100 font-semibold text-blue-600">
-                    {c.name[0]}
-                  </span>
-                  <span className="min-w-0 break-words">{c.name}</span>
-                </button>
-              ))}
-          </div>
-          {!contacts.length && (
-            <Empty>
-              {currentUserRole === "teacher"
-                ? "Parents appear after they link a student in your section."
-                : "Link a child to contact their teacher."}
-            </Empty>
-          )}
-        </aside>
-        <section
-          className={`min-w-0 flex-col ${active ? "flex" : "hidden lg:flex"}`}
+                  <Avatar
+                    sx={{
+                      bgcolor: isActive ? "#4F46E5" : "#E0E7FF",
+                      color: isActive ? "#ffffff" : "#4F46E5",
+                      fontWeight: "bold",
+                      mr: 1.5,
+                      width: 38,
+                      height: 38,
+                      fontSize: "0.9rem",
+                    }}
+                  >
+                    {getInitials(contact.name)}
+                  </Avatar>
+                  <ListItemText
+                    primary={
+                      <Typography
+                        variant="body2"
+                        sx={{
+                          fontWeight: isActive ? "bold" : "600",
+                          color: "#1e293b",
+                        }}
+                      >
+                        {contact.name}
+                      </Typography>
+                    }
+                  />
+                </ListItemButton>
+              );
+            })}
+            {contacts.length === 0 && (
+              <Box sx={{ p: 4, textAlign: "center" }}>
+                <Typography variant="body2" sx={{ color: "text.secondary" }}>
+                  No active contacts found.
+                </Typography>
+              </Box>
+            )}
+          </List>
+        </Box>
+
+        {/* RIGHT SIDE: Chat Area */}
+        <Box
+          sx={{
+            flex: 1,
+            display: { xs: active ? "flex" : "none", md: "flex" },
+            flexDirection: "column",
+            bgcolor: "#F8FAFC",
+            height: "100%",
+            overflow: "hidden",
+            position: "relative",
+          }}
         >
           {active ? (
             <>
-              <header className="flex items-center gap-3 border-b border-slate-100 p-4">
-                <Button
-                  variant="secondary"
-                  className="lg:hidden"
+              {/* Chat Header */}
+              <Box
+                sx={{
+                  p: { xs: 1.25, sm: 2 },
+                  bgcolor: "#ffffff",
+                  borderBottom: "1px solid #e2e8f0",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 1.5,
+                  flexShrink: 0,
+                }}
+              >
+                <IconButton
                   onClick={() => setActive(null)}
+                  sx={{
+                    display: { xs: "inline-flex", md: "none" },
+                    p: 1,
+                    minWidth: 40,
+                    minHeight: 40,
+                    bgcolor: "#f1f5f9",
+                    "&:hover": { bgcolor: "#e2e8f0" },
+                  }}
+                  aria-label="Back to contacts list"
                 >
-                  ← Back
-                </Button>
-                <div className="min-w-0">
-                  <h2 className="break-words text-sm font-semibold">
-                    {active.name}
-                  </h2>
-                  <p className="mt-1 text-xs text-slate-500">
-                    {connected && roomReady
-                      ? "Connected"
-                      : "Reconnecting • messages remain saved"}
-                  </p>
-                </div>
-              </header>
-              <div className="max-h-[55dvh] min-h-[30dvh] flex-1 space-y-4 overflow-y-auto bg-slate-50 p-4 sm:p-6">
-                {messages.map((m) => (
-                  <article
-                    key={m.message_id}
-                    className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm shadow-sm ${m.sender_role === currentUserRole ? "ml-auto bg-brand text-white" : "mr-auto bg-white text-slate-700"}`}
+                  <ArrowBackIcon fontSize="small" />
+                </IconButton>
+                <Avatar
+                  sx={{
+                    bgcolor: "#E0E7FF",
+                    color: "#4F46E5",
+                    fontWeight: "bold",
+                    width: { xs: 36, sm: 40 },
+                    height: { xs: 36, sm: 40 },
+                    fontSize: "0.95rem",
+                  }}
+                >
+                  {getInitials(active.name)}
+                </Avatar>
+                <Box sx={{ minWidth: 0, flex: 1 }}>
+                  <Typography
+                    variant="subtitle2"
+                    noWrap
+                    sx={{
+                      fontWeight: "bold",
+                      fontSize: { xs: "0.9rem", sm: "1rem" },
+                      color: "#0f172a",
+                    }}
                   >
-                    <p className="whitespace-pre-wrap break-words leading-6">
-                      {m.body}
-                    </p>
-                    <time className="mt-2 block text-right text-[0.65rem] opacity-60">
-                      {new Date(m.created_at).toLocaleString()}
-                    </time>
-                  </article>
-                ))}
-                {!messages.length && (
-                  <Empty>Start a conversation with {active.name}.</Empty>
-                )}
+                    {active.name}
+                  </Typography>
+                  <Typography
+                    variant="caption"
+                    sx={{
+                      color: "text.secondary",
+                      display: "block",
+                      fontSize: "0.72rem",
+                      lineHeight: 1.2,
+                    }}
+                  >
+                    Active Message Thread
+                  </Typography>
+                </Box>
+              </Box>
+
+              {/* Messages Scroll Area */}
+              <Box
+                sx={{
+                  flex: 1,
+                  p: { xs: 1.5, sm: 2.5 },
+                  overflowY: "auto",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 1.5,
+                }}
+              >
+                {messages.map((msg, index) => {
+                  const isMe = msg.sender_role === currentUserRole;
+                  return (
+                    <Box
+                      key={msg.message_id || index}
+                      sx={{
+                        display: "flex",
+                        justifyContent: isMe ? "flex-end" : "flex-start",
+                      }}
+                    >
+                      <Box
+                        sx={{
+                          maxWidth: { xs: "85%", sm: "75%", md: "65%" },
+                          p: { xs: 1.25, sm: 1.75 },
+                          borderRadius: 3,
+                          borderBottomRightRadius: isMe ? 0 : 3,
+                          borderBottomLeftRadius: !isMe ? 0 : 3,
+                          bgcolor: isMe ? "#4F46E5" : "#ffffff",
+                          color: isMe ? "#ffffff" : "#0f172a",
+                          boxShadow: "0 2px 6px rgba(0,0,0,0.04)",
+                          wordBreak: "break-word",
+                        }}
+                      >
+                        <Typography
+                          variant="body2"
+                          sx={{
+                            fontSize: { xs: "0.85rem", sm: "0.925rem" },
+                            lineHeight: 1.45,
+                          }}
+                        >
+                          {msg.body}
+                        </Typography>
+                        <Typography
+                          variant="caption"
+                          sx={{
+                            display: "block",
+                            textAlign: "right",
+                            mt: 0.5,
+                            fontSize: { xs: "0.65rem", sm: "0.72rem" },
+                            color: isMe ? "#C7D2FE" : "#94A3B8",
+                          }}
+                        >
+                          {formatTime(msg.created_at)}
+                        </Typography>
+                      </Box>
+                    </Box>
+                  );
+                })}
                 <div ref={bottom} />
-              </div>
+              </Box>
+
               {teacherId && parentId && (
                 <Composer
                   key={room}
@@ -377,12 +615,27 @@ export default function ChatInterface({
               )}
             </>
           ) : (
-            <div className="grid flex-1 place-items-center p-8">
-              <Empty>Choose a conversation to get started.</Empty>
-            </div>
+            <Box
+              sx={{
+                flex: 1,
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                p: 3,
+                textAlign: "center",
+              }}
+            >
+              <Typography
+                variant="body1"
+                sx={{ color: "text.secondary", fontWeight: "500" }}
+              >
+                Select a contact to start messaging
+              </Typography>
+            </Box>
           )}
-        </section>
-      </div>
+        </Box>
+      </Paper>
     </>
   );
 }

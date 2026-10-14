@@ -7,7 +7,7 @@
     "pnpm": "12.11.2"
   },
   "scripts": {
-    "backend": "uv run --no-project --python 3.12 python -m uvicorn backend.main:app --reload --env-file backend/.env",
+    "backend": "uvicorn backend.main:app --reload --port 8000",
     "frontend": "pnpm --dir frontend dev",
     "dev": "pnpm run \"/^(backend|frontend)$/\""
   }
