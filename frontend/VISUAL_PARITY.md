@@ -1,5 +1,5 @@
 # Phase 3: authentication and core layout visual review
-
+hello
 The available legacy reference is now `AMES-SYSTEM/frontend/` and remains read-only. The original authentication/shared-navigation review below is historical; current Chairman Batches 1/2/3 evidence is recorded at the end. Other workspace pages and chat content require their own visual audits.
 
 | Current file | Legacy source inspected | Extracted visual properties and Tailwind equivalents | Review status |
