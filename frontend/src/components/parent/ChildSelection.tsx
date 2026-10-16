@@ -44,7 +44,7 @@ export function LinkChild({ onLinked }: { onLinked: () => void }) {
           const result = await save("/api/students/link", "post");
           setMessage(
             result === "saved"
-              ? "Child linked successfully."
+              ? "Link request submitted. Your child's teacher must approve it before records become available."
               : "Your request is saved for reconnection.",
           );
           if (result === "saved") onLinked();

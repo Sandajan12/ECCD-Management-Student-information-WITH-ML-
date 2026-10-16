@@ -20,6 +20,7 @@ import {
   MenuItem,
   Grid,
   SvgIcon,
+  Snackbar,
 } from "@mui/material";
 import LockIcon from "@mui/icons-material/Lock";
 import HomeWorkIcon from "@mui/icons-material/HomeWork";
@@ -69,6 +70,7 @@ const Dashboard: React.FC = () => {
     () => readDraft<string>(linkKey)?.values ?? "",
   );
   const [error, setError] = useState<string>("");
+  const [linkNotice, setLinkNotice] = useState<string>("");
   const [isLinking, setIsLinking] = useState<boolean>(false);
   const linkingLock = useRef(false);
   const linkRevision = useRef("");
@@ -99,6 +101,9 @@ const Dashboard: React.FC = () => {
         setLrnValue("");
         setLrnModalOpen(false);
         setError("");
+        setLinkNotice(
+          "Link request submitted. Your child's teacher must approve it before records become available.",
+        );
       }
     };
     window.addEventListener("ames-record-synced", synced);
@@ -217,6 +222,9 @@ const Dashboard: React.FC = () => {
       if (response.status !== 200 && response.status !== 201)
         throw new Error("The server did not confirm this link.");
       confirmDraft(linkKey, draft.revision);
+      setLinkNotice(
+        "Link request submitted. Your child's teacher must approve it before records become available.",
+      );
       if (
         !readDraft<string>(linkKey) &&
         linkRevision.current === draft.revision
@@ -1182,6 +1190,19 @@ const Dashboard: React.FC = () => {
           </Button>
         </DialogActions>
       </Dialog>
+      <Snackbar
+        open={Boolean(linkNotice)}
+        autoHideDuration={8000}
+        onClose={() => setLinkNotice("")}
+      >
+        <Alert
+          severity="success"
+          onClose={() => setLinkNotice("")}
+          sx={{ borderRadius: 3 }}
+        >
+          {linkNotice}
+        </Alert>
+      </Snackbar>
     </Box>
   );
 };

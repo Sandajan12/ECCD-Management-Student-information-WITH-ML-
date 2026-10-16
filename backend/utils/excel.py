@@ -59,7 +59,7 @@ def student_workbook(db: Session, student: Student):
     if teacher is None:
         teacher = Teacher(first_name="", last_name="")
     parents = []
-    for parent, relationship in db.query(Parent, FamilyAccess.relationship_type).join(FamilyAccess).filter(FamilyAccess.student_id == student.student_id):
+    for parent, relationship in db.query(Parent, FamilyAccess.relationship_type).join(FamilyAccess).filter(FamilyAccess.status == "SYNCED", FamilyAccess.student_id == student.student_id):
         # Do not mutate a linked parent's relationship while exporting.
         proxy = Parent(fullname=parent.fullname, age=parent.age, occupation=parent.occupation, educational_attainment=parent.educational_attainment, relationship_type=relationship if relationship is not None else parent.relationship_type)
         parents.append(proxy)

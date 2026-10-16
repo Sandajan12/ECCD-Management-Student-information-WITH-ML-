@@ -21,6 +21,7 @@ from backend.schemas.health import HealthResponse, ReadinessResponse
 from backend.utils.http_middleware import RequestLimitsMiddleware, SecurityHeadersMiddleware, UnreadPollingFilter, security_headers
 from backend.utils.realtime import SocketHandshakeMiddleware
 from backend.migrations.parity_batch2 import check_batch2
+from backend.migrations.parent_linking import check_parent_linking
 
 access_logger = logging.getLogger("uvicorn.access")
 if not any(isinstance(item, UnreadPollingFilter) for item in access_logger.filters):
@@ -32,6 +33,7 @@ async def lifespan(api):
     # existing table layout or provisions accounts.
     with engine.connect() as connection:
         schema = connection.execute(text("SELECT current_schema()")).scalar_one()
+        check_parent_linking(connection, schema)
         check_phase2(connection, schema)
         check_batch2(connection, schema)
     with SessionLocal() as db:
@@ -61,7 +63,7 @@ api.add_middleware(
 # Mount Routers
 for router in (auth.router, eccd.router, sections.router, students.router,
                students.message_router, students.chairman_router, settings.router, settings.chairman_router,
-               analytics.router, analytics.legacy_router, teachers.router, messages.router, backup.router,
+               analytics.router, analytics.legacy_router, teachers.router, teachers.student_router, messages.router, backup.router,
                backup.chairman_router, eccd_config.router, eccd_config.chairman_router,
                chairman.router, parents.router):
     api.include_router(router)

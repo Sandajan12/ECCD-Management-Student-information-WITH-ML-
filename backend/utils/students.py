@@ -10,11 +10,11 @@ def public_student(db: Session, student: Student) -> dict:
     result.update(lrn_number=student.masked_lrn, lrn=student.masked_lrn, decimal_age=student_age(db, student), section_name=student.section.section_name if student.section else student.section_name)
     fields = (student.lrn_last4, student.first_name, student.last_name, student.date_of_birth, student.gender, student.section_id, student.address, student.handedness, student.num_of_siblings, student.birth_order, student.emergency_contact)
     result["profile_completeness"] = math.floor(sum(value is not None and value != "" for value in fields) * 100 / 11 + 0.5)
-    result["parent_names"] = ", ".join(link.parent.fullname or link.parent.user.username for link in student.parents if link.parent and link.parent.user_id) or None
+    result["parent_names"] = ", ".join(link.parent.fullname or link.parent.user.username for link in student.parents if link.status == "SYNCED" and link.parent and link.parent.user_id) or None
     middle = f" {student.middle_name[:1]}." if student.middle_name else ""
     result["full_name"] = f"{student.last_name or ''}, {student.first_name or ''}{middle}".strip()
     result["class_name"] = result["section_name"]
-    result["parents"] = [{"fullname": link.parent.fullname, "relationship": link.relationship_type, "age": link.parent.age, "occupation": link.parent.occupation, "educational_attainment": link.parent.educational_attainment} for link in student.parents if link.parent and link.parent.fullname]
+    result["parents"] = [{"fullname": link.parent.fullname, "relationship": link.relationship_type, "age": link.parent.age, "occupation": link.parent.occupation, "educational_attainment": link.parent.educational_attainment} for link in student.parents if link.status == "SYNCED" and link.parent and link.parent.fullname]
     return result
 
 
@@ -30,7 +30,7 @@ def child_profile(db: Session, student: Student) -> dict:
         result["full_name"], result["parents"] = None, []
         return result
     for relationship, prefix in (("Father", "father"), ("Mother", "mother"), ("Guardian", "legal_guardian")):
-        parent = db.query(Parent).join(FamilyAccess).filter(FamilyAccess.student_id == student.student_id, FamilyAccess.relationship_type == relationship).first()
+        parent = db.query(Parent).join(FamilyAccess).filter(FamilyAccess.status == "SYNCED", FamilyAccess.student_id == student.student_id, FamilyAccess.relationship_type == relationship).first()
         if parent:
             result.update({f"{prefix}_name": parent.fullname, f"{prefix}_age": parent.age, f"{prefix}_occ": parent.occupation, f"{prefix}_educ": parent.educational_attainment})
     return result
@@ -39,7 +39,7 @@ def child_profile(db: Session, student: Student) -> dict:
 def upsert_guardian(db: Session, student: Student, relationship: str, name: str | None, age: int | None, occupation: str | None, education: str | None) -> None:
     if not name or not name.strip():
         return
-    parent = db.query(Parent).join(FamilyAccess).filter(FamilyAccess.student_id == student.student_id, FamilyAccess.relationship_type == relationship).first()
+    parent = db.query(Parent).join(FamilyAccess).filter(FamilyAccess.status == "SYNCED", FamilyAccess.student_id == student.student_id, FamilyAccess.relationship_type == relationship).first()
     if parent is None:
         parent = Parent(relationship_type=relationship)
         db.add(parent)

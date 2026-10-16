@@ -41,7 +41,7 @@ def authorize_student(db: Session, user: User, student: Student, parent_edit: bo
             raise HTTPException(403, "Student is not assigned to your section.")
         return
     parent = db.query(Parent).filter_by(user_id=user.user_id).first()
-    if parent is None or not db.query(FamilyAccess).filter_by(parent_id=parent.parent_id, student_id=student.student_id).first():
+    if parent is None or not db.query(FamilyAccess).filter_by(parent_id=parent.parent_id, student_id=student.student_id, status="SYNCED").first():
         raise HTTPException(403, "This child is not linked to your account.")
     if parent_edit and not permissions_for_student(db, student).allow_parent_edit_student_info:
         raise HTTPException(403, "The Class Adviser has locked editing for student records.")

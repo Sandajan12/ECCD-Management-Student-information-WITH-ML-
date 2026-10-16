@@ -156,7 +156,7 @@ def evaluate_student_parent(payload: ParentEvaluationBatch, db: Session = Depend
     from backend.utils.access import resolve_student
     student = resolve_student(db, payload.student_lrn)
     parent = db.query(Parent).filter_by(user_id=current_user.user_id).first()
-    if parent is None or not db.query(FamilyAccess).filter_by(parent_id=parent.parent_id, student_id=student.student_id).first():
+    if parent is None or not db.query(FamilyAccess).filter_by(parent_id=parent.parent_id, student_id=student.student_id, status="SYNCED").first():
         raise HTTPException(403, "This child is not linked to your account.")
     from backend.utils.assessments import save_home_evaluation
     return save_home_evaluation(db, current_user, payload)

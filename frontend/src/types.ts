@@ -58,6 +58,8 @@ export interface Guardian {
   educational_attainment: string | null;
 }
 export interface Student extends Partial<Permissions> {
+  parent_link_status?: "NONE" | "PENDING" | "SYNCED";
+  parent_info?: ParentLinkInfo | null;
   student_id: number;
   masked_lrn: string;
   first_name: string | null;
@@ -93,6 +95,18 @@ export interface Student extends Partial<Permissions> {
   legal_guardian_age?: number | null;
   legal_guardian_occ?: string | null;
   legal_guardian_educ?: string | null;
+}
+export interface ParentLinkInfo {
+  parent_id: number;
+  full_name: string;
+  email: string;
+  relationship: string;
+  linked_at: string | null;
+  requested_at: string;
+}
+export interface ParentLinkActionResponse {
+  success: boolean;
+  message: string;
 }
 export interface Teacher {
   teacher_id: number;

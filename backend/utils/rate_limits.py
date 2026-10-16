@@ -24,7 +24,7 @@ class Policy:
 
 POLICIES = {
     "api": Policy(60, 120, "Too many requests. Please try again in a minute."),
-    "login": Policy(900, 10, "Too many login attempts. Please try again in 15 minutes."),
+    "login": Policy(900, 15, "Too many login attempts. Please try again in 15 minutes."),
     "otp-send": Policy(900, 5, "Too many verification email requests. Please try again in 15 minutes."),
     "otp-verify": Policy(900, 10, "Too many verification attempts. Please try again in 15 minutes."),
     "registration": Policy(900, 5, "Too many registration requests. Please try again in 15 minutes."),

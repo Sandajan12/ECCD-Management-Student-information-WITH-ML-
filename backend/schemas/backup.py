@@ -6,6 +6,7 @@ LRNs are encrypted; there are no plaintext LRN columns in this format.
 """
 
 from datetime import date, datetime
+from typing import Literal
 
 from pydantic import ConfigDict, Field, model_validator
 
@@ -117,6 +118,13 @@ class FamilyAccessBackupRow(BackupRow):
     student_id: PositiveId
     relationship_type: str | None = Field(max_length=50)
     date_linked: datetime
+    status: Literal["PENDING", "SYNCED"] = "SYNCED"
+    requested_at: datetime | None = None
+
+    @model_validator(mode="after")
+    def request_date(self) -> "FamilyAccessBackupRow":
+        self.requested_at = self.requested_at or self.date_linked
+        return self
 
 
 class DomainBackupRow(BackupRow):

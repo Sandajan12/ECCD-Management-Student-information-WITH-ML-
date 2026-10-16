@@ -17,9 +17,9 @@ def contacts(db: Session = Depends(get_db), user: User = Depends(verify_role(["a
     result = []
     if user.role.value == "admin":
         teacher = current_teacher(db, user)
-        parents = db.query(Parent).join(FamilyAccess).join(Student).join(User, Parent.user_id == User.user_id).filter(Student.section_id.in_(teacher_sections(db, teacher)), Student.is_active.is_(True), User.is_active.is_(True), User.role == "user").distinct().all()
+        parents = db.query(Parent).join(FamilyAccess).join(Student).join(User, Parent.user_id == User.user_id).filter(FamilyAccess.status == "SYNCED", Student.section_id.in_(teacher_sections(db, teacher)), Student.is_active.is_(True), User.is_active.is_(True), User.role == "user").distinct().all()
         for parent in parents:
-            children = db.query(Student).join(FamilyAccess).filter(FamilyAccess.parent_id == parent.parent_id, Student.section_id.in_(teacher_sections(db, teacher)), Student.is_active.is_(True)).distinct().all()
+            children = db.query(Student).join(FamilyAccess).filter(FamilyAccess.status == "SYNCED", FamilyAccess.parent_id == parent.parent_id, Student.section_id.in_(teacher_sections(db, teacher)), Student.is_active.is_(True)).distinct().all()
             names = " & ".join(sorted({child.first_name for child in children if child.first_name}))
             name = parent.fullname or parent.user.username
             latest = db.query(func.max(Message.created_at)).filter_by(parent_id=parent.parent_id, teacher_id=teacher.teacher_id, is_archived=False).scalar()
@@ -70,7 +70,7 @@ def notify(payload: NotifyStudentRequest, db: Session = Depends(get_db), user: U
     if not student.is_active:
         raise HTTPException(403, "Student is archived.")
     teacher = current_teacher(db, user)
-    parents = db.query(Parent).join(FamilyAccess).join(User, Parent.user_id == User.user_id).filter(FamilyAccess.student_id == student.student_id, User.is_active.is_(True), User.role == "user").distinct().all()
+    parents = db.query(Parent).join(FamilyAccess).join(User, Parent.user_id == User.user_id).filter(FamilyAccess.status == "SYNCED", FamilyAccess.student_id == student.student_id, User.is_active.is_(True), User.role == "user").distinct().all()
     if not parents:
         raise HTTPException(404, "No active parent account is linked to this student.")
     for parent in parents:
@@ -86,6 +86,7 @@ def unread(db: Session = Depends(get_db), user: User = Depends(verify_role(["adm
     # EXISTS avoids multiplying messages when siblings or duplicate assignment
     # records connect the same teacher and parent. No message bodies are loaded.
     relationship = db.query(Student.student_id).join(FamilyAccess, FamilyAccess.student_id == Student.student_id).join(SectionTeacher, SectionTeacher.section_id == Student.section_id).filter(
+        FamilyAccess.status == "SYNCED",
         FamilyAccess.parent_id == Message.parent_id,
         SectionTeacher.teacher_id == Message.teacher_id,
         SectionTeacher.status == "Active",

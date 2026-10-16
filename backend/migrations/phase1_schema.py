@@ -1,5 +1,5 @@
 """Retain the Phase 1 compatibility schema for upgrades from the original DB."""
-from sqlalchemy import Column, ForeignKeyConstraint, Index, MetaData, String, Table, UniqueConstraint
+from sqlalchemy import CheckConstraint, Column, ForeignKeyConstraint, Index, MetaData, String, Table, UniqueConstraint
 from backend.models import Base
 
 
@@ -22,6 +22,7 @@ def phase1_metadata() -> MetaData:
             Index("idx_lrn_last4", target.c.lrn_last4)
         else:
             constraints = foreign_keys + [ForeignKeyConstraint(["student_id", "student_lrn"], ["students.student_id", "students.lrn_number"], name="fk_family_student_identity" if table.name == "family_access" else "fk_eval_student_identity", ondelete="CASCADE")]
+            constraints.extend(CheckConstraint(item.sqltext, name=item.name) for item in table.constraints if isinstance(item, CheckConstraint))
             if table.name == "student_eccd_evaluations":
                 constraints.append(UniqueConstraint("student_id", "question_id", "testing_period", name="unique_student_eval"))
             target = Table(table.name, metadata, *columns, Column("student_lrn", String(50), nullable=False), *constraints)

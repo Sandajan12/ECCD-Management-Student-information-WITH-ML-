@@ -576,3 +576,69 @@ invalid local backup key is unchanged; temporary keys are confined to tests.
 All Batch 1 and intentional architecture upgrades, including protected section
 deletion for archived students, remain intact. This verifies backend behavior
 and local migrations, not remote deployment, SMTP or deployed-browser acceptance.
+
+## 14. Teacher parent link approval (2026-10-16)
+
+`family_access` now includes constrained `status` (`PENDING` or `SYNCED`) and
+timezone-aware `requested_at`. No account association means roster status `NONE`.
+Existing associations and non-account guardian records default to `SYNCED`.
+All parent-initiated link aliases create `PENDING` requests, including re-links
+after rejection/unlinking. Repeating the same pending request is idempotent;
+another account cannot replace it. Student row locks serialize linking/actions.
+
+Parent ownership, child lists, profile reads/updates, ECCD reads/home saves,
+messaging authorization/contacts/unread counts, notifications, guardian profile
+lookups and exports require `SYNCED` associations. Pending requests grant no
+access. Existing adviser release masking and six parent permissions still apply
+after approval. Unlink/reject deletes only the selected account association;
+evaluations, account records, unrelated children and guardian-only records stay.
+Backup validation/export/restore includes both new fields; old backup rows default
+to synced status and use their original `date_linked` as `requested_at`.
+
+`GET /api/teacher/students`, `GET /api/teachers/students`, and the existing active
+`/api/students/` roster return `parent_link_status` and nullable `parent_info`
+(ID, full name, email, relationship, linked/requested timestamps). Teacher actions:
+
+- `POST /api/teachers/students/{student_id}/unlink-parent`
+- `POST /api/teachers/students/{student_id}/approve-parent-link`
+- `POST /api/teachers/students/{student_id}/reject-parent-link`
+
+Actions require an active teacher assignment to the student's section, commit
+the change and audit event together, and return `{success, message}`. The optional
+Pydantic request body accepts `parent_id`; the UI supplies it so an outdated
+modal cannot act on a replacement account. Wrong states/targets return HTTP 409.
+
+Teacher StudentManagement displays No Parent, Synced Parent and Pending badges.
+Responsive account/request dialogs show name/email/relationship/dates, explicit
+unlink confirmation, action spinners, disabled controls during writes, server
+errors without dismissing the dialog, and success feedback after confirmation.
+No parent phone field is added. Parent link submission feedback explains that
+teacher approval is required; existing durable drafts remain intact.
+
+Before starting the updated API on another existing database, apply explicitly:
+
+```powershell
+uv run --no-project --python .venv312 python -m backend.migrations.parent_linking --apply
+uv run --no-project --python .venv312 python -m backend.migrations.parent_linking --check
+```
+
+The additive migration preserves original association fields/dates and is
+idempotent. It was applied and checked on the configured local development DB;
+startup checks the schema without applying migrations. The Phase 1 metadata
+adapter now copies family-access check constraints into fresh migration fixtures.
+
+Verification: 13 new isolated PostgreSQL tests in `test_parent_linking.py` pass;
+17 changed backend files pass py_compile. App TypeScript checking passes, as do
+ESLint for changed frontend files and Prettier checks for the feature files.
+All 10 desktop/mobile Playwright cases pass via
+`pnpm.cmd --dir frontend exec playwright test --config playwright.parent-linking.config.ts`;
+these use API mocks to check UI behavior, while backend tests exercise real
+isolated database schemas. Local Uvicorn startup, health and readiness pass.
+
+The requested full `uv run --no-project --python .venv312 python -m unittest`
+run executed 124 tests: 122 passed, with two unrelated environment errors. The
+pre-existing untracked `test_ml_model.py` imports `backend.ml.common`, absent
+on this feature's base branch. The existing legacy route parity test requires
+`AMES-SYSTEM-LEGACY/backend/routes/authRoutes.js`, absent from the partially
+available read-only reference checkout. Those unrelated files and all legacy
+files were left untouched. No new dependencies or deployment are involved.

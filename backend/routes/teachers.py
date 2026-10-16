@@ -1,6 +1,6 @@
 from backend.schemas.account import PasswordChangeRequest, PasswordChangeVerify, ChallengeResult
 from backend.schemas.auth import LoginResponse
-from backend.schemas.common import MessageResult
+from backend.schemas.common import MessageResult, PositiveId
 from backend.schemas.teacher import ParentPermissionUpdate, TeacherAccessResponse, TeacherProvisionRequest, TeacherProvisionResponse
 
 from backend.config.database import get_db
@@ -20,6 +20,65 @@ from sqlalchemy.exc import IntegrityError
 
 
 router = APIRouter(prefix="/api/teachers", tags=["Teachers"])
+student_router = APIRouter(prefix="/api/teacher", tags=["Teacher students"])
+
+from backend.schemas.student import ParentLinkActionRequest, ParentLinkActionResponse, TeacherStudentResponse
+
+
+@router.get("/students", response_model=list[TeacherStudentResponse])
+@student_router.get("/students", response_model=list[TeacherStudentResponse])
+def teacher_students(db: Session = Depends(get_db), current_user: User = Depends(verify_role(["admin"]))):
+    from backend.routes.students import roster
+    return roster(db, current_user, True)
+
+
+def change_parent_link(db: Session, user: User, student_id: int, payload: ParentLinkActionRequest | None, action: str) -> dict:
+    from datetime import datetime, timezone
+    from backend.models import FamilyAccess, Parent, Student, SystemLog
+    from backend.utils.access import authorize_student
+    from backend.utils.parent_links import selected_link
+    student = db.query(Student).filter_by(student_id=student_id).with_for_update().first()
+    if student is None:
+        raise HTTPException(404, "Student not found.")
+    authorize_student(db, user, student)
+    expected = "SYNCED" if action == "unlink" else "PENDING"
+    link, parent, account = selected_link(db, student_id, payload.parent_id if payload else None, expected)
+    if action == "approve":
+        if not student.is_active:
+            raise HTTPException(409, "An archived student's parent link cannot be approved.")
+        if not account.is_active:
+            raise HTTPException(409, "The requesting parent account is inactive.")
+        if db.query(FamilyAccess).join(Parent).filter(FamilyAccess.student_id == student_id, FamilyAccess.status == "SYNCED", Parent.user_id.isnot(None)).first():
+            raise HTTPException(409, "This student already has a synced parent.")
+        link.status, link.date_linked = "SYNCED", datetime.now(timezone.utc)
+        event, preposition, message = "Approved Parent Link", "for", "Parent link approved successfully."
+    else:
+        db.delete(link)
+        event, preposition, message = ("Unlinked Parent", "from", "Parent account successfully unlinked.") if action == "unlink" else ("Rejected Parent Link", "for", "Parent link request declined.")
+    parent_name = parent.fullname or account.username
+    student_name = " ".join(value for value in (student.first_name, student.middle_name, student.last_name) if value)
+    db.add(SystemLog(user_id=user.user_id, action_type=event, details=f"{event}: {parent_name} {preposition} student {student_name}"))
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    return {"success": True, "message": message}
+
+
+@router.post("/students/{student_id}/unlink-parent", response_model=ParentLinkActionResponse)
+def unlink_parent(student_id: PositiveId, payload: ParentLinkActionRequest | None = None, db: Session = Depends(get_db), current_user: User = Depends(verify_role(["admin"]))):
+    return change_parent_link(db, current_user, student_id, payload, "unlink")
+
+
+@router.post("/students/{student_id}/approve-parent-link", response_model=ParentLinkActionResponse)
+def approve_parent_link(student_id: PositiveId, payload: ParentLinkActionRequest | None = None, db: Session = Depends(get_db), current_user: User = Depends(verify_role(["admin"]))):
+    return change_parent_link(db, current_user, student_id, payload, "approve")
+
+
+@router.post("/students/{student_id}/reject-parent-link", response_model=ParentLinkActionResponse)
+def reject_parent_link(student_id: PositiveId, payload: ParentLinkActionRequest | None = None, db: Session = Depends(get_db), current_user: User = Depends(verify_role(["admin"]))):
+    return change_parent_link(db, current_user, student_id, payload, "reject")
 
 from backend.routes.analytics import get_dashboard_filters, get_dashboard_pie_data, get_dashboard_stats
 from backend.schemas.analytics import DashboardFilters, PieChartSlice

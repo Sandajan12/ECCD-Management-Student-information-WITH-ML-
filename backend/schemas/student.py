@@ -1,4 +1,5 @@
 from datetime import date, datetime
+from typing import Literal
 
 from backend.models.student import Gender, Handedness
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, computed_field, field_validator, model_validator
@@ -166,6 +167,30 @@ class StudentPublicResponse(StudentRecordResponse):
     full_name: str | None = None
     class_name: str | None = None
     parents: list[LinkedGuardian] = Field(default_factory=list)
+
+
+class ParentLinkInfo(ApiModel):
+    parent_id: PositiveId
+    full_name: str
+    email: str
+    relationship: str
+    linked_at: datetime | None
+    requested_at: datetime
+
+
+class TeacherStudentResponse(StudentPublicResponse):
+    parent_link_status: Literal["NONE", "PENDING", "SYNCED"] = "NONE"
+    parent_info: ParentLinkInfo | None = None
+
+
+class ParentLinkActionRequest(ApiModel):
+    # Optional for existing callers; the UI supplies this to reject stale actions.
+    parent_id: PositiveId | None = None
+
+
+class ParentLinkActionResponse(ApiModel):
+    success: bool
+    message: str
 
 
 class EnrollmentResponse(ApiModel):

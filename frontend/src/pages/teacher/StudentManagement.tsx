@@ -23,7 +23,12 @@ import {
   Select,
   MenuItem,
   Grid,
+  Stack,
+  Snackbar,
 } from "@mui/material";
+import LinkIcon from "@mui/icons-material/Link";
+import AccessTimeIcon from "@mui/icons-material/AccessTime";
+import ParentLinkModal from "../../components/teacher/ParentLinkModal";
 import SearchIcon from "@mui/icons-material/Search";
 import AddIcon from "@mui/icons-material/Add";
 import EditIcon from "@mui/icons-material/Edit";
@@ -199,6 +204,8 @@ const StudentManagement: React.FC = () => {
   const [editOpen, setEditOpen] = useState(false);
   const [confirmArchiveAllOpen, setConfirmArchiveAllOpen] = useState(false);
   const [students, setStudents] = useState<Student[]>([]);
+  const [parentStudent, setParentStudent] = useState<Student | null>(null);
+  const [parentNotice, setParentNotice] = useState<string>("");
   const [archivedStudents, setArchivedStudents] = useState<Student[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [error, setError] = useState("");
@@ -295,6 +302,7 @@ const StudentManagement: React.FC = () => {
     ++editVersion.current;
     editingId.current = 0;
     setEditOpen(false);
+    setParentStudent(null);
   }, [section?.section_id]);
   const handleOpenArchive = () => {
     void fetchArchivedStudents();
@@ -843,23 +851,83 @@ const StudentManagement: React.FC = () => {
                         </Typography>
                       </Box>
                     </TableCell>
-                    <TableCell
-                      sx={{ display: "flex", gap: 1, alignItems: "center" }}
-                    >
-                      <IconButton
-                        onClick={() => handleEditClick(student)}
-                        color="primary"
-                        title="Edit Student"
+                    <TableCell sx={{ verticalAlign: "middle" }}>
+                      <Stack
+                        direction="row"
+                        spacing={1}
+                        sx={{ alignItems: "center", flexWrap: "wrap" }}
                       >
-                        <EditIcon />
-                      </IconButton>
-                      <IconButton
-                        onClick={() => handleArchiveStudent(studentId)}
-                        color="warning"
-                        title="Archive Student"
-                      >
-                        <ArchiveIcon />
-                      </IconButton>
+                        {student.parent_link_status === "SYNCED" ||
+                        student.parent_link_status === "PENDING" ? (
+                          <Button
+                            size="small"
+                            disabled={!student.parent_info}
+                            startIcon={
+                              student.parent_link_status === "SYNCED" ? (
+                                <LinkIcon />
+                              ) : (
+                                <AccessTimeIcon />
+                              )
+                            }
+                            onClick={() => setParentStudent(student)}
+                            sx={{
+                              borderRadius: 3,
+                              textTransform: "none",
+                              whiteSpace: "nowrap",
+                              bgcolor:
+                                student.parent_link_status === "SYNCED"
+                                  ? "#ecfdf5"
+                                  : "#fffbeb",
+                              color:
+                                student.parent_link_status === "SYNCED"
+                                  ? "#047857"
+                                  : "#92400e",
+                              "&:hover": {
+                                bgcolor:
+                                  student.parent_link_status === "SYNCED"
+                                    ? "#d1fae5"
+                                    : "#fef3c7",
+                              },
+                            }}
+                          >
+                            {student.parent_link_status === "SYNCED"
+                              ? "Synced Parent"
+                              : "Pending"}
+                          </Button>
+                        ) : (
+                          <Typography
+                            component="span"
+                            sx={{
+                              px: 1,
+                              py: 0.5,
+                              borderRadius: 2,
+                              fontSize: "0.75rem",
+                              fontWeight: 500,
+                              bgcolor: "grey.100",
+                              color: "text.secondary",
+                              cursor: "default",
+                              userSelect: "none",
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            No Parent
+                          </Typography>
+                        )}
+                        <IconButton
+                          onClick={() => handleEditClick(student)}
+                          color="primary"
+                          title="Edit Student"
+                        >
+                          <EditIcon />
+                        </IconButton>
+                        <IconButton
+                          onClick={() => handleArchiveStudent(studentId)}
+                          color="warning"
+                          title="Archive Student"
+                        >
+                          <ArchiveIcon />
+                        </IconButton>
+                      </Stack>
                     </TableCell>
                   </TableRow>
                 );
@@ -881,6 +949,47 @@ const StudentManagement: React.FC = () => {
       </Paper>
 
       {/* ----------- EDIT STUDENT MODAL ----------- */}
+      {parentStudent && (
+        <ParentLinkModal
+          key={parentStudent.student_id}
+          student={parentStudent}
+          onClose={() => setParentStudent(null)}
+          onUpdated={(updated, message) => {
+            setStudents((current) => {
+              const next = current.map((student) =>
+                student.student_id === updated.student_id
+                  ? { ...student, ...updated }
+                  : student,
+              );
+              try {
+                localStorage.setItem(
+                  "ames_teacher_roster_" + owner,
+                  JSON.stringify(next),
+                );
+              } catch {
+                /* The confirmed server state remains visible. */
+              }
+              return next;
+            });
+            setParentStudent(null);
+            setParentNotice(message);
+            void fetchActiveStudents();
+          }}
+        />
+      )}
+      <Snackbar
+        open={Boolean(parentNotice)}
+        autoHideDuration={6000}
+        onClose={() => setParentNotice("")}
+      >
+        <Alert
+          severity="success"
+          onClose={() => setParentNotice("")}
+          sx={{ borderRadius: 3 }}
+        >
+          {parentNotice}
+        </Alert>
+      </Snackbar>
       <Dialog
         open={editOpen}
         onClose={() => setEditOpen(false)}

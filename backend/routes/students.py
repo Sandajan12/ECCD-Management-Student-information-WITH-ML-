@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from backend.config.database import get_db
 from backend.models import FamilyAccess, Parent, Section, SectionTeacher, Student, SystemLog, User
 from backend.schemas.common import MessageResult
-from backend.schemas.student import ChildPublicResponse, EnrollmentRequest, EnrollmentResponse, FamilyAccessCreate, StudentPublicResponse, StudentUpdate
+from backend.schemas.student import ChildPublicResponse, EnrollmentRequest, EnrollmentResponse, FamilyAccessCreate, StudentPublicResponse, StudentUpdate, TeacherStudentResponse
 from backend.utils.access import authorize_student, current_teacher, resolve_student, teacher_sections
 from backend.utils.deps import verify_role
 from backend.utils.lrn import hash_lrn
@@ -22,11 +22,14 @@ def roster(db: Session, user: User, active: bool | None) -> list[dict]:
         query = query.filter_by(is_active=active)
     if user.role.value == "admin":
         query = query.filter(Student.section_id.in_(teacher_sections(db, current_teacher(db, user))))
-    return [public_student(db, student) for student in query.order_by(Student.last_name, Student.first_name, Student.student_id)]
+    students = query.order_by(Student.last_name, Student.first_name, Student.student_id).all()
+    from backend.utils.parent_links import account_links, link_details
+    links = account_links(db, [student.student_id for student in students])
+    return [{**public_student(db, student), **link_details(links.get(student.student_id, []))} for student in students]
 
 
-@router.get("/", response_model=list[StudentPublicResponse])
-@router.get("/all", response_model=list[StudentPublicResponse])
+@router.get("/", response_model=list[TeacherStudentResponse])
+@router.get("/all", response_model=list[TeacherStudentResponse])
 def get_students(db: Session = Depends(get_db), user: User = Depends(verify_role(["admin", "super-admin"]))):
     return roster(db, user, True)
 
@@ -94,7 +97,7 @@ def linked_children(db: Session = Depends(get_db), user: User = Depends(verify_r
     parent = db.query(Parent).filter_by(user_id=user.user_id).first()
     if parent is None:
         return []
-    students = db.query(Student).join(FamilyAccess).filter(FamilyAccess.parent_id == parent.parent_id, Student.is_active.is_(True)).distinct().all()
+    students = db.query(Student).join(FamilyAccess).filter(FamilyAccess.status == "SYNCED", FamilyAccess.parent_id == parent.parent_id, Student.is_active.is_(True)).distinct().all()
     return [child_profile(db, student) for student in students]
 
 
@@ -105,15 +108,20 @@ def link_child(payload: FamilyAccessCreate, db: Session = Depends(get_db), user:
         raise HTTPException(400, "A valid 12-digit LRN is required.")
     student = resolve_student(db, payload.target_lrn)
     db.query(Student).filter_by(student_id=student.student_id).with_for_update().one()
+    if not student.is_active:
+        raise HTTPException(403, "Student is archived.")
     parent = db.query(Parent).filter_by(user_id=user.user_id).first()
     if parent is None:
         raise HTTPException(404, "Parent profile not found.")
-    if db.query(FamilyAccess).join(Parent).filter(FamilyAccess.student_id == student.student_id, Parent.user_id.isnot(None)).first():
+    existing = db.query(FamilyAccess).join(Parent).filter(FamilyAccess.student_id == student.student_id, Parent.user_id.isnot(None)).first()
+    if existing:
+        if existing.status == "PENDING" and existing.parent_id == parent.parent_id:
+            return {"message": "Parent link request is awaiting teacher approval.", "student_id": student.student_id, "masked_lrn": student.masked_lrn}
         raise HTTPException(400, "This student has already been synced to an account.")
     relationship = payload.relationship_type if "relationship_type" in payload.model_fields_set else parent.relationship_type
-    db.add(FamilyAccess(student_id=student.student_id, parent_id=parent.parent_id, relationship_type=relationship or "Guardian"))
+    db.add(FamilyAccess(student_id=student.student_id, parent_id=parent.parent_id, relationship_type=relationship or "Guardian", status="PENDING"))
     db.commit()
-    return {"message": "Successfully linked to student!", "student_id": student.student_id, "masked_lrn": student.masked_lrn}
+    return {"message": "Parent link request is awaiting teacher approval.", "student_id": student.student_id, "masked_lrn": student.masked_lrn}
 
 
 @router.put("/{identifier}/archive", response_model=MessageResult)
@@ -156,7 +164,7 @@ def student_change_snapshot(db: Session, student: Student) -> dict[str, str]:
     result = {label: text(getattr(student, field)) for field, label in fields.items()}
     result["LRN"] = student.masked_lrn
     for relationship, label in (("Father", "Father"), ("Mother", "Mother"), ("Guardian", "Guardian")):
-        parent = db.query(Parent).join(FamilyAccess).filter(FamilyAccess.student_id == student.student_id, FamilyAccess.relationship_type == relationship).first()
+        parent = db.query(Parent).join(FamilyAccess).filter(FamilyAccess.status == "SYNCED", FamilyAccess.student_id == student.student_id, FamilyAccess.relationship_type == relationship).first()
         for field, suffix in (("fullname", "Name"), ("age", "Age"), ("occupation", "Occupation"), ("educational_attainment", "Education")):
             result[f"{label}'s {suffix}"] = text(getattr(parent, field)) if parent else ""
     return result
@@ -207,7 +215,7 @@ def get_student(identifier: str, db: Session = Depends(get_db), user: User = Dep
         return child_profile(db, student)
     result = public_student(db, student)
     for relationship, prefix in (("Father", "father"), ("Mother", "mother"), ("Guardian", "legal_guardian")):
-        parent = db.query(Parent).join(FamilyAccess).filter(FamilyAccess.student_id == student.student_id, FamilyAccess.relationship_type == relationship).first()
+        parent = db.query(Parent).join(FamilyAccess).filter(FamilyAccess.status == "SYNCED", FamilyAccess.student_id == student.student_id, FamilyAccess.relationship_type == relationship).first()
         if parent:
             result.update({f"{prefix}_name": parent.fullname, f"{prefix}_age": parent.age, f"{prefix}_occ": parent.occupation, f"{prefix}_educ": parent.educational_attainment})
     return result

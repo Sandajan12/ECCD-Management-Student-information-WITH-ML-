@@ -1,4 +1,4 @@
-from sqlalchemy import Column, DateTime, ForeignKey, ForeignKeyConstraint, Index, Integer, String, func
+from sqlalchemy import CheckConstraint, Column, DateTime, ForeignKey, ForeignKeyConstraint, Index, Integer, String, func
 from sqlalchemy.orm import relationship
 
 from .base import Base
@@ -15,9 +15,13 @@ class FamilyAccess(Base):
     student_id = Column(Integer, ForeignKey("students.student_id", ondelete="CASCADE"), nullable=False)
     relationship_type = Column(String(50), nullable=True)
     date_linked = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    # Existing account links and non-account guardian records remain synced.
+    status = Column(String(10), default="SYNCED", server_default="SYNCED", nullable=False)
+    requested_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     __table_args__ = (
         Index("idx_family_student", "student_id"),
+        CheckConstraint("status IN ('PENDING', 'SYNCED')", name="ck_family_link_status"),
     )
 
     parent = relationship("Parent", back_populates="students")

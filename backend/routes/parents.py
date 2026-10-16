@@ -69,6 +69,7 @@ def get_child_eccd_summary(
         db.query(FamilyAccess)
         .filter(
             FamilyAccess.parent_id == parent.parent_id,
+            FamilyAccess.status == "SYNCED",
             FamilyAccess.student_lrn == lrn,
         )
         .first()
