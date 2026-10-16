@@ -31,6 +31,7 @@ import api, {
 import { useAuth } from "../../context/AuthContext";
 import { useTeacher } from "../../context/TeacherContext";
 import { useTeacherAssessment } from "../../hooks/useTeacherAssessment";
+import { formatDisplayDate } from "../../utils/dateUtils";
 import {
   domainCompletion,
   sectionAssessments,
@@ -141,8 +142,6 @@ const EccdAssessment: React.FC = () => {
     fetchDomainsProgress,
   );
   const error = pageError || assessmentError;
-  const formatDisplayDate = (value: string | null) =>
-    value ? new Date(value + "T00:00:00").toLocaleDateString("en-GB") : "";
   const getDisplayAge = (p: Period) =>
     activeDomain ? evalAges[activeDomain.domain_id]?.[p] : null;
   useEffect(() => {
@@ -889,7 +888,7 @@ const EccdAssessment: React.FC = () => {
                     <span className="w-2 h-2 rounded-full bg-emerald-600"></span>
                     Saved in Database (
                     {formatDisplayDate(evaluations[activePeriod]?.date) ||
-                      assessmentDate}
+                      formatDisplayDate(assessmentDate)}
                     )
                   </span>
                 ) : Object.keys(evaluations[activePeriod]?.answers || {})

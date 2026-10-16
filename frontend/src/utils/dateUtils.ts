@@ -1,4 +1,24 @@
 /** Display helpers only. Assessment scores and ages remain server-authoritative. */
+export function formatDisplayDate(
+  value: string | null | undefined,
+  fallback = "",
+): string {
+  if (!value) return fallback;
+  const parts = /^(\d{4})-(\d{2})-(\d{2})(?:T|$)/.exec(value);
+  if (!parts) return fallback;
+  const [, year, month, day] = parts;
+  // Birth and assessment dates are calendar dates; keep the recorded day in
+  // every timezone, including when the API includes a timestamp suffix.
+  const date = new Date(`${year}-${month}-${day}T00:00:00`);
+  if (
+    Number.isNaN(date.getTime()) ||
+    date.getFullYear() !== Number(year) ||
+    date.getMonth() + 1 !== Number(month) ||
+    date.getDate() !== Number(day)
+  ) return fallback;
+  return `${month}/${day}/${year}`;
+}
+
 export function getSchoolYearBaseline(
   schoolYear: string | null | undefined,
   startMonth = 8,

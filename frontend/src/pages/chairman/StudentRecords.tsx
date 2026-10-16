@@ -6,7 +6,7 @@ import API, { downloadFile, errorMessage } from "../../services/api";
 import type { Section, Student } from "../../types";
 import { studentName } from "../../types";
 import { useDurableForm } from "../../utils/drafts";
-import { calculateRosterAge } from "../../utils/dateUtils";
+import { calculateRosterAge, formatDisplayDate } from "../../utils/dateUtils";
 import Snackbar from "../../components/chairman/Snackbar";
 import type { SnackbarMessage } from "../../components/chairman/Snackbar";
 import {
@@ -417,13 +417,7 @@ export default function StudentRecords() {
               <InfoRow label="Gender" value={student.gender} />
               <InfoRow
                 label="Date of Birth"
-                value={
-                  student.date_of_birth
-                    ? new Date(
-                        `${student.date_of_birth.slice(0, 10)}T00:00:00`,
-                      ).toLocaleDateString()
-                    : null
-                }
+                value={formatDisplayDate(student.date_of_birth)}
               />
               <InfoRow label="Age" value={rosterAge(student)} />
               <InfoRow label="Handedness" value={student.handedness} />

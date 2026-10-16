@@ -10,6 +10,7 @@ import ChildCareIcon from "@mui/icons-material/ChildCare";
 import SaveIcon from "@mui/icons-material/Save";
 import { useChildren } from "../../hooks/useChildren";
 import { useParentAssessment } from "../../hooks/useParentAssessment";
+import { formatDisplayDate } from "../../utils/dateUtils";
 import { PERIODS, type Period, type PeriodSummary } from "../../types";
 
 const ParentEccdAssessment = () => {
@@ -39,20 +40,6 @@ const ParentEccdAssessment = () => {
   const handleSaveHomeBased = async () => {
     const result = await assessment.handleSaveChecklist();
     if (result) setToast({ open: true, ...result });
-  };
-  const formatDate = (dateStr: string | null | undefined) => {
-    if (!dateStr) return "-";
-    try {
-      const d = new Date(dateStr);
-      if (isNaN(d.getTime())) return dateStr;
-      return d.toLocaleDateString("en-US", {
-        month: "short",
-        day: "numeric",
-        year: "numeric",
-      });
-    } catch {
-      return dateStr;
-    }
   };
 
   const getInterpretationBadge = (interp: string | null | undefined) => {
@@ -346,7 +333,7 @@ const ParentEccdAssessment = () => {
                             Assessment Date
                           </span>
                           <span className="font-semibold text-slate-800">
-                            {formatDate(periodData.assessmentDate)}
+                            {formatDisplayDate(periodData.assessmentDate, "-")}
                           </span>
                         </div>
 

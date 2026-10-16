@@ -30,7 +30,7 @@ import {
   validateProfile,
   type ProfileField,
 } from "../../utils/parentProfile";
-import { calculateRosterAge } from "../../utils/dateUtils";
+import { calculateRosterAge, formatDisplayDate } from "../../utils/dateUtils";
 
 const ChildManagement: React.FC = () => {
   const { settings } = useSettings();
@@ -347,8 +347,8 @@ const ChildManagement: React.FC = () => {
               {getInitials(childData.first_name, childData.last_name)}
             </Avatar>
 
-            <Grid container spacing={1.5} sx={{ mb: 2.5 }}>
-              <Grid size={{ xs: 6 }}>
+            <Grid container spacing={1.5} sx={{ mb: 2.5, width: "100%" }}>
+              <Grid size={{ xs: 12 }}>
                 <Typography
                   variant="caption"
                   sx={{ color: "text.secondary", fontWeight: "bold" }}
@@ -357,9 +357,13 @@ const ChildManagement: React.FC = () => {
                 </Typography>
                 <TextField
                   fullWidth
+                  name="first_name"
                   value={childData.first_name || ""}
                   size="small"
-                  slotProps={{ input: { readOnly: true } }}
+                  slotProps={{
+                    input: { readOnly: true },
+                    htmlInput: { "aria-label": "First Name" },
+                  }}
                   sx={{
                     "& .MuiOutlinedInput-root": {
                       borderRadius: 2,
@@ -368,7 +372,31 @@ const ChildManagement: React.FC = () => {
                   }}
                 />
               </Grid>
-              <Grid size={{ xs: 6 }}>
+              <Grid size={{ xs: 12, sm: 6 }}>
+                <Typography
+                  variant="caption"
+                  sx={{ color: "text.secondary", fontWeight: "bold" }}
+                >
+                  Middle Name
+                </Typography>
+                <TextField
+                  fullWidth
+                  name="middle_name"
+                  value={childData.middle_name || ""}
+                  size="small"
+                  slotProps={{
+                    input: { readOnly: true },
+                    htmlInput: { "aria-label": "Middle Name" },
+                  }}
+                  sx={{
+                    "& .MuiOutlinedInput-root": {
+                      borderRadius: 2,
+                      bgcolor: "#f4f5f7",
+                    },
+                  }}
+                />
+              </Grid>
+              <Grid size={{ xs: 12, sm: 6 }}>
                 <Typography
                   variant="caption"
                   sx={{ color: "text.secondary", fontWeight: "bold" }}
@@ -377,9 +405,13 @@ const ChildManagement: React.FC = () => {
                 </Typography>
                 <TextField
                   fullWidth
+                  name="last_name"
                   value={childData.last_name || ""}
                   size="small"
-                  slotProps={{ input: { readOnly: true } }}
+                  slotProps={{
+                    input: { readOnly: true },
+                    htmlInput: { "aria-label": "Last Name" },
+                  }}
                   sx={{
                     "& .MuiOutlinedInput-root": {
                       borderRadius: 2,
@@ -633,8 +665,7 @@ const ChildManagement: React.FC = () => {
                 </Typography>
                 <TextField
                   fullWidth
-                  type="date"
-                  value={childData.date_of_birth || ""}
+                  value={formatDisplayDate(childData.date_of_birth)}
                   size="small"
                   slotProps={{ input: { readOnly: true } }}
                   sx={{

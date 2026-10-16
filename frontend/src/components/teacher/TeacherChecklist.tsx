@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { readDraft, useDurableForm } from "../../utils/drafts";
-import { calculateDecimalAge } from "../../utils/dateUtils";
+import { calculateDecimalAge, formatDisplayDate } from "../../utils/dateUtils";
 import { errorMessage } from "../../services/api";
 import type { Answer, Assessment, Domain, Period } from "../../types";
 import { PERIOD_LABELS, PERIODS } from "../../types";
@@ -222,7 +222,7 @@ export default function TeacherChecklist({
                   >
                     {PERIOD_LABELS[p]}
                     <span className="mt-1 block text-[10px] font-normal normal-case">
-                      {data.periodDates[p]?.slice(0, 10) || "Not yet evaluated"}
+                      {formatDisplayDate(data.periodDates[p], "Not yet evaluated")}
                     </span>
                   </th>
                 ))}
