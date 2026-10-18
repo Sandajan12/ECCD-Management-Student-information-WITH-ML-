@@ -12,6 +12,7 @@ from backend.models.message import SenderRole
 from backend.routes.messages import unread
 from backend.tests import test_phase2
 from backend.utils.lrn import hash_lrn
+from backend.utils.teachers import assign_teacher
 
 
 class ParityTests(unittest.TestCase):
@@ -42,7 +43,7 @@ class ParityTests(unittest.TestCase):
 
     def test_teacher_filters_stats_and_pie_use_assigned_sections_and_years(self):
         with self.sessions() as db:
-            db.add(SectionTeacher(section_id=2, teacher_id=1, role="Substitute", status="Active"))
+            assign_teacher(db, db.get(User, 1), 2, 1)
             db.add(Student(student_id=4, lrn_number="001234560004", first_name="Earlier", last_name="Active", section_id=1, school_year="2025-2026", is_active=True))
             db.get(Teacher, 1).allow_eccd_question_management = True
             db.commit()
@@ -79,7 +80,7 @@ class ParityTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.text)
         self.assertEqual(response.json()["stats"]["priorityDomain"], "Gross Motor")
 
-    def test_legacy_handover_field_preserves_scores_and_substitute(self):
+    def test_legacy_handover_field_preserves_scores_and_assignment_history(self):
         self.assertEqual(self.fixture.evaluate().status_code, 200)
         with self.sessions() as db:
             original = list(db.execute(StudentEccdEvaluation.__table__.select()))
@@ -88,7 +89,7 @@ class ParityTests(unittest.TestCase):
         with self.sessions() as db:
             self.assertFalse(db.get(User, 2).is_active)
             self.assertTrue(db.get(User, 3).is_active)
-            self.assertEqual(db.query(SectionTeacher).filter_by(section_id=1, teacher_id=3, role="Substitute", status="Active").count(), 1)
+            self.assertEqual(db.query(SectionTeacher).filter_by(section_id=1, teacher_id=3, role="Primary Adviser", status="Inactive").count(), 1)
             self.assertEqual(list(db.execute(StudentEccdEvaluation.__table__.select())), original)
         self.assertEqual(self.call("PUT", "/api/chairman/sections/1/assign", json={"adviser_teacher_id": None}).status_code, 200)
         with self.sessions() as db:
@@ -110,7 +111,7 @@ class ParityTests(unittest.TestCase):
     def test_teacher_archive_detaches_assignments_without_restoring_ownership(self):
         self.assertEqual(self.fixture.evaluate().status_code, 200)
         with self.sessions() as db:
-            db.add(SectionTeacher(section_id=2, teacher_id=1, role="Substitute", status="Active"))
+            assign_teacher(db, db.get(User, 1), 2, 1)
             db.commit()
             original = list(db.execute(StudentEccdEvaluation.__table__.select()))
         self.assertEqual(self.call("PUT", "/api/teachers/archive/2").status_code, 200)
@@ -218,7 +219,7 @@ class ParityTests(unittest.TestCase):
     def test_unread_one_count_handles_siblings_accounts_and_transfers(self):
         with self.sessions() as db:
             db.add(FamilyAccess(parent_id=1, student_id=3, relationship_type="Mother"))
-            db.add(SectionTeacher(section_id=2, teacher_id=1, role="Substitute", status="Active"))
+            assign_teacher(db, db.get(User, 1), 2, 1)
             db.add_all(Message(parent_id=1, teacher_id=1, sender_role=SenderRole.PARENT, body="Synthetic unread") for _ in range(25))
             db.add_all([
                 Message(parent_id=1, teacher_id=1, sender_role=SenderRole.TEACHER, body="Reply"),

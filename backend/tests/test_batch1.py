@@ -61,10 +61,10 @@ class Batch1ValidationTests(unittest.TestCase):
         payload = {"email": " teacher@example.com ", "password": test_phase2.PASSWORD, "firstName": " Ada ", "lastName": " Cruz ", "employeeId": " EMP-1 ", "sectionId": 1, "username": " teacher "}
         teacher = TeacherProvisionRequest.model_validate(payload)
         self.assertEqual((teacher.first_name, teacher.last_name, teacher.employee_id, teacher.username), ("Ada", "Cruz", "EMP-1", "teacher"))
-        for key in ("email", "firstName", "lastName", "employeeId", "sectionId"):
+        for key in ("email", "firstName", "lastName", "sectionId"):
             with self.subTest(key=key), self.assertRaises(ValidationError):
                 TeacherProvisionRequest.model_validate({field: value for field, value in payload.items() if field != key})
-        for key in ("firstName", "lastName", "employeeId"):
+        for key in ("firstName", "lastName"):
             with self.assertRaises(ValidationError):
                 TeacherProvisionRequest.model_validate({**payload, key: " "})
         with self.assertRaises(ValidationError):
@@ -203,9 +203,9 @@ class Batch1BackendTests(unittest.TestCase):
         self.assertEqual(result.status_code, 201, result.text)
         self.assertEqual(set(result.json()), {"message", "section_id", "section_name", "adviser_teacher_id", "created_at"})
 
-    def test_teacher_provisioning_requires_all_fields_and_assigns_long_class(self):
+    def test_teacher_provisioning_requires_names_and_assigns_long_class(self):
         payload = {"email": " newteacher@example.com ", "initial_password": test_phase2.PASSWORD, "fullName": " Ada ", "lastName": " Cruz ", "employeeId": " EMP-1 ", "class_name": "Section " + "A" * 92}
-        for field in ("email", "fullName", "lastName", "employeeId", "class_name"):
+        for field in ("email", "fullName", "lastName", "class_name"):
             rejected = self.call("POST", "/api/chairman/teachers", json={key: value for key, value in payload.items() if key != field})
             self.assertEqual(rejected.status_code, 422, rejected.text)
         with self.fixture.test_engine.begin() as connection:

@@ -321,7 +321,7 @@ export default function MainLayout({ children }: MainLayoutProps) {
         <main
           data-layout-content
           aria-hidden={mobile && open ? true : undefined}
-          className={`min-w-0 flex-1 overflow-x-hidden overflow-y-auto bg-[#f9fafb] p-3 legacy-sm:p-4 legacy-md:ml-64 legacy-md:h-screen legacy-md:p-6 ${role === "user" ? "pb-[4.75rem] legacy-sm:pb-4 legacy-md:pb-6" : "pb-4 legacy-md:pb-6"}`}
+          className={`min-w-0 flex-1 bg-[#f9fafb] p-3 legacy-sm:p-4 legacy-md:ml-64 legacy-md:h-screen legacy-md:p-6 ${role === "user" ? "overflow-x-clip overflow-y-visible legacy-md:overflow-x-hidden legacy-md:overflow-y-auto pb-[4.75rem] legacy-sm:pb-4 legacy-md:pb-6" : "overflow-x-hidden overflow-y-auto pb-4 legacy-md:pb-6"}`}
         >
           <SyncStatus />
           {children || <Outlet />}

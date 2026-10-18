@@ -58,6 +58,9 @@ class Parent(Base):
     relationship_type = Column(String(50), nullable=True)
 
     user = relationship("User", back_populates="parent")
+    evaluations = relationship(
+        "StudentEccdEvaluation", back_populates="parent", passive_deletes=True
+    )
     students = relationship(
         "FamilyAccess", back_populates="parent", cascade="all, delete-orphan"
     )

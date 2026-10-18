@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from backend.config.database import get_db
-from backend.models import FamilyAccess, Parent, Section, SectionTeacher, Student, SystemLog, User
+from backend.models import FamilyAccess, Parent, Section, SectionTeacher, Student, SystemLog, Teacher, User
 from backend.schemas.common import MessageResult
 from backend.schemas.student import ChildPublicResponse, EnrollmentRequest, EnrollmentResponse, FamilyAccessCreate, StudentPublicResponse, StudentUpdate, TeacherStudentResponse
 from backend.utils.access import authorize_student, current_teacher, resolve_student, teacher_sections
@@ -23,9 +23,24 @@ def roster(db: Session, user: User, active: bool | None) -> list[dict]:
     if user.role.value == "admin":
         query = query.filter(Student.section_id.in_(teacher_sections(db, current_teacher(db, user))))
     students = query.order_by(Student.last_name, Student.first_name, Student.student_id).all()
+    section_ids = {student.section_id for student in students if student.section_id is not None}
+    adviser_names: dict[int, str | None] = {}
+    if section_ids:
+        advisers = db.query(SectionTeacher.section_id, Teacher.first_name, Teacher.last_name).join(
+            Teacher, Teacher.teacher_id == SectionTeacher.teacher_id
+        ).join(User, User.user_id == Teacher.user_id).filter(
+            SectionTeacher.section_id.in_(section_ids),
+            SectionTeacher.status == "Active",
+            SectionTeacher.role == "Primary Adviser",
+            User.is_active.is_(True),
+        ).all()
+        adviser_names = {
+            section_id: " ".join(part.strip() for part in (first_name, last_name) if part and part.strip()) or None
+            for section_id, first_name, last_name in advisers
+        }
     from backend.utils.parent_links import account_links, link_details
     links = account_links(db, [student.student_id for student in students])
-    return [{**public_student(db, student), **link_details(links.get(student.student_id, []))} for student in students]
+    return [{**public_student(db, student), "adviser_name": adviser_names.get(student.section_id), **link_details(links.get(student.student_id, []))} for student in students]
 
 
 @router.get("/", response_model=list[TeacherStudentResponse])
@@ -58,7 +73,7 @@ def create_student(payload: EnrollmentRequest, db: Session = Depends(get_db), us
         raise HTTPException(400, "A student with this LRN already exists.")
     section_id = payload.section_id
     if user.role.value == "admin":
-        assignments = db.query(SectionTeacher).filter_by(teacher_id=current_teacher(db, user).teacher_id, status="Active").order_by((SectionTeacher.role == "Primary Adviser").desc(), SectionTeacher.id).all()
+        assignments = db.query(SectionTeacher).filter_by(teacher_id=current_teacher(db, user).teacher_id, role="Primary Adviser", status="Active").order_by(SectionTeacher.id).all()
         allowed = [assignment.section_id for assignment in assignments]
         section_id = section_id or (allowed[0] if allowed else None)
         if section_id not in allowed:

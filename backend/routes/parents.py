@@ -1,7 +1,6 @@
 from backend.schemas.student import ChildPublicResponse as ChildProfileResponse
 from backend.schemas.student import EnrollmentResponse
 from backend.schemas.common import MessageResult
-from datetime import date
 from typing import Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -24,6 +23,7 @@ from backend.schemas.parent import (
 )
 from backend.utils.deps import verify_role
 from backend.utils.eccd_scorer import calculate_decimal_age, calculate_scores
+from backend.utils.eccd_dates import get_grading_date, get_official_testing_date
 
 router = APIRouter(prefix="/api/parents", tags=["Parents"])
 
@@ -174,16 +174,10 @@ def get_child_eccd_summary(
 
         latest_phase = period.value
 
-        # Calculate evaluation date from database records
-        valid_dates = [e[0].evaluation_date for e in period_evals if e[0].evaluation_date]
-        eval_date = max(valid_dates) if valid_dates else None
-
-        # Decimal age at evaluation date
-        dec_age = 4.0
-        if student.date_of_birth and eval_date:
-            dec_age = calculate_decimal_age(student.date_of_birth, eval_date)
-        elif student.date_of_birth:
-            dec_age = calculate_decimal_age(student.date_of_birth, date.today())
+        records = [evaluation for evaluation, _, _ in evals]
+        eval_date = get_official_testing_date(records, period)
+        grading_date = get_grading_date(records, period)
+        dec_age = calculate_decimal_age(student.date_of_birth, grading_date) if student.date_of_birth and grading_date else None
 
         formatted_evals = [
             {"domain_name": e[2].domain_name, "answer": e[0].answer.value}
@@ -191,7 +185,7 @@ def get_child_eccd_summary(
         ]
 
         try:
-            scores_result = calculate_scores(formatted_evals, dec_age)
+            scores_result = calculate_scores(formatted_evals, dec_age) if dec_age is not None else {}
         except Exception:
             scores_result = {
                 "raw_scores": {},

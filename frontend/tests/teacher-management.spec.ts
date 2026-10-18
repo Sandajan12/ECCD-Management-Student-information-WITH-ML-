@@ -124,9 +124,10 @@ async function chooseSection(
   await page.getByRole("option", { name, exact: true }).click();
 }
 async function fillNew(page: Page, section: string) {
-  await page.getByLabel("Full Name", { exact: true }).fill("New Teacher");
+  await page.getByLabel("First Name", { exact: true }).fill("New");
+  await page.getByLabel("Last Name", { exact: true }).fill("Teacher");
   await page.getByLabel("Email", { exact: true }).fill("new@example.com");
-  await page.getByLabel("Employee ID", { exact: true }).fill("T003");
+  await page.getByLabel("Employee ID (optional)", { exact: true }).fill("T003");
   await page.getByLabel("Password", { exact: true }).fill("Teacher123!");
   await chooseSection(page, section);
 }
@@ -258,8 +259,8 @@ test("Teacher management create validates required fields and defaults username 
   await page.route("**/api/teachers/", async (route) => {
     count++;
     expect(route.request().postDataJSON()).toEqual({
-      first_name: "New Teacher",
-      last_name: "",
+      first_name: "New",
+      last_name: "Teacher",
       email: "new@example.com",
       username: "new@example.com",
       employee_id: "T003",
@@ -278,10 +279,9 @@ test("Teacher management create validates required fields and defaults username 
     });
   });
   await openNew(page);
-  await expect(page.getByLabel("Employee ID", { exact: true })).toHaveAttribute(
-    "required",
-    "",
-  );
+  await expect(
+    page.getByLabel("Employee ID (optional)", { exact: true }),
+  ).not.toHaveAttribute("required", "");
   await page
     .locator("#chairman-teacher-form")
     .evaluate((element) =>
@@ -290,7 +290,7 @@ test("Teacher management create validates required fields and defaults username 
       ),
     );
   await expect(page.getByRole("alert")).toContainText(
-    "All fields are required",
+    "Please fill in all required fields",
   );
   expect(count).toBe(0);
   await fillNew(page, "Section C");
@@ -339,8 +339,8 @@ test("Teacher management create handover requires explicit confirmation and reta
   await expect(prompt).toContainText("Incumbent Adviser");
   expect(count).toBe(0);
   await prompt.getByRole("button", { name: "Cancel", exact: true }).click();
-  await expect(page.getByLabel("Full Name", { exact: true })).toHaveValue(
-    "New Teacher",
+  await expect(page.getByLabel("First Name", { exact: true })).toHaveValue(
+    "New",
   );
   await page.getByRole("button", { name: "Save", exact: true }).click();
   await prompt
@@ -504,55 +504,121 @@ test("Teacher management section menu deletion keeps selection unchanged and hon
   ).toHaveText("Section A");
 });
 
-test("Teacher management assignment preserves Substitute and gates Primary Adviser handover", async ({
+for (const width of [320, 768, 1280]) {
+  test(`Teacher management adviser takeover at ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await prepare(page);
+    const assignments: number[] = [];
+    await page.route(
+      "**/api/chairman/sections/1/assign-teacher",
+      async (route) => {
+        const data = route.request().postDataJSON() as { teacher_id: number };
+        expect(data).toEqual({ teacher_id: 2 });
+        assignments.push(data.teacher_id);
+        await route.fulfill({
+          json: {
+            message: "Teacher successfully assigned to section.",
+            section_id: 1,
+          },
+        });
+      },
+    );
+    await page.goto("/super-admin/teachers");
+    await page.getByRole("button", { name: "Manage Access" }).nth(1).click();
+    await page.getByText("Section assignment", { exact: true }).click();
+    await expect(
+      page.getByRole("combobox", { name: "Assignment role" }),
+    ).toHaveCount(0);
+    await expect(page.getByText("Substitute", { exact: true })).toHaveCount(0);
+    await expect(
+      page.getByRole("switch", { name: "Enable ECCD Question Management" }),
+    ).toBeVisible();
+    await chooseSection(page, "Section A", "Section");
+    await expect(
+      page.getByText(
+        "Section Section A is currently assigned to Incumbent Adviser. Assigning this section will transfer the adviser role to this teacher.",
+        { exact: true },
+      ),
+    ).toBeVisible();
+    await page
+      .getByRole("button", { name: "Assign teacher", exact: true })
+      .click();
+    const prompt = page.getByRole("dialog", {
+      name: "Confirm Section Handover",
+      exact: true,
+    });
+    await expect(prompt).toBeVisible();
+    expect(assignments).toEqual([]);
+    await prompt.getByRole("button", { name: "Cancel", exact: true }).click();
+    expect(assignments).toEqual([]);
+    await page
+      .getByRole("button", { name: "Assign teacher", exact: true })
+      .click();
+    await prompt
+      .getByRole("button", { name: "Confirm Handover", exact: true })
+      .click();
+    await expect.poll(() => assignments.length).toBe(1);
+    expect(assignments).toEqual([2]);
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= window.innerWidth,
+      ),
+    ).toBe(true);
+  });
+}
+
+test("Teacher management unassigned section saves directly and retains failed assignment draft", async ({
   page,
 }) => {
   await prepare(page);
-  const roles: string[] = [];
+  let fail = true;
+  const assignments: number[] = [];
   await page.route(
-    "**/api/chairman/sections/1/assign-teacher",
+    "**/api/chairman/sections/3/assign-teacher",
     async (route) => {
-      const data = route.request().postDataJSON() as {
-        teacher_id: number;
-        role: string;
-      };
-      expect(data.teacher_id).toBe(2);
-      roles.push(data.role);
-      await route.fulfill({
-        json: {
-          message: "Teacher successfully assigned to section.",
-          section_id: 1,
-        },
-      });
+      expect(route.request().postDataJSON()).toEqual({ teacher_id: 2 });
+      assignments.push(2);
+      await route.fulfill(
+        fail
+          ? {
+              status: 403,
+              json: { detail: "Assignment is temporarily locked." },
+            }
+          : {
+              json: {
+                message: "Teacher successfully assigned to section.",
+                section_id: 3,
+              },
+            },
+      );
     },
   );
   await page.goto("/super-admin/teachers");
   await page.getByRole("button", { name: "Manage Access" }).nth(1).click();
   await page.getByText("Section assignment", { exact: true }).click();
-  await chooseSection(page, "Section A", "Section");
-  await chooseSection(page, "Substitute", "Assignment role");
+  await chooseSection(page, "Section C", "Section");
   await page
     .getByRole("button", { name: "Assign teacher", exact: true })
     .click();
-  await expect.poll(() => roles.length).toBe(1);
+  await expect(
+    page.getByText("Assignment is temporarily locked.", { exact: true }),
+  ).toBeVisible();
   await expect(
     page.getByRole("dialog", { name: "Confirm Section Handover", exact: true }),
   ).toHaveCount(0);
-  await chooseSection(page, "Primary Adviser", "Assignment role");
+  await page.reload();
+  await page.getByRole("button", { name: "Manage Access" }).nth(1).click();
+  await page.getByText("Section assignment", { exact: true }).click();
+  await expect(
+    page.getByRole("combobox", { name: "Section", exact: true }),
+  ).toHaveText("Section C");
+  fail = false;
   await page
     .getByRole("button", { name: "Assign teacher", exact: true })
     .click();
-  const prompt = page.getByRole("dialog", {
-    name: "Confirm Section Handover",
-    exact: true,
-  });
-  await expect(prompt).toBeVisible();
-  expect(roles).toEqual(["Substitute"]);
-  await prompt
-    .getByRole("button", { name: "Confirm Handover", exact: true })
-    .click();
-  await expect.poll(() => roles.length).toBe(2);
-  expect(roles).toEqual(["Substitute", "Primary Adviser"]);
+  await expect.poll(() => assignments.length).toBe(2);
 });
 
 test("Teacher management switch matches the legacy control in both states", async ({

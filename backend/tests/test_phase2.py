@@ -21,6 +21,7 @@ from backend.config.settings import settings
 from backend.main import api, app
 from backend.migrations.phase1 import apply_phase1, select_schema
 from backend.migrations.phase2 import apply_phase2, check_phase2
+from backend.migrations.adviser_takeover import apply_adviser_takeover
 from backend.models import Base, EccdQuestion, EmailVerification, FamilyAccess, Message, Parent, Section, SectionTeacher, Student, StudentEccdEvaluation, SystemLog, SystemSettings, Teacher, User, UserTrustedDevice
 from backend.models.eccd import EccdAnswer, TestingPeriod
 from backend.models.user import UserRole
@@ -46,6 +47,7 @@ class BackendTests(unittest.TestCase):
             connection.execute(text(f'CREATE SCHEMA "{self.schema}"'))
             apply_phase1(connection, self.schema)
             apply_phase2(connection, self.schema)
+            apply_adviser_takeover(connection, self.schema)
         self.test_engine = create_engine(engine.url, connect_args={'options': f'-csearch_path={self.schema},public'})
         self.sessions = sessionmaker(bind=self.test_engine, autoflush=False)
         with self.sessions() as db:
@@ -58,7 +60,7 @@ class BackendTests(unittest.TestCase):
             db.flush()
             db.add_all([Section(section_id=1, section_name='Test A', adviser_teacher_id=1), Section(section_id=2, section_name='Test B', adviser_teacher_id=2)])
             db.flush()
-            db.add_all([SectionTeacher(section_id=1, teacher_id=1, role='Primary Adviser', status='Active'), SectionTeacher(section_id=2, teacher_id=2, role='Primary Adviser', status='Active'), SectionTeacher(section_id=1, teacher_id=3, role='Substitute', status='Active')])
+            db.add_all([SectionTeacher(section_id=1, teacher_id=1, role='Primary Adviser', status='Active'), SectionTeacher(section_id=2, teacher_id=2, role='Primary Adviser', status='Active'), SectionTeacher(section_id=1, teacher_id=3, role='Primary Adviser', status='Inactive')])
             db.add(SystemSettings(id=1, current_school_year='2026-2027', school_name='TEST SCHOOL', principal_name='Test Principal', school_year_start_month=8))
             db.add_all([Student(student_id=1, lrn_number=LRN, first_name='Test', middle_name='Middle', last_name='Student', date_of_birth=date(2021,1,10), gender='Female', section_id=1, school_year='2026-2027', is_active=True), Student(student_id=2, lrn_number='009876543210', first_name='Old', last_name='Archive', section_id=1, school_year='2025-2026', is_active=False), Student(student_id=3, lrn_number='001111111111', first_name='Other', last_name='Class', section_id=2, school_year='2026-2027', is_active=True)])
             db.flush()
@@ -324,9 +326,9 @@ class BackendTests(unittest.TestCase):
             record.evaluation_date=date(2026,8,1)
             db.commit()
         self.assertEqual(self.call('POST','/api/eccd/parent/evaluate',5,json=payload).status_code,200)
-        with self.sessions() as db: self.assertEqual(db.query(StudentEccdEvaluation).filter_by(student_id=1,question_id=self.home).one().evaluation_date,date(2026,8,1))
+        with self.sessions() as db: self.assertEqual(db.query(StudentEccdEvaluation).filter_by(student_id=1,question_id=self.home).one().evaluation_date,date.today())
         payload['evaluations'][0]['question_id']=self.nonhome
-        self.assertEqual(self.call('POST','/api/eccd/parent/evaluate',5,json=payload).status_code,400)
+        self.assertEqual(self.call('POST','/api/eccd/parent/evaluate',5,json=payload).status_code,403)
         self.assertEqual(self.call('PUT','/api/teachers/access-controls',2,json={'allow_parent_view':True}).status_code,422)
         self.assertEqual(self.call('PUT','/api/teachers/access-controls',2,json={'allow_parent_edit_student_info':False}).status_code,200)
         self.assertEqual(self.call('PUT','/api/parents/children/1',5,json={'address':'Changed'}).status_code,403)
@@ -341,7 +343,7 @@ class BackendTests(unittest.TestCase):
         self.assertEqual(self.call('PUT','/api/chairman/students/transfer',json={'student_ids':[1],'new_section_id':2}).status_code,200)
         self.assertEqual(self.call('GET','/api/eccd/assessment/1',2).status_code,403)
         self.assertEqual(self.call('GET','/api/eccd/assessment/1',3).status_code,200)
-        self.assertEqual(self.call('POST','/api/chairman/sections/2/assign-teacher',json={'teacher_id':3,'role':'Substitute'}).status_code,200)
+        self.assertEqual(self.call('POST','/api/chairman/sections/2/assign-teacher',json={'teacher_id':3,'role':'Substitute'}).status_code,422)
         with self.sessions() as db:
             self.assertTrue(db.get(User,3).is_active)
             self.assertEqual(db.get(Section,2).adviser_teacher_id,2)

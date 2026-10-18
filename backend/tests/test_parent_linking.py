@@ -61,7 +61,9 @@ class ParentLinkingTests(unittest.TestCase):
         with self.sessions() as db:
             self.assertEqual(db.query(SystemLog).filter(SystemLog.action_type.like("%Parent%")).count(), 0)
 
-    def test_substitute_can_manage_assigned_section(self):
+    def test_replacement_adviser_can_manage_assigned_section(self):
+        self.assertEqual(self.action("unlink-parent", teacher=4).status_code, 403)
+        self.assertEqual(self.call("POST", "/api/chairman/sections/1/assign-teacher", json={"teacher_id": 3}).status_code, 200)
         self.assertEqual(self.action("unlink-parent", teacher=4).status_code, 200)
 
     def test_unlink_revokes_access_preserves_evaluations_and_guardians_and_audits(self):

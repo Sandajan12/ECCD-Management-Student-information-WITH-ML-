@@ -39,6 +39,7 @@ export interface Permissions {
   allow_parent_view_eccd_pre: boolean;
   allow_parent_view_eccd_mid: boolean;
   allow_parent_view_eccd_post: boolean;
+  allow_parent_view_eccd_marks?: boolean;
   allow_parent_edit_student_info: boolean;
   allow_parent_edit_home_based_eccd: boolean;
 }
@@ -47,6 +48,7 @@ export const PERMISSION_LABELS: Record<keyof Permissions, string> = {
   allow_parent_view_eccd_pre: "Release Pre-Test results",
   allow_parent_view_eccd_mid: "Release Mid-Test results",
   allow_parent_view_eccd_post: "Release Post-Test results",
+  allow_parent_view_eccd_marks: "View recorded ECCD marks",
   allow_parent_edit_student_info: "Edit child and family details",
   allow_parent_edit_home_based_eccd: "Complete home-based assessments",
 };
@@ -71,6 +73,7 @@ export interface Student extends Partial<Permissions> {
   section_id: number | null;
   section_name: string | null;
   school_year: string | null;
+  adviser_name?: string | null;
   decimal_age: number | null;
   is_active: boolean;
   address: string | null;
@@ -115,7 +118,7 @@ export interface Teacher {
   email: string;
   first_name: string;
   last_name: string;
-  employee_id: string;
+  employee_id: string | null;
   class_name: string | null;
   section_name: string | null;
   section_id: number | null;
@@ -132,7 +135,6 @@ export interface Section {
   role: string | null;
   status: string | null;
 }
-export type AssignmentRole = "Primary Adviser" | "Substitute";
 export interface TeacherFormValues {
   first_name: string;
   last_name: string;
@@ -146,13 +148,14 @@ export interface TeacherUpdatePayload {
   last_name: string;
   username: string;
   email: string;
-  employee_id: string;
+  employee_id: string | null;
   class_name: string;
 }
 export interface TeacherCreatePayload extends Omit<
   TeacherUpdatePayload,
-  "class_name"
+  "class_name" | "employee_id"
 > {
+  employee_id?: string | null;
   section_id: number;
   password: string;
 }
@@ -164,7 +167,6 @@ export interface TeacherPermissionPayload {
 }
 export interface TeacherAssignmentPayload {
   teacher_id: number;
-  role: AssignmentRole;
 }
 export interface Question {
   question_id: number;
@@ -173,6 +175,7 @@ export interface Question {
   question_text: string;
   sequence_order: number;
   is_home_based?: boolean;
+  evaluator_roles?: Partial<Record<Period, "teacher" | "parent" | null>>;
   answers: Record<Period, Answer | null>;
 }
 export interface Domain {
@@ -193,12 +196,24 @@ export interface PeriodSummary {
   scaledScores: Record<string, number> | null;
   sumOfScaledScores: number | null;
 }
+export interface ParentAssessmentAccess {
+  pre_test_parent_editable: boolean;
+  mid_test_parent_editable: boolean;
+  post_test_parent_editable: boolean;
+}
+export interface SectionAssessmentAccess extends ParentAssessmentAccess {
+  section_id: number;
+}
 export interface Assessment {
+  allow_parent_view_eccd_marks?: boolean;
+  parent_assessment_access?: ParentAssessmentAccess;
   student_id: number;
   masked_lrn: string;
   domains: Domain[];
   evalAges: Record<string, Record<Period, number | null>>;
   periodDates: Record<Period, string | null>;
+  evaluationDates?: Partial<Record<Period, string | null>>;
+  gradingDates?: Partial<Record<Period, string | null>>;
   student_birth_date: string | null;
   student?: Student;
   permissions?: Permissions;

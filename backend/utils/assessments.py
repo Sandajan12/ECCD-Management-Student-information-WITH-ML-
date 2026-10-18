@@ -1,12 +1,14 @@
-from datetime import date
+from datetime import date, datetime, timezone
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
-from backend.models import EccdDomain, EccdQuestion, Student, StudentEccdEvaluation, User
+from backend.models import EccdDomain, EccdQuestion, FamilyAccess, Parent, Section, Student, StudentEccdEvaluation, User
+from backend.utils.assessment_access import PERIOD_FLAGS, PERIOD_LABELS, window_values
 from backend.models.eccd import EccdAnswer, TestingPeriod
 from backend.schemas.common import ParentPermissions
 from backend.schemas.eccd import EvaluationBatch, ParentEvaluationBatch
 from backend.utils.access import authorize_student, current_teacher, get_active_adviser_for_student, permissions_for_student, resolve_student
 from backend.utils.eccd_scorer import calculate_decimal_age, calculate_scores
+from backend.utils.eccd_dates import get_grading_date, get_official_testing_date
 from backend.utils.students import public_student
 
 PERIODS = (TestingPeriod.PRE, TestingPeriod.MID, TestingPeriod.POST)
@@ -18,6 +20,8 @@ def released(permissions: ParentPermissions, period: TestingPeriod) -> bool:
 
 
 def save_evaluation(db: Session, user: User, payload: EvaluationBatch) -> dict:
+    if not payload.evaluations:
+        raise HTTPException(400, "At least one assessment answer is required.")
     student = resolve_student(db, payload.student_lrn)
     authorize_student(db, user, student)
     db.query(Student).filter_by(student_id=student.student_id).with_for_update().one()
@@ -27,14 +31,16 @@ def save_evaluation(db: Session, user: User, payload: EvaluationBatch) -> dict:
         raise HTTPException(400, "Unknown assessment question.")
     existing = db.query(StudentEccdEvaluation).filter_by(student_id=student.student_id).all()
     for record in existing:
-        if record.testing_period == payload.testing_period:
+        if record.testing_period == payload.testing_period or record.teacher_evaluation_date is None:
             continue
         previous = PERIODS.index(record.testing_period) < PERIODS.index(payload.testing_period)
-        if (previous and record.evaluation_date >= payload.assessment_date) or (not previous and record.evaluation_date <= payload.assessment_date):
+        if (previous and record.teacher_evaluation_date >= payload.assessment_date) or (not previous and record.teacher_evaluation_date <= payload.assessment_date):
             raise HTTPException(400, "Assessment dates must follow PRE < MID < POST.")
     teacher = current_teacher(db, user) if user.role.value == "admin" else get_active_adviser_for_student(student, db)
     for record in existing:
-        if record.testing_period == payload.testing_period:
+        # Normalize the teacher session without dating untouched parent-only rows.
+        if record.testing_period == payload.testing_period and record.teacher_evaluation_date is not None:
+            record.teacher_evaluation_date = payload.assessment_date
             record.evaluation_date = payload.assessment_date
     by_question = {record.question_id: record for record in existing if record.testing_period == payload.testing_period}
     for answer in payload.evaluations:
@@ -43,31 +49,52 @@ def save_evaluation(db: Session, user: User, payload: EvaluationBatch) -> dict:
             record = StudentEccdEvaluation(student_id=student.student_id, teacher_id=teacher.teacher_id if teacher else None, question_id=answer.question_id, testing_period=payload.testing_period, evaluation_date=payload.assessment_date)
             db.add(record)
         record.answer = answer.answer
+        record.teacher_id = teacher.teacher_id if teacher else None
+        record.evaluator_role = "teacher"
+        record.teacher_evaluation_date = payload.assessment_date
+        record.evaluation_date = payload.assessment_date
+        # Keep parent_id and parent_submitted_at as historical provenance.
     db.commit()
     return {"message": "Assessment and evaluation date saved successfully!", "period": payload.testing_period, "evaluation_date": payload.assessment_date, "student_id": student.student_id}
 
 
 def save_home_evaluation(db: Session, user: User, payload: ParentEvaluationBatch) -> dict:
     student = resolve_student(db, payload.student_lrn)
-    authorize_student(db, user, student)
+    current_parent = db.query(Parent).filter_by(user_id=user.user_id).first()
+    if current_parent is None or not db.query(FamilyAccess).filter_by(parent_id=current_parent.parent_id, student_id=student.student_id, status="SYNCED").first():
+        raise HTTPException(403, "This child is not linked to your account.")
+    db.query(Student).filter_by(student_id=student.student_id).populate_existing().with_for_update().one()
+    section = db.query(Section).filter_by(section_id=student.section_id).populate_existing().with_for_update().first()
+    ids = {row.question_id for row in payload.evaluations}
+    questions = db.query(EccdQuestion.question_id, EccdQuestion.is_home_based).filter(EccdQuestion.question_id.in_(ids)).with_for_update().all()
+    if any(question.is_home_based is not True for question in questions):
+        raise HTTPException(403, "Parents are only permitted to assess home-based questions.")
+    if ids != {question.question_id for question in questions}:
+        raise HTTPException(400, "Unknown assessment question.")
+    windows = window_values(section)
+    for answer in payload.evaluations:
+        period = answer.testing_period.value
+        if not windows[PERIOD_FLAGS[period]]:
+            raise HTTPException(403, f"Editing for {PERIOD_LABELS[period]} is currently closed by the teacher.")
     permissions = permissions_for_student(db, student)
     if not permissions.allow_parent_edit_home_based_eccd:
         raise HTTPException(403, "Editing is currently locked by the Class Adviser.")
-    db.query(Student).filter_by(student_id=student.student_id).with_for_update().one()
-    teacher = get_active_adviser_for_student(student, db)
-    ids = [row.question_id for row in payload.evaluations]
-    allowed = {row[0] for row in db.query(EccdQuestion.question_id).filter(EccdQuestion.question_id.in_(ids), EccdQuestion.is_home_based.is_(True))}
-    if set(ids) != allowed:
-        raise HTTPException(400, "Unknown or non-home-based assessment question.")
+    submitted_at = datetime.now(timezone.utc)
+    compatibility_date = date.today()
     for answer in payload.evaluations:
         record = db.query(StudentEccdEvaluation).filter_by(student_id=student.student_id, question_id=answer.question_id, testing_period=answer.testing_period).first()
-        if record:
-            if record.answer != answer.answer:
-                record.answer, record.evaluation_date = answer.answer, date.today()
-        else:
-            db.add(StudentEccdEvaluation(student_id=student.student_id, teacher_id=teacher.teacher_id, question_id=answer.question_id, testing_period=answer.testing_period, answer=answer.answer, evaluation_date=date.today()))
+        if record is None:
+            record = StudentEccdEvaluation(student_id=student.student_id, question_id=answer.question_id, testing_period=answer.testing_period)
+            db.add(record)
+        record.answer = answer.answer
+        record.parent_id = current_parent.parent_id
+        record.evaluator_role = "parent"
+        record.parent_submitted_at = submitted_at
+        if record.teacher_evaluation_date is None:
+            record.evaluation_date = compatibility_date
+        # Parent observations never replace teacher_id or teacher_evaluation_date.
     db.commit()
-    return {"message": "Assessment saved successfully!"}
+    return {"message": "Assessment saved successfully!", "testing_period": payload.testing_period}
 
 
 def assessment_data(db: Session, user: User, identifier: str, parent_view: bool = False) -> dict:
@@ -77,12 +104,16 @@ def assessment_data(db: Session, user: User, identifier: str, parent_view: bool 
     domains = db.query(EccdDomain).order_by(EccdDomain.domain_id).all()
     questions = db.query(EccdQuestion).order_by(EccdQuestion.sequence_order, EccdQuestion.question_id).all()
     evaluations = db.query(StudentEccdEvaluation).filter_by(student_id=student.student_id).order_by(StudentEccdEvaluation.evaluation_id).all()
+    evaluations_by_question_period = {(record.question_id, record.testing_period): record for record in evaluations}
     visible = {period: not parent_view or released(permissions, period) for period in PERIODS}
-    dates, summaries, ages = {}, {}, {}
+    windows = window_values(db.get(Section, student.section_id) if student.section_id else None) if parent_view else {}
+    parent = db.query(Parent).filter_by(user_id=user.user_id).first() if parent_view else None
+    dates, grading_dates, summaries, ages = {}, {}, {}, {}
     for period in PERIODS:
         records = [record for record in evaluations if record.testing_period == period]
-        dates[period] = max((record.evaluation_date for record in records), default=None) if visible[period] else None
-        age = calculate_decimal_age(student.date_of_birth, dates[period]) if student.date_of_birth and dates[period] else None
+        dates[period] = get_official_testing_date(evaluations, period) if visible[period] else None
+        grading_dates[period] = get_grading_date(evaluations, period) if visible[period] else None
+        age = calculate_decimal_age(student.date_of_birth, grading_dates[period]) if student.date_of_birth and grading_dates[period] else None
         scores = calculate_scores([{"domain_id": record.question.domain_id, "answer": record.answer.value} for record in records], age) if age is not None else None
         summaries[period] = {"period": period, "isReleased": visible[period], "is_published": visible[period], "isEvaluated": bool(records) if visible[period] else False,
                              "assessmentDate": dates[period], "decimalAge": age, "standardScore": scores["standard_score"] if scores else None,
@@ -90,22 +121,39 @@ def assessment_data(db: Session, user: User, identifier: str, parent_view: bool 
                              "rawScores": scores["raw_scores"] if scores else None, "scaledScores": scores["scaled_scores"] if scores else None, "sumOfScaledScores": scores["sum_of_scaled_scores"] if scores else None}
     formatted, checklist = [], []
     for domain in domains:
-        domain_questions = [question for question in questions if question.domain_id == domain.domain_id and (not parent_view or question.is_home_based)]
+        domain_questions = [question for question in questions if question.domain_id == domain.domain_id]
         rows = []
         ages[str(domain.domain_id)] = {}
         for period in PERIODS:
-            domain_records = [record for record in evaluations if record.question.domain_id == domain.domain_id and record.testing_period == period]
-            first = domain_records[0] if domain_records and visible[period] else None
-            ages[str(domain.domain_id)][period] = summaries[period]["decimalAge"] if parent_view else (calculate_decimal_age(student.date_of_birth, first.evaluation_date) if student.date_of_birth and first else None)
+            ages[str(domain.domain_id)][period] = summaries[period]["decimalAge"]
         for question in domain_questions:
-            answers = {period: next((record.answer for record in evaluations if record.question_id == question.question_id and record.testing_period == period), None) if visible[period] else None for period in PERIODS}
-            rows.append({"question_id": question.question_id, "domain_id": question.domain_id, "domain_name": domain.domain_name.replace(" Domain", ""), "question_text": question.question_text, "sequence_order": question.sequence_order, "answers": answers})
-        if rows or not parent_view:
-            formatted.append({"domain_id": domain.domain_id, "domain_name": domain.domain_name, "questions": rows})
-        checklist.extend(rows)
+            answers, evaluator_roles = {}, {}
+            for period in PERIODS:
+                record = evaluations_by_question_period.get((question.question_id, period))
+                if parent_view and not permissions.allow_parent_view_eccd_marks:
+                    # Score release does not release checklist marks. Only the
+                    # authenticated parent's own editable observations survive.
+                    own_editable_home = (
+                        question.is_home_based is True and parent is not None
+                        and permissions.allow_parent_edit_home_based_eccd
+                        and windows[PERIOD_FLAGS[period.value]]
+                        and record is not None and record.evaluator_role == "parent"
+                        and record.parent_id == parent.parent_id
+                    )
+                    if not own_editable_home:
+                        record = None
+                answers[period] = record.answer if record is not None else None
+                evaluator_roles[period] = record.evaluator_role if record is not None else None
+            rows.append({"question_id": question.question_id, "domain_id": question.domain_id, "domain_name": domain.domain_name.replace(" Domain", ""), "question_text": question.question_text, "sequence_order": question.sequence_order,
+                         "is_home_based": bool(question.is_home_based), "evaluator_roles": evaluator_roles, "answers": answers})
+        formatted.append({"domain_id": domain.domain_id, "domain_name": domain.domain_name, "questions": rows})
+        # Retain the home-only compatibility projection for older consumers.
+        checklist.extend(row for row in rows if row["is_home_based"])
     result = {"student_id": student.student_id, "masked_lrn": student.masked_lrn, "student_birth_date": student.date_of_birth if not parent_view or permissions.allow_parent_view_student_info else None,
-              "domains": formatted, "evalAges": ages, "periodDates": dates, "evaluationDates": dates}
+              "domains": formatted, "evalAges": ages, "periodDates": dates, "evaluationDates": dates, "gradingDates": grading_dates}
     if parent_view:
+        result["parent_assessment_access"] = windows
+        result["allow_parent_view_eccd_marks"] = permissions.allow_parent_view_eccd_marks
         public = public_student(db, student)
         if not permissions.allow_parent_view_student_info:
             for key in ("first_name", "middle_name", "last_name", "date_of_birth", "gender", "address", "emergency_contact", "decimal_age", "handedness", "num_of_siblings", "birth_order", "parent_names"):

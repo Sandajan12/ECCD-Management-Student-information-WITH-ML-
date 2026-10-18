@@ -1,4 +1,4 @@
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, func
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, func, true, false
 from sqlalchemy.orm import relationship
 
 from .base import Base
@@ -9,6 +9,9 @@ class Section(Base):
 
     section_id = Column(Integer, primary_key=True, autoincrement=True)
     section_name = Column(String(100), nullable=False, unique=True)
+    pre_test_parent_editable = Column(Boolean, nullable=False, default=True, server_default=true())
+    mid_test_parent_editable = Column(Boolean, nullable=False, default=False, server_default=false())
+    post_test_parent_editable = Column(Boolean, nullable=False, default=False, server_default=false())
     adviser_teacher_id = Column(
         Integer, ForeignKey("teachers.teacher_id", ondelete="SET NULL"), nullable=True
     )

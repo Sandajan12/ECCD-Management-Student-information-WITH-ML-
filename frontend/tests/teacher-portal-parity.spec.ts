@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 import type { Page, Locator, TestInfo } from "@playwright/test";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
+import type { Answer, Assessment, Period } from "../src/types";
 
 const settings = {
   school_name: "Example School",
@@ -91,6 +92,12 @@ async function prepare(page: Page, fixture: Fixture = {}) {
     query: string;
   }[] = [];
   let access = { ...permissions };
+  let assessmentAccess = {
+    section_id: 1,
+    pre_test_parent_editable: true,
+    mid_test_parent_editable: false,
+    post_test_parent_editable: false,
+  };
   await page.addInitScript(() => {
     if (!localStorage.getItem("token")) {
       localStorage.setItem(
@@ -130,123 +137,136 @@ async function prepare(page: Page, fixture: Fixture = {}) {
     const roster = fixture.empty ? [] : [student];
     if (request.method() === "PUT" && /me\/access|access-controls/.test(path))
       access = { ...access, ...request.postDataJSON() };
+    if (
+      request.method() === "PUT" &&
+      path === "/api/teacher/settings/parent-assessment-access"
+    )
+      assessmentAccess = { ...assessmentAccess, ...request.postDataJSON() };
     const data =
-      path === "/api/settings"
-        ? settings
-        : path === "/api/sections"
-          ? [
-              {
-                section_id: 1,
-                section_name: "Section A",
-                first_name: "Divina C.",
-                last_name: "Carpio",
-                role: "Primary Adviser",
-                status: "Active",
-              },
-            ]
-          : /dashboard-filters/.test(path)
-            ? {
-                sections: ["Section A"],
-                domains: domains.map((d) => d.domain_name),
-              }
-            : /dashboard-stats/.test(path)
+      path === "/api/teacher/settings/parent-assessment-access"
+        ? assessmentAccess
+        : path === "/api/settings"
+          ? settings
+          : path === "/api/sections"
+            ? [
+                {
+                  section_id: 1,
+                  section_name: "Section A",
+                  first_name: "Divina C.",
+                  last_name: "Carpio",
+                  role: "Primary Adviser",
+                  status: "Active",
+                },
+              ]
+            : /dashboard-filters/.test(path)
               ? {
-                  stats: {
-                    totalStudents: roster.length,
-                    unreadMessages: fixture.messages ? 1 : 0,
-                    eccdProgress: fixture.chart
-                      ? "22.2%"
-                      : fixture.empty
-                        ? "0%"
-                        : "0.0%",
-                    priorityDomain: "None",
-                  },
-                  messages: fixture.messages
-                    ? [
-                        {
-                          id: 1,
-                          read: false,
-                          name: "Jamie Reyes",
-                          time: "10:30",
-                          preview: "How is Avery doing in class?",
-                        },
-                      ]
-                    : [],
+                  sections: ["Section A"],
+                  domains: domains.map((d) => d.domain_name),
                 }
-              : /dashboard-pie/.test(path)
-                ? fixture.chart
-                  ? [
-                      { name: "KAYA", value: 3, color: "#3b82f6" },
-                      { name: "DI-KAYA", value: 1, color: "#f59e0b" },
-                    ]
-                  : []
-                : /access-controls|me\/access/.test(path)
-                  ? {
-                      ...access,
-                      allow_parent_home_based_edit:
-                        access.allow_parent_edit_home_based_eccd,
-                      section_id: 1,
-                      section_name: "Section A",
-                      allow_eccd_question_management: false,
-                    }
-                  : path === "/api/students/archived"
-                    ? fixture.archived
+              : /dashboard-stats/.test(path)
+                ? {
+                    stats: {
+                      totalStudents: roster.length,
+                      unreadMessages: fixture.messages ? 1 : 0,
+                      eccdProgress: fixture.chart
+                        ? "22.2%"
+                        : fixture.empty
+                          ? "0%"
+                          : "0.0%",
+                      priorityDomain: "None",
+                    },
+                    messages: fixture.messages
                       ? [
                           {
-                            ...student,
-                            student_id: 202,
-                            first_name: "Jordan",
-                            full_name: "Jordan Lee Reyes",
-                            is_active: false,
+                            id: 1,
+                            read: false,
+                            name: "Jamie Reyes",
+                            time: "10:30",
+                            preview: "How is Avery doing in class?",
                           },
                         ]
-                      : []
-                    : path === "/api/students/101"
-                      ? page.url().includes(":5187")
-                        ? { ...student, num_of_siblings: "0" }
-                        : student
-                      : path === "/api/students" ||
-                          path === "/api/eccd/students" ||
-                          path === "/api/students/section/1"
-                        ? roster
-                        : path === "/api/eccd/domains-progress"
-                          ? fixture.empty
-                            ? []
-                            : domains
-                          : path === "/api/eccd/assessment/101"
-                            ? {
-                                student_id: 101,
-                                masked_lrn: student.masked_lrn,
-                                domains,
-                                periodDates: {
-                                  PRE: null,
-                                  MID: null,
-                                  POST: null,
-                                },
-                                evalAges: {},
-                                student_birth_date: student.date_of_birth,
-                              }
-                            : path === "/api/teachers/change-password-request"
+                      : [],
+                  }
+                : /dashboard-pie/.test(path)
+                  ? fixture.chart
+                    ? [
+                        { name: "KAYA", value: 3, color: "#3b82f6" },
+                        { name: "DI-KAYA", value: 1, color: "#f59e0b" },
+                      ]
+                    : []
+                  : /access-controls|me\/access/.test(path)
+                    ? {
+                        ...access,
+                        allow_parent_home_based_edit:
+                          access.allow_parent_edit_home_based_eccd,
+                        parent_can_edit_pre:
+                          assessmentAccess.pre_test_parent_editable,
+                        parent_can_edit_mid:
+                          assessmentAccess.mid_test_parent_editable,
+                        parent_can_edit_post:
+                          assessmentAccess.post_test_parent_editable,
+                        section_id: 1,
+                        section_name: "Section A",
+                        allow_eccd_question_management: false,
+                      }
+                    : path === "/api/students/archived"
+                      ? fixture.archived
+                        ? [
+                            {
+                              ...student,
+                              student_id: 202,
+                              first_name: "Jordan",
+                              full_name: "Jordan Lee Reyes",
+                              is_active: false,
+                            },
+                          ]
+                        : []
+                      : path === "/api/students/101"
+                        ? page.url().includes(":5187")
+                          ? { ...student, num_of_siblings: "0" }
+                          : student
+                        : path === "/api/students" ||
+                            path === "/api/eccd/students" ||
+                            path === "/api/students/section/1"
+                          ? roster
+                          : path === "/api/eccd/domains-progress"
+                            ? fixture.empty
+                              ? []
+                              : domains
+                            : path === "/api/eccd/assessment/101"
                               ? {
-                                  email: "teacher@example.test",
-                                  challengeToken: "fixture-challenge",
-                                  message:
-                                    "Verification code sent to your email.",
+                                  student_id: 101,
+                                  masked_lrn: student.masked_lrn,
+                                  domains,
+                                  periodDates: {
+                                    PRE: null,
+                                    MID: null,
+                                    POST: null,
+                                  },
+                                  evalAges: {},
+                                  student_birth_date: student.date_of_birth,
                                 }
-                              : path === "/api/teachers/import-students"
+                              : path === "/api/teachers/change-password-request"
                                 ? {
-                                    successCount: 1,
-                                    failedCount: 1,
-                                    errors: [
-                                      {
-                                        row: 3,
-                                        error: "Invalid date of birth.",
-                                      },
-                                    ],
+                                    email: "teacher@example.test",
+                                    challengeToken: "fixture-challenge",
+                                    message:
+                                      "Verification code sent to your email.",
                                   }
-                                : path.includes("/api/messages/contacts")
-                                  ? { contacts: [] }
-                                  : { unreadCount: 0, success: true };
+                                : path === "/api/teachers/import-students"
+                                  ? {
+                                      successCount: 1,
+                                      failedCount: 1,
+                                      errors: [
+                                        {
+                                          row: 3,
+                                          error: "Invalid date of birth.",
+                                        },
+                                      ],
+                                    }
+                                  : path.includes("/api/messages/contacts")
+                                    ? { contacts: [] }
+                                    : { unreadCount: 0, success: true };
     await route.fulfill({ json: data });
   });
   return calls;
@@ -385,6 +405,111 @@ async function openPair(
     await ready(target);
   }
 }
+
+for (const width of [320, 768, 1280])
+  test(`home-based settings match legacy labels, grouping and card layout at ${width}px`, async ({
+    page,
+    context,
+  }, info) => {
+    await page.setViewportSize({ width, height: 900 });
+    const reference = await context.newPage();
+    const errors: string[] = [];
+    for (const target of [page, reference])
+      target.on("pageerror", (error) => errors.push(error.message));
+    await openPair(page, reference, "settings");
+    const controls = [
+      ["Home-Based Checklist Edit", "Allow parents to fill out home checklist"],
+      [
+        "Pre-Test Home-Based Edit",
+        "Allow Pre-test home-based question editing",
+      ],
+      [
+        "Mid-Test Home-Based Edit",
+        "Allow Mid-test home-based question editing",
+      ],
+      [
+        "Post-Test Home-Based Edit",
+        "Allow Post-test home-based question editing",
+      ],
+    ];
+    for (const target of [page, reference]) {
+      await expect(target.getByRole("switch")).toHaveCount(9);
+      await expect(
+        target.getByText("ECCD Assessment Visibility", { exact: true }),
+      ).toBeVisible();
+      await expect(
+        target.getByText("ECCD Assessment Editing", { exact: true }),
+      ).toBeVisible();
+      await expect(
+        target.getByText(
+          "Enable Home-Based Checklist Edit, then choose which assessment periods parents can edit. Changes save automatically.",
+          { exact: true },
+        ),
+      ).toBeVisible();
+      for (const [label, description] of controls) {
+        const control = target.getByRole("switch", {
+          name: label,
+          exact: true,
+        });
+        await expect(control).toBeEnabled();
+        if (label.startsWith("Pre-Test")) await expect(control).toBeChecked();
+        else await expect(control).not.toBeChecked();
+        await expect(
+          target.getByText(description, { exact: true }),
+        ).toBeVisible();
+      }
+      expect(
+        await target.getByRole("switch").evaluateAll((switches) => {
+          const papers = switches.map(
+            (input) =>
+              input.closest(".MuiPaper-outlined")?.parentElement?.parentElement
+                ?.parentElement,
+          );
+          return papers.every((paper) => !!paper && paper === papers[0]);
+        }),
+      ).toBe(true);
+      expect(
+        await target.evaluate(
+          () => document.documentElement.scrollWidth <= innerWidth,
+        ),
+      ).toBe(true);
+      await ready(target);
+    }
+    // Compare only the requested editing cards; account settings have their own tests.
+    const card = (target: Page, label: string) =>
+      target
+        .getByRole("switch", { name: label, exact: true })
+        .locator(
+          "xpath=ancestor::*[contains(concat(' ', normalize-space(@class), ' '), ' MuiPaper-outlined ')][1]",
+        );
+    for (const [index, [label]] of controls.entries()) {
+      await compare(
+        card(page, label),
+        card(reference, label),
+        `home-edit-card-${index}-${width}`,
+        info,
+      );
+    }
+    // Check enabled-state master, warning, and success colors after auto-save.
+    for (const index of [0, 2, 3]) {
+      const label = controls[index][0];
+      for (const target of [page, reference]) {
+        const toggle = target.getByRole("switch", { name: label, exact: true });
+        await toggle.check();
+        await expect(toggle).toBeEnabled();
+        await expect(toggle).toBeChecked();
+        await ready(target);
+      }
+      await compare(
+        card(page, label),
+        card(reference, label),
+        `home-edit-enabled-${index}-${width}`,
+        info,
+      );
+    }
+    await reference.close();
+    expect(errors).toEqual([]);
+  });
 
 for (const width of [320, 600, 900, 1200, 1280])
   for (const screen of Object.keys(titles)) {
@@ -657,7 +782,12 @@ for (const width of [320, 1280]) {
     await expect(
       page.getByText("Student Profile Viewing", { exact: true }),
     ).toBeVisible();
-    await expect(page.getByRole("switch")).toHaveCount(6);
+    await expect(page.getByRole("switch")).toHaveCount(9);
+    const preVisibility = page.getByRole("switch", {
+      name: "Pre-Test Scores Visibility",
+      exact: true,
+    });
+    await expect(preVisibility).toBeEnabled();
     // Reload is served locally while browser offline signals drive the save queue.
     await page.addInitScript(() =>
       Object.defineProperty(navigator, "onLine", {
@@ -673,7 +803,7 @@ for (const width of [320, 1280]) {
       });
       dispatchEvent(new Event("offline"));
     });
-    await page.getByRole("switch").nth(2).check();
+    await preVisibility.check();
     await expect
       .poll(() =>
         page.evaluate(
@@ -685,7 +815,7 @@ for (const width of [320, 1280]) {
       )
       .toBe(true);
     await page.reload();
-    await expect(page.getByRole("switch").nth(2)).toBeChecked();
+    await expect(preVisibility).toBeChecked();
     await page.evaluate(() => {
       localStorage.removeItem("fixture-offline");
       dispatchEvent(new Event("online"));
@@ -743,7 +873,7 @@ for (const width of [320, 1280]) {
         .first()
         .getByRole("button", { name: "KAYA", exact: true })
         .nth(1),
-    ).toHaveClass(/bg-emerald-100/);
+    ).not.toHaveClass(/bg-emerald-100/);
     await page.reload();
     await select();
     await expect(
@@ -798,7 +928,7 @@ for (const width of [320, 1280]) {
       .toBeNull();
     expect(
       await page.evaluate(() => localStorage.getItem("eccd_draft_101_MID_1_7")),
-    ).not.toBeNull();
+    ).toBeNull();
   });
 }
 
@@ -1005,6 +1135,693 @@ test("access HTTP 403 retains the exact intended switch revision", async ({
     ),
   ).toBe(false);
 });
+
+async function prepareSavedAssessment(
+  page: Page,
+  saved: Partial<Record<number, Partial<Record<Period, Answer>>>>,
+  configure?: (assessment: Assessment) => void,
+) {
+  const calls = await prepare(page);
+  await page.route("**/api/eccd/domains-progress", (route) =>
+    route.fulfill({
+      json: domains.map((domain) => ({
+        ...domain,
+        questions: domain.questions.map((q) => ({ ...q, answers: undefined })),
+      })),
+    }),
+  );
+  const assessment: Assessment = {
+    student_id: 101,
+    masked_lrn: student.masked_lrn,
+    student_birth_date: student.date_of_birth,
+    domains: domains.map((domain) => ({
+      ...domain,
+      questions: domain.questions.map((q) => ({
+        ...q,
+        is_home_based: q.question_id === 2,
+        evaluator_roles: Object.fromEntries(
+          (["PRE", "MID", "POST"] as Period[]).map((p) => [
+            p,
+            saved[q.question_id]?.[p] ? "teacher" : null,
+          ]),
+        ),
+        answers: { ...q.answers, ...saved[q.question_id] },
+      })),
+    })),
+    evalAges: {},
+    periodDates: {
+      PRE: Object.values(saved).some((answers) => answers?.PRE)
+        ? "2026-09-01"
+        : null,
+      MID: Object.values(saved).some((answers) => answers?.MID)
+        ? "2026-10-01"
+        : null,
+      POST: null,
+    },
+  };
+  configure?.(assessment);
+  await page.route("**/api/eccd/assessment/101", (route) =>
+    route.fulfill({ json: assessment }),
+  );
+  await page.route("**/api/eccd/evaluate", async (route) => {
+    const payload = route.request().postDataJSON() as {
+      testing_period: Period;
+      assessment_date: string;
+      evaluations: {
+        question_id: number;
+        testing_period: Period;
+        answer: Answer;
+      }[];
+    };
+    calls.push({
+      path: "/api/eccd/evaluate",
+      method: "POST",
+      query: "",
+      body: payload,
+    });
+    for (const evaluation of payload.evaluations) {
+      expect(evaluation.testing_period).toBe(payload.testing_period);
+      const question = assessment.domains
+        .flatMap((domain) => domain.questions)
+        .find((q) => q.question_id === evaluation.question_id)!;
+      question.answers[payload.testing_period] = evaluation.answer;
+      question.evaluator_roles = {
+        ...question.evaluator_roles,
+        [payload.testing_period]: "teacher",
+      };
+    }
+    assessment.periodDates[payload.testing_period] = payload.assessment_date;
+    assessment.gradingDates = {
+      ...assessment.gradingDates,
+      [payload.testing_period]: payload.assessment_date,
+    };
+    await route.fulfill({ json: { success: true } });
+  });
+  return calls;
+}
+
+async function openAssessment(page: Page) {
+  await page.goto("/teacher/eccdassessment");
+  await page
+    .getByRole("button", { name: "Assess Domain", exact: true })
+    .first()
+    .click();
+  await page.locator("select").first().selectOption("101");
+  await expect(page.locator("table")).toBeVisible();
+}
+
+function assessmentChoice(
+  page: Page,
+  row: number,
+  period: Period,
+  answer: Answer,
+) {
+  return page
+    .locator("tbody tr")
+    .nth(row)
+    .getByRole("button", { name: answer, exact: true })
+    .nth((["PRE", "MID", "POST"] as Period[]).indexOf(period));
+}
+
+async function expectUnassessed(page: Page, row: number, period: Period) {
+  for (const answer of ["KAYA", "DI-KAYA"] as Answer[])
+    await expect(assessmentChoice(page, row, period, answer)).not.toHaveClass(
+      /bg-(emerald|rose)-(100|600)/,
+    );
+}
+
+for (const width of [320, 768, 1280]) {
+  test(`saved-only PRE lifecycle confirms virtual carry without submitting future periods at ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await prepareSavedAssessment(page, {});
+    // Observe actual browser requests independently of the fixture's save handler.
+    const writes: unknown[] = [];
+    const errors: string[] = [];
+    page.on("request", (request) => {
+      if (
+        new URL(request.url()).pathname === "/api/eccd/evaluate" &&
+        request.method() === "POST"
+      )
+        writes.push(request.postDataJSON());
+    });
+    page.on("pageerror", (error) => errors.push(error.message));
+    await openAssessment(page);
+    const dock = page.locator("div.sticky.bottom-0");
+    const save = page.getByRole("button", {
+      name: "Save Assessment",
+      exact: true,
+    });
+    await page.locator('input[type="date"]').fill("2026-09-01");
+    await expect(dock).toContainText("Saved: 0 / 2");
+    await assessmentChoice(page, 0, "PRE", "KAYA").click();
+    await expect(dock).toContainText("1 unsaved change");
+    await expect(dock.getByText("Completed", { exact: true })).toHaveCount(0);
+    // The audit requires saved-only inheritance, never an unsaved KAYA source.
+    for (const period of ["MID", "POST"] as Period[])
+      await expectUnassessed(page, 0, period);
+    expect(writes).toEqual([]);
+
+    await save.click();
+    await expect(dock).toContainText("Saved: 1 / 2");
+    await expect(dock).not.toContainText("unsaved change");
+    await expect(dock.getByText("Completed", { exact: true })).toHaveCount(0);
+    for (const period of ["MID", "POST"] as Period[]) {
+      await expect(assessmentChoice(page, 0, period, "KAYA")).toHaveClass(
+        /bg-emerald-100/,
+      );
+      await expect(
+        page.locator("thead th").nth(period === "MID" ? 2 : 3),
+      ).toContainText("Saved: 0 / 2");
+    }
+    expect(writes).toEqual([
+      {
+        student_id: 101,
+        testing_period: "PRE",
+        assessment_date: "2026-09-01",
+        evaluations: [
+          { question_id: 1, testing_period: "PRE", answer: "KAYA" },
+        ],
+      },
+    ]);
+
+    // Both downstream cells clear immediately, before another HTTP save.
+    await assessmentChoice(page, 0, "PRE", "DI-KAYA").click();
+    for (const period of ["MID", "POST"] as Period[])
+      await expectUnassessed(page, 0, period);
+    await expect(dock).toContainText("Saved: 1 / 2");
+    await expect(dock).toContainText("1 unsaved change");
+    expect(writes).toHaveLength(1);
+    await save.click();
+    await expect(dock).not.toContainText("unsaved change");
+    for (const period of ["MID", "POST"] as Period[])
+      await expectUnassessed(page, 0, period);
+
+    // A fresh unsaved KAYA cannot restart the now DI-KAYA saved source.
+    await assessmentChoice(page, 0, "PRE", "KAYA").click();
+    await assessmentChoice(page, 1, "PRE", "DI-KAYA").click();
+    await expect(dock).toContainText("2 unsaved changes");
+    await expect(dock.getByText("Completed", { exact: true })).toHaveCount(0);
+    for (const period of ["MID", "POST"] as Period[])
+      await expectUnassessed(page, 0, period);
+    await save.click();
+    await expect(dock).toContainText("Saved: 2 / 2");
+    await expect(dock).not.toContainText("unsaved change");
+    await expect(dock.getByText("Completed", { exact: true })).toBeVisible();
+    for (const period of ["MID", "POST"] as Period[]) {
+      await expect(assessmentChoice(page, 0, period, "KAYA")).toHaveClass(
+        /bg-emerald-100/,
+      );
+      await expectUnassessed(page, 1, period);
+    }
+    expect(writes).toEqual([
+      {
+        student_id: 101,
+        testing_period: "PRE",
+        assessment_date: "2026-09-01",
+        evaluations: [
+          { question_id: 1, testing_period: "PRE", answer: "KAYA" },
+        ],
+      },
+      {
+        student_id: 101,
+        testing_period: "PRE",
+        assessment_date: "2026-09-01",
+        evaluations: [
+          { question_id: 1, testing_period: "PRE", answer: "DI-KAYA" },
+        ],
+      },
+      {
+        student_id: 101,
+        testing_period: "PRE",
+        assessment_date: "2026-09-01",
+        evaluations: [
+          { question_id: 1, testing_period: "PRE", answer: "KAYA" },
+          { question_id: 2, testing_period: "PRE", answer: "DI-KAYA" },
+        ],
+      },
+    ]);
+    expect(
+      await page.evaluate(() =>
+        ["PRE", "MID", "POST"].map((period) =>
+          localStorage.getItem(`eccd_draft_101_${period}_1_7`),
+        ),
+      ),
+    ).toEqual([null, null, null]);
+    await page.locator("select").nth(1).selectOption("MID");
+    await expect(dock).toContainText("Saved: 0 / 2");
+    await expect(dock).not.toContainText("unsaved change");
+    await expect(dock.getByText("Completed", { exact: true })).toHaveCount(0);
+    expect(writes).toHaveLength(3);
+    expect(errors).toEqual([]);
+  });
+
+  for (const midAnswer of ["KAYA", "DI-KAYA"] as Answer[])
+    test(`saved-only PRE resets preserve independent MID ${midAnswer} and per-question carry at ${width}px`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height: 900 });
+      const calls = await prepareSavedAssessment(page, {
+        1: { PRE: "KAYA", MID: midAnswer },
+        2: { PRE: "KAYA" },
+      });
+      await openAssessment(page);
+      // Q1's committed MID must not suppress Q2's virtual MID in this domain.
+      await expect(assessmentChoice(page, 0, "MID", midAnswer)).toHaveClass(
+        midAnswer === "KAYA" ? /bg-emerald-100/ : /bg-rose-100/,
+      );
+      await expect(assessmentChoice(page, 1, "MID", "KAYA")).toHaveClass(
+        /bg-emerald-100/,
+      );
+      await assessmentChoice(page, 0, "PRE", "DI-KAYA").click();
+      await assessmentChoice(page, 1, "PRE", "DI-KAYA").click();
+      await expect(assessmentChoice(page, 0, "MID", midAnswer)).toHaveClass(
+        midAnswer === "KAYA" ? /bg-emerald-100/ : /bg-rose-100/,
+      );
+      if (midAnswer === "KAYA")
+        await expect(assessmentChoice(page, 0, "POST", "KAYA")).toHaveClass(
+          /bg-emerald-100/,
+        );
+      else await expectUnassessed(page, 0, "POST");
+      for (const period of ["MID", "POST"] as Period[])
+        await expectUnassessed(page, 1, period);
+      const dock = page.locator("div.sticky.bottom-0");
+      await expect(dock).toContainText("2 unsaved changes");
+      await expect(dock.getByText("Completed", { exact: true })).toHaveCount(0);
+      await page
+        .getByRole("button", { name: "Save Assessment", exact: true })
+        .click();
+      await expect(dock.getByText("Completed", { exact: true })).toBeVisible();
+      expect(
+        calls.filter((call) => call.path === "/api/eccd/evaluate"),
+      ).toEqual([
+        {
+          path: "/api/eccd/evaluate",
+          method: "POST",
+          query: "",
+          body: {
+            student_id: 101,
+            testing_period: "PRE",
+            assessment_date: "2026-09-01",
+            evaluations: [
+              { question_id: 1, testing_period: "PRE", answer: "DI-KAYA" },
+              { question_id: 2, testing_period: "PRE", answer: "DI-KAYA" },
+            ],
+          },
+        },
+      ]);
+      await page.reload();
+      await page
+        .getByRole("button", { name: "Assess Domain", exact: true })
+        .first()
+        .click();
+      await page.locator("select").first().selectOption("101");
+      await page.locator("select").nth(1).selectOption("MID");
+      await expect(assessmentChoice(page, 0, "MID", midAnswer)).toHaveClass(
+        midAnswer === "KAYA" ? /bg-emerald-600/ : /bg-rose-600/,
+      );
+      await expectUnassessed(page, 1, "MID");
+      await expect(dock).toContainText("Saved: 1 / 2");
+      await expect(dock).not.toContainText("unsaved change");
+      await expect(dock.getByText("Completed", { exact: true })).toHaveCount(0);
+      expect(
+        await page.evaluate(() =>
+          ["MID", "POST"].map((period) =>
+            localStorage.getItem(`eccd_draft_101_${period}_1_7`),
+          ),
+        ),
+      ).toEqual([null, null]);
+    });
+}
+
+for (const width of [320, 768, 1280]) {
+  test(`checklist provenance, granular progress and teacher confirmation at ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 900 });
+    const errors: string[] = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    page.on("console", (message) => {
+      if (message.type() === "error") errors.push(message.text());
+    });
+    await prepareSavedAssessment(
+      page,
+      { 1: { PRE: "KAYA", MID: "DI-KAYA" }, 2: { PRE: "KAYA" } },
+      (assessment) => {
+        assessment.domains[0].questions[1].evaluator_roles = {
+          PRE: "parent",
+          MID: null,
+          POST: null,
+        };
+        assessment.gradingDates = {
+          PRE: "2026-09-01",
+          MID: "2026-10-01",
+          POST: null,
+        };
+      },
+    );
+    await page.goto("/teacher/eccdassessment");
+    const card = page.getByLabel("Gross Motor Domain saved progress");
+    await expect(card).toContainText("Saved: 2 / 2");
+    await expect(card).toContainText("Completed");
+    await page
+      .getByRole("button", { name: "Assess Domain", exact: true })
+      .first()
+      .click();
+    await page.locator("select").first().selectOption("101");
+    const homeRow = page.locator("tbody tr").nth(1);
+    await expect(
+      homeRow.getByText("Home-Based", { exact: true }),
+    ).toBeVisible();
+    await expect(
+      homeRow.getByText("Parent Assessed", { exact: true }),
+    ).toBeVisible();
+    const badgeBounds = await homeRow
+      .locator("td")
+      .first()
+      .evaluate((cell) => {
+        const rect = cell.getBoundingClientRect();
+        return Array.from(cell.querySelectorAll(":scope > div span")).map(
+          (badge) => {
+            const box = badge.getBoundingClientRect();
+            return box.left >= rect.left && box.right <= rect.right;
+          },
+        );
+      });
+    expect(badgeBounds).toEqual([true, true]);
+    for (const cell of await homeRow.locator("td").all()) {
+      expect(
+        await cell.evaluate(
+          (element) => element.scrollWidth <= element.clientWidth,
+        ),
+      ).toBe(true);
+    }
+    await expect(
+      page.locator("tbody tr").first().getByText("Home-Based", { exact: true }),
+    ).toHaveCount(0);
+    const dock = page.locator("div.sticky.bottom-0");
+    await expect(dock).toContainText("Saved: 2 / 2");
+    await expect(dock.getByText("Completed", { exact: true })).toBeVisible();
+    await assessmentChoice(page, 1, "PRE", "KAYA").click();
+    await expect(dock).not.toContainText("unsaved change");
+    await expect(dock.getByText("Completed", { exact: true })).toBeVisible();
+    await assessmentChoice(page, 1, "PRE", "DI-KAYA").click();
+    await expect(dock).toContainText("1 unsaved change");
+    await expect(dock.getByText("Completed", { exact: true })).toHaveCount(0);
+    await expect(
+      homeRow.getByText("Parent Assessed", { exact: true }),
+    ).toBeVisible();
+    await page
+      .getByRole("button", { name: "Back to Domains", exact: true })
+      .click();
+    await expect(card).toContainText("Saved: 2 / 2");
+    await expect(card).toContainText("1 unsaved change");
+    await expect(card.getByText("Completed", { exact: true })).toHaveCount(0);
+    await page
+      .getByRole("button", { name: "Assess Domain", exact: true })
+      .first()
+      .click();
+    await page.locator("select").first().selectOption("101");
+    // Return to the saved answer; no-op drafts must not suppress MID inheritance.
+    await assessmentChoice(page, 1, "PRE", "KAYA").click();
+    await page.locator("select").nth(1).selectOption("MID");
+    await expect(
+      homeRow.getByText("Parent Assessed", { exact: true }),
+    ).toHaveCount(0);
+    await expect(dock).toContainText("Saved: 1 / 2");
+    await expect(dock).not.toContainText("unsaved change");
+    await expect(dock.getByText("Completed", { exact: true })).toHaveCount(0);
+    await expect(page.locator("thead th").nth(2)).toContainText(
+      "1 inherited (not saved)",
+    );
+    await page.locator("select").nth(1).selectOption("PRE");
+    await assessmentChoice(page, 1, "PRE", "DI-KAYA").click();
+    await page
+      .getByRole("button", { name: "Save Assessment", exact: true })
+      .click();
+    await expect(
+      page.getByText("Assessment Saved Successfully!", { exact: true }),
+    ).toBeVisible();
+    await expect(
+      homeRow.getByText("Parent Assessed", { exact: true }),
+    ).toHaveCount(0);
+    await expect(
+      homeRow.getByText("Home-Based", { exact: true }),
+    ).toBeVisible();
+    await expect(dock.getByText("Completed", { exact: true })).toBeVisible();
+    const bounds = await homeRow
+      .locator("td")
+      .first()
+      .evaluate((cell) => {
+        const rect = cell.getBoundingClientRect();
+        return {
+          cellWidth: cell.clientWidth,
+          contentWidth: cell.scrollWidth,
+          badges: Array.from(cell.querySelectorAll("div span")).map((badge) => {
+            const box = badge.getBoundingClientRect();
+            return { inside: box.left >= rect.left && box.right <= rect.right };
+          }),
+        };
+      });
+    expect(bounds.contentWidth).toBeLessThanOrEqual(bounds.cellWidth);
+    expect(bounds.badges.every((badge) => badge.inside)).toBe(true);
+    await page
+      .getByRole("button", { name: "Back to Domains", exact: true })
+      .click();
+    await expect(card).toContainText("Saved: 2 / 2");
+    await expect(card).not.toContainText("unsaved change");
+    await expect(card).toContainText("Completed");
+    // A date-only edit retains saved counts but prevents false completion.
+    await page
+      .getByRole("button", { name: "Assess Domain", exact: true })
+      .first()
+      .click();
+    await page.locator("select").first().selectOption("101");
+    await page.locator('input[type="date"]').fill("2026-09-02");
+    await expect(dock).toContainText("Saved: 2 / 2");
+    await expect(dock).toContainText("Unsaved date change");
+    await expect(dock.getByText("Completed", { exact: true })).toHaveCount(0);
+    await page
+      .getByRole("button", { name: "Back to Domains", exact: true })
+      .click();
+    await expect(card).toContainText("1 unsaved date change");
+    await expect(card.getByText("Completed", { exact: true })).toHaveCount(0);
+    expect(errors).toEqual([]);
+  });
+
+  test(`checklist grading uses parent fallback and excludes unsaved compatibility dates at ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await prepareSavedAssessment(page, { 2: { PRE: "KAYA" } }, (assessment) => {
+      assessment.periodDates = { PRE: null, MID: null, POST: null };
+      assessment.gradingDates = { PRE: "2026-08-01", MID: null, POST: null };
+      assessment.evalAges = { 1: { PRE: 9.9, MID: 9.9, POST: 9.9 } };
+      assessment.domains[0].questions[1].evaluator_roles = { PRE: "parent" };
+    });
+    await openAssessment(page);
+    await expect(
+      page.getByText("Decimal Age: 5.3", { exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByText("Grading Date: 08/01/2026", { exact: true }),
+    ).toBeVisible();
+    await expect(page.locator("thead th").nth(1)).toContainText("Saved: 1 / 2");
+    await expect(page.locator("thead th").nth(1)).not.toContainText(
+      "Testing Date",
+    );
+    await expect(page.locator("thead th").nth(2)).not.toContainText("Age:");
+    await page.locator('input[type="date"]').fill("2026-11-01");
+    await expect(
+      page.getByText("Decimal Age: 5.3", { exact: true }),
+    ).toBeVisible();
+    await expect(page.locator("div.sticky.bottom-0")).toContainText(
+      "Unsaved date change",
+    );
+    await page.reload();
+    await page
+      .getByRole("button", { name: "Assess Domain", exact: true })
+      .first()
+      .click();
+    await page.locator("select").first().selectOption("101");
+    await expect(page.locator('input[type="date"]')).toHaveValue("2026-11-01");
+    await expect(
+      page.getByText("Decimal Age: 5.3", { exact: true }),
+    ).toBeVisible();
+    await page.locator("select").nth(1).selectOption("MID");
+    await expect(page.getByText(/Decimal Age:/)).toHaveCount(0);
+    await expect(page.locator("thead th").nth(2)).not.toContainText("Age:");
+    await page
+      .getByRole("button", { name: "Back to Domains", exact: true })
+      .click();
+    // Class totals remain in the selected period; virtual MID is not saved work.
+    await expect(
+      page.getByLabel("Gross Motor Domain saved progress"),
+    ).toContainText("Mid-Test · Saved: 0 / 2");
+    await expect(
+      page.getByLabel("Gross Motor Domain saved progress"),
+    ).not.toContainText("unsaved change");
+  });
+}
+
+for (const width of [320, 1280]) {
+  test(`saved-only per-question carry resets and explicit selected-period saves at ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 900 });
+    const calls = await prepareSavedAssessment(page, {
+      1: { PRE: "KAYA", MID: "DI-KAYA" },
+      2: { PRE: "KAYA" },
+    });
+    await openAssessment(page);
+    await expect(assessmentChoice(page, 0, "POST", "KAYA")).not.toHaveClass(
+      /bg-emerald-100/,
+    );
+    await expect(assessmentChoice(page, 1, "MID", "KAYA")).toHaveClass(
+      /bg-emerald-100/,
+    );
+    await expect(assessmentChoice(page, 1, "POST", "KAYA")).toHaveClass(
+      /bg-emerald-100/,
+    );
+    await assessmentChoice(page, 1, "PRE", "DI-KAYA").click();
+    await expect(assessmentChoice(page, 1, "MID", "KAYA")).not.toHaveClass(
+      /bg-emerald-100/,
+    );
+    await expect(assessmentChoice(page, 1, "POST", "KAYA")).not.toHaveClass(
+      /bg-emerald-100/,
+    );
+    expect(
+      await page.evaluate(() =>
+        ["MID", "POST"].map((p) =>
+          localStorage.getItem(`eccd_draft_101_${p}_1_7`),
+        ),
+      ),
+    ).toEqual([null, null]);
+    await page.locator("select").nth(1).selectOption("MID");
+    await assessmentChoice(page, 1, "MID", "KAYA").click();
+    await expect(assessmentChoice(page, 1, "POST", "KAYA")).not.toHaveClass(
+      /bg-emerald-100/,
+    );
+    await page.locator("input[type=date]").fill("2026-10-14");
+    await page
+      .getByRole("button", { name: "Save Assessment", exact: true })
+      .click();
+    await expect(assessmentChoice(page, 1, "POST", "KAYA")).toHaveClass(
+      /bg-emerald-100/,
+    );
+    await expect(
+      page.getByRole("button", { name: "Save Assessment", exact: true }),
+    ).toBeEnabled();
+    await assessmentChoice(page, 1, "MID", "DI-KAYA").click();
+    await expect(assessmentChoice(page, 1, "POST", "KAYA")).not.toHaveClass(
+      /bg-emerald-100/,
+    );
+    await page
+      .getByRole("button", { name: "Save Assessment", exact: true })
+      .click();
+    await expect(
+      page.getByRole("button", { name: "Save Assessment", exact: true }),
+    ).toBeEnabled();
+    const saves = calls.filter((call) => call.path === "/api/eccd/evaluate");
+    expect(saves).toHaveLength(2);
+    for (const save of saves)
+      expect(save.body).toMatchObject({ testing_period: "MID" });
+    expect(saves[1].body).toMatchObject({
+      evaluations: [
+        { question_id: 1, testing_period: "MID", answer: "DI-KAYA" },
+        { question_id: 2, testing_period: "MID", answer: "DI-KAYA" },
+      ],
+    });
+    expect(
+      await page.evaluate(() =>
+        localStorage.getItem("eccd_draft_101_POST_1_7"),
+      ),
+    ).toBeNull();
+    expect(
+      await page.evaluate(
+        () =>
+          JSON.parse(localStorage.getItem("eccd_draft_101_PRE_1_7")!).values
+            .answers,
+      ),
+    ).toEqual({ 2: "DI-KAYA" });
+  });
+
+  test(`saved-only date edits and resets preserve explicit later drafts across reload at ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 900 });
+    const calls = await prepareSavedAssessment(page, {
+      1: { PRE: "KAYA" },
+      2: { PRE: "KAYA" },
+    });
+    await openAssessment(page);
+    await page.locator("select").nth(1).selectOption("MID");
+    await page.locator("input[type=date]").fill("2026-10-14");
+    expect(
+      await page.evaluate(
+        () =>
+          JSON.parse(localStorage.getItem("eccd_draft_101_MID_1_7")!).values
+            .answers,
+      ),
+    ).toEqual({});
+    await page.locator("select").nth(1).selectOption("POST");
+    await assessmentChoice(page, 1, "POST", "KAYA").click();
+    await page.locator("select").nth(1).selectOption("MID");
+    await assessmentChoice(page, 1, "MID", "DI-KAYA").click();
+    await page.locator("select").nth(1).selectOption("PRE");
+    await assessmentChoice(page, 0, "PRE", "DI-KAYA").click();
+    await assessmentChoice(page, 1, "PRE", "DI-KAYA").click();
+    await expect(assessmentChoice(page, 0, "MID", "KAYA")).not.toHaveClass(
+      /bg-emerald-100/,
+    );
+    await expect(assessmentChoice(page, 0, "POST", "KAYA")).not.toHaveClass(
+      /bg-emerald-100/,
+    );
+    await expect(assessmentChoice(page, 1, "MID", "DI-KAYA")).toHaveClass(
+      /bg-rose-100/,
+    );
+    await expect(assessmentChoice(page, 1, "POST", "KAYA")).toHaveClass(
+      /bg-emerald-100/,
+    );
+    await page.reload();
+    await page
+      .getByRole("button", { name: "Assess Domain", exact: true })
+      .first()
+      .click();
+    await page.locator("select").first().selectOption("101");
+    await expect(assessmentChoice(page, 0, "MID", "KAYA")).not.toHaveClass(
+      /bg-emerald-100/,
+    );
+    await expect(assessmentChoice(page, 0, "POST", "KAYA")).not.toHaveClass(
+      /bg-emerald-100/,
+    );
+    await expect(assessmentChoice(page, 1, "MID", "DI-KAYA")).toHaveClass(
+      /bg-rose-100/,
+    );
+    await expect(assessmentChoice(page, 1, "POST", "KAYA")).toHaveClass(
+      /bg-emerald-100/,
+    );
+    expect(
+      await page.evaluate(() =>
+        Object.fromEntries(
+          ["PRE", "MID", "POST"].map((p) => [
+            p,
+            JSON.parse(localStorage.getItem(`eccd_draft_101_${p}_1_7`)!).values
+              .answers,
+          ]),
+        ),
+      ),
+    ).toEqual({
+      PRE: { 1: "DI-KAYA", 2: "DI-KAYA" },
+      MID: { 2: "DI-KAYA" },
+      POST: { 2: "KAYA" },
+    });
+    expect(calls.some((call) => call.path === "/api/eccd/evaluate")).toBe(
+      false,
+    );
+  });
+}
 
 test("delayed assessment confirmation cannot erase a newer draft revision", async ({
   page,

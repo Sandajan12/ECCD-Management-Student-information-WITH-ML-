@@ -20,6 +20,7 @@ from backend.schemas.student import StudentCreate
 from backend.schemas.common import validate_person_name
 from backend.utils.access import authorize_student, current_teacher, get_active_adviser_for_student, resolve_student, teacher_sections
 from backend.utils.eccd_scorer import calculate_decimal_age, calculate_scores
+from backend.utils.eccd_dates import get_official_testing_date
 from backend.utils.lrn import decrypt_lrn, hash_lrn
 from backend.utils.rollover import settings_record
 from backend.utils.students import upsert_guardian
@@ -125,13 +126,13 @@ def summary_workbook(db: Session, section: Section, students: list[Student]):
             for column, value in enumerate(values, 2):
                 if value is not None:
                     write_cell(sheet, row, column, value)
-            evaluation_date = min((record.evaluation_date for record in records), default=None)
+            evaluation_date = get_official_testing_date(records, period)
+            write_cell(sheet, row, 9, evaluation_date)
             if evaluation_date:
                 header_dates.append(evaluation_date)
             if evaluation_date and student.date_of_birth:
                 age = calculate_decimal_age(student.date_of_birth, evaluation_date)
                 scores = calculate_scores([{"domain_id": record.question.domain_id, "answer": record.answer.value} for record in records], age)
-                write_cell(sheet, row, 9, evaluation_date)
                 write_cell(sheet, row, 10, age)
                 for offset, code in enumerate(("GM", "FM", "SH", "RL", "EL", "C", "SE")):
                     write_cell(sheet, row, 11 + offset * 2, scores["raw_scores"][code])
@@ -213,7 +214,7 @@ def marked(value: object) -> bool:
 
 def import_students(db: Session, user: User, content: bytes, section_id: int | None = None) -> dict:
     teacher = current_teacher(db, user)
-    assignments = db.query(SectionTeacher).filter_by(teacher_id=teacher.teacher_id, status="Active").order_by((SectionTeacher.role == "Primary Adviser").desc()).all()
+    assignments = db.query(SectionTeacher).filter_by(teacher_id=teacher.teacher_id, role="Primary Adviser", status="Active").order_by(SectionTeacher.id).all()
     allowed = [assignment.section_id for assignment in assignments]
     section_id = section_id or (allowed[0] if allowed else None)
     if section_id not in allowed:
@@ -278,6 +279,9 @@ def import_students(db: Session, user: User, content: bytes, section_id: int | N
                     raise ValueError("Names must not exceed 100 characters.")
                 upsert_guardian(db, student, relationship, name, age, string(start + 2)[:50] or None, string(start + 3)[:20] or None)
             dates = {TestingPeriod.PRE: parse_date(cell(10), wb.epoch), TestingPeriod.MID: parse_date(cell(12), wb.epoch), TestingPeriod.POST: parse_date(cell(14), wb.epoch)}
+            evaluations = db.query(StudentEccdEvaluation).filter_by(student_id=student.student_id).all()
+            by_question_period = {(record.question_id, record.testing_period): record for record in evaluations}
+            import_dates = {}
             normalized_name = " ".join(string(1).split()).casefold()
             for question in questions:
                 sheet_name = DOMAIN_SHEETS.get(question.domain_id)
@@ -295,11 +299,38 @@ def import_students(db: Session, user: User, content: bytes, section_id: int | N
                         continue
                     if dates[period] is None:
                         raise ValueError("Marked assessment is missing its testing date.")
-                    evaluation = db.query(StudentEccdEvaluation).filter_by(student_id=student.student_id, question_id=question.question_id, testing_period=period).first()
+                    evaluation = by_question_period.get((question.question_id, period))
                     if evaluation is None:
-                        db.add(StudentEccdEvaluation(student_id=student.student_id, teacher_id=teacher.teacher_id, question_id=question.question_id, testing_period=period, answer=answer, evaluation_date=dates[period]))
-                    else:
-                        evaluation.answer, evaluation.evaluation_date, evaluation.teacher_id = answer, dates[period], teacher.teacher_id
+                        evaluation = StudentEccdEvaluation(student_id=student.student_id, question_id=question.question_id, testing_period=period)
+                        db.add(evaluation)
+                        evaluations.append(evaluation)
+                        by_question_period[(question.question_id, period)] = evaluation
+                    evaluation.answer = answer
+                    evaluation.teacher_id = teacher.teacher_id
+                    evaluation.evaluator_role = "teacher"
+                    evaluation.teacher_evaluation_date = dates[period]
+                    evaluation.evaluation_date = dates[period]
+                    # Parent identity and submission time remain historical provenance.
+                    import_dates[period] = dates[period]
+            for evaluation in evaluations:
+                # Unmarked parent-only observations do not join the teacher session.
+                if evaluation.testing_period in import_dates and evaluation.teacher_evaluation_date is not None:
+                    evaluation.teacher_evaluation_date = import_dates[evaluation.testing_period]
+                    evaluation.evaluation_date = import_dates[evaluation.testing_period]
+            # Validate the final state: several imported periods may move together.
+            periods = list(TestingPeriod)
+            for period, imported_date in import_dates.items():
+                for evaluation in evaluations:
+                    if evaluation.testing_period == period or evaluation.teacher_evaluation_date is None:
+                        continue
+                    earlier = periods.index(evaluation.testing_period) < periods.index(period)
+                    if (earlier and evaluation.teacher_evaluation_date >= imported_date) or (not earlier and evaluation.teacher_evaluation_date <= imported_date):
+                        raise ValueError(
+                            f"Assessment dates must follow PRE < MID < POST. "
+                            f"Imported {period.value} date {imported_date.isoformat()} conflicts with "
+                            f"{evaluation.testing_period.value} teacher date {evaluation.teacher_evaluation_date.isoformat()}. "
+                            "No changes saved for this student."
+                        )
             db.commit()
             result["successCount"] += 1
         except Exception as error:

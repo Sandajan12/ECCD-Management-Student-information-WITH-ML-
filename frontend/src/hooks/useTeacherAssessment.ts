@@ -11,13 +11,14 @@ import {
 } from "../utils/drafts";
 import type { Draft } from "../utils/drafts";
 import { calculateDecimalAge } from "../utils/dateUtils";
+import {
+  resolveTeacherDrafts,
+  teacherDomainProgress,
+} from "../utils/eccdDrafts";
+import type { TeacherAssessmentDraft as AssessmentDraft } from "../utils/eccdDrafts";
 import { PERIODS } from "../types";
 import type { Answer, Domain, Period } from "../types";
 
-interface AssessmentDraft {
-  answers: Record<string, Answer>;
-  evaluation_date: string;
-}
 interface AssessmentPayload {
   student_id: number;
   testing_period: Period;
@@ -72,53 +73,24 @@ export function useTeacherAssessment(
     data?.domains.find((d) => d.domain_id === domain?.domain_id)?.questions ||
     domain?.questions ||
     [];
-  const answers: Record<Period, Record<string, Answer>> = {
-    PRE: {},
-    MID: {},
-    POST: {},
-  };
-  const saved: Record<Period, boolean> = {
-    PRE: false,
-    MID: false,
-    POST: false,
-  };
+  const drafts: Partial<Record<Period, AssessmentDraft>> = {};
+  for (const p of PERIODS) {
+    const draft = readDraft<AssessmentDraft>(keyFor(p));
+    if (draft?.owner_id === owner) drafts[p] = draft.values;
+  }
+  const resolved = resolveTeacherDrafts(questions, drafts);
   const dates: Record<Period, string> = {
     PRE: localToday(),
     MID: localToday(),
     POST: localToday(),
   };
   for (const p of PERIODS) {
-    for (const q of questions) {
-      const answer = q.answers?.[p];
-      if (answer) {
-        answers[p][q.question_id] = answer;
-        saved[p] = true;
-      }
-    }
-    if (saved[p]) dates[p] = data?.periodDates[p] || localToday();
-    const draft = readDraft<AssessmentDraft>(keyFor(p));
-    if (draft?.owner_id === owner) {
-      Object.assign(answers[p], draft.values.answers);
-      dates[p] = draft.values.evaluation_date;
-    }
-  }
-  // Stored answers and deliberate local edits always win over inherited answers.
-  for (const q of questions) {
-    if (
-      !saved.MID &&
-      !answers.MID[q.question_id] &&
-      answers.PRE[q.question_id] === "KAYA"
-    )
-      answers.MID[q.question_id] = "KAYA";
-    if (
-      !saved.POST &&
-      !answers.POST[q.question_id] &&
-      (answers.MID[q.question_id] === "KAYA" ||
-        answers.PRE[q.question_id] === "KAYA")
-    )
-      answers.POST[q.question_id] = "KAYA";
+    if (Object.keys(resolved[p].savedAnswers).length)
+      dates[p] = data?.periodDates[p] || localToday();
+    if (drafts[p]) dates[p] = drafts[p].evaluation_date;
   }
   const assessmentDate = dates[period];
+  const gradingDates = data?.gradingDates;
   const evalAges = { ...data?.evalAges };
   if (domain) {
     evalAges[domain.domain_id] = {
@@ -127,11 +99,29 @@ export function useTeacherAssessment(
       POST: null,
       ...data?.evalAges[domain.domain_id],
     };
-    if (data?.student_birth_date && assessmentDate) {
-      const age = calculateDecimalAge(data.student_birth_date, assessmentDate);
-      evalAges[domain.domain_id][period] = age === "" || age < 0 ? null : age;
+    for (const p of PERIODS) {
+      // Grading dates include the server's safe parent-only preview fallback.
+      // An unsaved date picker value must not replace that resolved date.
+      const gradingDate = gradingDates?.[p];
+      if (data?.student_birth_date && gradingDate) {
+        const age = calculateDecimalAge(data.student_birth_date, gradingDate);
+        evalAges[domain.domain_id][p] = age === "" || age < 0 ? null : age;
+      } else if (gradingDates) evalAges[domain.domain_id][p] = null;
     }
   }
+  const periodProgress = Object.fromEntries(
+    PERIODS.map((p) => [
+      p,
+      teacherDomainProgress(
+        questions,
+        resolved[p],
+        Boolean(
+          drafts[p] &&
+          drafts[p].evaluation_date !== (data?.periodDates[p] || localToday()),
+        ),
+      ),
+    ]),
+  ) as Record<Period, ReturnType<typeof teacherDomainProgress>>;
   const persist = (p: Period, next: AssessmentDraft) => {
     const key = keyFor(p);
     // Editing a queued record cancels its old submission intent, retaining inputs.
@@ -149,23 +139,24 @@ export function useTeacherAssessment(
     answer: Answer,
   ) => {
     if (p !== period || !data || loading || !domain) return;
+    if (!questions.some((q) => q.question_id === questionId)) return;
+    // Read the latest revision so rapid edits cannot replace another selection.
+    const draft = readDraft<AssessmentDraft>(keyFor(period));
     persist(period, {
-      answers: { ...answers[period], [questionId]: answer },
+      answers: {
+        ...(draft?.owner_id === owner ? draft.values.answers : {}),
+        [questionId]: answer,
+      },
       evaluation_date: assessmentDate,
     });
-    if (answer === "KAYA") {
-      for (const next of PERIODS.slice(PERIODS.indexOf(period) + 1)) {
-        if (!saved[next] && !answers[next][questionId])
-          persist(next, {
-            answers: { ...answers[next], [questionId]: answer },
-            evaluation_date: dates[next],
-          });
-      }
-    }
   };
   const handleDateChange = (date: string) => {
     if (!data || loading || !domain) return;
-    persist(period, { answers: answers[period], evaluation_date: date });
+    const draft = readDraft<AssessmentDraft>(keyFor(period));
+    persist(period, {
+      answers: draft?.owner_id === owner ? draft.values.answers : {},
+      evaluation_date: date,
+    });
   };
   const validateDate = (): string => {
     if (
@@ -214,26 +205,30 @@ export function useTeacherAssessment(
     PERIODS.map((p) => [
       p,
       {
-        answers: answers[p],
-        date: saved[p] ? data?.periodDates[p] || "" : "",
-        isSaved: saved[p] && !readDraft(keyFor(p)),
+        ...resolved[p],
+        date: data?.periodDates[p] || "",
+        isSaved: Boolean(
+          periodProgress[p].savedCount &&
+          !periodProgress[p].draftCount &&
+          !periodProgress[p].hasDateChange,
+        ),
       },
     ]),
   ) as Record<
     Period,
-    { answers: Record<string, Answer>; date: string; isSaved: boolean }
+    (typeof resolved)[Period] & { date: string; isSaved: boolean }
   >;
   const handleSave = async () => {
     if (submissionLock.current || !studentId || !domain || !data || loading)
       return;
     const dateError = validateDate();
     const evaluations = questions.flatMap((q) =>
-      answers[period][q.question_id]
+      resolved[period].answers[q.question_id]
         ? [
             {
               question_id: q.question_id,
               testing_period: period,
-              answer: answers[period][q.question_id],
+              answer: resolved[period].answers[q.question_id],
             },
           ]
         : [],
@@ -255,7 +250,11 @@ export function useTeacherAssessment(
     };
     const draft: Draft<AssessmentDraft> = {
       owner_id: owner,
-      values: { answers: answers[period], evaluation_date: assessmentDate },
+      // Explicit Save confirms the displayed answers for this period only.
+      values: {
+        answers: resolved[period].answers,
+        evaluation_date: assessmentDate,
+      },
       revision: crypto.randomUUID(),
       is_pending_sync: true,
       request: { path: "/api/eccd/evaluate", method: "post", data: payload },
@@ -348,7 +347,6 @@ export function useTeacherAssessment(
     };
     const synced = (event: Event) => {
       if ((event as CustomEvent<string>).detail?.startsWith("eccd_draft_")) {
-        onSaved();
         setSnackbar({
           open: true,
           message:
@@ -371,9 +369,13 @@ export function useTeacherAssessment(
       window.removeEventListener("ames-drafts-changed", update);
       window.removeEventListener("ames-record-synced", synced);
     };
-  }, [owner, triggerBackgroundSync, onSaved]);
+  }, [owner, triggerBackgroundSync]);
   return {
+    assessment: data,
     assessmentDate,
+    gradingDates,
+    questions,
+    periodProgress,
     evalAges,
     evaluations,
     dateError: studentId && !loading ? validateDate() : "",
@@ -391,6 +393,7 @@ export function useTeacherAssessment(
     handleDateChange,
     handleSave,
     triggerBackgroundSync,
-    getAnswer: (id: number, p: string) => answers[p as Period]?.[id] || null,
+    getAnswer: (id: number, p: string) =>
+      resolved[p as Period]?.answers[id] || null,
   };
 }

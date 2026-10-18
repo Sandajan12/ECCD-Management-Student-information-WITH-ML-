@@ -10,7 +10,7 @@ from backend.utils.lrn import hash_lrn
 
 
 def teacher_sections(db: Session, teacher: Teacher) -> list[int]:
-    return [row[0] for row in db.query(SectionTeacher.section_id).filter_by(teacher_id=teacher.teacher_id, status="Active").distinct()]
+    return [row[0] for row in db.query(SectionTeacher.section_id).filter_by(teacher_id=teacher.teacher_id, role="Primary Adviser", status="Active").distinct()]
 
 
 def current_teacher(db: Session, user: User) -> Teacher:
@@ -57,7 +57,7 @@ def permissions_for_student(db: Session, student: Student) -> ParentPermissions:
     teacher = get_active_adviser_for_student(student, db)
     if teacher is None:
         return ParentPermissions(allow_parent_view_student_info=False, allow_parent_edit_student_info=False)
-    return ParentPermissions(**{key: bool(getattr(teacher, key)) for key in ParentPermissions.model_fields})
+    return ParentPermissions(**{key: bool(getattr(teacher, key, False)) for key in ParentPermissions.model_fields})
 
 
 def student_age(db: Session, student: Student) -> float | None:

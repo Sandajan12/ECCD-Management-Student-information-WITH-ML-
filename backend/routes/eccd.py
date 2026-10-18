@@ -1,9 +1,9 @@
-from backend.schemas.eccd import EvaluationBatch, ParentEvaluationBatch, AssessmentResponse, ParentAssessmentResponse, ParentDashboardResponse, EvaluationSaved, EvaluationPublicResponse, DomainProgress
+from backend.schemas.eccd import EvaluationBatch, ParentEvaluationBatch, ParentEvaluationSaved, AssessmentResponse, ParentAssessmentResponse, ParentDashboardResponse, EvaluationSaved, EvaluationPublicResponse, DomainProgress
 from backend.schemas.student import StudentPublicResponse
-from backend.schemas.common import MessageResult
 from backend.schemas.operations import DomainProgressResult, ParentProgressPeriod, SectionSummaryItem
 import io
 import math
+from collections import defaultdict
 from datetime import date
 
 import openpyxl
@@ -21,11 +21,12 @@ from backend.models.section import Section
 from backend.models.section_teacher import SectionTeacher
 from backend.utils.deps import verify_role
 from backend.utils.eccd_scorer import calculate_decimal_age, calculate_scores
+from backend.utils.eccd_dates import get_grading_date, get_official_testing_date
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from openpyxl.styles import Alignment, Font
 from pydantic import BaseModel
-from sqlalchemy import case
+from sqlalchemy import case, select
 from sqlalchemy.orm import Session
 
 router = APIRouter(prefix="/api/eccd", tags=["ECCD"])
@@ -57,62 +58,57 @@ def get_domains_progress(
         .filter(
             SectionTeacher.teacher_id == teacher.teacher_id,
             SectionTeacher.status == "Active",
+            SectionTeacher.role == "Primary Adviser",
             Student.is_active == True,
         )
         .all()
     )
     
-    student_lrns = [s.lrn_number for s in students]
-    total_students = len(student_lrns)
+    student_ids = [s.student_id for s in students]
+    total_students = len(student_ids)
     
     domains = db.query(EccdDomain).all()
     questions = db.query(EccdQuestion).order_by(EccdQuestion.sequence_order).all()
+    questions_by_domain: dict[int, list[EccdQuestion]] = defaultdict(list)
+    for question in questions:
+        questions_by_domain[question.domain_id].append(question)
     
     if total_students > 0:
         evaluations = (
-            db.query(StudentEccdEvaluation)
-            .filter(StudentEccdEvaluation.student_lrn.in_(student_lrns))
+            db.connection().execute(
+                select(
+                    StudentEccdEvaluation.student_id,
+                    StudentEccdEvaluation.testing_period,
+                    StudentEccdEvaluation.question_id,
+                ).where(StudentEccdEvaluation.student_id.in_(student_ids))
+            )
             .all()
         )
     else:
         evaluations = []
 
+    # A saved answer completes a question regardless of answer or evaluator role.
+    student_period_answers: dict[tuple[int, TestingPeriod], set[int]] = defaultdict(set)
+    for student_id, period, question_id in evaluations:
+        student_period_answers[(student_id, period)].add(question_id)
+
     formatted_domains = []
     
     for domain in domains:
-        domain_questions = [q for q in questions if q.domain_id == domain.domain_id]
-        questions_in_domain = [q.question_id for q in domain_questions]
-        total_required_per_student = len(questions_in_domain)
-        
-        pre_completed_count = 0
-        mid_completed_count = 0
-        post_completed_count = 0
-        
-        if total_required_per_student > 0 and total_students > 0:
-            for lrn in student_lrns:
-                pre_count = 0
-                mid_count = 0
-                post_count = 0
-                
-                for e in evaluations:
-                    if e.student_lrn == lrn and e.question_id in questions_in_domain:
-                        if e.testing_period == TestingPeriod.PRE:
-                            pre_count += 1
-                        elif e.testing_period == TestingPeriod.MID:
-                            mid_count += 1
-                        elif e.testing_period == TestingPeriod.POST:
-                            post_count += 1
-                
-                if pre_count >= total_required_per_student:
-                    pre_completed_count += 1
-                if mid_count >= total_required_per_student:
-                    mid_completed_count += 1
-                if post_count >= total_required_per_student:
-                    post_completed_count += 1
-                    
-        pre_progress = math.floor((pre_completed_count / total_students) * 100 + 0.5) if total_students > 0 else 0
-        mid_progress = math.floor((mid_completed_count / total_students) * 100 + 0.5) if total_students > 0 else 0
-        post_progress = math.floor((post_completed_count / total_students) * 100 + 0.5) if total_students > 0 else 0
+        domain_questions = questions_by_domain.get(domain.domain_id, [])
+        required_question_ids = {q.question_id for q in domain_questions}
+        completed_counts = {period: 0 for period in TestingPeriod}
+
+        if required_question_ids and total_students > 0:
+            for student_id in student_ids:
+                for period in TestingPeriod:
+                    answered_questions = student_period_answers.get((student_id, period))
+                    if answered_questions is not None and required_question_ids.issubset(answered_questions):
+                        completed_counts[period] += 1
+
+        pre_progress = math.floor((completed_counts[TestingPeriod.PRE] / total_students) * 100 + 0.5) if total_students > 0 else 0
+        mid_progress = math.floor((completed_counts[TestingPeriod.MID] / total_students) * 100 + 0.5) if total_students > 0 else 0
+        post_progress = math.floor((completed_counts[TestingPeriod.POST] / total_students) * 100 + 0.5) if total_students > 0 else 0
         
         formatted_domains.append({
             "domain_id": domain.domain_id,
@@ -150,14 +146,8 @@ def get_parent_assessment_data(student_lrn: str, db: Session = Depends(get_db), 
     return assessment_data(db, current_user, student_lrn, parent_view=True)
 
 
-@router.post("/parent/evaluate", response_model=MessageResult)
+@router.post("/parent/evaluate", response_model=ParentEvaluationSaved)
 def evaluate_student_parent(payload: ParentEvaluationBatch, db: Session = Depends(get_db), current_user=Depends(verify_role(["user", "super-admin"]))):
-    from backend.models import FamilyAccess, Parent
-    from backend.utils.access import resolve_student
-    student = resolve_student(db, payload.student_lrn)
-    parent = db.query(Parent).filter_by(user_id=current_user.user_id).first()
-    if parent is None or not db.query(FamilyAccess).filter_by(parent_id=parent.parent_id, student_id=student.student_id, status="SYNCED").first():
-        raise HTTPException(403, "This child is not linked to your account.")
     from backend.utils.assessments import save_home_evaluation
     return save_home_evaluation(db, current_user, payload)
 
@@ -172,8 +162,8 @@ def get_parent_domains_progress_flat(student_lrn: str, db: Session = Depends(get
         for period in PERIODS:
             visible = data["summary"][period]["isReleased"]
             count = sum(question["answers"][period] is not None for question in domain["questions"])
-            progress[f"{period.value.lower()}_progress"] = math.floor(count * 100 / len(domain["questions"]) + 0.5) if visible else None
-        questions = [{**question, "is_home_based": True} for question in domain["questions"]]
+            progress[f"{period.value.lower()}_progress"] = (math.floor(count * 100 / len(domain["questions"]) + 0.5) if domain["questions"] else 0) if visible else None
+        questions = domain["questions"]
         result.append({"domain_id": domain["domain_id"], "domain_name": domain["domain_name"], "questions": questions, **progress})
     return result
 
@@ -230,7 +220,7 @@ def get_section_summary(
                 StudentEccdEvaluation.question_id == EccdQuestion.question_id,
             )
             .filter(
-                StudentEccdEvaluation.student_lrn == student.lrn_number,
+                StudentEccdEvaluation.student_id == student.student_id,
                 StudentEccdEvaluation.testing_period == testing_period,
             )
             .all()
@@ -239,7 +229,9 @@ def get_section_summary(
         if not student_evals:
             continue
 
-        evaluation_date = student_evals[0][0].evaluation_date
+        records = [evaluation for evaluation, _ in student_evals]
+        evaluation_date = get_official_testing_date(records, testing_period)
+        grading_date = get_grading_date(records, testing_period)
 
         formatted_evals = []
         for eval_obj, question_obj in student_evals:
@@ -250,9 +242,9 @@ def get_section_summary(
                 }
             )
 
-        decimal_age = calculate_decimal_age(student.date_of_birth, evaluation_date) if student.date_of_birth else 4.0
+        decimal_age = calculate_decimal_age(student.date_of_birth, grading_date) if student.date_of_birth and grading_date else None
         try:
-            scores = calculate_scores(formatted_evals, decimal_age)
+            scores = calculate_scores(formatted_evals, decimal_age) if decimal_age is not None else {}
         except ValueError:
             scores = {}
 

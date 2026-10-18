@@ -22,7 +22,7 @@ legacy_router = APIRouter(prefix="/api/logs", tags=["Audit logs"])
 
 
 def get_teacher_section_ids(teacher_id: int, db: Session) -> list[int]:
-    return [row[0] for row in db.query(SectionTeacher.section_id).filter_by(teacher_id=teacher_id, status="Active").distinct()]
+    return [row[0] for row in db.query(SectionTeacher.section_id).filter_by(teacher_id=teacher_id, role="Primary Adviser", status="Active").distinct()]
 
 
 @router.get("/filters", response_model=DashboardFilters)
@@ -169,7 +169,7 @@ def get_dashboard_stats(
 
         if section != "All":
             students_query = students_query.filter(Student.section.has(section_name=section))
-            teachers_query = teachers_query.filter(Teacher.section_assignments.any((SectionTeacher.status == "Active") & SectionTeacher.section.has(section_name=section)))
+            teachers_query = teachers_query.filter(Teacher.section_assignments.any((SectionTeacher.status == "Active") & (SectionTeacher.role == "Primary Adviser") & SectionTeacher.section.has(section_name=section)))
             
         total_students = students_query.count()
         total_teachers = teachers_query.count()

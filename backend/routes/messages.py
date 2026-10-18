@@ -90,6 +90,7 @@ def unread(db: Session = Depends(get_db), user: User = Depends(verify_role(["adm
         FamilyAccess.parent_id == Message.parent_id,
         SectionTeacher.teacher_id == Message.teacher_id,
         SectionTeacher.status == "Active",
+        SectionTeacher.role == "Primary Adviser",
         Student.is_active.is_(True),
     ).correlate(Message).exists()
     query = db.query(func.count(Message.message_id)).select_from(Message).join(Teacher, Teacher.teacher_id == Message.teacher_id).join(Parent, Parent.parent_id == Message.parent_id).join(teacher_user, teacher_user.user_id == Teacher.user_id).join(parent_user, parent_user.user_id == Parent.user_id).filter(

@@ -140,8 +140,7 @@ def transfer_students(payload: StudentIdTransferRequest | StudentTransferRequest
 @router.put("/sections/{section_id}/assign", response_model=AssignmentResponse)
 def assign_teacher_to_section(section_id: int, payload: AssignTeacherSectionRequest, db: Session = Depends(get_db), current_user=Depends(verify_role(["super-admin"]))):
     from backend.utils.teachers import assign_teacher
-    role = payload.role.value if payload.role else "Primary Adviser"
-    assign_teacher(db, current_user, section_id, payload.teacher_id, role)
+    assign_teacher(db, current_user, section_id, payload.teacher_id)
     db.commit()
     return {"message": "Teacher successfully assigned to section.", "section_id": section_id}
 
@@ -218,8 +217,9 @@ def get_chairman_teachers(
             .filter(
                 SectionTeacher.teacher_id == t.teacher_id,
                 SectionTeacher.status == "Active",
+                SectionTeacher.role == "Primary Adviser",
             )
-            .order_by((SectionTeacher.role == "Primary Adviser").desc())
+            .order_by(SectionTeacher.id)
             .first()
         )
         sec_name = active_assignment[1].section_name if active_assignment else None

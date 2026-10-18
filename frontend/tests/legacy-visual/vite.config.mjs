@@ -34,7 +34,13 @@ export default defineConfig({
             .startsWith(legacyRoot.replaceAll("\\", "/") + "/")
         )
           return;
-        source = source.replace(/\.(jsx?|tsx?)$/, "");
+        // Service-to-service imports such as './api' need the same fixture
+        // adapter as a page's '../services/api' import.
+        source = (
+          source.startsWith(".") ? resolve(importer, "..", source) : source
+        )
+          .replaceAll("\\", "/")
+          .replace(/\.(jsx?|tsx?)$/, "");
         if (source.endsWith("context/SettingsContext"))
           return "\0reference-settings";
         if (source.endsWith("context/AuthContext")) return "\0reference-auth";

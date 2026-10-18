@@ -7,41 +7,40 @@ from backend.schemas.teacher import TeacherProvisionRequest
 from backend.utils.security import get_password_hash
 
 
-def assign_teacher(db: Session, user: User, section_id: int, teacher_id: int | None, role: str = "Primary Adviser") -> Section:
+def assign_teacher(db: Session, user: User, section_id: int, teacher_id: int | None) -> Section:
     section = db.query(Section).filter_by(section_id=section_id).with_for_update().first()
     if section is None:
         raise HTTPException(404, "Section not found.")
     teacher = db.get(Teacher, teacher_id) if teacher_id else None
     if teacher_id and (teacher is None or teacher.user is None or teacher.user.role != UserRole.ADMIN):
         raise HTTPException(404, "Incoming teacher not found.")
-    if role not in ("Primary Adviser", "Substitute"):
-        raise HTTPException(422, "Unsupported section assignment role.")
-    if role == "Substitute" and teacher is None:
-        raise HTTPException(422, "Select a teacher for a substitute assignment.")
-    if role == "Primary Adviser":
-        for previous in db.query(SectionTeacher).filter_by(section_id=section_id, role="Primary Adviser", status="Active").with_for_update().all():
-            if previous.teacher_id != teacher_id:
-                previous.status = "Inactive"
-                db.flush()
-                other = db.query(SectionTeacher).filter_by(teacher_id=previous.teacher_id, status="Active").first()
-                if other is None:
-                    previous.teacher.class_name = None
-                    previous.teacher.user.is_active = False
-        section.adviser_teacher_id = teacher_id
+    previous_assignments = db.query(SectionTeacher).filter_by(section_id=section_id, status="Active").with_for_update().all()
+    outgoing = set()
+    for previous in previous_assignments:
+        if previous.teacher_id != teacher_id or previous.role != "Primary Adviser":
+            previous.status = "Inactive"
+            outgoing.add(previous.teacher_id)
+    # Flush deactivations before inserting/reactivating the unique active adviser.
+    db.flush()
+    for previous_id in outgoing - {teacher_id}:
+        previous_teacher = db.get(Teacher, previous_id)
+        other = db.query(SectionTeacher).filter_by(teacher_id=previous_id, role="Primary Adviser", status="Active").first()
+        if other is None:
+            previous_teacher.class_name = None
+            if previous_teacher.user:
+                previous_teacher.user.is_active = False
+        else:
+            previous_teacher.class_name = other.section.section_name
+    section.adviser_teacher_id = teacher_id
     if teacher:
         teacher.user.is_active = True
-        if role == "Primary Adviser":
-            teacher.class_name = section.section_name
-            # Promotion replaces this teacher's substitute role in this section.
-            db.query(SectionTeacher).filter_by(section_id=section_id, teacher_id=teacher_id, role="Substitute", status="Active").update({"status":"Inactive"})
-        elif db.query(SectionTeacher).filter_by(section_id=section_id, teacher_id=teacher_id, role="Primary Adviser", status="Active").first():
-            raise HTTPException(409, "This teacher is already the section's Primary Adviser.")
-        assignment = db.query(SectionTeacher).filter_by(section_id=section_id, teacher_id=teacher_id, role=role).first()
+        teacher.class_name = section.section_name
+        assignment = db.query(SectionTeacher).filter_by(section_id=section_id, teacher_id=teacher_id, role="Primary Adviser").order_by((SectionTeacher.status == "Active").desc(), SectionTeacher.id.desc()).first()
         if assignment:
             assignment.status = "Active"
         else:
-            db.add(SectionTeacher(section_id=section_id, teacher_id=teacher_id, role=role, status="Active"))
-    db.add(SystemLog(user_id=user.user_id, action_type="SECTION_HANDOVER_REASSIGNMENT", details=f"Assigned {role} {teacher_id} to section {section_id}; preserved evaluations."))
+            db.add(SectionTeacher(section_id=section_id, teacher_id=teacher_id, role="Primary Adviser", status="Active"))
+    db.add(SystemLog(user_id=user.user_id, action_type="SECTION_HANDOVER_REASSIGNMENT", details=f"Assigned Adviser {teacher_id} to section {section_id}; preserved student records, evaluations and section parent assessment settings."))
     return section
 
 

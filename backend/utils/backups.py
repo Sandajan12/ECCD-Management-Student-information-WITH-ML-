@@ -18,8 +18,10 @@ def cipher() -> Fernet:
 
 
 def export_backup(db: Session) -> bytes:
+    # ORM metadata includes all evaluator provenance columns; retain default/null
+    # fields in the encrypted document as well as explicitly populated values.
     document = {name: [dict(row) for row in db.execute(table.select()).mappings()] for name, table in Base.metadata.tables.items()}
-    payload = cipher().encrypt(BackupDocument.model_validate(document).model_dump_json().encode())
+    payload = cipher().encrypt(BackupDocument.model_validate(document).model_dump_json(exclude_unset=False).encode())
     if len(payload) > BACKUP_LIMIT:
         raise HTTPException(413, "Backup exceeds the restore upload limit.")
     return payload
@@ -43,7 +45,9 @@ def restore_backup(db: Session, payload: bytes, audit_user_id: int | None = None
                 continue
             records = getattr(document, table.name)
             if records:
-                db.execute(table.insert(), [record.model_dump() for record in records])
+                # Include Pydantic defaults for older backups that predate
+                # evaluator provenance, without guessing historical authorship.
+                db.execute(table.insert(), [record.model_dump(exclude_unset=False) for record in records])
         # Imported explicit IDs must not collide with the next ORM-generated ID.
         for table in Base.metadata.sorted_tables:
             if table.name in preserved:

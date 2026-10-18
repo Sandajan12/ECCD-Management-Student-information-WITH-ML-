@@ -30,22 +30,29 @@ import api, {
 } from "../../services/api";
 import { useAuth } from "../../context/AuthContext";
 import { useTeacher } from "../../context/TeacherContext";
-import { useTeacherAssessment } from "../../hooks/useTeacherAssessment";
-import { formatDisplayDate } from "../../utils/dateUtils";
 import {
-  domainCompletion,
-  sectionAssessments,
-} from "../../utils/teacherMetrics";
+  localToday,
+  useTeacherAssessment,
+} from "../../hooks/useTeacherAssessment";
+import { formatDisplayDate } from "../../utils/dateUtils";
+import { readDraft } from "../../utils/drafts";
+import {
+  resolveTeacherDrafts,
+  teacherDomainProgress,
+} from "../../utils/eccdDrafts";
+import type { TeacherAssessmentDraft } from "../../utils/eccdDrafts";
+import { assessmentRefreshScheduler } from "../../hooks/assessmentRefresh";
 import type {
   Domain as AssessmentDomain,
   DomainProgress,
+  Assessment,
   Period,
   Student,
 } from "../../types";
 interface Domain extends AssessmentDomain, DomainProgress {}
 const EccdAssessment: React.FC = () => {
   const { user } = useAuth();
-  const { section, sections } = useTeacher();
+  const { section } = useTeacher();
   const [students, setStudents] = useState<Student[]>([]);
   const [selectedLrn, setSelectedLrn] = useState("");
   const [domains, setDomains] = useState<Domain[]>([]);
@@ -59,50 +66,45 @@ const EccdAssessment: React.FC = () => {
   const [activePeriod, setActivePeriod] = useState<Period>("PRE");
   const requestVersion = useRef(0);
   const progressVersion = useRef(0);
+  const progressController = useRef<AbortController | null>(null);
+  const progressRefresh = useRef<ReturnType<
+    typeof assessmentRefreshScheduler
+  > | null>(null);
   const [pageError, setPageError] = useState("");
+  const progressScope = `${user?.id}_${section?.section_id}`;
+  const [classAssessments, setClassAssessments] = useState<{
+    scope: string;
+    records: Assessment[];
+  } | null>(null);
   const fetchDomainsProgress = useCallback(
     async (quiet = false) => {
       const version = ++progressVersion.current;
+      progressController.current?.abort();
+      const controller = new AbortController();
+      progressController.current = controller;
       if (!quiet) setLoading(true);
       try {
-        const res = await api.get<Domain[]>("/api/eccd/domains-progress");
-        let progress = res.data;
-        if (section && sections.length > 1) {
-          const roster = await api.get<Student[]>(
-            "/api/students/section/" + section.section_id,
-          );
-          const assessments = await sectionAssessments(
-            roster.data.filter((student) => student.is_active),
-          );
-          progress = progress.map((domain) => ({
-            ...domain,
-            ...domainCompletion(domain, assessments),
-          }));
-        } else if (!section)
-          progress = progress.map((domain) => ({
-            ...domain,
-            pre_progress: 0,
-            mid_progress: 0,
-            post_progress: 0,
-          }));
-        if (version !== progressVersion.current) return;
+        const res = await api.get<Domain[]>("/api/eccd/domains-progress", {
+          signal: controller.signal,
+        });
+        if (controller.signal.aborted || version !== progressVersion.current)
+          return;
+        const progress = res.data;
         setDomains(progress);
+        setPageError("");
         localStorage.setItem(
-          "ames_teacher_domains_" + user?.id + "_" + section?.section_id,
+          "ames_teacher_domains_" + progressScope,
           JSON.stringify(progress),
         );
       } catch (err) {
-        if (version !== progressVersion.current) return;
+        if (controller.signal.aborted || version !== progressVersion.current)
+          return;
         if (isNetworkError(err)) {
           try {
             setDomains(
               JSON.parse(
-                localStorage.getItem(
-                  "ames_teacher_domains_" +
-                    user?.id +
-                    "_" +
-                    section?.section_id,
-                ) || "[]",
+                localStorage.getItem("ames_teacher_domains_" + progressScope) ||
+                  "[]",
               ) as Domain[],
             );
           } catch {
@@ -111,13 +113,20 @@ const EccdAssessment: React.FC = () => {
         }
         setPageError(errorMessage(err));
       } finally {
-        if (!quiet && version === progressVersion.current) setLoading(false);
+        if (version === progressVersion.current) setLoading(false);
       }
     },
-    [user?.id, section?.section_id, sections.length],
+    [progressScope],
   );
+  const scheduleProgressRefresh = useCallback(() => {
+    progressRefresh.current?.schedule();
+  }, []);
   const {
+    assessment: selectedAssessment,
     assessmentDate,
+    gradingDates,
+    questions,
+    periodProgress,
     evalAges,
     evaluations,
     dateError,
@@ -139,30 +148,122 @@ const EccdAssessment: React.FC = () => {
     Number(selectedLrn),
     activeDomain,
     activePeriod,
-    fetchDomainsProgress,
+    scheduleProgressRefresh,
   );
+  useEffect(() => {
+    if (!selectedAssessment) return;
+    setClassAssessments((previous) => ({
+      scope: progressScope,
+      records: [
+        ...(previous?.scope === progressScope ? previous.records : []).filter(
+          (record) => record.student_id !== selectedAssessment.student_id,
+        ),
+        selectedAssessment,
+      ],
+    }));
+  }, [selectedAssessment, progressScope]);
   const error = pageError || assessmentError;
   const getDisplayAge = (p: Period) =>
     activeDomain ? evalAges[activeDomain.domain_id]?.[p] : null;
+  const activeProgress = periodProgress[activePeriod];
+  const domainCardProgress = (domain: Domain) => {
+    if (classAssessments?.scope !== progressScope) return null;
+    // Aggregate percentages cannot reveal partial per-question saved counts.
+    // Keep the existing detailed row only when the entire roster is known.
+    if (
+      !students.length ||
+      !students.every((student) =>
+        classAssessments.records.some(
+          (record) => record.student_id === student.student_id,
+        ),
+      )
+    )
+      return null;
+    let savedCount = 0;
+    let draftCount = 0;
+    let total = 0;
+    let dateChanges = 0;
+    for (const assessment of classAssessments.records.filter((record) =>
+      students.some((student) => student.student_id === record.student_id),
+    )) {
+      const savedQuestions =
+        assessment.domains.find((item) => item.domain_id === domain.domain_id)
+          ?.questions || [];
+      const domainQuestions = domain.questions.map(
+        (q) =>
+          savedQuestions.find(
+            (saved) => saved.question_id === q.question_id,
+          ) || { ...q, answers: { PRE: null, MID: null, POST: null } },
+      );
+      const draft = readDraft<TeacherAssessmentDraft>(
+        `eccd_draft_${assessment.student_id}_${activePeriod}_${domain.domain_id}_${user?.id}`,
+      );
+      const values =
+        draft && draft.owner_id === user?.id ? draft.values : undefined;
+      const state = resolveTeacherDrafts(domainQuestions, {
+        [activePeriod]: values,
+      });
+      const progress = teacherDomainProgress(
+        domainQuestions,
+        state[activePeriod],
+      );
+      savedCount += progress.savedCount;
+      draftCount += progress.draftCount;
+      total += progress.total;
+      if (
+        values &&
+        values.evaluation_date !==
+          (assessment.periodDates[activePeriod] || localToday())
+      )
+        dateChanges++;
+    }
+    return {
+      savedCount,
+      draftCount,
+      total,
+      dateChanges,
+      complete:
+        total > 0 &&
+        savedCount === total &&
+        draftCount === 0 &&
+        dateChanges === 0,
+    };
+  };
   useEffect(() => {
     setSelectedLrn("");
+    setActiveDomain(null);
+    setDomains([]);
+    setClassAssessments(null);
+    setLoading(false);
     setDownloadTargetLrn("");
     const version = ++requestVersion.current;
+    let rosterController: AbortController | null = null;
+    const scheduler = assessmentRefreshScheduler(user?.id || 0, () =>
+      fetchDomainsProgress(true),
+    );
+    progressRefresh.current = scheduler;
     setStudents([]);
     setPageError("");
     const cacheKey =
       "ames_teacher_roster_" + user?.id + "_" + section?.section_id;
     const load = async () => {
+      rosterController?.abort();
+      const controller = new AbortController();
+      rosterController = controller;
       try {
-        const res = await api.get<Student[]>("/api/eccd/students");
-        if (version !== requestVersion.current) return;
+        const res = await api.get<Student[]>("/api/eccd/students", {
+          signal: controller.signal,
+        });
+        if (controller.signal.aborted || version !== requestVersion.current)
+          return;
         const roster = res.data.filter(
           (s) => s.is_active && s.section_id === section?.section_id,
         );
         setStudents(roster);
         localStorage.setItem(cacheKey, JSON.stringify(roster));
       } catch (err) {
-        if (version !== requestVersion.current) return;
+        if (controller.signal.aborted || version !== requestVersion.current)
+          return;
         if (isNetworkError(err)) {
           try {
             setStudents(
@@ -175,19 +276,32 @@ const EccdAssessment: React.FC = () => {
         setPageError(errorMessage(err));
       }
     };
-    void load();
-    void fetchDomainsProgress();
-    const reload = () => {
+    if (section) {
       void load();
       void fetchDomainsProgress();
+    }
+    const reload = () => {
+      if (!section) return;
+      void load();
+      scheduler.schedule();
+    };
+    const synced = (event: Event) => {
+      const key = (event as CustomEvent<string>).detail;
+      if (key?.startsWith("eccd_draft_")) {
+        if (key.endsWith(`_${user?.id}`)) scheduler.schedule();
+      } else reload();
     };
     window.addEventListener("online", reload);
-    window.addEventListener("ames-record-synced", reload);
+    window.addEventListener("ames-record-synced", synced);
     return () => {
       ++requestVersion.current;
       ++progressVersion.current;
+      rosterController?.abort();
+      progressController.current?.abort();
+      scheduler.cancel();
+      progressRefresh.current = null;
       window.removeEventListener("online", reload);
-      window.removeEventListener("ames-record-synced", reload);
+      window.removeEventListener("ames-record-synced", synced);
     };
   }, [section?.section_id, user?.id, fetchDomainsProgress]);
   const handleDomainClick = (domain: Domain) => {
@@ -437,6 +551,7 @@ const EccdAssessment: React.FC = () => {
             const preProgress = domain.pre_progress || 0;
             const midProgress = domain.mid_progress || 0;
             const postProgress = domain.post_progress || 0;
+            const cardProgress = domainCardProgress(domain);
             return (
               <div
                 key={domain.domain_id}
@@ -515,6 +630,39 @@ const EccdAssessment: React.FC = () => {
                       </div>
                     </div>
                   </div>
+                  {cardProgress && (
+                    <div
+                      className="flex flex-wrap items-center gap-2 mb-4 text-xs text-slate-600"
+                      aria-label={`${domain.domain_name} saved progress`}
+                    >
+                      <span>
+                        {activePeriod === "PRE"
+                          ? "Pre-Test"
+                          : activePeriod === "MID"
+                            ? "Mid-Test"
+                            : "Post-Test"}{" "}
+                        · Saved: {cardProgress.savedCount} /{" "}
+                        {cardProgress.total}
+                      </span>
+                      {cardProgress.draftCount > 0 && (
+                        <span className="inline-flex rounded-full bg-amber-50 px-2 py-0.5 font-semibold text-amber-700">
+                          {cardProgress.draftCount} unsaved change
+                          {cardProgress.draftCount === 1 ? "" : "s"}
+                        </span>
+                      )}
+                      {cardProgress.dateChanges > 0 && (
+                        <span className="text-amber-700">
+                          {cardProgress.dateChanges} unsaved date change
+                          {cardProgress.dateChanges === 1 ? "" : "s"}
+                        </span>
+                      )}
+                      {cardProgress.complete && (
+                        <span className="inline-flex rounded-full bg-emerald-50 px-2 py-0.5 font-semibold text-emerald-700">
+                          Completed
+                        </span>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 {/* Bottom Action Button */}
@@ -602,46 +750,37 @@ const EccdAssessment: React.FC = () => {
                         }
                         className="w-full text-xs sm:text-sm py-1.5 px-3 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all cursor-pointer"
                       >
-                        <option value="PRE">
-                          Pre-Test{" "}
-                          {evaluations.PRE?.isSaved
-                            ? "✓"
-                            : Object.keys(evaluations.PRE?.answers || {})
-                                  .length > 0
-                              ? "✎ (Draft)"
+                        {(["PRE", "MID", "POST"] as Period[]).map((p) => (
+                          <option key={p} value={p}>
+                            {p === "PRE"
+                              ? "Pre-Test"
+                              : p === "MID"
+                                ? "Mid-Test"
+                                : "Post-Test"}
+                            {` (Saved: ${periodProgress[p].savedCount} / ${periodProgress[p].total})`}
+                            {periodProgress[p].draftCount > 0 ||
+                            periodProgress[p].hasDateChange
+                              ? " - Draft"
                               : ""}
-                        </option>
-                        <option value="MID">
-                          Mid-Test{" "}
-                          {evaluations.MID?.isSaved
-                            ? "✓"
-                            : Object.keys(evaluations.MID?.answers || {})
-                                  .length > 0
-                              ? "✎ (Draft)"
-                              : ""}
-                        </option>
-                        <option value="POST">
-                          Post-Test{" "}
-                          {evaluations.POST?.isSaved
-                            ? "✓"
-                            : Object.keys(evaluations.POST?.answers || {})
-                                  .length > 0
-                              ? "✎ (Draft)"
-                              : ""}
-                        </option>
+                          </option>
+                        ))}
                       </select>
                     </div>
 
-                    {evaluations[activePeriod]?.isSaved ? (
+                    {activeProgress.draftCount > 0 ||
+                    activeProgress.hasDateChange ? (
+                      <span className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200 whitespace-nowrap">
+                        Unsaved changes
+                      </span>
+                    ) : activeProgress.savedCount > 0 ? (
                       <span className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 whitespace-nowrap">
                         <span className="w-1.5 h-1.5 rounded-full bg-emerald-600"></span>
-                        Saved
+                        Saved: {activeProgress.savedCount} /{" "}
+                        {activeProgress.total}
                       </span>
-                    ) : Object.keys(evaluations[activePeriod]?.answers || {})
-                        .length > 0 ? (
-                      <span className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200 whitespace-nowrap">
-                        <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
-                        Unsaved Draft
+                    ) : activeProgress.inheritedCount > 0 ? (
+                      <span className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-medium bg-slate-100 text-slate-600 whitespace-nowrap">
+                        Inherited (not saved)
                       </span>
                     ) : (
                       <span className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-medium bg-slate-100 text-slate-600 whitespace-nowrap">
@@ -669,6 +808,12 @@ const EccdAssessment: React.FC = () => {
                           </span>
                         )}
                     </div>
+                    {gradingDates?.[activePeriod] && (
+                      <span className="text-[11px] text-slate-500 mt-1">
+                        Grading Date:{" "}
+                        {formatDisplayDate(gradingDates[activePeriod])}
+                      </span>
+                    )}
                     {dateError && (
                       <span className="text-[11px] font-semibold text-rose-600 mt-1 max-w-[280px]">
                         {dateError}
@@ -725,79 +870,55 @@ const EccdAssessment: React.FC = () => {
                     <th className="py-2.5 px-3 sm:px-4 text-[11px] lg:text-xs font-bold uppercase tracking-wider text-slate-600 text-left">
                       QUESTION / INDICATOR
                     </th>
-                    <th className="py-2.5 px-3 sm:px-4 text-[11px] lg:text-xs font-bold uppercase tracking-wider text-slate-600 text-center border-l border-slate-200">
-                      PRE-TEST
-                      {evaluations.PRE.isSaved && evaluations.PRE.date ? (
-                        <span className="text-[10px] font-semibold text-emerald-600 block normal-case">
-                          Saved: {formatDisplayDate(evaluations.PRE.date)}
+                    {(["PRE", "MID", "POST"] as Period[]).map((p) => (
+                      <th
+                        key={p}
+                        className="py-2.5 px-3 sm:px-4 text-[11px] lg:text-xs font-bold uppercase tracking-wider text-slate-600 text-center border-l border-slate-200"
+                      >
+                        {p === "PRE"
+                          ? "PRE-TEST"
+                          : p === "MID"
+                            ? "MID-TEST"
+                            : "POST-TEST"}
+                        <span className="text-[10px] font-semibold text-slate-600 block normal-case">
+                          Saved: {periodProgress[p].savedCount} /{" "}
+                          {periodProgress[p].total}
                         </span>
-                      ) : Object.keys(evaluations.PRE.answers || {}).length >
-                        0 ? (
-                        <span className="text-[10px] font-semibold text-amber-600 block normal-case">
-                          Unsaved Draft
-                        </span>
-                      ) : (
-                        <span className="text-[10px] font-normal text-slate-400 block normal-case">
-                          Not yet evaluated
-                        </span>
-                      )}
-                      {getDisplayAge("PRE") !== null &&
-                        getDisplayAge("PRE") !== undefined && (
-                          <span className="text-[10px] font-normal text-slate-400 block font-sans normal-case">
-                            Age: {getDisplayAge("PRE")}
+                        {evaluations[p].date && (
+                          <span className="text-[10px] font-semibold text-emerald-600 block normal-case">
+                            Testing Date:{" "}
+                            {formatDisplayDate(evaluations[p].date)}
                           </span>
                         )}
-                    </th>
-                    <th className="py-2.5 px-3 sm:px-4 text-[11px] lg:text-xs font-bold uppercase tracking-wider text-slate-600 text-center border-l border-slate-200">
-                      MID-TEST
-                      {evaluations.MID.isSaved && evaluations.MID.date ? (
-                        <span className="text-[10px] font-semibold text-emerald-600 block normal-case">
-                          Saved: {formatDisplayDate(evaluations.MID.date)}
-                        </span>
-                      ) : Object.keys(evaluations.MID.answers || {}).length >
-                        0 ? (
-                        <span className="text-[10px] font-semibold text-amber-600 block normal-case">
-                          Pre-filled Draft
-                        </span>
-                      ) : (
-                        <span className="text-[10px] font-normal text-slate-400 block normal-case">
-                          Not yet evaluated
-                        </span>
-                      )}
-                      {getDisplayAge("MID") !== null &&
-                        getDisplayAge("MID") !== undefined && (
-                          <span className="text-[10px] font-normal text-slate-400 block font-sans normal-case">
-                            Age: {getDisplayAge("MID")}
+                        {periodProgress[p].draftCount > 0 && (
+                          <span className="text-[10px] font-semibold text-amber-600 block normal-case">
+                            {periodProgress[p].draftCount} unsaved change
+                            {periodProgress[p].draftCount === 1 ? "" : "s"}
                           </span>
                         )}
-                    </th>
-                    <th className="py-2.5 px-3 sm:px-4 text-[11px] lg:text-xs font-bold uppercase tracking-wider text-slate-600 text-center border-l border-slate-200">
-                      POST-TEST
-                      {evaluations.POST.isSaved && evaluations.POST.date ? (
-                        <span className="text-[10px] font-semibold text-emerald-600 block normal-case">
-                          Saved: {formatDisplayDate(evaluations.POST.date)}
-                        </span>
-                      ) : Object.keys(evaluations.POST.answers || {}).length >
-                        0 ? (
-                        <span className="text-[10px] font-semibold text-amber-600 block normal-case">
-                          Pre-filled Draft
-                        </span>
-                      ) : (
-                        <span className="text-[10px] font-normal text-slate-400 block normal-case">
-                          Not yet evaluated
-                        </span>
-                      )}
-                      {getDisplayAge("POST") !== null &&
-                        getDisplayAge("POST") !== undefined && (
-                          <span className="text-[10px] font-normal text-slate-400 block font-sans normal-case">
-                            Age: {getDisplayAge("POST")}
+                        {periodProgress[p].hasDateChange && (
+                          <span className="text-[10px] font-semibold text-amber-600 block normal-case">
+                            Unsaved date change
                           </span>
                         )}
-                    </th>
+                        {periodProgress[p].inheritedCount > 0 && (
+                          <span className="text-[10px] font-normal text-slate-400 block normal-case">
+                            {periodProgress[p].inheritedCount} inherited (not
+                            saved)
+                          </span>
+                        )}
+                        {getDisplayAge(p) !== null &&
+                          getDisplayAge(p) !== undefined && (
+                            <span className="text-[10px] font-normal text-slate-400 block font-sans normal-case">
+                              Age: {getDisplayAge(p)}
+                            </span>
+                          )}
+                      </th>
+                    ))}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 bg-white">
-                  {activeDomain.questions?.map((q, index) => (
+                  {questions.map((q, index) => (
                     <tr
                       key={q.question_id}
                       className="hover:bg-slate-50/70 transition-colors"
@@ -809,6 +930,21 @@ const EccdAssessment: React.FC = () => {
                           </span>
                           {q.question_text}
                         </p>
+                        {(q.is_home_based ||
+                          q.evaluator_roles?.[activePeriod] === "parent") && (
+                          <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                            {q.is_home_based && (
+                              <span className="inline-flex rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-700">
+                                Home-Based
+                              </span>
+                            )}
+                            {q.evaluator_roles?.[activePeriod] === "parent" && (
+                              <span className="inline-flex rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
+                                Parent Assessed
+                              </span>
+                            )}
+                          </div>
+                        )}
                       </td>
                       {["PRE", "MID", "POST"].map((period) => {
                         const isCurrentPeriod = period === activePeriod;
@@ -883,28 +1019,21 @@ const EccdAssessment: React.FC = () => {
               {/* Left Side: Status & Counter indicator */}
               <div className="flex items-center gap-3 flex-wrap">
                 {/* Visual Status Indicator */}
-                {evaluations[activePeriod]?.isSaved ? (
+                {activeProgress.savedCount > 0 ? (
                   <span className="inline-flex items-center gap-1.5 text-xs sm:text-sm font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">
                     <span className="w-2 h-2 rounded-full bg-emerald-600"></span>
-                    Saved in Database (
-                    {formatDisplayDate(evaluations[activePeriod]?.date) ||
-                      formatDisplayDate(assessmentDate)}
-                    )
+                    Saved: {activeProgress.savedCount} / {activeProgress.total}
                   </span>
-                ) : Object.keys(evaluations[activePeriod]?.answers || {})
-                    .length > 0 ? (
+                ) : activeProgress.inheritedCount > 0 ? (
                   <span className="inline-flex items-center gap-1.5 text-xs sm:text-sm font-semibold text-amber-700 bg-amber-50 px-2.5 py-1 rounded-full border border-amber-200">
                     <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
-                    Pre-filled Draft (
-                    {activeDomain.questions?.filter((q) =>
-                      getAnswer(q.question_id, activePeriod),
-                    )?.length || 0}
-                    /{activeDomain.questions?.length || 0} items ready)
+                    Saved: 0 / {activeProgress.total} ·{" "}
+                    {activeProgress.inheritedCount} inherited (not saved)
                   </span>
                 ) : (
                   <span className="inline-flex items-center gap-1.5 text-xs sm:text-sm font-medium text-slate-600 bg-slate-100 px-2.5 py-1 rounded-full">
                     <span className="w-2 h-2 rounded-full bg-slate-400"></span>
-                    Not yet evaluated (Unsaved Draft)
+                    Saved: 0 / {activeProgress.total}
                   </span>
                 )}
 
@@ -918,25 +1047,25 @@ const EccdAssessment: React.FC = () => {
                         : "Post-Test"}
                     :{" "}
                     <strong className="text-slate-900 font-bold">
-                      {activeDomain.questions?.filter((q) =>
-                        getAnswer(q.question_id, activePeriod),
-                      )?.length || 0}
+                      {activeProgress.answeredCount}
                     </strong>{" "}
-                    {"/"} {activeDomain.questions?.length || 0} Answered
+                    {"/"} {activeProgress.total} Answered
                   </span>
                 </div>
-                {evaluations[activePeriod]?.isSaved ? (
-                  (activeDomain.questions?.filter((q) =>
-                    getAnswer(q.question_id, activePeriod),
-                  )?.length || 0) === (activeDomain.questions?.length || 0) &&
-                  (activeDomain.questions?.length || 0) > 0 && (
-                    <span className="hidden sm:inline-flex text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
-                      Completed
-                    </span>
-                  )
-                ) : (
-                  <span className="hidden sm:inline-flex text-[11px] font-bold text-amber-700 bg-amber-50 px-2.5 py-0.5 rounded-full border border-amber-200">
-                    Unsaved
+                {activeProgress.complete && (
+                  <span className="inline-flex text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
+                    Completed
+                  </span>
+                )}
+                {activeProgress.draftCount > 0 && (
+                  <span className="inline-flex text-[11px] font-bold text-amber-700 bg-amber-50 px-2.5 py-0.5 rounded-full border border-amber-200">
+                    {activeProgress.draftCount} unsaved change
+                    {activeProgress.draftCount === 1 ? "" : "s"}
+                  </span>
+                )}
+                {activeProgress.hasDateChange && (
+                  <span className="inline-flex text-[11px] font-bold text-amber-700 bg-amber-50 px-2.5 py-0.5 rounded-full border border-amber-200">
+                    Unsaved date change
                   </span>
                 )}
               </div>

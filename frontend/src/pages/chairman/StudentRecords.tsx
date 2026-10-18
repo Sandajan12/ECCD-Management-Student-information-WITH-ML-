@@ -313,7 +313,7 @@ export default function StudentRecords() {
         </Select>
       </div>
       <div className="overflow-x-auto rounded-lg bg-white shadow-[0_4px_6px_rgba(0,0,0,.05)]">
-        <table className="w-full min-w-[650px]">
+        <table className="w-full min-w-[calc(650px+10rem)]">
           <thead className="bg-[#f3f4f6]">
             <tr>
               <th className="w-12 pl-1! pr-0! py-0! text-left!">
@@ -329,7 +329,7 @@ export default function StudentRecords() {
                   onChange={(e) => toggleAll(e.target.checked)}
                 />
               </th>
-              {["LRN ID", "Full Name", "Class Name", "School Year"].map(
+              {["LRN ID", "Full Name", "Class Name", "Adviser", "School Year"].map(
                 (label) => (
                   <th key={label} className="font-bold! text-[#4b5563]!">
                     {label}
@@ -376,12 +376,15 @@ export default function StudentRecords() {
                 <td className="text-[#374151]">
                   {s.section_name || "Unassigned"}
                 </td>
+                <td className="whitespace-nowrap text-[#374151]">
+                  {s.adviser_name || "—"}
+                </td>
                 <td className="text-[#374151]">{s.school_year || "N/A"}</td>
               </tr>
             ))}
             {!visible.length && (
               <tr>
-                <td colSpan={5} className="py-6! text-center text-[#6b7280]">
+                <td colSpan={6} className="py-6! text-center text-[#6b7280]">
                   No student records found.
                 </td>
               </tr>

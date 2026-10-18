@@ -1,7 +1,7 @@
 from backend.schemas.account import PasswordChangeRequest, PasswordChangeVerify, ChallengeResult
 from backend.schemas.auth import LoginResponse
 from backend.schemas.common import MessageResult, PositiveId
-from backend.schemas.teacher import ParentPermissionUpdate, TeacherAccessResponse, TeacherProvisionRequest, TeacherProvisionResponse
+from backend.schemas.teacher import ParentPermissionUpdate, TeacherAccessResponse, TeacherProvisionRequest, TeacherProvisionResponse, TeacherSettingsResponse, TeacherSettingsUpdate
 
 from backend.config.database import get_db
 from backend.config.settings import settings
@@ -21,6 +21,27 @@ from sqlalchemy.exc import IntegrityError
 
 router = APIRouter(prefix="/api/teachers", tags=["Teachers"])
 student_router = APIRouter(prefix="/api/teacher", tags=["Teacher students"])
+
+from backend.schemas.assessment_access import ParentAssessmentAccess, SectionAssessmentAccess
+from backend.utils.assessment_access import teacher_access_section, window_values
+
+
+@student_router.get("/settings/parent-assessment-access", response_model=SectionAssessmentAccess)
+def get_parent_assessment_access(section_id: PositiveId | None = None, db: Session = Depends(get_db), current_user: User = Depends(verify_role(["admin"]))):
+    section = teacher_access_section(db, current_user, section_id)
+    return {"section_id": section.section_id, **window_values(section)}
+
+
+@student_router.put("/settings/parent-assessment-access", response_model=SectionAssessmentAccess)
+def update_parent_assessment_access(payload: ParentAssessmentAccess, section_id: PositiveId | None = None, db: Session = Depends(get_db), current_user: User = Depends(verify_role(["admin"]))):
+    from backend.models import SystemLog
+    section = teacher_access_section(db, current_user, section_id)
+    for key, value in payload.model_dump().items():
+        setattr(section, key, value)
+    result = {"section_id": section.section_id, **window_values(section)}
+    db.add(SystemLog(user_id=current_user.user_id, action_type="PARENT_ASSESSMENT_ACCESS", details=f"Section {section.section_id} parent assessment windows: {payload.model_dump()}"))
+    db.commit()
+    return result
 
 from backend.schemas.student import ParentLinkActionRequest, ParentLinkActionResponse, TeacherStudentResponse
 
@@ -119,8 +140,9 @@ def get_teachers(
             .filter(
                 SectionTeacher.teacher_id == teacher.teacher_id,
                 SectionTeacher.status == "Active",
+                SectionTeacher.role == "Primary Adviser",
             )
-            .order_by((SectionTeacher.role == "Primary Adviser").desc())
+            .order_by(SectionTeacher.id)
             .first()
         )
         sec_name = active_assignment[1].section_name if active_assignment else teacher.class_name
@@ -187,12 +209,13 @@ def verify_password_change(payload: PasswordChangeVerify, response: Response, db
 
 @router.get("/access-controls", response_model=TeacherAccessResponse)
 @router.get("/me/access", response_model=TeacherAccessResponse)
+@router.get("/settings", response_model=TeacherSettingsResponse)
 def get_teacher_access(db: Session = Depends(get_db), current_user: User = Depends(verify_role(["admin"]))):
     from backend.utils.access import current_teacher
     teacher = current_teacher(db, current_user)
-    assignment = db.query(SectionTeacher).filter_by(teacher_id=teacher.teacher_id, status="Active").order_by((SectionTeacher.role == "Primary Adviser").desc()).first()
+    assignment = db.query(SectionTeacher).filter_by(teacher_id=teacher.teacher_id, role="Primary Adviser", status="Active").order_by(SectionTeacher.id).first()
     section = db.get(Section, assignment.section_id) if assignment else None
-    return {**{key: bool(getattr(teacher, key)) for key in ParentPermissionUpdate.model_fields},
+    return {**{key: bool(getattr(teacher, key, False)) for key in ParentPermissionUpdate.model_fields},
             "allow_eccd_question_management": bool(teacher.allow_eccd_question_management),
             "section_id": section.section_id if section else None, "section_name": section.section_name if section else None,
             "class_name": section.section_name if section else None}
@@ -200,15 +223,27 @@ def get_teacher_access(db: Session = Depends(get_db), current_user: User = Depen
 
 @router.put("/access-controls", response_model=MessageResult)
 @router.put("/me/access", response_model=MessageResult)
-def update_teacher_access(payload: ParentPermissionUpdate, db: Session = Depends(get_db), current_user: User = Depends(verify_role(["admin"]))):
+def update_teacher_access(payload: TeacherSettingsUpdate, db: Session = Depends(get_db), current_user: User = Depends(verify_role(["admin"]))):
     from backend.utils.access import current_teacher
     teacher = current_teacher(db, current_user)
-    for key, value in payload.model_dump(exclude_unset=True).items():
+    updates = payload.model_dump(exclude_unset=True)
+    for value in updates.values():
         if value is None:
             raise HTTPException(422, "Parent permissions must be true or false.")
+    for key, value in updates.items():
         setattr(teacher, key, value)
-    db.commit()
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
     return {"message": "Access controls updated."}
+
+
+@router.put("/settings", response_model=TeacherSettingsResponse)
+def update_teacher_settings(payload: TeacherSettingsUpdate, db: Session = Depends(get_db), current_user: User = Depends(verify_role(["admin"]))):
+    update_teacher_access(payload, db, current_user)
+    return get_teacher_access(db, current_user)
 
 
 @router.get("/download/{lrn}")

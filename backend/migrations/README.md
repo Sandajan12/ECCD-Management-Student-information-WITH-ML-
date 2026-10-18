@@ -129,3 +129,62 @@ Tests create uniquely named `phase1_test_<uuid>` PostgreSQL schemas, load a sche
 fixture captured before migration, and clean up only those schemas. They verify
 both fresh installs and upgrades with synthetic PRE/MID/POST history, family links,
 archives and accounts. They never reset or modify live school records.
+
+## Parent assessment access windows (006)
+
+Apply after the existing migrations, before starting the updated API:
+
+```powershell
+uv run --no-project --python .venv312 python -m backend.migrations.parent_assessment_access --apply
+uv run --no-project --python .venv312 python -m backend.migrations.parent_assessment_access --check
+```
+
+Adds three non-null Boolean fields to `sections`: `pre_test_parent_editable`
+(default true), `mid_test_parent_editable` and `post_test_parent_editable`
+(default false), matching legacy period defaults. Repeated application preserves
+saved settings and section records. Startup validates the schema without applying
+it. The active Adviser's global home-edit permission remains required for parent
+saves. After migration 008, only that section's active Adviser can manage windows.
+
+## Adviser takeover (008)
+
+Stop API writers and apply after the existing migrations, before starting the
+updated API:
+
+```powershell
+uv run --no-project --python .venv312 python -m backend.migrations.adviser_takeover --apply
+uv run --no-project --python .venv312 python -m backend.migrations.adviser_takeover --check
+```
+
+Retires every historical Substitute assignment as an inactive Adviser assignment,
+retaining its ID, section, teacher and assigned date. Audit entries preserve its
+former role/status. Existing active Advisers remain owners; the compatibility
+pointer is synchronized to that assignment. A partial unique index enforces one
+active Adviser per section and the role constraint accepts only `Primary Adviser`.
+Ambiguous multiple active Advisers abort the transaction for explicit resolution.
+Student demographics, PRE/MID/POST evaluations, family links, section editing
+windows, teacher permission flags, and accounts are verified unchanged. Startup
+validates this migration and never applies it automatically.
+
+Assignment aliases keep accepting `teacher_id` or legacy `adviser_teacher_id`;
+null unassigns the section. Older queued `role: "Primary Adviser"` payloads remain
+valid; Substitute payloads receive HTTP 422. Old encrypted backups retain retired
+assignment rows as inactive records without restoring Substitute access.
+
+## Parent ECCD marks visibility (009)
+
+Apply before starting the updated API:
+
+```powershell
+uv run --no-project --python .venv312 python -m backend.migrations.parent_eccd_marks --apply
+uv run --no-project --python .venv312 python -m backend.migrations.parent_eccd_marks --check
+```
+
+Adds `teachers.allow_parent_view_eccd_marks` as a non-null Boolean defaulting to
+false for all existing teachers. Repeated application preserves saved choices
+and all other teacher fields. Startup checks this migration without applying it.
+Official score releases and section editing windows stay independent. Older
+settings updates preserve omitted permissions; older backups default this flag
+to false. The parent checklist returns teacher-recorded marks only when enabled,
+including periods whose official scores remain unreleased. When disabled, only
+the authenticated parent's own home answers in editable periods are returned.

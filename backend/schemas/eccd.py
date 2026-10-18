@@ -1,10 +1,12 @@
-from datetime import date
+from datetime import date, datetime
+from typing import Literal, Optional
 
 from backend.models.eccd import EccdAnswer, TestingPeriod
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator, model_validator
 from .common import ApiModel, PositiveId
 from .common import ParentPermissions
 from .student import StudentPublicResponse
+from .assessment_access import ParentAssessmentAccess
 
 
 # --- DOMAIN SCHEMAS ---
@@ -31,6 +33,13 @@ class EccdQuestionResponse(EccdQuestionBase):
 
 
 # --- EVALUATION SCHEMAS ---
+class EvaluationProvenance(BaseModel):
+    parent_id: Optional[int] = None
+    evaluator_role: Literal["teacher", "parent"] = "teacher"
+    teacher_evaluation_date: Optional[date] = None
+    parent_submitted_at: Optional[datetime] = None
+
+
 class EvaluationBase(BaseModel):
     teacher_id: PositiveId | None = None
     question_id: PositiveId
@@ -48,7 +57,7 @@ class EvaluationUpdate(BaseModel):
     evaluation_date: date | None = None
 
 
-class EvaluationResponse(EvaluationBase):
+class EvaluationResponse(EvaluationBase, EvaluationProvenance):
     evaluation_id: int
     student_lrn: str
     model_config = ConfigDict(from_attributes=True)
@@ -58,9 +67,12 @@ class EvaluationIdCreate(EvaluationBase):
     student_id: PositiveId
 
 
-class EvaluationIdResponse(EvaluationIdCreate):
+class EvaluationIdResponse(EvaluationIdCreate, EvaluationProvenance):
     evaluation_id: PositiveId
     model_config = ConfigDict(from_attributes=True)
+
+
+StudentEccdEvaluationResponse = EvaluationIdResponse
 
 
 class AssessmentAnswer(ApiModel):
@@ -124,14 +136,26 @@ class EvaluationBatch(ApiModel):
 
 class ParentEvaluationBatch(ApiModel):
     student_lrn: str | int = Field(validation_alias=AliasChoices("student_id", "student_lrn"))
-    evaluations: list[AssessmentAnswer] = Field(max_length=1000)
+    testing_period: TestingPeriod | None = None
+    evaluations: list[AssessmentAnswer] = Field(min_length=1, max_length=1000)
 
     @model_validator(mode="after")
     def unique_answers(self) -> "ParentEvaluationBatch":
+        periods = {row.testing_period for row in self.evaluations}
+        if len(periods) != 1 or (self.testing_period is not None and periods != {self.testing_period}):
+            raise ValueError("Submit home-based answers for the selected testing period only")
+        # Older durable requests already contain one period per domain draft.
+        # Infer that period so queued pre-Phase-4 observations can still sync.
+        self.testing_period = self.evaluations[0].testing_period
         keys = [(row.question_id, row.testing_period) for row in self.evaluations]
         if len(keys) != len(set(keys)):
             raise ValueError("Duplicate home-based assessment answers")
         return self
+
+
+class ParentEvaluationSaved(ApiModel):
+    message: str
+    testing_period: TestingPeriod
 
 
 class EvaluationSaved(ApiModel):
@@ -147,6 +171,8 @@ class ChecklistQuestion(ApiModel):
     sequence_order: int
     domain_id: PositiveId | None = None
     domain_name: str | None = None
+    is_home_based: bool
+    evaluator_roles: dict[TestingPeriod, Literal["teacher", "parent"] | None]
     answers: dict[TestingPeriod, EccdAnswer | None]
 
 
@@ -184,10 +210,13 @@ class AssessmentResponse(ApiModel):
     evalAges: dict[str, dict[TestingPeriod, float | None]]
     periodDates: dict[TestingPeriod, date | None]
     evaluationDates: dict[TestingPeriod, date | None]
+    gradingDates: dict[TestingPeriod, date | None] = Field(default_factory=dict)
     student_birth_date: date | None = None
 
 
 class ParentAssessmentResponse(AssessmentResponse):
+    allow_parent_view_eccd_marks: bool = False
+    parent_assessment_access: ParentAssessmentAccess
     student: StudentPublicResponse
     permissions: ParentPermissions
     summary: dict[TestingPeriod, ParentPeriodCard]
@@ -231,7 +260,7 @@ class DomainProgress(ApiModel):
     questions: list[EccdQuestionResponse] = Field(default_factory=list)
 
 
-class EvaluationPublicResponse(EvaluationBase):
+class EvaluationPublicResponse(EvaluationBase, EvaluationProvenance):
     evaluation_id: PositiveId
     student_id: PositiveId
     model_config = ConfigDict(from_attributes=True)

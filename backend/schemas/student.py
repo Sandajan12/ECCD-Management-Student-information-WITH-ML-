@@ -166,6 +166,7 @@ class StudentPublicResponse(StudentRecordResponse):
     profile_completeness: int = 0
     full_name: str | None = None
     class_name: str | None = None
+    adviser_name: str | None = None
     parents: list[LinkedGuardian] = Field(default_factory=list)
 
 

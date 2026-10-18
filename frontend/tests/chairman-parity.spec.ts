@@ -283,10 +283,10 @@ test("Chairman teacher form retains drafts and question workspace opens the lega
   await prepare(page);
   await page.goto("/super-admin/teachers");
   await page.getByRole("button", { name: "Add New Teacher" }).click();
-  await page.getByLabel("Full Name").fill("Draft Teacher");
+  await page.getByLabel("First Name", { exact: true }).fill("Draft Teacher");
   await page.reload();
   await page.getByRole("button", { name: "Add New Teacher" }).click();
-  await expect(page.getByLabel("Full Name")).toHaveValue("Draft Teacher");
+  await expect(page.getByLabel("First Name", { exact: true })).toHaveValue("Draft Teacher");
   await page.getByRole("button", { name: "Cancel", exact: true }).click();
   await page.goto("/super-admin/eccd-questions");
   await page.getByRole("button", { name: "Manage Questions" }).first().click();

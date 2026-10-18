@@ -57,7 +57,7 @@ class SectionSummaryItem(ApiModel):
     first_name: str | None = None
     last_name: str | None = None
     evaluation_date: date | None = None
-    decimal_age: float
+    decimal_age: float | None = None
     scores: ScoreResult
 
 

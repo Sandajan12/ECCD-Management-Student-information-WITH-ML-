@@ -7,6 +7,7 @@ import {
   type Answer,
   type Domain,
   type Period,
+  type Question,
   type Student,
 } from "../types";
 import {
@@ -20,6 +21,11 @@ import { useAssessment } from "./useAssessment";
 interface HomeValues {
   answers: Record<string, Answer>;
   evaluation_date?: string;
+}
+interface PeriodSelection {
+  owner: number;
+  child: number;
+  period: Period | null;
 }
 interface HomeEvaluation {
   question_id: number;
@@ -40,6 +46,11 @@ const VIEW_FLAGS = {
   MID: "allow_parent_view_eccd_mid",
   POST: "allow_parent_view_eccd_post",
 } as const;
+const EDIT_FLAGS = {
+  PRE: "pre_test_parent_editable",
+  MID: "mid_test_parent_editable",
+  POST: "post_test_parent_editable",
+} as const;
 
 export function useParentAssessment(child?: Student) {
   const { user } = useAuth();
@@ -48,6 +59,7 @@ export function useParentAssessment(child?: Student) {
   const assessment = useAssessment(id, true);
   const data = assessment.data;
   const [selection, setSelection] = useState<{
+    owner: number;
     child: number;
     domain: number;
   } | null>(null);
@@ -55,15 +67,18 @@ export function useParentAssessment(child?: Student) {
   const memoryDrafts = useRef(new Map<string, Draft<HomeValues>>());
   const [saving, setSaving] = useState(false);
   const saveLock = useRef(false);
-  const currentChild = useRef(id);
+  const identity = `${owner}_${id}`;
+  const currentChild = useRef(identity);
   useLayoutEffect(() => {
-    currentChild.current = id;
-  }, [id]);
+    currentChild.current = identity;
+  }, [identity]);
+  const [periodSelection, setPeriodSelection] =
+    useState<PeriodSelection | null>(null);
   const [feedback, setFeedback] = useState<{
-    child: number;
+    scope: string;
     error: string;
     success: string;
-  }>({ child: 0, error: "", success: "" });
+  }>({ scope: "", error: "", success: "" });
   useEffect(() => {
     const redraw = () => updateDrafts((version) => version + 1);
     const reload = () => void assessment.refresh();
@@ -82,20 +97,58 @@ export function useParentAssessment(child?: Student) {
     data?.can_edit_home_based === true &&
     data.permissions?.allow_parent_edit_home_based_eccd === true &&
     child?.allow_parent_edit_home_based_eccd === true;
+  const canEditPeriod = (period: Period) =>
+    canEditHomeBased &&
+    data?.parent_assessment_access?.[EDIT_FLAGS[period]] === true;
+  const hasOpenPeriod = PERIODS.some(canEditPeriod);
+  const editablePeriods = PERIODS.filter(canEditPeriod);
+  const canViewMarks = data?.allow_parent_view_eccd_marks === true;
+  const viewablePeriods = canViewMarks ? PERIODS : editablePeriods;
+  const preferred =
+    periodSelection?.owner === owner && periodSelection.child === id
+      ? periodSelection.period
+      : null;
+  const selectedPeriod =
+    preferred && viewablePeriods.includes(preferred)
+      ? preferred
+      : (viewablePeriods[0] ?? null);
+  useEffect(() => {
+    setPeriodSelection((previous) =>
+      previous?.owner === owner &&
+      previous.child === id &&
+      previous.period === selectedPeriod
+        ? previous
+        : { owner, child: id, period: selectedPeriod },
+    );
+  }, [owner, id, selectedPeriod]);
+  const setSelectedPeriod = (period: Period) => {
+    if (viewablePeriods.includes(period) && !saving)
+      setPeriodSelection({ owner, child: id, period });
+  };
   const isPeriodReleased = (period: Period) =>
     child?.[VIEW_FLAGS[period]] === true &&
     data?.permissions?.[VIEW_FLAGS[period]] === true &&
     data.summary?.[period].isReleased === true &&
     data.summary?.[period].is_published === true;
-  const checklistDomains = data?.domains || [];
+  const checklistDomains = [...(data?.domains || [])].sort(
+    (a, b) =>
+      Number(b.questions.some((q) => q.is_home_based === true)) -
+        Number(a.questions.some((q) => q.is_home_based === true)) ||
+      a.domain_id - b.domain_id,
+  );
+  // Marks access also permits read-only period selection with editing closed.
+  const activePeriod =
+    selectedPeriod ?? PERIODS.find(isPeriodReleased) ?? "PRE";
   const activeDomain =
-    selection?.child === id
+    selection?.owner === owner && selection.child === id
       ? checklistDomains.find(
           (domain) => domain.domain_id === selection.domain,
         ) || null
       : null;
   const setActiveDomain = (domain: Domain | null) =>
-    setSelection(domain ? { child: id, domain: domain.domain_id } : null);
+    setSelection(
+      domain ? { owner, child: id, domain: domain.domain_id } : null,
+    );
   const draftKey = (domain: number, period: Period) =>
     `eccd_draft_${id}_${period}_${domain}_home_${owner}`;
   const draftFor = (domain: number, period: Period) => {
@@ -111,14 +164,19 @@ export function useParentAssessment(child?: Student) {
     updateDrafts((version) => version + 1);
   };
   const serverAnswer = (questionId: number, period: Period): Answer | null => {
-    if (!isPeriodReleased(period)) return null;
-    return (
-      checklistDomains
-        .flatMap((domain) => domain.questions)
-        .find((question) => question.question_id === questionId)?.answers[
-        period
-      ] || null
-    );
+    const question = checklistDomains
+      .flatMap((domain) => domain.questions)
+      .find((item) => item.question_id === questionId);
+    if (
+      !canViewMarks &&
+      !(
+        question?.is_home_based === true &&
+        question.evaluator_roles?.[period] === "parent" &&
+        canEditPeriod(period)
+      )
+    )
+      return null;
+    return question?.answers[period] || null;
   };
   const getAnswer = (questionId: number, period: string): Answer | null => {
     if (!PERIODS.includes(period as Period)) return null;
@@ -126,14 +184,33 @@ export function useParentAssessment(child?: Student) {
     const domain = checklistDomains.find((item) =>
       item.questions.some((question) => question.question_id === questionId),
     );
-    if (!domain) return null;
-    // Own unsaved observations may be entered independently of official score release.
-    // Server answers remain masked until the matching period is released.
-    const local = draftFor(domain.domain_id, p)?.values.answers[questionId];
-    return (
-      (canEditHomeBased || isPeriodReleased(p) ? local : null) ||
-      serverAnswer(questionId, p)
+    const question = domain?.questions.find(
+      (q) => q.question_id === questionId,
     );
+    if (!domain || !question) return null;
+    if (question.is_home_based !== true) return serverAnswer(questionId, p);
+    // Own unsaved observations may be entered independently of official score release.
+    // The API masks records using marks access and ownership, independently of scores.
+    let source: Answer | null = null;
+    let blocked = false;
+    for (const current of PERIODS) {
+      // Hidden records may contain a later DI-KAYA. Never infer through a
+      // masked intermediate period or expose a hidden source as carry-over.
+      if (!canViewMarks && !canEditPeriod(current)) source = null;
+      const saved = serverAnswer(questionId, current);
+      const local =
+        canEditHomeBased || isPeriodReleased(current)
+          ? draftFor(domain.domain_id, current)?.values.answers[questionId]
+          : null;
+      if (saved) {
+        source = saved;
+        blocked = false;
+      }
+      const inherited = canEditPeriod(current) && !blocked && source === "KAYA";
+      if (current === p) return local || saved || (inherited ? "KAYA" : null);
+      if (local === "DI-KAYA") blocked = true;
+    }
+    return null;
   };
   const handleAnswerChange = (
     questionId: number,
@@ -141,7 +218,8 @@ export function useParentAssessment(child?: Student) {
     answer: string,
   ) => {
     if (
-      !canEditHomeBased ||
+      !canEditPeriod(period as Period) ||
+      period !== selectedPeriod ||
       saving ||
       !PERIODS.includes(period as Period) ||
       !["KAYA", "DI-KAYA"].includes(answer)
@@ -150,73 +228,73 @@ export function useParentAssessment(child?: Student) {
     const domain = checklistDomains.find((item) =>
       item.questions.some((question) => question.question_id === questionId),
     );
-    if (!domain) return;
+    if (
+      !domain?.questions.some(
+        (q) => q.question_id === questionId && q.is_home_based === true,
+      )
+    )
+      return;
     const p = period as Period;
-    const set = (target: Period) => {
-      const previous = draftFor(domain.domain_id, target);
-      const answers = {
-        ...previous?.values.answers,
-        [questionId]: answer as Answer,
-      };
-      write(draftKey(domain.domain_id, target), {
-        owner_id: owner,
-        values: { ...previous?.values, answers },
-        revision: crypto.randomUUID(),
-        is_pending_sync: false,
-      });
+    const previous = draftFor(domain.domain_id, p);
+    const answers = {
+      ...previous?.values.answers,
+      [questionId]: answer as Answer,
     };
-    set(p);
-    // Retain legacy mastery carry-forward/backfill for parent observations only.
-    if (answer === "KAYA") {
-      for (const target of PERIODS) {
-        if (
-          target !== p &&
-          (PERIODS.indexOf(target) > PERIODS.indexOf(p) ||
-            !getAnswer(questionId, target))
-        )
-          set(target);
-      }
-    }
-    setFeedback({ child: id, error: "", success: "" });
+    write(draftKey(domain.domain_id, p), {
+      owner_id: owner,
+      values: { ...previous?.values, answers },
+      revision: crypto.randomUUID(),
+      is_pending_sync: false,
+    });
+    setFeedback({ scope: identity, error: "", success: "" });
   };
   const handleSaveChecklist = async () => {
-    if (!canEditHomeBased || saveLock.current) return;
-    const snapshots = checklistDomains.flatMap((domain) =>
-      PERIODS.flatMap((period) => {
-        const previous = draftFor(domain.domain_id, period);
-        if (!previous) return [];
-        const evaluations: HomeEvaluation[] = domain.questions.flatMap(
-          (question) => {
-            const answer = previous.values.answers[question.question_id];
-            return answer === "KAYA" || answer === "DI-KAYA"
-              ? [
-                  {
-                    question_id: question.question_id,
-                    testing_period: period,
-                    answer,
-                  },
-                ]
-              : [];
-          },
-        );
-        if (!evaluations.length) return [];
-        const key = draftKey(domain.domain_id, period);
-        const draft: Draft<HomeValues> = {
-          ...previous,
-          revision: crypto.randomUUID(),
-          is_pending_sync: true,
-          request: {
-            path: "/api/eccd/parent/evaluate",
-            method: "post",
-            data: { student_id: id, evaluations },
-          },
-        };
-        return [{ key, draft, evaluations }];
-      }),
-    );
+    if (
+      !selectedPeriod ||
+      !canEditPeriod(selectedPeriod) ||
+      assessment.loading ||
+      saveLock.current
+    )
+      return;
+    const period = selectedPeriod;
+    const snapshots = checklistDomains.flatMap((domain) => {
+      const evaluations: HomeEvaluation[] = domain.questions.flatMap(
+        (question) => {
+          if (question.is_home_based !== true) return [];
+          const answer = getAnswer(question.question_id, period);
+          return answer === "KAYA" || answer === "DI-KAYA"
+            ? [
+                {
+                  question_id: question.question_id,
+                  testing_period: period,
+                  answer,
+                },
+              ]
+            : [];
+        },
+      );
+      if (!evaluations.length) return [];
+      const key = draftKey(domain.domain_id, period);
+      const draft: Draft<HomeValues> = {
+        owner_id: owner,
+        values: {
+          answers: Object.fromEntries(
+            evaluations.map((row) => [row.question_id, row.answer]),
+          ),
+        },
+        revision: crypto.randomUUID(),
+        is_pending_sync: true,
+        request: {
+          path: "/api/eccd/parent/evaluate",
+          method: "post",
+          data: { student_id: id, testing_period: period, evaluations },
+        },
+      };
+      return [{ key, draft, evaluations }];
+    });
     if (!snapshots.length) {
       setFeedback({
-        child: id,
+        scope: identity,
         error: "Please answer at least one indicator before saving.",
         success: "",
       });
@@ -224,12 +302,12 @@ export function useParentAssessment(child?: Student) {
     }
     saveLock.current = true;
     setSaving(true);
-    setFeedback({ child: id, error: "", success: "" });
+    setFeedback({ scope: identity, error: "", success: "" });
     for (const snapshot of snapshots) write(snapshot.key, snapshot.draft);
     try {
       if (!navigator.onLine) {
         setFeedback({
-          child: id,
+          scope: identity,
           error: "",
           success:
             "Saved on this device. Observations will sync when your connection returns.",
@@ -242,6 +320,7 @@ export function useParentAssessment(child?: Student) {
       }
       const response = await API.post("/api/eccd/parent/evaluate", {
         student_id: id,
+        testing_period: period,
         evaluations: snapshots.flatMap((snapshot) => snapshot.evaluations),
       });
       if (response.status !== 200 && response.status !== 201)
@@ -255,12 +334,15 @@ export function useParentAssessment(child?: Student) {
           memoryDrafts.current.delete(snapshot.key);
       }
       updateDrafts((version) => version + 1);
+      // Confirm the submitted child's exact keys, but leave a newly selected
+      // child/account's page and feedback alone when the response arrives late.
+      if (currentChild.current !== identity) return;
       setFeedback({
-        child: id,
+        scope: identity,
         error: "",
         success: "Assessment evaluations saved successfully!",
       });
-      if (currentChild.current === id) await assessment.refresh();
+      if (currentChild.current === identity) await assessment.refresh();
       return {
         severity: "success" as const,
         message: "Home-based evaluation saved successfully!",
@@ -271,7 +353,7 @@ export function useParentAssessment(child?: Student) {
         (isAxiosError(err) && (err.response?.status || 0) >= 500)
       )
         setFeedback({
-          child: id,
+          scope: identity,
           error: "",
           success:
             "Saved on this device. Observations are queued for synchronization.",
@@ -290,12 +372,13 @@ export function useParentAssessment(child?: Student) {
               error: errorMessage(err),
             });
         }
-        setFeedback({ child: id, error: errorMessage(err), success: "" });
-        if (currentChild.current === id) void assessment.refresh();
+        setFeedback({ scope: identity, error: errorMessage(err), success: "" });
+        if (currentChild.current === identity) void assessment.refresh();
       }
       const queued =
         isNetworkError(err) ||
         (isAxiosError(err) && (err.response?.status || 0) >= 500);
+      if (currentChild.current !== identity) return;
       return {
         severity: (queued ? "success" : "error") as "success" | "error",
         message: queued
@@ -307,6 +390,41 @@ export function useParentAssessment(child?: Student) {
       setSaving(false);
     }
   };
+  const domainProgress = (domain: Domain, period: Period) => {
+    const released = isPeriodReleased(period);
+    const saved = domain.questions.filter((q) =>
+      serverAnswer(q.question_id, period),
+    ).length;
+    const local = domain.questions.filter(
+      (q) =>
+        q.is_home_based === true &&
+        (canEditHomeBased || released) &&
+        draftFor(domain.domain_id, period)?.values.answers[q.question_id],
+    ).length;
+    const answered = domain.questions.filter((q) =>
+      getAnswer(q.question_id, period),
+    ).length;
+    return {
+      saved,
+      local,
+      answered,
+      total: domain.questions.length,
+      percentage:
+        canViewMarks || saved > 0 || local > 0
+          ? domain.questions.length
+            ? Math.round((answered * 100) / domain.questions.length)
+            : 0
+          : null,
+      provisional: !canViewMarks || local > 0,
+    };
+  };
+  const sortedQuestions = (questions: Question[]) =>
+    [...questions].sort(
+      (a, b) =>
+        Number(b.is_home_based === true) - Number(a.is_home_based === true) ||
+        a.sequence_order - b.sequence_order ||
+        a.question_id - b.question_id,
+    );
   const summaryData = data
     ? {
         permissions: data.permissions,
@@ -385,6 +503,16 @@ export function useParentAssessment(child?: Student) {
     activeDomain,
     setActiveDomain,
     canEditHomeBased,
+    canEditPeriod,
+    hasOpenPeriod,
+    editablePeriods,
+    viewablePeriods,
+    canViewMarks,
+    selectedPeriod,
+    activePeriod,
+    setSelectedPeriod,
+    domainProgress,
+    sortedQuestions,
     isPeriodReleased,
     getAnswer,
     handleAnswerChange,
@@ -393,7 +521,8 @@ export function useParentAssessment(child?: Student) {
     summaryData,
     evalAges,
     loading: assessment.loading,
-    error: assessment.error || (feedback.child === id ? feedback.error : ""),
-    saveSuccess: feedback.child === id ? feedback.success : "",
+    error:
+      assessment.error || (feedback.scope === identity ? feedback.error : ""),
+    saveSuccess: feedback.scope === identity ? feedback.success : "",
   };
 }

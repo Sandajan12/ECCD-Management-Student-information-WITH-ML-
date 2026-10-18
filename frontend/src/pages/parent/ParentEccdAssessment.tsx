@@ -8,6 +8,7 @@ import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import HelpOutlineIcon from "@mui/icons-material/HelpOutlineOutlined";
 import ChildCareIcon from "@mui/icons-material/ChildCare";
 import SaveIcon from "@mui/icons-material/Save";
+import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import { useChildren } from "../../hooks/useChildren";
 import { useParentAssessment } from "../../hooks/useParentAssessment";
 import { formatDisplayDate } from "../../utils/dateUtils";
@@ -120,17 +121,9 @@ const ParentEccdAssessment = () => {
     POST: { isReleased: false },
   };
   const matrix = assessment.data?.matrix || [];
-  const homeChecklist = (assessment.data?.homeBasedChecklist || []).map(
-    (question) => ({
-      ...question,
-      domain_name:
-        question.domain_name ||
-        assessment.checklistDomains
-          .find((domain) => domain.domain_id === question.domain_id)
-          ?.domain_name.replace(/ Domain$/i, "") ||
-        "",
-    }),
-  );
+  const homeChecklist = assessment.data?.homeBasedChecklist || [];
+  const selectedPeriod = assessment.activePeriod;
+  const activeDomain = assessment.activeDomain;
   const canEditHomeBased = assessment.canEditHomeBased;
 
   const periodsConfig: { key: Period; title: string; permissionKey: string }[] =
@@ -524,7 +517,7 @@ const ParentEccdAssessment = () => {
       {activeTab === "checklist" && (
         <div>
           {/* Access Enforcement Banner */}
-          {!canEditHomeBased && (
+          {!assessment.hasOpenPeriod && (
             <div className="flex items-start sm:items-center gap-3 p-4 mb-6 bg-amber-50 border border-amber-200/90 rounded-2xl text-amber-900 shadow-xs">
               <div className="w-9 h-9 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center flex-shrink-0 mt-0.5 sm:mt-0">
                 <LockOutlinedIcon sx={{ fontSize: 20 }} />
@@ -541,7 +534,7 @@ const ParentEccdAssessment = () => {
             </div>
           )}
 
-          {canEditHomeBased && (
+          {assessment.hasOpenPeriod && (
             <div className="flex items-start sm:items-center gap-3 p-4 mb-6 bg-blue-50 border border-blue-200/80 rounded-2xl text-blue-900 shadow-xs">
               <div className="w-9 h-9 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center flex-shrink-0 mt-0.5 sm:mt-0">
                 <CheckCircleIcon sx={{ fontSize: 20 }} />
@@ -559,153 +552,269 @@ const ParentEccdAssessment = () => {
             </div>
           )}
 
-          {/* Checklist questions */}
-          {homeChecklist.length === 0 ? (
-            <div className="p-12 text-center bg-white rounded-2xl border border-slate-200 shadow-sm">
-              <AssignmentIcon
-                sx={{ fontSize: 50 }}
-                className="text-slate-300 mx-auto mb-2"
-              />
-              <h4 className="text-base font-bold text-slate-700">
-                No Home-Based Indicators Assigned
-              </h4>
-              <p className="text-xs text-slate-500 mt-1">
-                There are no assessment questions flagged for home evaluation at
-                this time.
-              </p>
-            </div>
-          ) : (
-            <div className="bg-white rounded-2xl border border-slate-200/90 shadow-sm overflow-hidden mb-12">
-              <div className="p-4 sm:p-5 border-b border-slate-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50/50">
-                <div>
-                  <h3 className="text-base font-bold text-slate-900">
-                    Home-Based Evaluation Checklist
-                  </h3>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    Parent observations of child developmental skills at home.
-                  </p>
-                </div>
-                {canEditHomeBased && (
-                  <button
-                    type="button"
-                    onClick={handleSaveHomeBased}
-                    disabled={saving}
-                    className="inline-flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm rounded-xl shadow-xs transition-colors cursor-pointer disabled:opacity-50"
-                  >
-                    {saving ? (
-                      <CircularProgress size={16} color="inherit" />
-                    ) : (
-                      <SaveIcon sx={{ fontSize: 18 }} />
-                    )}
-                    <span>{saving ? "Saving..." : "Save Assessment"}</span>
-                  </button>
-                )}
+          <div className="sticky top-14 z-20 legacy-md:top-0 flex flex-wrap items-center justify-between gap-3 mb-4 bg-white p-3.5 sm:p-4 rounded-2xl border border-slate-100 shadow-sm">
+            <h2 className="text-base sm:text-lg lg:text-xl font-bold text-slate-900 tracking-tight leading-tight">
+              Developmental Domains
+            </h2>
+            <div className="flex flex-wrap items-center gap-2.5 sm:gap-3">
+              <div className="relative min-w-[130px]">
+                <select
+                  aria-label="Testing period"
+                  value={assessment.selectedPeriod || ""}
+                  disabled={
+                    saving || loading || !assessment.viewablePeriods.length
+                  }
+                  onChange={(event) =>
+                    assessment.setSelectedPeriod(event.target.value as Period)
+                  }
+                  className="w-full text-xs sm:text-sm py-1.5 px-3 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all cursor-pointer"
+                >
+                  {!assessment.viewablePeriods.length && (
+                    <option value="">No periods open</option>
+                  )}
+                  {assessment.viewablePeriods.map((period) => (
+                    <option key={period} value={period}>
+                      {
+                        periodsConfig.find((config) => config.key === period)
+                          ?.title
+                      }
+                    </option>
+                  ))}
+                </select>
               </div>
-
-              <div className="overflow-x-auto w-full -mx-2 px-2 sm:mx-0 sm:px-0">
-                <table className="w-full min-w-[580px] text-left border-collapse">
-                  <thead>
-                    <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 uppercase text-[11px] font-bold tracking-wider">
-                      <th className="py-3 px-3 w-10 text-center">#</th>
-                      <th className="py-3 px-4">INDICATOR / QUESTION</th>
-                      <th className="py-3 px-3 w-28 text-center">PRE-TEST</th>
-                      <th className="py-3 px-3 w-28 text-center">MID-TEST</th>
-                      <th className="py-3 px-3 w-28 text-center">POST-TEST</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 text-sm">
-                    {homeChecklist.map((q, idx) => (
-                      <tr
-                        key={q.question_id}
-                        className="hover:bg-slate-50/60 transition-colors"
-                      >
-                        <td className="py-4 px-3 text-center font-bold text-slate-400 text-xs">
-                          {idx + 1}
-                        </td>
-                        <td className="py-4 px-4">
-                          <span className="text-xs font-semibold text-blue-600 block mb-0.5 uppercase tracking-wide">
-                            {q.domain_name}
-                          </span>
-                          <span className="text-slate-800 font-medium text-sm leading-relaxed">
-                            {q.question_text}
-                          </span>
-                        </td>
-
-                        {PERIODS.map((period) => {
-                          const ans = assessment.getAnswer(
-                            q.question_id,
-                            period,
+              <button
+                type="button"
+                onClick={handleSaveHomeBased}
+                disabled={
+                  saving || loading || !assessment.canEditPeriod(selectedPeriod)
+                }
+                className="inline-flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm rounded-xl shadow-xs transition-colors cursor-pointer disabled:opacity-50"
+              >
+                {saving ? (
+                  <CircularProgress size={16} color="inherit" />
+                ) : (
+                  <SaveIcon sx={{ fontSize: 18 }} />
+                )}
+                <span>{saving ? "Saving..." : "Save Assessment"}</span>
+              </button>
+            </div>
+          </div>
+          {!assessment.canViewMarks && (
+            <p className="text-xs text-slate-500 mb-4">
+              Marks hidden by class adviser. Your own home-based observations
+              remain visible while editing is permitted.
+            </p>
+          )}
+          {!activeDomain ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 w-full max-w-7xl mx-auto">
+              {assessment.checklistDomains.map((domain, index) => {
+                const homeCount = domain.questions.filter(
+                  (question) => question.is_home_based === true,
+                ).length;
+                return (
+                  <div
+                    key={domain.domain_id}
+                    className="bg-white rounded-2xl p-6 border border-slate-100 shadow-sm flex flex-col justify-between h-full hover:shadow-md hover:border-slate-300 transition-all group"
+                  >
+                    <div>
+                      <div className="flex items-start gap-3.5 mb-4">
+                        <div className="w-11 h-11 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center flex-shrink-0 font-black text-lg group-hover:bg-blue-600 group-hover:text-white transition-colors">
+                          {index + 1}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <h3 className="text-base lg:text-lg font-bold text-slate-800 leading-snug break-words">
+                            {domain.domain_name}
+                          </h3>
+                          <p className="text-xs text-slate-500 font-medium mt-1">
+                            {domain.questions.length} Indicators Checklist
+                          </p>
+                        </div>
+                      </div>
+                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-600 border border-slate-200">
+                        {homeCount
+                          ? "Contains Home Questions"
+                          : "Teacher Assessed / View Only"}
+                      </span>
+                      <div className="flex flex-col gap-2.5 my-4 pt-2 border-t border-slate-100">
+                        {periodsConfig.map(({ key, title }) => {
+                          const progress = assessment.domainProgress(
+                            domain,
+                            key,
                           );
-
                           return (
-                            <td
-                              key={period}
-                              className="py-4 px-2 text-center align-middle"
-                            >
-                              <div className="flex items-center justify-center gap-1">
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    handleAnswerChange(
-                                      q.question_id,
-                                      period,
-                                      "KAYA",
-                                    )
-                                  }
-                                  disabled={!canEditHomeBased || saving}
-                                  className={`min-w-[44px] min-h-[36px] px-2.5 py-1 text-xs font-bold rounded-lg transition-all ${
-                                    ans === "KAYA"
-                                      ? "bg-emerald-600 text-white shadow-xs"
-                                      : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                                  } ${!canEditHomeBased ? "opacity-60 cursor-not-allowed" : "cursor-pointer"}`}
+                            <div key={key}>
+                              <div className="flex justify-between items-center gap-2 mb-1 text-xs">
+                                <span className="font-semibold text-slate-600">
+                                  {title}
+                                </span>
+                                <span
+                                  className={`font-bold ${key === "PRE" ? "text-blue-600" : key === "MID" ? "text-amber-600" : "text-emerald-600"}`}
                                 >
-                                  KAYA
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    handleAnswerChange(
-                                      q.question_id,
-                                      period,
-                                      "DI-KAYA",
-                                    )
-                                  }
-                                  disabled={!canEditHomeBased || saving}
-                                  className={`min-w-[44px] min-h-[36px] px-2.5 py-1 text-xs font-bold rounded-lg transition-all ${
-                                    ans === "DI-KAYA"
-                                      ? "bg-rose-600 text-white shadow-xs"
-                                      : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                                  } ${!canEditHomeBased ? "opacity-60 cursor-not-allowed" : "cursor-pointer"}`}
-                                >
-                                  DI-KAYA
-                                </button>
+                                  {progress.percentage === null
+                                    ? "Pending Adviser Release"
+                                    : `${progress.percentage}%${progress.provisional ? " (provisional)" : ""}`}
+                                </span>
                               </div>
-                            </td>
+                              <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
+                                <div
+                                  className={`h-full rounded-full transition-all duration-500 ${key === "PRE" ? "bg-blue-500" : key === "MID" ? "bg-amber-500" : "bg-emerald-500"}`}
+                                  style={{
+                                    width: `${progress.percentage ?? 0}%`,
+                                  }}
+                                />
+                              </div>
+                              {progress.local > 0 && (
+                                <p className="text-xs text-slate-500 mt-1">
+                                  {progress.local} local observation(s) /{" "}
+                                  {progress.total} indicators
+                                </p>
+                              )}
+                            </div>
                           );
                         })}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => assessment.setActiveDomain(domain)}
+                      aria-label={`${homeCount ? "Assess" : "View"} ${domain.domain_name}`}
+                      className="mt-auto w-full py-2.5 font-semibold rounded-xl bg-blue-600 hover:bg-blue-700 text-white transition-colors cursor-pointer text-sm shadow-xs flex items-center justify-center"
+                    >
+                      {homeCount ? "Assess Domain" : "View Domain"}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="flex flex-col min-h-0 w-full">
+              <button
+                type="button"
+                onClick={() => assessment.setActiveDomain(null)}
+                className="inline-flex items-center gap-1.5 text-xs sm:text-sm font-semibold text-slate-500 hover:text-slate-800 transition-colors mb-3 cursor-pointer group w-fit"
+              >
+                <ArrowBackIcon
+                  sx={{ fontSize: 18 }}
+                  className="group-hover:-translate-x-0.5 transition-transform"
+                />
+                Back to Domains
+              </button>
+              <h2 className="text-base sm:text-lg lg:text-xl font-bold text-slate-900 tracking-tight leading-tight mb-4">
+                {activeDomain.domain_name}
+              </h2>
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden mb-12">
+                {[
+                  { home: true, title: "Home-Based Questions" },
+                  {
+                    home: false,
+                    title: "School-Administered Questions · View Only",
+                  },
+                ].map((group) => {
+                  const questions = assessment
+                    .sortedQuestions(activeDomain.questions)
+                    .filter(
+                      (question) =>
+                        (question.is_home_based === true) === group.home,
+                    );
+                  if (!questions.length) return null;
+                  return (
+                    <section key={group.title} aria-label={group.title}>
+                      <h3 className="px-4 py-3 bg-slate-50 border-b border-slate-200 text-xs font-bold text-slate-600">
+                        {group.title}
+                      </h3>
+                      <div className="divide-y divide-slate-100">
+                        {questions.map((question) => {
+                          const answer = assessment.getAnswer(
+                            question.question_id,
+                            selectedPeriod,
+                          );
+                          return (
+                            <div
+                              key={question.question_id}
+                              role="group"
+                              aria-label={question.question_text}
+                              className="flex flex-wrap items-center justify-between gap-3 py-3 px-4 hover:bg-slate-50/70 transition-colors"
+                            >
+                              <div className="flex-1 min-w-0 basis-full sm:basis-auto">
+                                <p className="text-xs lg:text-sm font-medium text-slate-800 leading-snug break-words">
+                                  {question.question_text}
+                                </p>
+                                {!group.home && (
+                                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-600 border border-slate-200 mt-1">
+                                    Teacher Assessed — View Only
+                                  </span>
+                                )}
+                              </div>
+                              {group.home ? (
+                                <div className="flex items-center justify-center gap-1.5 sm:gap-2">
+                                  {(["KAYA", "DI-KAYA"] as const).map(
+                                    (value) => (
+                                      <button
+                                        key={value}
+                                        type="button"
+                                        aria-pressed={answer === value}
+                                        disabled={
+                                          !assessment.selectedPeriod ||
+                                          !assessment.canEditPeriod(
+                                            selectedPeriod,
+                                          ) ||
+                                          saving ||
+                                          loading
+                                        }
+                                        onClick={() =>
+                                          handleAnswerChange(
+                                            question.question_id,
+                                            selectedPeriod,
+                                            value,
+                                          )
+                                        }
+                                        className={`min-w-[44px] min-h-[36px] px-2.5 py-1 text-xs font-bold rounded-lg transition-all ${answer === value ? (value === "KAYA" ? "bg-emerald-600 text-white shadow-xs" : "bg-rose-600 text-white shadow-xs") : "bg-slate-100 text-slate-600 hover:bg-slate-200"} ${!assessment.canEditPeriod(selectedPeriod) ? "opacity-60 cursor-not-allowed" : "cursor-pointer"}`}
+                                      >
+                                        {value}
+                                      </button>
+                                    ),
+                                  )}
+                                </div>
+                              ) : !assessment.canViewMarks ? (
+                                <span className="text-xs text-slate-500">
+                                  Marks hidden by class adviser
+                                </span>
+                              ) : (
+                                <span
+                                  className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold border ${answer === "KAYA" ? "bg-emerald-100 text-emerald-800 border-emerald-200" : answer === "DI-KAYA" ? "bg-amber-100 text-amber-800 border-amber-200" : "bg-slate-100 text-slate-600 border-slate-200"}`}
+                                >
+                                  {answer || "Not yet evaluated"}
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </section>
+                  );
+                })}
+                {canEditHomeBased && (
+                  <div className="p-4 bg-slate-50 border-t border-slate-200 flex justify-end">
+                    <button
+                      type="button"
+                      onClick={handleSaveHomeBased}
+                      disabled={
+                        saving ||
+                        loading ||
+                        !assessment.canEditPeriod(selectedPeriod)
+                      }
+                      className="inline-flex items-center gap-2 px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm rounded-xl shadow-xs transition-colors cursor-pointer disabled:opacity-50"
+                    >
+                      {saving ? (
+                        <CircularProgress size={16} color="inherit" />
+                      ) : (
+                        <SaveIcon sx={{ fontSize: 18 }} />
+                      )}
+                      <span>{saving ? "Saving..." : "Save Assessment"}</span>
+                    </button>
+                  </div>
+                )}
               </div>
-
-              {canEditHomeBased && (
-                <div className="p-4 bg-slate-50 border-t border-slate-200 flex justify-end">
-                  <button
-                    type="button"
-                    onClick={handleSaveHomeBased}
-                    disabled={saving}
-                    className="inline-flex items-center gap-2 px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm rounded-xl shadow-xs transition-colors cursor-pointer disabled:opacity-50"
-                  >
-                    {saving ? (
-                      <CircularProgress size={16} color="inherit" />
-                    ) : (
-                      <SaveIcon sx={{ fontSize: 18 }} />
-                    )}
-                    <span>{saving ? "Saving..." : "Save Assessment"}</span>
-                  </button>
-                </div>
-              )}
             </div>
           )}
         </div>

@@ -175,7 +175,7 @@ Old workspace/shim page directories are absent.
 | teachers / `models/teacher.py` | teacher_id, unique nullable user_id, employee ID, names/class label, six parent flags, question-management permission |
 | parents / `models/parent.py` | parent_id, unique nullable user_id, guardian name/age/education/occupation; guardian-only records can lack login accounts |
 | sections / `models/section.py` | section_id, unique name, adviser compatibility pointer |
-| section_teachers / `models/section_teacher.py` | Assignment ID, section/teacher FKs, assigned date; constrained Primary Adviser/Substitute and Active/Inactive |
+| section_teachers / `models/section_teacher.py` | Assignment ID, section/teacher FKs, assigned date; Primary Adviser only, Active/Inactive, one active assignment per section (migration 008) |
 | students / `models/student.py` | **Integer student_id PK**, encrypted LRN, unique HMAC hash, last four digits, names including middle name, DOB/gender, section, family/contact fields, school year, active flag |
 | family_access / `models/parent.py` | Parent/student-ID FKs, relationship type, timezone-aware date_linked |
 | eccd_domains, eccd_questions / `models/eccd.py` | IDs, domain FK, question text, sequence_order, is_home_based |
@@ -269,9 +269,11 @@ incorrect-current-password responses.
 
 ## 6. Authentication and access invariants
 
-- Passwords require 8+ characters, uppercase, lowercase, a number, and at most
-  72 UTF-8 bytes for bcrypt. Pydantic failures normally return 422; route business
-  failures use explicit statuses.
+- Personal passwords require 8+ characters, uppercase, lowercase, a number, and
+  at most 72 UTF-8 bytes for bcrypt. Chairman-provisioned teacher temporary
+  passwords require only 8+ characters (not whitespace-only) within the same
+  byte limit; mandatory first-login password replacement remains enforced.
+  Pydantic failures normally return 422; route business failures use explicit statuses.
 - JWT sessions bind to live user role/email/password hash via credentialVersion.
   Inactive/pending accounts cannot access protected services.
 - New teachers must change their initial password before protected APIs/chat.
@@ -642,3 +644,497 @@ on this feature's base branch. The existing legacy route parity test requires
 `AMES-SYSTEM-LEGACY/backend/routes/authRoutes.js`, absent from the partially
 available read-only reference checkout. Those unrelated files and all legacy
 files were left untouched. No new dependencies or deployment are involved.
+
+## 15. Parent assessment editing windows (2026-10-17)
+
+Section-scoped non-null Boolean windows are `pre_test_parent_editable` (default
+true), `mid_test_parent_editable` and `post_test_parent_editable` (default false).
+These match legacy defaults while using the normalized section assignments.
+Only the section's active Adviser can manage its windows after migration 008.
+Teacher replacement/archiving behavior is retained; windows remain on the
+section. The six existing adviser permissions remain independent.
+
+`GET` and `PUT /api/teacher/settings/parent-assessment-access` are teacher-only;
+optional `section_id` selects an actively assigned section and is required for
+multiple assignments. PUT accepts all three strict Boolean fields and returns
+them with `section_id`. Teacher Settings adds the matching switches with auto-save,
+success feedback and owner/section-scoped durable drafts. Existing layout/styles
+are retained. Parent assessment responses expose `parent_assessment_access`.
+
+Home saves lock the student and section, validate every submitted period before
+writing, and return HTTP 403 with `Editing for [Pre-Test/Mid-Test/Post-Test] is
+currently closed by the teacher.` when a window is closed. Global home editing,
+synced child ownership and home-question validation still apply. A mixed-period
+request cannot partially commit. Result-release flags/masking are unchanged.
+Parent checklist controls disable closed periods, display `Editing Closed by
+Teacher`, and save only open-period drafts. Closed-period drafts are retained;
+carry-forward writes only to open periods. Both save buttons disable when all
+periods are closed. Backup schemas retain the windows and accept older backups
+with legacy defaults.
+
+Before starting against another database, explicitly run
+`uv run --no-project --python .venv312 python -m backend.migrations.parent_assessment_access --apply`
+and the corresponding `--check`. Startup only validates this additive migration.
+Feature tests use disposable PostgreSQL schemas; the dedicated Playwright config
+`frontend/playwright.parent-assessment-access.config.ts` starts an isolated real
+API and Vite instance for desktop/mobile acceptance checks. No legacy files,
+dependencies, secrets or ML implementation are changed by this feature.
+
+Verification: all 11 feature backend tests pass, as do all 6 real-API Playwright
+checks across desktop/mobile (including offline teacher toggle synchronization).
+App TypeScript, changed-file ESLint and Prettier checks pass. The additive
+migration was applied and checked on the configured local database. Local
+Uvicorn startup, `/healthz` and `/ready` pass; the temporary server was stopped.
+Full backend discovery runs 142 tests: 140 pass, with two existing Batch 2
+rate-limit assertions failing independently. Those tests expect 10 allowed login
+attempts, while the unchanged HEAD policy allows 15. Rate-limit code/tests remain
+untouched. Tests do not claim deployment or live-parent-account acceptance.
+
+## 16. Teacher checklist provenance contract (2026-10-18)
+
+Assessment checklist questions expose Boolean `is_home_based` and
+`evaluator_roles` keyed by the existing `PRE`, `MID`, `POST` period values.
+Roles come from saved evaluation rows; absent rows return null. Shared parent
+responses mask roles alongside answers for unreleased periods. `gradingDates`
+uses the shared grading-date resolver; `periodDates` and `evaluationDates`
+remain official teacher-date aliases. Frontend shared types expose these maps
+without changing assessment components, layouts, or draft behavior.
+
+Verification: backend compilation and app TypeScript checking pass. All 10
+`backend.tests.test_eccd_phase2_lifecycle` integration tests pass in disposable
+PostgreSQL schemas, including provenance transitions, mixed evaluator roles,
+empty periods, nullable legacy home flags, and unreleased parent masking.
+
+## 17. Teacher saved-only auto-fill (2026-10-18)
+
+`utils/eccdDrafts.ts` resolves each question independently into `savedAnswers`,
+`draftAnswers`, `inheritedAnswers`, and displayed `answers`. Only saved KAYA
+starts carry-over. Saved DI-KAYA replaces that source; draft DI-KAYA blocks
+dependent carry until an independent later saved answer starts a new chain.
+Independent later drafts and records remain intact. Domain metadata without
+student answer maps is safe while selecting/loading a student.
+
+`useTeacherAssessment` persists only explicit selections/date edits in the
+selected period. Date edits never snapshot virtual answers. Explicit Save may
+confirm displayed inherited answers for that selected period; it never queues
+future periods. Existing owner-scoped keys, offline submission requests, and
+revision-checked confirmation remain. Historical stored drafts lack provenance
+markers, so ambiguous values are retained rather than deleting potential manual
+work. Newly calculated carry-over is never stored as an answer draft.
+
+Focused verification commands are `node --test frontend/tests/eccd-drafts.test.ts`
+and `pnpm.cmd --dir frontend exec playwright test --config playwright.eccd-drafts.config.ts`.
+The browser config uses mocked APIs on the active app and does not start legacy
+servers or use school data. Assessment layouts/styles/components are unchanged.
+
+Verification: all 11 resolver tests and 7 Chromium browser tests pass, including
+320px/1280px layouts, reload/offline saves, and delayed response revision safety.
+App TypeScript, changed-file ESLint, and all 10 backend Phase 2 lifecycle tests
+also pass. No backend application or legacy files changed in this step.
+
+## 18. Teacher checklist provenance and progress display (2026-10-18)
+
+The routed `pages/teacher/EccdAssessment.tsx` uses loaded student checklist
+questions for Home-Based and selected-period Parent Assessed pills. Badges wrap
+within the existing question cell; the table, responsive containers, navigation,
+theme, and unused `TeacherChecklist.tsx` remain unchanged.
+
+`teacherDomainProgress` counts verified saved answers and explicit drafts whose
+answers differ from saved records. Inherited answers are displayed separately
+and do not count as saved or dirty work. Completion requires every question saved,
+zero changed answers, and no changed date. Date-only edits have a separate pending
+label; no-op selections retain completion. Per-period headers, period options,
+and the save dock share these counts. Domain cards aggregate saved question
+records and owner-scoped drafts for active students in the current section and
+selected period; their existing class completion percentage bars are preserved.
+Class assessment snapshots are cached under an owner/section-scoped key for
+offline display. Existing draft persistence and confirmation logic is unchanged.
+
+The teacher hook exposes `gradingDates` and computes header age displays from
+those dates, including the server's parent-only preview fallback. Unsaved date
+picker changes do not replace the resolved grading date. Null grading periods
+show no age; old cached responses without the grading map retain their server
+`evalAges`. Official testing dates still use `periodDates` and stay blank for
+parent-only observations.
+
+Verification: app TypeScript checking, changed-file ESLint and Prettier pass,
+as do all 13 native Node draft/progress tests and all 12 teacher browser cases in
+`playwright.eccd-drafts.config.ts`. Browser cases cover 320px/1280px provenance,
+teacher confirmation, partial/no-op/changed drafts, date-only completion,
+grading fallback, reload/offline persistence, date bounds, and revision safety
+using mocked APIs. Full `pnpm.cmd --dir frontend run lint` reports three existing
+`react-hooks/refs` errors in unchanged `hooks/useParentProfile.ts` (lines 20/23).
+That separate parent-profile hook is outside this change. No backend or legacy
+files, application database records, or dependency manifests are modified.
+
+## 19. Phase 3 teacher workflow regression coverage (2026-10-18)
+
+`tests/teacher-portal-parity.spec.ts` adds nine browser lifecycle cases across
+320px, 768px and 1280px. They observe actual PRE save requests independently of
+the mock persistence handler, check partial saved counts and changed-draft counts,
+then confirm completion only after both questions are saved. Both downstream
+answer buttons must be unselected immediately after PRE DI-KAYA, before saving.
+Independent committed MID KAYA and DI-KAYA each survive PRE resets and reload;
+another question in the same partially saved domain still inherits separately.
+Future-period draft keys remain absent and PRE saves contain only PRE answers.
+Existing provenance/progress and grading-date cases also run at tablet width.
+
+The tests retain the audited saved-only contract: selecting an unsaved KAYA does
+not start carry-over; confirming that selected period with Save enables virtual
+MID/POST KAYA. Saving a later period remains an explicit separate action. The
+saved-assessment fixture now leaves PRE's official date null when PRE is empty.
+No component, hook, stylesheet, backend application or legacy source is changed.
+
+The legacy visual harness resolves relative imports before selecting its existing
+API/auth/settings adapters. This makes service-local `./api` imports use the same
+mock as page-level `../services/api`, avoiding legacy Axios dependency resolution
+without installing dependencies or editing the read-only reference.
+
+Fresh focused verification: all 23 browser cases pass with
+`pnpm.cmd --dir frontend exec playwright test --config playwright.eccd-drafts.config.ts`,
+all 13 native Node draft/progress tests pass, and all 10
+`backend.tests.test_eccd_phase2_lifecycle` integration tests pass in disposable
+PostgreSQL schemas. App TypeScript, changed-spec ESLint, and both changed test
+files' Prettier checks pass. The requested default Playwright command cannot
+start its API because its generic Python 3.12 environment lacks uvicorn; the
+existing `playwright.teacher-portal.config.ts` instead runs this spec against
+mocked APIs and the read-only legacy visual harness.
+
+The entire teacher spec was also run with
+`pnpm.cmd --dir frontend exec playwright test tests/teacher-portal-parity.spec.ts --config playwright.teacher-portal.config.ts`:
+75 of 118 cases passed, including every focused Phase 3 workflow case; 43 failed.
+Failures comprise 40 legacy screenshot comparisons, two dashboard-loading
+assertions expecting `Loading...`, and one mobile settings assertion expecting
+six switches where the updated page has nine. Existing screenshot tolerances and
+those assertions remain unchanged; this is not a claim of full portal parity.
+The generated review artifacts are `frontend/test-results/teacher-portal-report/index.html`,
+`frontend/test-results/teacher-portal-report.json`, and individual traces/diffs
+under `frontend/test-results/teacher-portal/`. No school records were written;
+browser tests use mocks and backend tests use disposable schemas.
+
+## 20. Legacy Teacher Settings home-based controls (2026-10-18)
+
+The legacy reference is `AMES-SYSTEM-LEGACY/frontend/src/pages/teacher/TeacherSettings.jsx`
+(editing controls at lines 301-355). The active Teacher Settings now separates
+ECCD Assessment Visibility from ECCD Assessment Editing inside the same Global
+Parent Access panel. The editing group contains Home-Based Checklist Edit and
+Pre-Test/Mid-Test/Post-Test Home-Based Edit with the legacy descriptions, order,
+responsive grid, and success/info/warning/success switch colors. The independent
+period defaults remain Pre enabled, Mid/Post disabled. The master and period
+choices auto-save; disabling the master does not reset any period choice.
+
+Controls wait for access loading and lock during saves. Inline success/error
+feedback matches the legacy panel; pending edits clear the previous message.
+Owner/section-scoped drafts, revision-checked confirmation and offline retry are
+preserved. Failed saves retain input instead of copying the legacy rollback.
+The existing six teacher permissions and normalized section editing windows keep
+their current API and database contracts; no new columns or migrations are used.
+The section selector continues to choose which section's windows are edited.
+
+Focused browser checks are reproducible with
+`pnpm.cmd --dir frontend exec playwright test --config playwright.teacher-settings.config.ts`
+(legacy comparisons plus global permission offline/403 retention), and
+`pnpm.cmd --dir frontend exec playwright test --config playwright.parent-assessment-access.config.ts`
+(real API in disposable schemas). The legacy reference remains read-only.
+
+Verification: all six teacher-settings browser cases and all ten real-API parent
+window cases pass (16 total). Editing-card screenshots match legacy with zero
+different pixels at 320px, 768px and 1280px, including enabled master/Mid/Post
+colors. Real-API cases verify each period independently, master-off blocking
+without resetting windows, reload retention and offline synchronization.
+All 18 backend parent-assessment-access tests pass. App TypeScript, ESLint for
+all changed frontend files and Prettier checks pass. No application database
+records, backend files, legacy sources or dependency manifests changed.
+
+## 21. Phase 4 parent checklist and selected-period saves (2026-10-18)
+
+The inspected legacy references are `backend/controllers/parentEccdController.js`,
+`frontend/src/pages/users/ParentEccdAssessment.jsx`, and `frontend/src/utils/eccdDrafts.js`
+under the read-only `AMES-SYSTEM-LEGACY/` directory. This phase implements audit
+Section 2.3 and Phase 4 while retaining the stricter active release policy.
+
+`backend/utils/assessments.py` returns every configured ECCD domain and all its
+questions, including school-only and empty domains. Checklist questions retain
+Boolean `is_home_based` and per-period answers/roles. `homeBasedChecklist` remains
+a home-only compatibility projection. Parent progress endpoints use all domain
+questions as the completion denominator, preserve the real home flags, handle
+empty domains safely and return null progress for unreleased periods. Dashboard
+phase selection still masks an unreleased latest recorded period instead of
+falling back to an older release. Completion is distinct from KAYA mastery.
+
+Parent request validation requires nonempty, unique answers for one period.
+The frontend sends top-level `testing_period`; the server infers it for older
+queued requests whose rows already identify one period. The previous hook stored
+one period per domain's queued request even though its foreground aggregate POST
+could contain multiple periods. Those old single-period queue records still
+restore/sync without conversion or deletion. Mixed-period, mismatched-period,
+empty and duplicate payloads now fail validation before writes. Success retains
+`message` and adds typed `testing_period`. Existing SYNCED ownership, authenticated
+parent provenance, home-only HTTP 403 guard, global permission and section-window
+HTTP 403 checks remain. Parent saves preserve teacher IDs/dates and other periods.
+
+The active parent page retains its official summary, outer containers, navigation,
+typography and theme. Its checklist now uses the existing domain card/progress
+styles, home-containing domains first, followed by school-only view cards. An
+enabled-period-only selector uses the existing `PRE`, `MID`, `POST` identifiers;
+closing the selected window falls back to the first open period after refresh.
+With none open, editing and Save are disabled and the checklist stays read-only.
+Opening a domain shows home questions first and a separate school section with
+`Teacher Assessed — View Only` labels and status pills, without editable controls.
+
+`useParentAssessment` scopes explicit drafts and feedback by owner/student, with
+domain/period in each durable key. Only selected-period home answers are sent or
+queued by Save. Other-period drafts remain byte-for-byte intact. Confirmations
+evict only exact submitted keys/revisions after HTTP 200/201; newer work survives.
+Late responses confirm the original child without changing a selected sibling's
+work or displaying success feedback on that sibling's page. Closed-period drafts
+and failed/offline submissions survive reload, and the existing shared sync queue
+retries when access reopens. No global storage clearing is introduced.
+
+Carry-over is virtual, per question and saved-only. Unsaved KAYA does not generate
+future writes; DI-KAYA blocks dependent inheritance while independent later
+drafts/records remain. Unlike legacy's broader editable-window visibility, masked
+records are never returned as answers, roles or carry projections. Inheritance
+stops at masked periods. Confirmed unreleased parent observations also remain
+masked until release; the page explains that only local unsaved observations are
+shown. Card percentages include visible answers/local observations with a
+provisional label; hidden saved progress stays Pending Adviser Release. Official
+scores, ages, dates and teacher answers retain existing release masking.
+
+Verification: all 22 `backend.tests.test_parent_assessment_access` tests and all
+10 `backend.tests.test_eccd_phase2_lifecycle` tests pass in disposable PostgreSQL
+schemas. App TypeScript, changed-file ESLint, Prettier and backend compilation
+pass. The expanded `playwright.parent-assessment-access.config.ts` covers 24
+desktop/mobile cases at 1280px/320px: delivery, sorting, school-only navigation,
+release masking, full denominators, period-isolated saves, live window fallback,
+offline closure/reopening, older queued requests, saved-only inheritance,
+revision safety and child/account isolation. The full expanded run passed 22;
+two confirmation-listener tests initially timed out due to a test registration
+race. After explicitly registering their listener before releasing the response,
+both passed in a focused rerun (all 24 cases verified across those runs).
+Teacher views, legacy sources, dependency files, schema migrations and application
+database records were not changed in this phase. The browser suite uses the
+disposable real API; the synthetic sibling/account isolation reads are mocked.
+
+## 22. Adviser takeover and removal of Substitute access (2026-10-18)
+
+Section assignments now have only `Primary Adviser` and Active/Inactive status.
+The assignment helper locks the section, deactivates the outgoing assignment,
+flushes it before activating the replacement, and updates the compatibility
+pointer atomically. Repeated assignments reuse an active assignment before an
+inactive historical row. An outgoing teacher with another active section stays
+active; otherwise the existing legacy account-archiving behavior is retained.
+Student demographics, evaluations/provenance, family links and section parent
+editing windows are not reassigned, deleted or reset. The incoming Adviser can
+read/evaluate all section students and manage its existing editing windows.
+The six teacher-level parent flags remain on their teachers, unchanged; parent
+permissions continue to inherit from the current active Adviser.
+
+All ownership consumers (student/ECCD access, settings, authentication section
+selection, imports, analytics, messaging and teacher listings) require active
+Adviser assignments. Assignment aliases and response shapes are retained.
+Requests need only `teacher_id` (or legacy `adviser_teacher_id`); null unassigns.
+Older queued `Primary Adviser` roles remain valid, while removed roles and
+unknown substitute flags return HTTP 422 rather than triggering a takeover.
+
+Migration `008_adviser_takeover` must be applied explicitly before updated API
+startup; startup validates it without applying changes. It retires Substitute
+rows as inactive Adviser history, preserves their IDs/dates, records their former
+role/status in the audit trail, and adds the single-active-adviser unique index
+and adviser-only role constraint. Ambiguous duplicate active Advisers stop the
+transaction for explicit resolution. Preservation checks cover school records,
+accounts, teacher flags and section windows. Historical Phase 1 metadata retains
+its original roles so this upgrade remains explicit. Old encrypted backups keep
+retired assignment rows without restoring removed access. See
+`backend/migrations/README.md` for the apply/check commands.
+
+Manage Teacher Access retains its modal structure, styles, buttons and question
+permission switch. Its Section assignment panel contains the section selector,
+an incumbent-specific transfer note and the existing handover confirmation; the
+role selector is removed. Owner-scoped drafts and confirmed-save eviction remain.
+There are no Substitute checks or labels in active frontend source.
+
+Fresh focused verification: all eight `backend.tests.test_adviser_takeover` tests
+pass, covering concurrency, authorization, preserved records/windows/permissions,
+invalid payloads, migration rollback/idempotence, backup compatibility and API
+startup/health. All four browser cases in
+`frontend/playwright.adviser-takeover.config.ts` pass at 320px/768px/1280px and
+verify confirmation, unassigned saves and failed-draft reload retention. App
+TypeScript has zero errors; changed-file ESLint, Prettier and backend compilation
+pass. The two existing evaluator lifecycle tests now explicitly transfer the
+adviser role before the replacement teacher saves/imports; both focused reruns
+pass. No legacy sources, dependencies or application database records were
+modified; backend tests use disposable PostgreSQL schemas and browser tests use
+mocked APIs.
+
+Final full backend discovery ran 198 tests. Four unrelated test methods remain
+failing (10 assertion failures): two unchanged rate-limit tests expect a login
+budget of 10 while policy permits 15; the legacy-route inventory expects seven
+routes absent from the active application; and the older parent-progress parity
+test still expects home-only questions despite Phase 4's all-domain contract.
+Every takeover test and the updated evaluator lifecycle tests pass in that full
+run. Full output is in
+`frontend/test-results/adviser-takeover-backend-tests.log`. The migration was not
+applied to the configured application database in this task.
+
+Startup follow-up (2026-10-18): the configured local `ames_parity_dev` database
+was missing migration 008. Applied `backend.migrations.adviser_takeover --apply`
+successfully, including its transactional data-preservation checks; `--check`
+then passed. The actual application lifespan now starts against that database,
+and `/healthz` and `/ready` both return HTTP 200 (`database: connected`). No
+application code or legacy files changed in this follow-up.
+
+## 23. Independent parent ECCD marks visibility (2026-10-18)
+
+`teachers.allow_parent_view_eccd_marks` is a seventh granular permission, a
+non-null Boolean with Python/server defaults of false. The earlier descriptions
+of score-release-gated checklist marks are superseded by this independent gate.
+The current active Adviser's flag controls question answers and evaluator roles
+across all seven domains and PRE/MID/POST. With marks enabled, recorded answers
+are returned even when official scores are unreleased. With marks disabled,
+teacher-recorded answers (including home questions) are masked; only the signed-in
+parent's own home observations in globally and section-enabled editing windows
+are returned. Another linked parent's observations remain masked. School marks
+are also guarded in the client. Official summaries, matrix scores, ages, dates,
+dashboard releases and write access retain their separate permission checks.
+
+Teacher Settings adds Viewing of ECCD Marks as the fourth card in the existing
+ECCD Assessment Visibility grid, with the requested title/description and the
+same switches, spacing and typography. It uses the existing owner-scoped,
+revision-checked auto-save queue and offline recovery. The parent checklist
+supports read-only PRE/MID/POST selection when marks are enabled, shows green
+KAYA/amber DI-KAYA school badges, and shows Marks hidden by class adviser when
+disabled. Read access does not enable submissions or erase durable inputs.
+
+The existing `/api/teachers/me/access` and `/access-controls` GET/PUT aliases
+include the flag. `/api/teachers/settings` GET/PUT uses the same transactional
+settings logic; PUT returns the normalized settings. Omitted fields in older
+updates preserve existing permissions. Backups retain the flag and default
+older documents to false. Parent assessment responses include the flag both
+at the top level and in `permissions`.
+
+Migration `009_parent_eccd_marks` is explicit, additive and idempotent, verifies
+preservation of every previous teacher field and is checked during startup.
+It was applied and checked on the configured local development database; all
+existing teachers default off. Apply/check commands are documented in
+`backend/migrations/README.md`. No legacy sources or dependencies changed.
+
+Fresh verification: 37 backend access/evaluator lifecycle tests pass in disposable
+PostgreSQL schemas. All four new desktop/mobile marks browser cases pass via
+`playwright.eccd-marks.config.ts`, including all seven domains in all three
+periods, default-off behavior, independent scores/write permissions, reload and
+failed-save synchronization. The broader parent suite passed 22 of 24 cases;
+its remaining two score-coupled carry-over assertions were updated to test the
+independent score/marks/editing boundaries; both pass in a focused rerun (all 24
+parent regression cases verified across those runs). App TypeScript,
+changed-file ESLint, Prettier and Python compilation pass. Local Uvicorn startup,
+`/healthz` and `/ready` pass; the temporary verification server was stopped.
+
+## 24. Teacher account creation validation (2026-10-18)
+
+The active Add Teacher form previously rendered one Full Name field and sent
+`last_name: ""`, while `TeacherProvisionRequest` requires both names. This caused
+HTTP 422. The read-only references inspected were the legacy chairman
+`TeacherManagement.jsx`, `teacherController.js` and `utils/personValidation.js`.
+The legacy form has separate names; its controller permits Chairman-issued
+temporary credentials and stores missing employee IDs as null, although its
+person validator still requires an employee ID. The requested active contract
+now explicitly makes that ID optional.
+
+Add Teacher uses separate required First Name and Last Name inputs. Changes strip
+Unicode decimal digits; the existing backend `Name` validator requires letters
+and permits Unicode accents/marks, spaces, hyphens, apostrophes and periods while
+rejecting digits. Existing Tailwind field/grid/modal classes, icons and theme
+remain intact. Teacher response/create/update TypeScript contracts support null
+employee IDs; input state remains a string. Blank IDs become JSON null, and the
+shared update/provision schema normalizes empty or whitespace IDs to None. The
+ORM and configured PostgreSQL column already allow NULL with uniqueness for
+nonempty IDs, verified through read-only inspection; no migration was needed.
+
+Teacher provisioning alone uses `TemporaryPassword`: at least eight characters,
+not whitespace-only, at most 72 UTF-8 bytes. Personal registration/password
+changes retain the strong policy, and new teachers must still replace their
+temporary credential on first login. Existing snake_case requests, camelCase
+aliases, `initial_password`, API route aliases and response shapes are retained.
+Creation drafts and tab-scoped credentials survive failed requests and reload;
+only confirmed HTTP 200/201 clears their exact storage keys.
+
+`backend/tests/test_teacher_creation.py` covers request validation, multiple null
+IDs, duplicate nonempty IDs/transaction rollback, Unicode names, creation aliases,
+authorization and first-login login behavior in disposable PostgreSQL schemas.
+`frontend/playwright.teacher-creation.config.ts` runs real API creation checks
+and mocked teacher-management regressions at desktop/mobile sizes. It reuses the
+disposable API server from the parent-access test configuration and excludes the
+legacy screenshot case that requires a separate visual harness. Legacy sources,
+dependencies, application school records and Git branches remain unchanged.
+
+Fresh verification: all six new backend regressions and all 30 desktop/mobile
+teacher browser cases pass, including real HTTP 201 creation, a subsequent API
+read of the saved teacher, login requiring password replacement, and failed-save
+reload retention. Requested backend compilation, app TypeScript, changed-file
+ESLint and focused Prettier checks pass. The standalone older teacher browser
+configuration could not start its Corepack launcher because its cached pnpm.cjs
+was absent; the new configuration uses the working pnpm.cmd launcher and passed.
+
+Full requested backend discovery completed: 209 tests, with 11 assertion failures
+across five existing unrelated methods. Two rate-limit tests expect 10 requests
+where current policy allows 15; the legacy-route inventory has seven missing
+route subtests; two parent-progress tests retain obsolete home-only/visibility
+expectations. All six teacher-creation tests pass in this full run. Full output:
+`frontend/test-results/teacher-creation-backend-tests.log`. Those unrelated
+contracts and assertions were left unchanged.
+
+## 25. Sticky parent ECCD controls (2026-10-18)
+
+The existing Developmental Domains control card in `ParentEccdAssessment.tsx`
+uses `sticky top-14 z-20 legacy-md:top-0`, preserving its background, shadow,
+spacing and controls. Parent mobile layout overflow uses clip/visible so the
+card follows window scrolling beneath the fixed school header; desktop retains
+the existing scrollable main panel. Assessment behavior and drafts are unchanged.
+
+Verification: app TypeScript and ESLint for both changed frontend files pass.
+Mocked Chromium checks at 320/400/768/899/900/1280px verify sticky positioning,
+unclipped controls, navigation clearance, period switching and saves while
+scrolled. Screenshots and results are under `frontend/test-results/parent-sticky/`;
+the verification script is `frontend/test-results/parent-sticky-check.cjs`.
+Full frontend lint reports three existing `react-hooks/refs` errors in the
+untouched `useParentProfile.ts`. Legacy sources and school records are unchanged.
+
+## 26. Chairman enrolled-student advisers (2026-10-18)
+
+`GET /api/chairman/students` uses `routes/students.py::roster`. The roster now
+batch-resolves `adviser_name` with one query joining SectionTeacher, Teacher and
+User for the listed section IDs. Only Active Primary Adviser assignments with
+active accounts qualify, matching the existing ownership helper. Inactive
+history and the section's compatibility adviser pointer cannot supply stale
+names. Names use the teacher directory's First Last order, skipping missing
+parts; unassigned sections return null. `StudentPublicResponse` and the shared
+frontend Student interface expose the nullable field. No schema migration is
+required.
+
+`StudentRecords.tsx` displays Adviser immediately after Class Name and uses an
+em dash for missing/null names. It reuses adjacent header/cell styles, keeps
+adviser names on one line and reserves an additional 10rem in the table's
+existing scrollable minimum width to preserve row heights on small screens.
+The empty state spans six columns, including the unchanged checkbox column.
+Existing filtering, selection, details, action buttons and durable drafts stay
+intact. The inspected read-only references were legacy `StudentRecords.jsx`,
+`chairmanController.js` and `studentController.js` under AMES-SYSTEM-LEGACY.
+
+`backend/tests/test_student_advisers.py` covers current assignments, takeover,
+stale pointers, unassigned/sectionless students, missing names, inactive accounts
+and one adviser query as the roster grows. The browser checks in
+`playwright.student-advisers.config.ts` use the disposable real API and verify
+column order, takeover/unassignment, styles, row heights and scrolling at
+320px/768px/1280px, plus missing/null fields and existing roster interactions.
+
+Fresh verification: all four adviser backend tests and all four browser cases
+pass, including the explicit row-height comparisons. App TypeScript,
+changed-file ESLint, focused Prettier checks and Python compilation pass.
+Full requested backend discovery ran 213 tests and reports the same 11 existing
+assertion failures across five unrelated methods: two rate-limit expectations,
+the seven missing legacy-route subtests, and two obsolete parent-progress
+expectations. All four adviser tests pass in that run. Full output is in
+`frontend/test-results/student-advisers-backend-tests.log`; browser screenshots
+are under `frontend/test-results/student-advisers/`. Legacy files, dependencies,
+application school records and Git branches were not changed.

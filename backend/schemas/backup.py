@@ -6,7 +6,7 @@ LRNs are encrypted; there are no plaintext LRN columns in this format.
 """
 
 from datetime import date, datetime
-from typing import Literal
+from typing import Literal, Optional
 
 from pydantic import ConfigDict, Field, model_validator
 
@@ -50,6 +50,7 @@ class TeacherBackupRow(BackupRow):
     allow_parent_view_eccd_pre: bool | None
     allow_parent_view_eccd_mid: bool | None
     allow_parent_view_eccd_post: bool | None
+    allow_parent_view_eccd_marks: bool = False
     allow_parent_edit_student_info: bool | None
     allow_parent_edit_home_based_eccd: bool | None
     allow_eccd_question_management: bool
@@ -66,6 +67,9 @@ class ParentBackupRow(BackupRow):
 
 
 class SectionBackupRow(BackupRow):
+    pre_test_parent_editable: bool = True
+    mid_test_parent_editable: bool = False
+    post_test_parent_editable: bool = False
     section_id: PositiveId
     section_name: str = Field(min_length=1, max_length=100)
     adviser_teacher_id: PositiveId | None
@@ -79,6 +83,14 @@ class SectionTeacherBackupRow(BackupRow):
     role: TeacherRole
     status: AssignmentStatus
     assigned_date: datetime | None
+
+    @model_validator(mode="before")
+    @classmethod
+    def retire_legacy_assignment(cls, value: object) -> object:
+        # Old backups retain every assignment row without restoring removed access.
+        if isinstance(value, dict) and value.get("role") == "Substitute":
+            return {**value, "role": "Primary Adviser", "status": "Inactive"}
+        return value
 
 
 class StudentBackupRow(BackupRow):
@@ -148,6 +160,13 @@ class EvaluationBackupRow(BackupRow):
     testing_period: TestingPeriod
     answer: EccdAnswer
     evaluation_date: date
+    parent_id: Optional[int] = None
+    evaluator_role: Literal["teacher", "parent"] = "teacher"
+    teacher_evaluation_date: Optional[date] = None
+    parent_submitted_at: Optional[datetime] = None
+
+
+BackupStudentEccdEvaluation = EvaluationBackupRow
 
 
 class MessageBackupRow(BackupRow):
@@ -226,6 +245,9 @@ class BackupDocument(BackupRow):
 
     @model_validator(mode="after")
     def validate_student_references(self) -> "BackupDocument":
+        active_sections = [row.section_id for row in self.section_teachers if row.status == AssignmentStatus.ACTIVE]
+        if len(active_sections) != len(set(active_sections)):
+            raise ValueError("Only one active adviser is allowed per section")
         for table_name, table in Base.metadata.tables.items():
             primary_key = list(table.primary_key.columns.keys())[0]
             ids = [getattr(row, primary_key) for row in getattr(self, table_name)]

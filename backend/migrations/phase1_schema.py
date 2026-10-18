@@ -34,6 +34,16 @@ def phase1_metadata() -> MetaData:
     # explicitly after Phase 2; evolving ORM metadata must not rewrite history.
     metadata.tables["teachers"].c.class_name.type = String(50)
     metadata.tables["students"].c.section_name.type = String(50)
+    # Keep the historical two-role schema so existing installs are upgraded
+    # explicitly and transactionally by adviser_takeover, never by Phase 1.
+    assignments = metadata.tables["section_teachers"]
+    for constraint in list(assignments.constraints):
+        if constraint.name == "ck_section_teacher_role":
+            assignments.constraints.remove(constraint)
+    assignments.append_constraint(CheckConstraint("role IN ('Primary Adviser', 'Substitute')", name="ck_section_teacher_role"))
+    for index in list(assignments.indexes):
+        if index.name == "uq_section_active_adviser":
+            assignments.indexes.remove(index)
     for table in (metadata.tables["messages"], metadata.tables["system_logs"]):
         for index in list(table.indexes):
             if index.name in ("idx_messages_thread", "idx_logs_timestamp"):

@@ -19,12 +19,14 @@ from backend.tests.test_phase2 import BackendTests
 from backend.utils import realtime
 from backend.migrations.parity_batch1 import apply_batch1
 from backend.migrations.parity_batch2 import apply_batch2
+from backend.migrations.parent_assessment_access import apply_parent_assessment_access
 
 
 def prepare_parity_schema(fixture):
     with fixture.test_engine.begin() as connection:
         apply_batch1(connection, fixture.schema)
         apply_batch2(connection, fixture.schema)
+        apply_parent_assessment_access(connection, fixture.schema)
 
 main = importlib.import_module('backend.main')
 BackendTests.setUpClass()

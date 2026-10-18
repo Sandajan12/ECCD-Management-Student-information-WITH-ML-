@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import {
   Box,
   Typography,
@@ -12,7 +12,6 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
-  Snackbar,
   Divider,
 } from "@mui/material";
 import PasswordValidator from "../../components/teacher/PasswordValidator";
@@ -28,6 +27,8 @@ import type { Draft } from "../../utils/drafts";
 import { useSessionField } from "../../utils/sessionDrafts";
 import type { Permissions, SessionResponse } from "../../types";
 import { passwordValid } from "../../components/ForceChangePassword";
+import { useTeacher } from "../../context/TeacherContext";
+import ParentAssessmentAccessSettings from "../../components/teacher/ParentAssessmentAccessSettings";
 interface PasswordChallenge {
   email?: string;
   challengeToken?: string;
@@ -51,6 +52,7 @@ const initialPermissions: Permissions = {
   allow_parent_view_eccd_pre: false,
   allow_parent_view_eccd_mid: false,
   allow_parent_view_eccd_post: false,
+  allow_parent_view_eccd_marks: false,
   allow_parent_edit_student_info: true,
   allow_parent_edit_home_based_eccd: false,
 };
@@ -59,10 +61,12 @@ const parentPermissions = (source: Permissions): Permissions => ({
   allow_parent_view_eccd_pre: source.allow_parent_view_eccd_pre,
   allow_parent_view_eccd_mid: source.allow_parent_view_eccd_mid,
   allow_parent_view_eccd_post: source.allow_parent_view_eccd_post,
+  allow_parent_view_eccd_marks: source.allow_parent_view_eccd_marks === true,
   allow_parent_edit_student_info: source.allow_parent_edit_student_info,
   allow_parent_edit_home_based_eccd: source.allow_parent_edit_home_based_eccd,
 });
 const TeacherSettings: React.FC = () => {
+  const { section, loading: sectionsLoading } = useTeacher();
   const { user, login } = useAuth();
   const owner = user?.id || 0;
   const accessKey = "ames_draft_" + owner + "_teacher_access";
@@ -75,11 +79,22 @@ const TeacherSettings: React.FC = () => {
   const accessReady = useRef(!!readDraft<Permissions>(accessKey));
   const accessGeneration = useRef(0);
   const accessQueue = useRef<Promise<void>>(Promise.resolve());
+  const [accessLoaded, setAccessLoaded] = useState(false);
+  const [accessSaving, setAccessSaving] = useState(false);
+  const [periodBusy, setPeriodBusy] = useState(false);
+  const accessDisabled =
+    !accessLoaded || accessSaving || periodBusy || sectionsLoading;
   const [accessSnackbar, setAccessSnackbar] = useState<AccessFeedback>({
     open: false,
     message: "",
     severity: "success",
   });
+  const reportAccessFeedback = useCallback(
+    (message: string, severity: "success" | "error") => {
+      setAccessSnackbar({ open: Boolean(message), message, severity });
+    },
+    [],
+  );
   const credentialKey = "ames_teacher_password_" + owner + "_";
   const [oldPassword, setOldPassword, clearOld] = useSessionField(
     credentialKey + "old",
@@ -130,6 +145,7 @@ const TeacherSettings: React.FC = () => {
         const next = parentPermissions(draft?.values || response.data);
         desiredAccess.current = next;
         setAccess(next);
+        setAccessLoaded(true);
       } catch (err) {
         if (current)
           setAccessSnackbar({
@@ -149,7 +165,7 @@ const TeacherSettings: React.FC = () => {
         void load();
         setAccessSnackbar({
           open: true,
-          message: "Parent access settings updated successfully.",
+          message: "Parent access settings saved successfully!",
           severity: "success",
         });
       }
@@ -171,7 +187,8 @@ const TeacherSettings: React.FC = () => {
       });
       return;
     }
-    ++accessGeneration.current;
+    const version = ++accessGeneration.current;
+    setAccessSnackbar((previous) => ({ ...previous, open: false }));
     const values = { ...desiredAccess.current, ...updates };
     desiredAccess.current = values;
     setAccess(values);
@@ -183,25 +200,26 @@ const TeacherSettings: React.FC = () => {
       request: { path: "/api/teachers/me/access", method: "put", data: values },
     };
     storeDraft(accessKey, draft);
+    setAccessSaving(true);
     accessQueue.current = accessQueue.current.then(async () => {
       if (readDraft(accessKey)?.revision !== draft.revision) return;
-      if (!navigator.onLine) {
-        setAccessSnackbar({
-          open: true,
-          message:
-            "Saved locally on device. Will automatically sync once reconnected.",
-          severity: "success",
-        });
-        return;
-      }
       try {
+        if (!navigator.onLine) {
+          setAccessSnackbar({
+            open: true,
+            message:
+              "Saved locally on device. Will automatically sync once reconnected.",
+            severity: "success",
+          });
+          return;
+        }
         const response = await api.put("/api/teachers/me/access", values);
         if (response.status !== 200 && response.status !== 201)
           throw new Error("The server did not confirm this save.");
         confirmDraft(accessKey, draft.revision);
         setAccessSnackbar({
           open: true,
-          message: "Parent access settings updated successfully.",
+          message: "Parent access settings saved successfully!",
           severity: "success",
         });
       } catch (err) {
@@ -225,6 +243,8 @@ const TeacherSettings: React.FC = () => {
             severity: "error",
           });
         }
+      } finally {
+        if (accessGeneration.current === version) setAccessSaving(false);
       }
     });
   };
@@ -380,6 +400,12 @@ const TeacherSettings: React.FC = () => {
           students.
         </Typography>
 
+        {accessSnackbar.open && (
+          <Alert severity={accessSnackbar.severity} sx={{ mb: 3 }}>
+            {accessSnackbar.message}
+          </Alert>
+        )}
+
         <Paper
           sx={{
             p: { xs: 3, md: 4 },
@@ -426,6 +452,10 @@ const TeacherSettings: React.FC = () => {
                     </Typography>
                   </Box>
                   <Switch
+                    disabled={accessDisabled}
+                    slotProps={{
+                      input: { "aria-label": "Student Profile Viewing" },
+                    }}
                     checked={access.allow_parent_view_student_info}
                     onChange={(e) =>
                       persistSettingChange({
@@ -465,6 +495,10 @@ const TeacherSettings: React.FC = () => {
                     </Typography>
                   </Box>
                   <Switch
+                    disabled={accessDisabled}
+                    slotProps={{
+                      input: { "aria-label": "Student Profile Editing" },
+                    }}
                     checked={access.allow_parent_edit_student_info}
                     onChange={(e) =>
                       persistSettingChange({
@@ -488,7 +522,7 @@ const TeacherSettings: React.FC = () => {
               fontWeight: "bold",
             }}
           >
-            ECCD Assessment Visibility & Editing
+            ECCD Assessment Visibility
           </Typography>
           <Grid container spacing={3}>
             <Grid size={{ xs: 12, sm: 6 }}>
@@ -519,6 +553,10 @@ const TeacherSettings: React.FC = () => {
                     </Typography>
                   </Box>
                   <Switch
+                    disabled={accessDisabled}
+                    slotProps={{
+                      input: { "aria-label": "Pre-Test Scores Visibility" },
+                    }}
                     checked={access.allow_parent_view_eccd_pre}
                     onChange={(e) =>
                       persistSettingChange({
@@ -558,6 +596,10 @@ const TeacherSettings: React.FC = () => {
                     </Typography>
                   </Box>
                   <Switch
+                    disabled={accessDisabled}
+                    slotProps={{
+                      input: { "aria-label": "Mid-Test Scores Visibility" },
+                    }}
                     checked={access.allow_parent_view_eccd_mid}
                     onChange={(e) =>
                       persistSettingChange({
@@ -597,6 +639,10 @@ const TeacherSettings: React.FC = () => {
                     </Typography>
                   </Box>
                   <Switch
+                    disabled={accessDisabled}
+                    slotProps={{
+                      input: { "aria-label": "Post-Test Scores Visibility" },
+                    }}
                     checked={access.allow_parent_view_eccd_post}
                     onChange={(e) =>
                       persistSettingChange({
@@ -618,36 +664,48 @@ const TeacherSettings: React.FC = () => {
                   }}
                 >
                   <Box>
-                    <Typography
-                      variant="body2"
-                      sx={{
-                        fontWeight: "bold",
-                      }}
-                    >
-                      Home-Based Checklist Edit
+                    <Typography variant="body2" sx={{ fontWeight: "bold" }}>
+                      Viewing of ECCD Marks
                     </Typography>
                     <Typography
                       variant="caption"
-                      sx={{
-                        color: "text.secondary",
-                      }}
+                      sx={{ color: "text.secondary" }}
                     >
-                      Allow parents to fill out home checklist
+                      Allow parents to view all recorded Kaya and Di-Kaya marks
+                      across all developmental domains
                     </Typography>
                   </Box>
                   <Switch
-                    checked={access.allow_parent_edit_home_based_eccd}
+                    disabled={accessDisabled}
+                    slotProps={{
+                      input: { "aria-label": "Viewing of ECCD Marks" },
+                    }}
+                    checked={access.allow_parent_view_eccd_marks === true}
                     onChange={(e) =>
                       persistSettingChange({
-                        allow_parent_edit_home_based_eccd: e.target.checked,
+                        allow_parent_view_eccd_marks: e.target.checked,
                       })
                     }
-                    color="success"
+                    color="info"
                   />
                 </Box>
               </Paper>
             </Grid>
           </Grid>
+          <Divider sx={{ my: 2 }} />
+          <ParentAssessmentAccessSettings
+            key={`${owner}_${section?.section_id ?? "unassigned"}`}
+            sectionId={section?.section_id ?? null}
+            homeBasedEnabled={access.allow_parent_edit_home_based_eccd}
+            disabled={accessDisabled}
+            onHomeBasedChange={(checked) =>
+              persistSettingChange({
+                allow_parent_edit_home_based_eccd: checked,
+              })
+            }
+            onBusyChange={setPeriodBusy}
+            onFeedback={reportAccessFeedback}
+          />
         </Paper>
       </Box>
 
@@ -837,18 +895,6 @@ const TeacherSettings: React.FC = () => {
           </Button>
         </DialogActions>
       </Dialog>
-      <Snackbar
-        open={accessSnackbar.open}
-        autoHideDuration={4000}
-        onClose={() =>
-          setAccessSnackbar((previous) => ({ ...previous, open: false }))
-        }
-        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
-      >
-        <Alert severity={accessSnackbar.severity} sx={{ borderRadius: 2 }}>
-          {accessSnackbar.message}
-        </Alert>
-      </Snackbar>
     </Box>
   );
 };

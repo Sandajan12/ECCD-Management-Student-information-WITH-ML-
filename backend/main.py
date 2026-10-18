@@ -8,7 +8,7 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
-from sqlalchemy import text
+from sqlalchemy import inspect, text
 from backend.routes import auth, eccd, sections, students, settings, analytics, teachers, messages, backup, eccd_config, chairman, parents
 from backend.config.database import SessionLocal, engine
 from backend.migrations.phase2 import check_phase2
@@ -22,10 +22,38 @@ from backend.utils.http_middleware import RequestLimitsMiddleware, SecurityHeade
 from backend.utils.realtime import SocketHandshakeMiddleware
 from backend.migrations.parity_batch2 import check_batch2
 from backend.migrations.parent_linking import check_parent_linking
+from backend.migrations.parent_assessment_access import check_parent_assessment_access
+from backend.migrations.eccd_evaluator_tracking import check_eccd_evaluator_tracking
+from backend.migrations.adviser_takeover import check_adviser_takeover
+from backend.migrations.parent_eccd_marks import check_parent_eccd_marks
+from backend.migrations.phase1 import MigrationError
 
 access_logger = logging.getLogger("uvicorn.access")
 if not any(isinstance(item, UnreadPollingFilter) for item in access_logger.filters):
     access_logger.addFilter(UnreadPollingFilter())
+
+
+def check_evaluator_tracking_readiness(connection, schema):
+    """Inspect provenance before the generic schema check; never apply upgrades."""
+    required = {"parent_id", "evaluator_role", "teacher_evaluation_date", "parent_submitted_at"}
+    inspector = inspect(connection)
+    columns = (
+        {column["name"] for column in inspector.get_columns("student_eccd_evaluations", schema=schema)}
+        if inspector.has_table("student_eccd_evaluations", schema=schema) else set()
+    )
+    try:
+        missing = required - columns
+        if missing:
+            raise MigrationError("student_eccd_evaluations missing columns: " + ", ".join(sorted(missing)))
+        check_eccd_evaluator_tracking(connection, schema)
+    except MigrationError as error:
+        diagnostic = (
+            f"ECCD evaluator tracking schema is not ready: {error}. "
+            "Administrator: run python -m backend.migrations.eccd_evaluator_tracking --apply"
+        )
+        logging.getLogger("uvicorn.error").error(diagnostic)
+        raise MigrationError(diagnostic) from None
+
 
 @asynccontextmanager
 async def lifespan(api):
@@ -33,6 +61,10 @@ async def lifespan(api):
     # existing table layout or provisions accounts.
     with engine.connect() as connection:
         schema = connection.execute(text("SELECT current_schema()")).scalar_one()
+        check_evaluator_tracking_readiness(connection, schema)
+        check_adviser_takeover(connection, schema)
+        check_parent_assessment_access(connection, schema)
+        check_parent_eccd_marks(connection, schema)
         check_parent_linking(connection, schema)
         check_phase2(connection, schema)
         check_batch2(connection, schema)

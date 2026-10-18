@@ -33,11 +33,10 @@ import {
 } from "recharts";
 import api from "../../services/api";
 import { useTeacher } from "../../context/TeacherContext";
-import {
-  sectionAssessments,
-  sectionPriority,
-} from "../../utils/teacherMetrics";
-import type { Domain, Student } from "../../types";
+import { sectionPriority } from "../../utils/teacherMetrics";
+import type { Assessment, Domain, Student } from "../../types";
+import { useAuth } from "../../context/AuthContext";
+import { assessmentRefreshScheduler } from "../../hooks/assessmentRefresh";
 interface DashboardStats {
   totalStudents: string | number;
   unreadMessages: string | number;
@@ -76,6 +75,7 @@ const emptyStats: DashboardStats = {
 };
 const Dashboard: React.FC = () => {
   const { settings } = useContext(SettingsContext);
+  const { user } = useAuth();
   const { section, sections } = useTeacher();
   const navigate = useNavigate();
   const filterSection = section?.section_name || "";
@@ -94,99 +94,186 @@ const Dashboard: React.FC = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   useEffect(() => {
     let current = true;
-    let version = 0;
+    let controller: AbortController | null = null;
     setDashboardStats({ ...emptyStats, priorityDomain: "Loading..." });
     setMessages([]);
     setDistribution({ male: 0, female: 0 });
-    const load = async () => {
-      const request = ++version;
-      try {
-        const filters = await api.get<DashboardFilters>(
-          "/api/teachers/dashboard-filters",
-        );
-        if (!current || request !== version) return;
-        setDomains(filters.data.domains || []);
-        setFilterDomain((previous) =>
-          previous === "All" || filters.data.domains.includes(previous)
-            ? previous
-            : filters.data.domains[0] || "All",
-        );
-        if (!section || !filters.data.sections.includes(section.section_name))
+    const load = () => {
+      controller?.abort();
+      const request = new AbortController();
+      controller = request;
+      const signal = request.signal;
+      const activeRequest = () => current && !signal.aborted;
+      void api
+        .get<DashboardFilters>("/api/teachers/dashboard-filters", { signal })
+        .then(({ data }) => {
+          if (!activeRequest()) return;
+          setDomains(data.domains || []);
+          setFilterDomain((previous) =>
+            previous === "All" || data.domains.includes(previous)
+              ? previous
+              : data.domains[0] || "All",
+          );
+        })
+        .catch(() => {
+          if (activeRequest()) setDomains([]);
+        });
+      if (!section) return;
+
+      let roster: Student[] | undefined;
+      let questionCount: number | undefined;
+      let submitted: number | undefined;
+      let priorityDomain: string | undefined;
+      let progress: string | undefined;
+      const updateProgress = () => {
+        if (
+          !activeRequest() ||
+          !roster ||
+          questionCount === undefined ||
+          submitted === undefined
+        )
           return;
-        const [stats, roster, reference, counts] = await Promise.all([
-          api.get<DashboardResponse>("/api/teachers/dashboard-stats", {
-            params: { section: section.section_name },
-          }),
-          api.get<Student[]>("/api/students/section/" + section.section_id),
-          api.get<Domain[]>("/api/eccd/domains-progress"),
-          api.get<PieData[]>("/api/teachers/dashboard-pie", {
-            params: {
-              section: section.section_name,
-              domain: "All",
-              period: "All",
-            },
-          }),
-        ]);
-        if (!current || request !== version) return;
-        const active = roster.data.filter(
-          (s) => s.is_active && s.section_id === section.section_id,
-        );
-        const questionCount = reference.data.reduce(
-          (sum, domain) => sum + domain.questions.length,
-          0,
-        );
-        const required = active.length * questionCount * 3;
-        const submitted = counts.data.reduce(
-          (sum, slice) => sum + Number(slice.value || 0),
-          0,
-        );
-        const priorityDomain =
-          sections.length > 1
-            ? sectionPriority(await sectionAssessments(active))
-            : stats.data.stats.priorityDomain || "None";
-        if (!current || request !== version) return;
-        setDashboardStats({
-          ...emptyStats,
-          ...stats.data.stats,
-          priorityDomain,
-          totalStudents: active.length,
-          eccdProgress: required
-            ? Math.min(100, (submitted / required) * 100).toFixed(1) + "%"
-            : "0%",
-        });
-        setDistribution({
-          male: active.filter((s) => s.gender?.toLowerCase() === "male").length,
-          female: active.filter((s) => s.gender?.toLowerCase() === "female")
-            .length,
-        });
-        setMessages(stats.data.messages || []);
-      } catch {
-        if (current && request === version) {
-          setDashboardStats(emptyStats);
+        const required = roster.length * questionCount * 3;
+        progress = required
+          ? Math.min(100, (submitted / required) * 100).toFixed(1) + "%"
+          : "0%";
+        setDashboardStats((previous) => ({
+          ...previous,
+          eccdProgress: progress!,
+        }));
+      };
+      // Each response publishes its own fields. Reference/progress failures
+      // must not hide an already available roster, summary or recent feed.
+      void api
+        .get<DashboardResponse>("/api/teachers/dashboard-stats", {
+          params: { section: section.section_name },
+          signal,
+        })
+        .then(({ data }) => {
+          if (!activeRequest()) return;
+          setDashboardStats((previous) => ({
+            ...emptyStats,
+            ...data.stats,
+            totalStudents: roster ? roster.length : data.stats.totalStudents,
+            priorityDomain:
+              priorityDomain ?? data.stats.priorityDomain ?? "None",
+            eccdProgress: progress ?? previous.eccdProgress,
+          }));
+          setMessages(data.messages || []);
+        })
+        .catch(() => {
+          if (!activeRequest()) return;
+          setDashboardStats((previous) => ({
+            ...previous,
+            unreadMessages: 0,
+            priorityDomain: priorityDomain ?? "None",
+          }));
           setMessages([]);
-          setDistribution({ male: 0, female: 0 });
-        }
-      }
+        });
+      void api
+        .get<Student[]>("/api/students/section/" + section.section_id, {
+          signal,
+        })
+        .then(async ({ data }) => {
+          if (!activeRequest()) return;
+          const active = data.filter(
+            (s) => s.is_active && s.section_id === section.section_id,
+          );
+          roster = active;
+          setDashboardStats((previous) => ({
+            ...previous,
+            totalStudents: active.length,
+          }));
+          setDistribution({
+            male: active.filter((s) => s.gender?.toLowerCase() === "male")
+              .length,
+            female: active.filter((s) => s.gender?.toLowerCase() === "female")
+              .length,
+          });
+          updateProgress();
+          // Preserve the existing latest-period-per-student priority rule for
+          // multiple assignments. Single-section views never need checklists.
+          if (sections.length > 1) {
+            const records = await Promise.all(
+              active.map(async (student) => {
+                const response = await api.get<Assessment>(
+                  `/api/eccd/assessment/${student.student_id}`,
+                  { signal },
+                );
+                return response.data;
+              }),
+            );
+            if (!activeRequest()) return;
+            priorityDomain = sectionPriority(records);
+            setDashboardStats((previous) => ({
+              ...previous,
+              priorityDomain: priorityDomain!,
+            }));
+          }
+        })
+        .catch(() => {
+          // Keep independently loaded summary data when roster/detail fails.
+        });
+      void api
+        .get<Domain[]>("/api/eccd/domains-progress", { signal })
+        .then(({ data }) => {
+          if (!activeRequest()) return;
+          questionCount = data.reduce(
+            (sum, domain) => sum + domain.questions.length,
+            0,
+          );
+          updateProgress();
+        })
+        .catch(() => {
+          // Keep other cards available; only completion needs the denominator.
+        });
+      void api
+        .get<PieData[]>("/api/teachers/dashboard-pie", {
+          params: {
+            section: section.section_name,
+            domain: "All",
+            period: "All",
+          },
+          signal,
+        })
+        .then(({ data }) => {
+          if (!activeRequest()) return;
+          submitted = data.reduce(
+            (sum, slice) => sum + Number(slice.value || 0),
+            0,
+          );
+          updateProgress();
+        })
+        .catch(() => {
+          // The selected-period chart has its own request and failure state.
+        });
     };
-    void load();
+    load();
     const reload = () => void load();
+    const scheduler = assessmentRefreshScheduler(user?.id || 0, async () =>
+      load(),
+    );
     window.addEventListener("online", reload);
     window.addEventListener("focus", reload);
-    window.addEventListener("ames-record-synced", reload);
+    window.addEventListener("ames-record-synced", scheduler.schedule);
     return () => {
       current = false;
+      controller?.abort();
+      scheduler.cancel();
       window.removeEventListener("online", reload);
       window.removeEventListener("focus", reload);
-      window.removeEventListener("ames-record-synced", reload);
+      window.removeEventListener("ames-record-synced", scheduler.schedule);
     };
-  }, [section?.section_id, section?.section_name, sections.length]);
+  }, [section?.section_id, section?.section_name, sections.length, user?.id]);
   useEffect(() => {
     let current = true;
-    let version = 0;
+    let controller: AbortController | null = null;
     setPieData([]);
     const load = async () => {
       if (!filterSection) return;
-      const request = ++version;
+      controller?.abort();
+      const request = new AbortController();
+      controller = request;
       try {
         const response = await api.get<PieData[]>(
           "/api/teachers/dashboard-pie",
@@ -196,25 +283,29 @@ const Dashboard: React.FC = () => {
               domain: filterDomain,
               period: filterPeriod,
             },
+            signal: request.signal,
           },
         );
-        if (current && request === version) setPieData(response.data || []);
+        if (current && !request.signal.aborted) setPieData(response.data || []);
       } catch {
-        if (current && request === version) setPieData([]);
+        if (current && !request.signal.aborted) setPieData([]);
       }
     };
     void load();
     const reload = () => void load();
+    const scheduler = assessmentRefreshScheduler(user?.id || 0, load);
     window.addEventListener("online", reload);
     window.addEventListener("focus", reload);
-    window.addEventListener("ames-record-synced", reload);
+    window.addEventListener("ames-record-synced", scheduler.schedule);
     return () => {
       current = false;
+      controller?.abort();
+      scheduler.cancel();
       window.removeEventListener("online", reload);
       window.removeEventListener("focus", reload);
-      window.removeEventListener("ames-record-synced", reload);
+      window.removeEventListener("ames-record-synced", scheduler.schedule);
     };
-  }, [filterSection, filterDomain, filterPeriod]);
+  }, [filterSection, filterDomain, filterPeriod, user?.id]);
   // Dynamically populated stats array
   const stats = [
     {

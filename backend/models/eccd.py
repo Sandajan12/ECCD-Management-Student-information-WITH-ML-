@@ -2,8 +2,10 @@ import enum
 
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
     Column,
     Date,
+    DateTime,
     Enum,
     ForeignKey,
     ForeignKeyConstraint,
@@ -70,6 +72,12 @@ class StudentEccdEvaluation(Base):
     teacher_id = Column(
         Integer, ForeignKey("teachers.teacher_id", ondelete="SET NULL"), nullable=True
     )
+    parent_id = Column(
+        Integer,
+        ForeignKey("parents.parent_id", name="fk_eccd_evaluator_parent", ondelete="SET NULL"),
+        nullable=True,
+    )
+    evaluator_role = Column(String(7), nullable=False, default="teacher", server_default="teacher")
     question_id = Column(
         Integer,
         ForeignKey("eccd_questions.question_id", ondelete="CASCADE"),
@@ -78,17 +86,21 @@ class StudentEccdEvaluation(Base):
     testing_period = Column(Enum(TestingPeriod), nullable=False)
     answer = Column(Enum(EccdAnswer), nullable=False)
     evaluation_date = Column(Date, nullable=False)
+    teacher_evaluation_date = Column(Date, nullable=True)
+    parent_submitted_at = Column(DateTime(timezone=True), nullable=True)
 
     # Enforce strict composite uniqueness matching DepEd logic
     __table_args__ = (
         UniqueConstraint(
             "student_id", "question_id", "testing_period", name="unique_student_eval"
         ),
+        CheckConstraint("evaluator_role IN ('teacher', 'parent')", name="ck_eccd_evaluator_role"),
         Index("idx_student_period", "student_id", "testing_period"),
     )
 
     question = relationship("EccdQuestion", back_populates="evaluations")
     student = relationship("Student", back_populates="evaluations", foreign_keys=[student_id])
+    parent = relationship("Parent", back_populates="evaluations")
 
     @hybrid_property
     def student_lrn(self):

@@ -84,7 +84,7 @@ def build_session(db: Session, user: User) -> dict:
     section = None
     teacher = db.query(Teacher).filter_by(user_id=user.user_id).first() if user.role.value == "admin" else None
     if teacher:
-        assignment = db.query(SectionTeacher).filter_by(teacher_id=teacher.teacher_id, status="Active").order_by((SectionTeacher.role == "Primary Adviser").desc(), SectionTeacher.id).first()
+        assignment = db.query(SectionTeacher).filter_by(teacher_id=teacher.teacher_id, role="Primary Adviser", status="Active").order_by(SectionTeacher.id).first()
         section = db.get(Section, assignment.section_id) if assignment else None
     payload = {"id": user.user_id, "userId": user.user_id, "sub": user.username, "username": user.username,
                "email": user.email, "role": user.role.value, "is_first_login": int(user.is_first_login),

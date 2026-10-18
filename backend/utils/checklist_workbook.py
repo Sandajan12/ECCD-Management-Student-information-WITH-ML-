@@ -5,6 +5,7 @@ import openpyxl
 from openpyxl.cell.cell import MergedCell
 from openpyxl.styles import Font
 from backend.utils.eccd_scorer import calculate_decimal_age, calculate_scores
+from backend.utils.eccd_dates import get_official_testing_date
 
 DOMAIN_CODES = {1:'GM', 2:'FM', 3:'SH', 4:'RL', 5:'EL', 6:'C', 7:'SE'}
 
@@ -78,7 +79,8 @@ def generate_student_workbook(student, teacher, parents, evaluations, questions,
         for row,columns in totals.values(): write(f'{columns.split()[index]}{row}',None)
         records=[record for record in evaluations if record.testing_period.value==period]
         if not records: continue
-        evaluation_date=min(record.evaluation_date for record in records)
+        evaluation_date=get_official_testing_date(evaluations,period)
+        if evaluation_date is None: continue
         write(f'M{index+3}',evaluation_date.strftime('%m/%d/%Y'))
         if not student.date_of_birth: continue
         birth=student.date_of_birth

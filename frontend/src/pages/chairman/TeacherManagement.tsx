@@ -3,7 +3,6 @@ import API, { downloadFile, errorMessage } from "../../services/api";
 import { confirmDraft, readDraft, useDurableForm } from "../../utils/drafts";
 import { useSessionField } from "../../utils/sessionDrafts";
 import type {
-  AssignmentRole,
   Section,
   Teacher,
   TeacherFormValues,
@@ -24,10 +23,10 @@ import {
 } from "../../components/chairman/ui";
 import Icon from "../../components/chairman/Icon";
 import { IconButton } from "../../components/chairman/ui";
-import {
-  PasswordRules,
-  passwordValid,
-} from "../../components/ForceChangePassword";
+const temporaryPasswordValid = (value: string): boolean =>
+  value.length >= 8 &&
+  value.trim().length > 0 &&
+  new TextEncoder().encode(value).length <= 72;
 interface TeacherFormProps {
   onSection: () => void;
   onDeleteSection: (section: Section) => void;
@@ -157,17 +156,17 @@ function TeacherForm({
     );
     if (
       !values.first_name.trim() ||
+      (!teacher && !values.last_name.trim()) ||
       !values.email.trim() ||
-      !values.employee_id.trim() ||
       !section ||
       (teacher && !values.username.trim())
     ) {
-      setError("All fields are required. Please fill in all the blanks.");
+      setError("Please fill in all required fields.");
       return;
     }
-    if (!teacher && !passwordValid(password)) {
+    if (!teacher && !temporaryPasswordValid(password)) {
       setError(
-        "Use at least 8 characters, uppercase, lowercase, and a number. Maximum 72 UTF-8 bytes.",
+        "Use at least 8 characters for the temporary password. Maximum 72 UTF-8 bytes.",
       );
       return;
     }
@@ -181,7 +180,7 @@ function TeacherForm({
         last_name: values.last_name.trim(),
         email: values.email.trim(),
         username: teacher ? values.username.trim() : values.email.trim(),
-        employee_id: values.employee_id.trim(),
+        employee_id: values.employee_id.trim() || null,
         class_name: section.section_name,
       };
       if (teacher) {
@@ -230,17 +229,17 @@ function TeacherForm({
           setError("");
           if (
             !values.first_name.trim() ||
+            (!teacher && !values.last_name.trim()) ||
             !values.email.trim() ||
-            !values.employee_id.trim() ||
             !values.section_id ||
             (teacher && !values.username.trim())
           ) {
-            setError("All fields are required. Please fill in all the blanks.");
+            setError("Please fill in all required fields.");
             return;
           }
-          if (!teacher && !passwordValid(password)) {
+          if (!teacher && !temporaryPasswordValid(password)) {
             setError(
-              "Use at least 8 characters, uppercase, lowercase, and a number. Maximum 72 UTF-8 bytes.",
+              "Use at least 8 characters for the temporary password. Maximum 72 UTF-8 bytes.",
             );
             return;
           }
@@ -263,7 +262,7 @@ function TeacherForm({
                 "email",
                 "employee_id",
               ] as const)
-            : (["first_name", "email", "employee_id"] as const)
+            : (["first_name", "last_name", "email", "employee_id"] as const)
           ).map((name) => (
             <Field
               key={name}
@@ -274,16 +273,18 @@ function TeacherForm({
               className="bg-[#f9f9f9]"
               label={
                 {
-                  first_name: teacher ? "First Name" : "Full Name",
-                  last_name: "Last Name (optional)",
+                  first_name: "First Name",
+                  last_name: teacher ? "Last Name (optional)" : "Last Name",
                   username: "Username",
                   email: "Email",
-                  employee_id: "Employee ID",
+                  employee_id: "Employee ID (optional)",
                 }[name]
               }
               value={values[name]}
               type={name === "email" ? "email" : "text"}
-              required={name !== "last_name"}
+              required={
+                name !== "employee_id" && (!teacher || name !== "last_name")
+              }
               disabled={busy}
               maxLength={
                 name === "first_name" || name === "last_name"
@@ -292,7 +293,15 @@ function TeacherForm({
                     ? 100
                     : 50
               }
-              onChange={(e) => change({ ...values, [name]: e.target.value })}
+              onChange={(e) =>
+                change({
+                  ...values,
+                  [name]:
+                    name === "first_name" || name === "last_name"
+                      ? e.target.value.replace(/\p{Nd}/gu, "")
+                      : e.target.value,
+                })
+              }
             />
           ))}
           <Select
@@ -352,7 +361,14 @@ function TeacherForm({
             />
           )}
         </div>
-        {!teacher && password && <PasswordRules value={password} />}
+        {!teacher && password && (
+          <p
+            className={`text-xs leading-6 ${temporaryPasswordValid(password) ? "text-emerald-600" : "text-slate-500"}`}
+          >
+            Use 8 or more characters for the temporary password. Maximum 72
+            UTF-8 bytes.
+          </p>
+        )}
       </form>
       {handover && (
         <SectionHandover
@@ -447,9 +463,6 @@ function ManageAccess({
     `teacher_assignment_${teacher.teacher_id}`,
     {
       section_id: String(teacher.section_id || ""),
-      role: (teacher.role === "Substitute"
-        ? "Substitute"
-        : "Primary Adviser") as AssignmentRole,
     },
   );
   const permissionForm = useDurableForm(
@@ -471,7 +484,6 @@ function ManageAccess({
     try {
       const payload: TeacherAssignmentPayload = {
         teacher_id: teacher.teacher_id,
-        role: values.role,
       };
       const result = await save(
         `/api/chairman/sections/${values.section_id}/assign-teacher`,
@@ -516,37 +528,26 @@ function ManageAccess({
               </option>
             ))}
           </Select>
-          <Select
-            label="Assignment role"
-            value={values.role}
-            disabled={busy}
-            onChange={(e) => {
-              if (
-                e.target.value === "Primary Adviser" ||
-                e.target.value === "Substitute"
-              )
-                change({ ...values, role: e.target.value });
-            }}
-          >
-            <option>Primary Adviser</option>
-            <option>Substitute</option>
-          </Select>
           <Notice>
-            {values.role === "Primary Adviser"
-              ? "The current Primary Adviser will be replaced. Teachers with no remaining assignment are archived. Student assessment records are preserved."
-              : "The current Primary Adviser stays assigned and continues to control parent permissions."}
+            {(() => {
+              const incumbent = incumbentSection(
+                sections,
+                values.section_id,
+                teacher.teacher_id,
+              );
+              return incumbent
+                ? `Section ${incumbent.section_name} is currently assigned to ${[incumbent.first_name, incumbent.last_name].filter(Boolean).join(" ") || "another teacher"}. Assigning this section will transfer the adviser role to this teacher.`
+                : "Assign this teacher as the section's Adviser. Student records, assessments and section parent editing settings are preserved.";
+            })()}
           </Notice>
           <Button
             disabled={busy || !values.section_id}
             onClick={() => {
-              const incumbent =
-                values.role === "Primary Adviser"
-                  ? incumbentSection(
-                      sections,
-                      values.section_id,
-                      teacher.teacher_id,
-                    )
-                  : undefined;
+              const incumbent = incumbentSection(
+                sections,
+                values.section_id,
+                teacher.teacher_id,
+              );
               if (incumbent) setHandover(incumbent);
               else void assign();
             }}
