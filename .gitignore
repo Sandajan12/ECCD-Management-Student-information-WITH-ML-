@@ -145,7 +145,7 @@ backend/assets/templates/*.xls
 
 # Local read-only migration reference; never add the embedded repository.
 /AMES-SYSTEM/
-/AMES-SYSTEM-LEGACY/
+AMES-SYSTEM-LEGACY/
 
 # ML Raw Datasets and Generated Microdata
 backend/ml/raw_data/
