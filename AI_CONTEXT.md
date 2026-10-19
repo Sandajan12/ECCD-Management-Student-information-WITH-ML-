@@ -544,6 +544,13 @@ not reasons to generate temporary replacement keys. Backup routes are Chairman-o
 
 ## 10. Offline durability and development rules
 
+`frontend/playwright.ml-insights.config.ts` is self-contained: desktop Chromium,
+`./tests/ml-insights.spec.ts`, and Vite at `http://localhost:5173` with existing
+server reuse. It no longer imports the missing parent-assessment-access config.
+It starts only Vite; the teacher ML tests still require their test API at
+`http://127.0.0.1:8769` separately. The parent ML config is already independent
+and retains its disposable API/Vite servers on ports 8771/5183.
+
 Preserve inputs across reload, network failure, offline operation, and session
 expiry. **Never call localStorage.clear().** Evict only the exact confirmed record
 and revision after HTTP 200/201; older responses cannot erase newer edits.
