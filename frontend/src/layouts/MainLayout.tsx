@@ -9,10 +9,11 @@ import LegacyRipple from "../components/LegacyRipple";
 import LegacyIcon from "../components/LegacyIcon";
 import type { LegacyIconName } from "../components/LegacyIcon";
 import type { ReactNode } from "react";
+import AutoAwesomeRounded from "@mui/icons-material/AutoAwesomeRounded";
 interface NavItem {
   title: string;
   path: string;
-  icon: LegacyIconName;
+  icon: LegacyIconName | "Sparkles";
 }
 interface MainLayoutProps {
   children?: ReactNode;
@@ -154,6 +155,11 @@ export default function MainLayout({ children }: MainLayoutProps) {
             },
             { title: "My Students", path: "/teacher/students", icon: "People" },
             {
+              title: "ML Insights",
+              path: "/teacher/ml-insights",
+              icon: "Sparkles",
+            },
+            {
               title: "Assessments",
               path: "/teacher/eccdassessment",
               icon: "Assignment",
@@ -255,7 +261,11 @@ export default function MainLayout({ children }: MainLayoutProps) {
                     <span
                       className={`relative mr-2 inline-flex min-w-6 ${isActive ? "text-white" : "text-[#9ca3af]"}`}
                     >
-                      <LegacyIcon name={item.icon} className="size-5" />
+                      {item.icon === "Sparkles" ? (
+                        <AutoAwesomeRounded sx={{ fontSize: "1.25rem" }} />
+                      ) : (
+                        <LegacyIcon name={item.icon} className="size-5" />
+                      )}
                       {badge(item)}
                     </span>
                     <span
@@ -345,7 +355,11 @@ export default function MainLayout({ children }: MainLayoutProps) {
               {({ isActive }) => (
                 <>
                   <span className="relative inline-flex items-center justify-center">
-                    <LegacyIcon name={item.icon} className="size-[22px]" />
+                    {item.icon === "Sparkles" ? (
+                      <AutoAwesomeRounded sx={{ fontSize: "1.375rem" }} />
+                    ) : (
+                      <LegacyIcon name={item.icon} className="size-[22px]" />
+                    )}
                     {badge(item, true)}
                   </span>
                   <span

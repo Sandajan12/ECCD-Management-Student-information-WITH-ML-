@@ -451,16 +451,59 @@ Validation/permission failures retain inputs for review.
   scoring, evaluation history, permission masking, and confirmation-safe drafts
   when changing features. Do not infer behavior solely from historical docs.
 
-## 11. ML goals and verification boundaries
+## 11. ML research inference and verification boundaries
 
-No active backend/ml directory, training pipeline, model integration, or inference
-endpoint was found. NumPy, pandas, SciPy, scikit-learn, and joblib are installed.
-Current analytics are SQL aggregations and deterministic ECCD scores.
+The active `backend/ml/` training pipeline uses exactly 18 PRE and demographic
+features to predict three supported POST classes. Trusted artifacts, including
+`rf_post_test_model.joblib`, `prescriptive_guides.json`, and
+`MODEL_EVALUATION_REPORT.md`, live in `backend/ml/artifacts/`, as established by
+`common.py`. Model binaries and research datasets follow existing Git-ignore
+policy; deployments need the trusted locally generated artifacts.
 
-Future ML should remain isolated from HTTP/domain logic, use historical
-seven-domain scores, assessment-date ages and inter-period progression, and
-return risk labels/confidence. It must never mutate or replace official DepEd
-answers, scores, or interpretations. These are goals, not delivered features.
+`inference.py` caches the fitted pipeline and JSON guides. FastAPI lifespan warms
+the cache; unavailable/incompatible artifacts produce a sanitized HTTP 503 for
+predictions without disabling ordinary school workflows. No inference refits,
+database migrations, assessment writes, or scoring-rule changes are introduced.
+
+Teacher-only routes in `routes/ml.py` expose `GET /api/ml/students?section_id=N`,
+`POST /api/ml/predict/student/{student_id}`, and `POST /api/ml/predict/sandbox`.
+The roster and student inference enforce active section assignments. Student
+inference requires all configured PRE questions, all seven domains, a teacher-
+confirmed PRE date, and a valid birth date. Existing deterministic scoring and
+completed-month age use that PRE date. Parent observations can contribute answers
+without turning their submission dates into an official teacher test date.
+
+Missing demographics go through the saved median/mode imputers. Canonical parent
+education values come only from synced family records. Free-text occupations have
+no reviewed training mapping and remain missing, rather than inferring household
+tiers. Imputed fields are disclosed. Returned baseline tiers and interventions
+follow the existing rules: scaled <=6 or explicit DI-KAYA items, independently of
+the predicted outcome. DI-KAYA item numbers are positions within each domain.
+
+`/teacher/ml-insights` provides section-scoped student testing, probabilities,
+seven baseline cards, expandable classroom/home activities, and a debounced
+18-input sandbox. It reuses Tailwind cards, MUI Stack structure, and installed
+Material icons (Lucide is not installed). Sandbox values persist in owner-scoped
+drafts, remain after successful inference, and retry on reconnection; failed
+requests never discard inputs. No prediction is persisted as an assessment.
+
+The page explicitly identifies educational research use, not clinical diagnosis,
+and documents the report's mixed-holdout 88.9% accuracy versus 25% on eight real
+holdout learners. All 29 observed real POST outcomes are Average; all contribute
+generator anchors, so there is no independent real-world validation. Probabilities
+are not calibrated clinical confidence; activities do not establish treatment
+effectiveness. Advanced developmental classes remain unsupported.
+
+Fresh feature verification (2026-10-18): all 8 existing model acceptance tests
+and 6 new API/cache tests pass. API checks use disposable PostgreSQL schemas and
+cover section/role gates, incomplete/parent-only PRE sessions, missing-field
+imputation, canonical demographics, sanitized unavailability, cache reuse, and
+unchanged assessments. All 4 real-API desktop/mobile Playwright cases pass via
+`playwright.ml-insights.config.ts`, including readable 320px field widths,
+probabilities/activities, offline draft retention, reconnection, and reload.
+Screenshots are in `frontend/test-results/ml-insights/`. Changed Python files
+compile; app TypeScript and changed-file ESLint pass. Production build passes
+with the existing large-bundle advisory. No dependencies or branches were added.
 
 ### Verification commands and isolation
 

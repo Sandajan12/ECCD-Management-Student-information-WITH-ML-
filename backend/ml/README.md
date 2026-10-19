@@ -1,4 +1,4 @@
-# Standalone ECCD model research
+# ECCD model research and teacher insights
 
 Run from the repository root with Python 3.12 and the project's environment:
 
@@ -53,7 +53,28 @@ student = pd.read_csv(DATA / "real_beneficiary_cleaned.csv").iloc[0].to_dict()
 result = predict_student(student)
 ```
 
+The Teacher Portal integrates this saved model at `/teacher/ml-insights`.
+Teacher-authenticated routes are `GET /api/ml/students?section_id=N`,
+`POST /api/ml/predict/student/{student_id}`, and `POST /api/ml/predict/sandbox`.
+Pydantic request/response contracts live in `backend/schemas/ml.py`. Student
+inference checks section ownership and complete PRE data, uses the official
+teacher PRE date for age/scoring, and discloses missing imputed demographics.
+Free-text occupations remain missing because no reviewed tier mapping exists.
+The sandbox accepts all 18 model inputs; its total and delayed-domain controls
+are calculated from the seven domains, while standard score is independently
+adjustable for hypothetical testing. Inconsistent scenarios may be unrealistic.
+No predictions alter official assessments. Startup caches artifacts in memory;
+missing artifacts return HTTP 503 for prediction requests.
+
+Additional integration checks:
+
+```powershell
+uv run --no-project --python .venv312 python -m unittest backend.tests.test_ml_api -v
+pnpm.cmd --dir frontend exec playwright test --config playwright.ml-insights.config.ts
+```
+
 Load only trusted joblib artifacts. Names and LRNs never enter exported CSVs, but
 pseudonymous developmental records are still sensitive. Workbooks, CSVs and the
 model binary remain Git-ignored by existing project policy. Generated reports and
-figures are reproducible locally. No database connection or API server is needed.
+figures are reproducible locally. Offline training and local inference require no
+database or API server; the teacher integration uses the existing application DB.

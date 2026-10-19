@@ -9,7 +9,8 @@ from starlette.exceptions import HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from sqlalchemy import inspect, text
-from backend.routes import auth, eccd, sections, students, settings, analytics, teachers, messages, backup, eccd_config, chairman, parents
+from backend.routes import auth, eccd, sections, students, settings, analytics, teachers, messages, backup, eccd_config, chairman, parents, ml
+from backend.ml.inference import warm_inference
 from backend.config.database import SessionLocal, engine
 from backend.migrations.phase2 import check_phase2
 from backend.utils.realtime import sio
@@ -70,6 +71,10 @@ async def lifespan(api):
         check_batch2(connection, schema)
     with SessionLocal() as db:
         seed_reference_data(db)
+    try:
+        warm_inference()
+    except (OSError, ValueError, KeyError, TypeError):
+        logging.getLogger("uvicorn.error").error("ML research artifacts unavailable; prediction endpoints will return 503.")
     if runtime_settings.otp_enabled:
         logging.getLogger("uvicorn.error").info("[AUTH] Email OTP enabled; SMTP delivery active.")
     else:
@@ -97,7 +102,7 @@ for router in (auth.router, eccd.router, sections.router, students.router,
                students.message_router, students.chairman_router, settings.router, settings.chairman_router,
                analytics.router, analytics.legacy_router, teachers.router, teachers.student_router, messages.router, backup.router,
                backup.chairman_router, eccd_config.router, eccd_config.chairman_router,
-               chairman.router, parents.router):
+               chairman.router, parents.router, ml.router):
     api.include_router(router)
 
 @api.get("/", response_model=MessageResult)

@@ -19,6 +19,7 @@ import StudentManagement from "./pages/teacher/StudentManagement";
 import EccdAssessment from "./pages/teacher/EccdAssessment";
 import MessageParent from "./pages/teacher/MessageParent";
 import TeacherSettings from "./pages/teacher/TeacherSettings";
+import MlInsights from "./pages/teacher/MlInsights";
 
 // Parent Pages
 import ParentDashboard from "./pages/parent/Dashboard";
@@ -120,6 +121,7 @@ function App() {
                 />
                 <Route path="/teacher/messages" element={<MessageParent />} />
                 <Route path="/teacher/settings" element={<TeacherSettings />} />
+                <Route path="/teacher/ml-insights" element={<MlInsights />} />
                 <Route
                   path="/teacher/eccd-questions"
                   element={

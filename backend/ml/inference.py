@@ -1,14 +1,34 @@
-"""Local single-student inference only; never imports or registers an API route."""
+"""Cached inference using the trusted, fitted research artifacts; no model refits."""
 from __future__ import annotations
 
 from pathlib import Path
+from functools import lru_cache
+import json
 
 import joblib
 import numpy as np
 import pandas as pd
 
-from backend.ml.common import ARTIFACTS, CATEGORICAL_FEATURES, FEATURES, NUMERIC_FEATURES
+from backend.ml.common import ACTIVE_CLASSES, ARTIFACTS, CATEGORICAL_FEATURES, FEATURES, NUMERIC_FEATURES
 from backend.ml.prescriptions import recommend
+
+
+@lru_cache(maxsize=4)
+def load_model(model_path: Path = ARTIFACTS / "rf_post_test_model.joblib") -> dict:
+    bundle = joblib.load(model_path)
+    if bundle["metadata"]["features"] != FEATURES or set(bundle["pipeline"].classes_) != set(ACTIVE_CLASSES):
+        raise ValueError("The model does not match the supported 18-feature, three-class contract")
+    return bundle
+
+
+@lru_cache(maxsize=1)
+def load_guides() -> dict:
+    return json.loads((ARTIFACTS / "prescriptive_guides.json").read_text(encoding="utf-8"))
+
+
+def warm_inference() -> None:
+    load_model(ARTIFACTS / "rf_post_test_model.joblib")
+    load_guides()
 
 
 def predict_student(student: dict, model_path: Path = ARTIFACTS / "rf_post_test_model.joblib") -> dict:
@@ -16,7 +36,7 @@ def predict_student(student: dict, model_path: Path = ARTIFACTS / "rf_post_test_
     missing = set(FEATURES) - set(student)
     if missing:
         raise ValueError(f"Missing feature keys: {sorted(missing)}")
-    bundle = joblib.load(model_path)
+    bundle = load_model(model_path)
     frame = pd.DataFrame([{key: student[key] for key in FEATURES}]).replace({None: np.nan})
     for key in NUMERIC_FEATURES:
         frame[key] = pd.to_numeric(frame[key], errors="raise")
@@ -27,5 +47,5 @@ def predict_student(student: dict, model_path: Path = ARTIFACTS / "rf_post_test_
     return {"predicted_post_interpretation": pipeline.predict(frame)[0],
         "class_probabilities": dict(zip(pipeline.classes_.tolist(), map(float, probabilities))),
         "unsupported_classes": bundle["metadata"]["unsupported_classes"],
-        "interventions": recommend(student),
+        "interventions": recommend(student, load_guides()),
         "interpretation_note": "Research prediction; official assessments remain deterministic and unchanged"}
