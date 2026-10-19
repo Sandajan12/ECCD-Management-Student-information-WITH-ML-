@@ -27,6 +27,7 @@ from backend.migrations.parent_assessment_access import check_parent_assessment_
 from backend.migrations.eccd_evaluator_tracking import check_eccd_evaluator_tracking
 from backend.migrations.adviser_takeover import check_adviser_takeover
 from backend.migrations.parent_eccd_marks import check_parent_eccd_marks
+from backend.migrations.parent_predictions import check_parent_predictions
 from backend.migrations.phase1 import MigrationError
 
 access_logger = logging.getLogger("uvicorn.access")
@@ -66,6 +67,7 @@ async def lifespan(api):
         check_adviser_takeover(connection, schema)
         check_parent_assessment_access(connection, schema)
         check_parent_eccd_marks(connection, schema)
+        check_parent_predictions(connection, schema)
         check_parent_linking(connection, schema)
         check_phase2(connection, schema)
         check_batch2(connection, schema)

@@ -188,3 +188,22 @@ settings updates preserve omitted permissions; older backups default this flag
 to false. The parent checklist returns teacher-recorded marks only when enabled,
 including periods whose official scores remain unreleased. When disabled, only
 the authenticated parent's own home answers in editable periods are returned.
+
+## Parent student predictions (010)
+
+Stop API writers and apply before starting the updated API:
+
+```powershell
+uv run --no-project --python .venv312 python -m backend.migrations.parent_predictions --apply
+uv run --no-project --python .venv312 python -m backend.migrations.parent_predictions --check
+```
+
+Adds `teachers.allow_parent_predictions`, a non-null Boolean defaulting to false.
+The transaction verifies every other teacher field is unchanged. Repeated runs
+preserve saved choices. Startup validates the schema without applying changes.
+Older settings updates preserve omitted permissions; older backups default off.
+Parents need a SYNCED link, an active enrolled child, the active Adviser's
+prediction permission, a complete teacher-confirmed PRE assessment, and released
+PRE results. Individual checklist marks and family model inputs are excluded
+from the parent prediction response. Teacher prediction and sandbox routes retain
+their existing contracts.

@@ -1,4 +1,4 @@
-"""Public contracts for teacher-only educational research inference."""
+"""Public teacher and privacy-scoped parent educational research contracts."""
 from datetime import date
 from typing import Annotated, Literal
 
@@ -75,3 +75,32 @@ class MLStudentOption(BaseModel):
     student_name: str
     pre_complete: bool
     readiness_note: str
+
+
+class ParentMLReadiness(MLStudentOption):
+    allow_parent_predictions: bool
+    is_published: bool
+
+
+class HomeIntervention(BaselineDomain):
+    goal: str
+    home_activity: str
+    practice: str
+    scaffolding: str
+    review_days: int
+    success_check: str
+    source_url: str
+
+
+class ParentPredictionResponse(BaseModel):
+    """Parent projection excludes family model inputs and individual checklist marks."""
+    student_id: int
+    student_name: str
+    assessment_date: date
+    predicted_post_interpretation: str
+    confidence_percentages: dict[str, float]
+    confidence_percentage: float
+    baseline_domains: list[BaselineDomain]
+    interventions: list[HomeIntervention]
+    interpretation_note: str
+    research_notice: str

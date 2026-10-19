@@ -23,6 +23,7 @@ import MlInsights from "./pages/teacher/MlInsights";
 
 // Parent Pages
 import ParentDashboard from "./pages/parent/Dashboard";
+import ParentMlInsights from "./pages/parent/ParentMlInsights";
 import ParentEccdAssessment from "./pages/parent/ParentEccdAssessment";
 import ChildManagement from "./pages/parent/ChildManagement";
 import MessageTeacher from "./pages/parent/MessageTeacher";
@@ -146,6 +147,10 @@ function App() {
                   element={<Navigate to="/parent/dashboard" replace />}
                 />
                 <Route path="/parent/dashboard" element={<ParentDashboard />} />
+                <Route
+                  path="/parent/ml-insights"
+                  element={<ParentMlInsights />}
+                />
                 <Route
                   path="/parent/eccdassessment"
                   element={<ParentEccdAssessment />}

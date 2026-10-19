@@ -17,6 +17,7 @@ TemporaryPassword = Annotated[str, AfterValidator(validate_temporary_password)]
 
 
 class TeacherBase(BaseModel):
+    allow_parent_predictions: bool = False
     first_name: Name | None = None
     last_name: Name | None = None
     employee_id: str | None = None
@@ -73,6 +74,7 @@ class TeacherCreateWithUser(TeacherBase):
 
 
 class TeacherUpdateAccess(BaseModel):
+    allow_parent_predictions: bool = False
     allow_parent_view_eccd_marks: bool = False
     allow_parent_view_student_info: bool | None = None
     allow_parent_view_eccd_pre: bool | None = None
@@ -117,6 +119,7 @@ class TeacherProvisionRequest(TeacherUpdate):
 
 
 class ParentPermissionUpdate(ApiModel):
+    allow_parent_predictions: bool = False
     allow_parent_view_eccd_marks: bool = False
     allow_parent_view_student_info: bool | None = None
     allow_parent_view_eccd_pre: bool | None = None

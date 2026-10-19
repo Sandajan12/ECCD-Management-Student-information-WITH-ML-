@@ -179,6 +179,11 @@ export default function MainLayout({ children }: MainLayoutProps) {
         : [
             { title: "Overview", path: "/parent/dashboard", icon: "Home" },
             {
+              title: "ML Insights",
+              path: "/parent/ml-insights",
+              icon: "Sparkles",
+            },
+            {
               title: "ECCD Management",
               path: "/parent/eccdassessment",
               icon: "ChildCare",
@@ -298,34 +303,57 @@ export default function MainLayout({ children }: MainLayoutProps) {
   return (
     <div className="flex min-h-screen flex-col font-sans">
       <header className="fixed inset-x-0 top-0 z-[1201] flex h-14 items-center bg-[#111827] px-3 text-white shadow-[0_2px_8px_rgba(0,0,0,0.15)] legacy-sm:px-4 legacy-md:hidden">
-        <button
-          aria-label="Open navigation"
-          aria-expanded={open}
-          onClick={() => setOpen(!open)}
-          className="relative -ml-3 mr-2 grid min-h-11 min-w-11 place-items-center rounded-full p-2 outline-none hover:bg-black/4 [@media(hover:none)]:hover:bg-transparent focus-visible:outline-none"
-        >
-          <LegacyIcon name="Menu" />
-          <LegacyRipple center />
-        </button>
+        {role !== "user" && (
+          <button
+            aria-label="Open navigation"
+            aria-expanded={open}
+            onClick={() => setOpen(!open)}
+            className="relative -ml-3 mr-2 grid min-h-11 min-w-11 place-items-center rounded-full p-2 outline-none hover:bg-black/4 [@media(hover:none)]:hover:bg-transparent focus-visible:outline-none"
+          >
+            <LegacyIcon name="Menu" />
+            <LegacyRipple center />
+          </button>
+        )}
+        {role === "user" && settings.logo_url && (
+          <img
+            src={settings.logo_url}
+            alt="School logo"
+            className="mr-2 size-8 shrink-0 rounded-full bg-white object-cover"
+          />
+        )}
         <span className="min-w-0 flex-1 truncate text-sm leading-[1.5] font-bold tracking-[0.2px] legacy-sm:text-base">
           {settings.school_name || "ECCD Management System"}
         </span>
+        {role === "user" && (
+          <button
+            type="button"
+            aria-label="Logout"
+            title="Logout"
+            onClick={() => void logout()}
+            className="ml-2 flex shrink-0 items-center gap-1.5 rounded-md px-2.5 py-2 text-xs font-medium text-slate-200 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white active:bg-white/20"
+          >
+            <LegacyIcon name="Logout" className="size-4" />
+            <span className="max-[360px]:hidden">Logout</span>
+          </button>
+        )}
       </header>
       {mobile
-        ? createPortal(
-            <>
-              {open && (
-                <button
-                  aria-label="Close navigation"
-                  tabIndex={-1}
-                  className="fixed inset-0 z-[1200] bg-black/50 outline-none"
-                  onClick={() => setOpen(false)}
-                />
-              )}
-              {drawer}
-            </>,
-            document.body,
-          )
+        ? role === "user"
+          ? null
+          : createPortal(
+              <>
+                {open && (
+                  <button
+                    aria-label="Close navigation"
+                    tabIndex={-1}
+                    className="fixed inset-0 z-[1200] bg-black/50 outline-none"
+                    onClick={() => setOpen(false)}
+                  />
+                )}
+                {drawer}
+              </>,
+              document.body,
+            )
         : drawer}
       <div className="flex flex-1 pt-14 legacy-md:pt-0">
         <main

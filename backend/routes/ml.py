@@ -1,4 +1,4 @@
-"""Read-only teacher research predictions; assessment records are never changed."""
+"""Authorized teacher and parent research predictions; assessments never change."""
 import logging
 import re
 
@@ -11,8 +11,9 @@ from backend.ml.common import DOMAINS, DOMAIN_NAMES
 from backend.ml.inference import predict_student
 from backend.models import EccdQuestion, FamilyAccess, Parent, Student, StudentEccdEvaluation, User
 from backend.models.eccd import TestingPeriod
-from backend.schemas.ml import MLFeatures, MLStudentOption, PredictionResponse
-from backend.utils.access import authorize_student, current_teacher, resolve_student, teacher_sections
+from backend.schemas.ml import MLFeatures, MLStudentOption, PredictionResponse, ParentMLReadiness, ParentPredictionResponse
+from backend.schemas.common import PositiveId
+from backend.utils.access import authorize_student, current_teacher, resolve_student, teacher_sections, permissions_for_student
 from backend.utils.deps import verify_role
 from backend.utils.eccd_dates import get_official_testing_date
 from backend.utils.eccd_scorer import calculate_decimal_age, calculate_scores
@@ -110,10 +111,17 @@ def predict_record(student_id: int, db: Session = Depends(get_db), user: User = 
     authorize_student(db, user, student)
     if not student.is_active:
         raise HTTPException(409, "Select an active student for prediction.")
+    return predict_student_record(db, student)
+
+
+def predict_student_record(db: Session, student: Student, *, parent_request: bool = False):
+    student_id = student.student_id
     questions = db.query(EccdQuestion).order_by(EccdQuestion.sequence_order, EccdQuestion.question_id).all()
     records = db.query(StudentEccdEvaluation).filter_by(student_id=student_id, testing_period=TestingPeriod.PRE).all()
     complete, note = pre_readiness(student, records, questions)
     if not complete:
+        if parent_request:
+            raise HTTPException(400, "PRE assessment must be completed before generating a prediction.")
         raise HTTPException(409, note)
     assessment_date = get_official_testing_date(records, TestingPeriod.PRE)
     birth = student.date_of_birth
@@ -136,3 +144,41 @@ def predict_record(student_id: int, db: Session = Depends(get_db), user: User = 
         raise HTTPException(409, "The PRE profile contains values outside the model input limits. Review the student record.") from None
     return {**prediction_response(features, item_features), "student_id": student_id,
             "student_name": student_name(student), "assessment_date": assessment_date}
+
+
+def parent_prediction_student(db: Session, user: User, student_id: int) -> Student:
+    student = resolve_student(db, student_id)
+    authorize_student(db, user, student)
+    if not student.is_active:
+        raise HTTPException(403, "Predictions are available only for currently enrolled children.")
+    return student
+
+
+@router.get("/parent/readiness/{student_id}", response_model=ParentMLReadiness)
+def parent_prediction_readiness(student_id: PositiveId, db: Session = Depends(get_db), user: User = Depends(verify_role(["user"]))):
+    student = parent_prediction_student(db, user, student_id)
+    permissions = permissions_for_student(db, student)
+    questions = db.query(EccdQuestion).all()
+    records = db.query(StudentEccdEvaluation).filter_by(student_id=student_id, testing_period=TestingPeriod.PRE).all()
+    complete, _ = pre_readiness(student, records, questions)
+    return {"student_id": student_id, "student_name": student_name(student), "pre_complete": complete,
+            "readiness_note": "Completed PRE assessment available" if complete else "PRE assessment must be completed before generating a prediction.",
+            "allow_parent_predictions": permissions.allow_parent_predictions,
+            "is_published": permissions.allow_parent_view_eccd_pre}
+
+
+@router.post("/parent/predict/{student_id}", response_model=ParentPredictionResponse)
+def predict_parent_record(student_id: PositiveId, db: Session = Depends(get_db), user: User = Depends(verify_role(["user"]))):
+    student = parent_prediction_student(db, user, student_id)
+    permissions = permissions_for_student(db, student)
+    if not permissions.allow_parent_predictions:
+        raise HTTPException(403, "Prediction access is currently disabled by your child's adviser.")
+    questions = db.query(EccdQuestion).all()
+    records = db.query(StudentEccdEvaluation).filter_by(student_id=student_id, testing_period=TestingPeriod.PRE).all()
+    if not pre_readiness(student, records, questions)[0]:
+        raise HTTPException(400, "PRE assessment must be completed before generating a prediction.")
+    # Predictions include actual baseline scores and gaps. The independent PRE
+    # release must also be open before those records may leave the server.
+    if not permissions.allow_parent_view_eccd_pre:
+        raise HTTPException(403, "Results Pending Adviser Release: PRE results must be released before viewing prediction insights.")
+    return predict_student_record(db, student, parent_request=True)

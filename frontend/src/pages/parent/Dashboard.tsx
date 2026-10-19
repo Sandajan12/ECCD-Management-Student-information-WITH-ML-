@@ -14,22 +14,23 @@ import {
   Button,
   Alert,
   CircularProgress,
-  LinearProgress,
   Avatar,
   Select,
   MenuItem,
   Grid,
-  SvgIcon,
   Snackbar,
+  Stack,
 } from "@mui/material";
 import LockIcon from "@mui/icons-material/Lock";
 import HomeWorkIcon from "@mui/icons-material/HomeWork";
-import WarningAmberIcon from "@mui/icons-material/WarningAmber";
+import CheckCircleOutlineIcon from "@mui/icons-material/CheckCircleOutlined";
 import EmojiEventsIcon from "@mui/icons-material/EmojiEvents";
 import TimelineIcon from "@mui/icons-material/Timeline";
 import { useNavigate } from "react-router-dom";
 import api, { errorMessage, isNetworkError } from "../../services/api";
 import { useChildren } from "../../hooks/useChildren";
+import { useAssessment } from "../../hooks/useAssessment";
+import { PERIODS, PERIOD_LABELS } from "../../types";
 import { useAuth } from "../../context/AuthContext";
 import {
   confirmDraft,
@@ -42,7 +43,89 @@ import type {
   Contact,
   DomainProgress,
   ParentStats,
+  Answer,
+  Period,
+  Student,
+  SessionUser,
 } from "../../types";
+
+interface HomeDraftValues {
+  answers: Record<string, Answer>;
+}
+
+interface ParentGreetingUser extends SessionUser {
+  first_name?: string | null;
+  name?: string | null;
+  full_name?: string | null;
+}
+
+function parentGreeting(
+  user: ParentGreetingUser | null,
+  child: Student | undefined,
+): string {
+  // Match the synced account holder, excluding family-only records.
+  const accountName = child?.parent_names?.trim().toLocaleLowerCase();
+  const matches = child?.parents?.filter(
+    (parent) => parent.fullname?.trim().toLocaleLowerCase() === accountName,
+  );
+  const parentName =
+    accountName && matches?.length === 1 ? matches[0].fullname?.trim() : "";
+  const fullName =
+    user?.name?.trim() || user?.full_name?.trim() || parentName || "";
+  const givenName =
+    user?.first_name?.trim() ||
+    (fullName.includes(",") ? fullName.split(",")[1].trim() : fullName);
+  const firstName = givenName.split(/\s+/)[0];
+  if (!firstName) return "Welcome back!";
+  const displayName =
+    firstName.charAt(0).toLocaleUpperCase() +
+    firstName.slice(1).toLocaleLowerCase();
+  return `Welcome back, ${displayName}!`;
+}
+
+const primaryColor = "var(--primary-color)";
+const primaryTint = "color-mix(in srgb, var(--primary-color) 10%, white)";
+
+const periodFlags = {
+  PRE: { view: "allow_parent_view_eccd_pre", edit: "pre_test_parent_editable" },
+  MID: { view: "allow_parent_view_eccd_mid", edit: "mid_test_parent_editable" },
+  POST: {
+    view: "allow_parent_view_eccd_post",
+    edit: "post_test_parent_editable",
+  },
+} as const;
+
+const surfaceSx = {
+  minWidth: 0,
+  height: "100%",
+  borderRadius: 3,
+  bgcolor: "white",
+  color: "#0f172a",
+  border: "1px solid rgba(226,232,240,0.8)",
+  boxShadow: "0 2px 8px rgba(15,23,42,0.03)",
+};
+const contentSx = {
+  p: { xs: 1.75, sm: 2.5 },
+  "&:last-child": { pb: { xs: 1.75, sm: 2.5 } },
+};
+const actionSx = {
+  width: { xs: "100%", sm: "auto" },
+  minHeight: 40,
+  borderRadius: 3,
+  textTransform: "none",
+  fontWeight: 600,
+  whiteSpace: "normal",
+  bgcolor: primaryColor,
+  color: "#fff",
+  boxShadow: "0 2px 4px rgba(15,23,42,0.08)",
+  transition: "opacity 150ms ease, transform 150ms ease",
+  "&:hover": { bgcolor: primaryColor, opacity: 0.9 },
+  "&:active": { transform: "scale(0.98)" },
+  "&:focus-visible": { outline: `2px solid ${primaryColor}`, outlineOffset: 3 },
+  "&.Mui-disabled": { bgcolor: "#e2e8f0", color: "#64748b", boxShadow: "none" },
+  "@media (max-width: 639.95px)": { width: "100%" },
+};
+const titleSx = { fontSize: "1.125rem", fontWeight: 600, color: "#0f172a" };
 
 interface RecentMessage {
   message_id: number;
@@ -58,6 +141,7 @@ const Dashboard: React.FC = () => {
   const roster = useChildren();
   const linkedChildren = roster.children;
   const activeChild = roster.child;
+  const assessment = useAssessment(activeChild?.student_id || 0, true);
   const activeChildIndex = Math.max(
     0,
     linkedChildren.findIndex((child) => child.student_id === roster.selected),
@@ -174,6 +258,7 @@ const Dashboard: React.FC = () => {
             .flatMap((result) =>
               result.status === "fulfilled" ? result.value : [],
             )
+            .filter((message) => message.sender_role === "teacher")
             .sort(
               (a, b) =>
                 Date.parse(b.sent_at) - Date.parse(a.sent_at) ||
@@ -259,866 +344,615 @@ const Dashboard: React.FC = () => {
     const child = linkedChildren[Number(event.target.value)];
     if (child) roster.select(child.student_id);
   };
-  const isHomeAssessmentOpen =
-    activeChild?.allow_parent_edit_home_based_eccd === true;
+  const assessmentData = assessment.data;
+  const editablePeriods = PERIODS.filter(
+    (period) =>
+      activeChild?.allow_parent_edit_home_based_eccd === true &&
+      assessmentData?.can_edit_home_based === true &&
+      assessmentData.permissions?.allow_parent_edit_home_based_eccd === true &&
+      assessmentData.parent_assessment_access?.[periodFlags[period].edit] ===
+        true,
+  );
+  const isHomeAssessmentOpen = editablePeriods.length > 0;
   const visibleStats =
     hydratedChild === activeChild?.student_id ? dashboardStats : null;
-  const currentProgress = (domain: DomainProgress): number | null => {
-    if (!visibleStats?.is_published || !activeChild) return null;
-    const released = [
-      activeChild.allow_parent_view_eccd_pre ? domain.pre_progress : null,
-      activeChild.allow_parent_view_eccd_mid ? domain.mid_progress : null,
-      activeChild.allow_parent_view_eccd_post ? domain.post_progress : null,
-    ].filter(
-      (value): value is number => value !== null && Number.isFinite(value),
+  const childName =
+    activeChild?.full_name ||
+    [activeChild?.first_name, activeChild?.middle_name, activeChild?.last_name]
+      .filter(Boolean)
+      .join(" ");
+  const homeQuestions = (assessmentData?.domains ?? []).flatMap((domain) =>
+    domain.questions.filter((question) => question.is_home_based === true),
+  );
+  // Count only server-confirmed observations as submitted. Drafts remain untouched.
+  const pendingHomeCount = editablePeriods.reduce(
+    (total, period) =>
+      total +
+      homeQuestions.filter((question) => {
+        const draft = readDraft<HomeDraftValues>(
+          `eccd_draft_${activeChild?.student_id}_${period}_${question.domain_id}_home_${owner}`,
+        );
+        const saved = question.answers[period];
+        const local =
+          draft?.owner_id === owner
+            ? draft.values.answers[question.question_id]
+            : undefined;
+        return !saved || (local !== undefined && local !== saved);
+      }).length,
+    0,
+  );
+  const periodStatus = (period: Period): string => {
+    if (!assessmentData)
+      return assessment.error ? "Status unavailable" : "Loading status…";
+    const summary = assessmentData.summary?.[period];
+    if (
+      !activeChild?.[periodFlags[period].view] ||
+      !assessmentData.permissions?.[periodFlags[period].view] ||
+      !summary?.isReleased ||
+      !summary.is_published
+    )
+      return "Results Pending Adviser Release";
+    if (!assessmentData.allow_parent_view_eccd_marks)
+      return "Completion hidden by class adviser";
+    const questions = assessmentData.domains.flatMap(
+      (domain) => domain.questions,
     );
-    return released.length ? Math.min(100, Math.max(0, ...released)) : null;
+    if (!questions.length) return "Not configured yet";
+    const count = questions.filter(
+      (question) =>
+        question.answers[period] === "KAYA" ||
+        question.answers[period] === "DI-KAYA",
+    ).length;
+    // Require every actual answer; rounded domain percentages alone can imply completion.
+    const progressKey = {
+      PRE: "pre_progress",
+      MID: "mid_progress",
+      POST: "post_progress",
+    } as const;
+    const progress = domains.map((domain) => domain[progressKey[period]]);
+    if (count === questions.length)
+      return progress.length && progress.every((value) => value === 100)
+        ? "Complete"
+        : "Status unavailable";
+    return count > 0 || summary.isEvaluated ? "In Progress" : "Upcoming";
   };
   if (loading) {
     return (
-      <Box sx={{ display: "flex", justifyContent: "center", mt: 10 }}>
-        <CircularProgress />
+      <Box
+        sx={{
+          display: "flex",
+          justifyContent: "center",
+          p: 4,
+          bgcolor: "#f8fafc",
+        }}
+      >
+        <CircularProgress sx={{ color: primaryColor }} />
       </Box>
     );
   }
 
   return (
-    <Box
+    <Stack
       sx={{
         width: "100%",
-        maxWidth: "1280px",
-        mx: "auto",
-        px: { xs: 1, sm: 2, md: 3 },
-        py: { xs: 1, sm: 2 },
-        pb: { xs: 8, md: 4 },
+        minWidth: 0,
+        px: 1.75,
+        py: 2,
+        gap: 1.75,
+        overflowX: "hidden",
+        overflowWrap: "anywhere",
+        bgcolor: "#f8fafc",
+        color: "#0f172a",
       }}
     >
-      {/* Header */}
-      <Box
-        sx={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          mb: 2,
-          flexWrap: "wrap",
-          gap: 1.5,
-        }}
-      >
+      <Stack sx={{ gap: 0.75, alignItems: "flex-start" }}>
         <Typography
-          variant="h5"
-          sx={{ fontWeight: "bold", fontSize: { xs: "1.25rem", sm: "1.5rem" } }}
+          component="h1"
+          sx={{ ...titleSx, fontSize: { xs: "1.125rem", sm: "1.5rem" } }}
         >
-          Welcome, {user?.username || "Parent"}!
+          {parentGreeting(user, activeChild)}
         </Typography>
-      </Box>
-
-      {/* The Home-Based Assessment Banner was moved to Card 1 in the grid below */}
-
-      {/* 2. Child Quick Info (The Blue Rectangle) */}
-      <Card
-        sx={{
-          background: "linear-gradient(135deg, #4f46e5 0%, #3b82f6 100%)",
-          color: "white",
-          borderRadius: "16px",
-          mb: 3,
-          boxShadow: "0 8px 20px rgba(59, 130, 246, 0.15)",
-          position: "relative",
-        }}
-      >
-        <CardContent
+        <Typography sx={{ fontSize: "0.75rem", color: "#64748b" }}>
+          Small steps today. Growing confidence for tomorrow.
+        </Typography>
+        <Typography
+          component="span"
           sx={{
-            p: { xs: 2, sm: 2.5, md: 3 },
-            "&:last-child": { pb: { xs: 2, sm: 2.5, md: 3 } },
+            fontSize: "0.75rem",
+            color: primaryColor,
+            bgcolor: primaryTint,
+            px: 1.25,
+            py: 0.5,
+            borderRadius: 3,
           }}
         >
-          <Box
-            sx={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: { xs: "flex-start", sm: "center" },
-              flexDirection: { xs: "column", md: "row" },
-              gap: 2,
-            }}
+          {activeChild?.school_year
+            ? "SY " + activeChild.school_year.replace("-", "–") + " · "
+            : ""}
+          Kindergarten
+        </Typography>
+      </Stack>
+
+      <Card sx={surfaceSx}>
+        <CardContent sx={contentSx}>
+          <Stack
+            direction={{ xs: "column", md: "row" }}
+            sx={{ gap: 2, alignItems: { xs: "stretch", md: "center" } }}
           >
-            <Box
-              sx={{
-                display: "flex",
-                gap: 2,
-                alignItems: "center",
-                flexWrap: "wrap",
-              }}
+            <Stack
+              direction="row"
+              sx={{ gap: 1.5, alignItems: "flex-start", flex: 1, minWidth: 0 }}
             >
               <Avatar
                 sx={{
-                  width: { xs: 54, sm: 70 },
-                  height: { xs: 54, sm: 70 },
-                  bgcolor: "rgba(255,255,255,0.2)",
-                  fontSize: { xs: "1.5rem", sm: "2rem" },
-                  fontWeight: "bold",
+                  bgcolor: primaryTint,
+                  color: primaryColor,
+                  fontWeight: 600,
+                  flexShrink: 0,
                 }}
               >
-                {activeChild ? activeChild.first_name?.charAt(0) : "?"}
+                {activeChild?.first_name?.charAt(0).toUpperCase() || "?"}
               </Avatar>
-              <Box>
-                <Typography
-                  variant="h5"
-                  sx={{
-                    fontWeight: "bold",
-                    mb: 0.5,
-                    fontSize: { xs: "1.15rem", sm: "1.4rem" },
-                  }}
-                >
-                  {activeChild
-                    ? `${activeChild.first_name} ${activeChild.last_name}`
-                    : "Awaiting Connection..."}
+              <Stack sx={{ gap: 0.5, minWidth: 0, flex: 1 }}>
+                <Typography component="h2" sx={titleSx}>
+                  {childName || "Awaiting Connection…"}
                 </Typography>
                 {activeChild && (
-                  <Box
-                    sx={{
-                      display: "flex",
-                      gap: { xs: 1, sm: 2 },
-                      opacity: 0.9,
-                      flexWrap: "wrap",
-                      alignItems: "center",
-                    }}
-                  >
-                    <Typography
-                      variant="body2"
-                      sx={{
-                        fontWeight: "500",
-                        fontSize: { xs: "0.75rem", sm: "0.875rem" },
-                      }}
-                    >
-                      📍 {activeChild.section_name || "N/A"}
+                  <Stack sx={{ gap: 0.5, color: "#64748b" }}>
+                    <Typography sx={{ fontSize: "0.75rem" }}>
+                      {activeChild.section_name || "Section not assigned"}
+                    </Typography>
+                    <Typography sx={{ fontSize: "0.75rem" }}>
+                      Adviser:{" "}
+                      {activeChild.teacher_lname
+                        ? "Tr. " + activeChild.teacher_lname
+                        : activeChild.adviser_name || "Not assigned"}
                     </Typography>
                     <Typography
-                      variant="body2"
-                      sx={{
-                        fontWeight: "500",
-                        fontSize: { xs: "0.75rem", sm: "0.875rem" },
-                      }}
+                      sx={{ fontSize: "0.75rem", letterSpacing: "0.04em" }}
                     >
-                      👤 Tr. {activeChild.teacher_lname || "N/A"}
+                      LRN: {activeChild.masked_lrn}
                     </Typography>
-                    <Typography
-                      variant="body2"
-                      sx={{
-                        fontWeight: "500",
-                        fontSize: { xs: "0.75rem", sm: "0.875rem" },
-                      }}
-                    >
-                      🆔 {activeChild.masked_lrn}
-                    </Typography>
-                  </Box>
+                  </Stack>
                 )}
-              </Box>
-            </Box>
-
-            <Box
+              </Stack>
+            </Stack>
+            <Stack
+              direction={{ xs: "column", sm: "row" }}
               sx={{
-                display: "flex",
-                gap: 1.5,
-                alignItems: "center",
-                flexWrap: "wrap",
-                width: { xs: "100%", md: "auto" },
-                justifyContent: { xs: "space-between", md: "flex-end" },
+                gap: 1.25,
+                minWidth: 0,
+                "@media (max-width: 639.95px)": {
+                  flexDirection: "column",
+                  alignItems: "stretch",
+                },
+                alignItems: { xs: "stretch", sm: "flex-end" },
+                width: {
+                  xs: "100%",
+                  md: linkedChildren.length > 1 ? "45%" : "auto",
+                },
               }}
             >
-              {linkedChildren.length > 1 ? (
-                <Box sx={{ mr: { sm: 1 }, flex: { xs: 1, sm: "none" } }}>
+              {linkedChildren.length > 1 && (
+                <Stack sx={{ gap: 0.5, flex: 1, minWidth: 0 }}>
                   <Typography
-                    variant="caption"
-                    sx={{
-                      display: "block",
-                      mb: 0.5,
-                      opacity: 0.9,
-                      fontWeight: "bold",
-                      fontSize: "0.7rem",
-                    }}
+                    component="label"
+                    htmlFor="dashboard-child"
+                    sx={{ fontSize: "0.75rem", color: "#64748b" }}
                   >
-                    Select Child
+                    {linkedChildren.length} children synced · Select Child
                   </Typography>
                   <Select
+                    id="dashboard-child"
+                    fullWidth
                     value={activeChildIndex}
                     onChange={handleChildChange}
                     size="small"
+                    inputProps={{ "aria-label": "Select Child" }}
                     sx={{
-                      bgcolor: "rgba(255,255,255,0.2)",
-                      color: "white",
-                      fontWeight: "bold",
-                      borderRadius: 2,
-                      minWidth: { xs: 130, sm: 160 },
-                      "& .MuiSelect-icon": { color: "white" },
-                      "& .MuiOutlinedInput-notchedOutline": { border: "none" },
+                      minWidth: 0,
+                      minHeight: 40,
+                      borderRadius: 3,
+                      "&.Mui-focused .MuiOutlinedInput-notchedOutline": {
+                        borderColor: primaryColor,
+                      },
+                    }}
+                    MenuProps={{
+                      slotProps: {
+                        paper: {
+                          sx: {
+                            "& .MuiMenuItem-root.Mui-selected": {
+                              bgcolor: primaryTint,
+                              "&:hover": { bgcolor: primaryTint },
+                            },
+                          },
+                        },
+                      },
                     }}
                   >
                     {linkedChildren.map((child, index) => (
-                      <MenuItem key={child.student_id} value={index}>
+                      <MenuItem
+                        key={child.student_id}
+                        value={index}
+                        sx={{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+                      >
                         {child.first_name} {child.last_name} ({child.masked_lrn}
                         )
                       </MenuItem>
                     ))}
                   </Select>
-                </Box>
-              ) : (
-                <Box sx={{ display: "flex", gap: 1.5, mr: { sm: 1 } }}>
-                  <Box
-                    sx={{
-                      bgcolor: "rgba(255,255,255,0.15)",
-                      px: 1.5,
-                      py: 0.8,
-                      borderRadius: "8px",
-                      backdropFilter: "blur(10px)",
-                      textAlign: "center",
-                    }}
-                  >
-                    <Typography
-                      variant="caption"
-                      sx={{
-                        opacity: 0.9,
-                        fontWeight: "bold",
-                        display: "block",
-                        fontSize: "0.7rem",
-                      }}
-                    >
-                      Children
-                    </Typography>
-                    <Typography variant="body1" sx={{ fontWeight: "bold" }}>
-                      {activeChild ? linkedChildren.length : 0}
-                    </Typography>
-                  </Box>
-                  <Box
-                    sx={{
-                      bgcolor: "rgba(255,255,255,0.15)",
-                      px: 1.5,
-                      py: 0.8,
-                      borderRadius: "8px",
-                      backdropFilter: "blur(10px)",
-                      textAlign: "center",
-                    }}
-                  >
-                    <Typography
-                      variant="caption"
-                      sx={{
-                        opacity: 0.9,
-                        fontWeight: "bold",
-                        display: "block",
-                        fontSize: "0.7rem",
-                      }}
-                    >
-                      ECCD
-                    </Typography>
-                    <Typography variant="body1" sx={{ fontWeight: "bold" }}>
-                      {activeChild ? "Normal" : "N/A"}
-                    </Typography>
-                  </Box>
-                </Box>
+                </Stack>
               )}
               <Button
                 variant="contained"
                 onClick={() => setLrnModalOpen(true)}
-                sx={{
-                  bgcolor: "white",
-                  color: "primary.main",
-                  fontWeight: "bold",
-                  "&:hover": { bgcolor: "#f1f5f9" },
-                  borderRadius: 2,
-                  textTransform: "none",
-                  px: 2,
-                  py: 0.8,
-                  minHeight: 40,
-                  boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
-                }}
+                sx={{ ...actionSx, flexShrink: 0 }}
               >
                 SYNC
               </Button>
-            </Box>
-          </Box>
+            </Stack>
+          </Stack>
         </CardContent>
       </Card>
 
       {activeChild && (
-        <Box sx={{ mb: 4 }}>
-          {/* 2.5. 4-Card Summary Grid */}
-          <Grid container spacing={2} sx={{ mb: 4 }}>
-            <Grid size={{ xs: 12, sm: 6, md: 3 }} sx={{ minWidth: 0 }}>
-              <Card
-                onClick={() =>
-                  isHomeAssessmentOpen
-                    ? navigate("/parent/eccdassessment")
-                    : null
-                }
-                sx={{
-                  minHeight: 100,
-                  height: "100%",
-                  width: "100%",
-                  minWidth: 0,
-                  maxWidth: "100%",
-                  borderRadius: "12px",
-                  cursor: isHomeAssessmentOpen ? "pointer" : "default",
-                  bgcolor: isHomeAssessmentOpen ? "#fffbeb" : "#fef2f2",
-                  border: `1px solid ${isHomeAssessmentOpen ? "#fde68a" : "#fecdd3"}`,
-                  boxShadow: "0 4px 12px rgba(0,0,0,0.03)",
-                  transition: "all 0.2s ease",
-                  "&:hover": {
-                    bgcolor: isHomeAssessmentOpen ? "#fef3c7" : "#fef2f2",
-                    transform: isHomeAssessmentOpen
-                      ? "translateY(-2px)"
-                      : "none",
-                  },
-                }}
-              >
-                <CardContent
-                  sx={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 1.5,
-                    p: 2,
-                    "&:last-child": { pb: 2 },
-                  }}
-                >
-                  <Box
-                    sx={{
-                      p: 1,
-                      borderRadius: "10px",
-                      bgcolor: isHomeAssessmentOpen ? "#fef3c7" : "#fee2e2",
-                      color: isHomeAssessmentOpen ? "#d97706" : "#ef4444",
-                      display: "flex",
-                      flexShrink: 0,
-                    }}
-                  >
-                    {isHomeAssessmentOpen ? <HomeWorkIcon /> : <LockIcon />}
-                  </Box>
-                  <Box
-                    sx={{
-                      overflow: "hidden",
-                      flex: 1,
-                      minWidth: 0,
-                      width: "100%",
-                    }}
-                  >
-                    <Typography
-                      variant="body2"
-                      noWrap
-                      sx={{
-                        color: isHomeAssessmentOpen ? "#92400e" : "error.dark",
-                        fontWeight: "bold",
-                      }}
-                    >
-                      Assessment Task
-                    </Typography>
-                    <Typography
-                      variant="h6"
-                      sx={{
-                        fontWeight: "bold",
-                        mt: 0.5,
-                        fontSize: "0.95rem",
-                        whiteSpace: "nowrap",
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        color: isHomeAssessmentOpen ? "#b45309" : "error.main",
-                        display: "block",
-                      }}
-                    >
-                      {isHomeAssessmentOpen ? "Open for Edit" : "Locked"}
-                    </Typography>
-                    <Typography
-                      variant="caption"
-                      sx={{
-                        color: isHomeAssessmentOpen ? "#b45309" : "error.main",
-                        display: "block",
-                      }}
-                      noWrap
-                    >
-                      {isHomeAssessmentOpen
-                        ? "Click to answer"
-                        : "Teacher review"}
-                    </Typography>
-                  </Box>
-                </CardContent>
-              </Card>
-            </Grid>
-
-            <Grid size={{ xs: 12, sm: 6, md: 3 }} sx={{ minWidth: 0 }}>
-              <Card
-                sx={{
-                  minHeight: 100,
-                  height: "100%",
-                  width: "100%",
-                  minWidth: 0,
-                  maxWidth: "100%",
-                  borderRadius: "12px",
-                  boxShadow: "0 4px 12px rgba(0,0,0,0.03)",
-                  border: visibleStats?.assessmentMastered
-                    ? "1px solid #bbf7d0"
-                    : "1px solid #f1f5f9",
-                  bgcolor: visibleStats?.assessmentMastered
-                    ? "#f0fdf4"
-                    : "inherit",
-                }}
-              >
-                <CardContent
-                  sx={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 1.5,
-                    p: 2,
-                    "&:last-child": { pb: 2 },
-                  }}
-                >
-                  <Box
-                    sx={{
-                      p: 1,
-                      borderRadius: "10px",
-                      bgcolor: visibleStats?.assessmentMastered
-                        ? "#dcfce7"
-                        : "#ffedd5",
-                      color: visibleStats?.assessmentMastered
-                        ? "#16a34a"
-                        : "#ea580c",
-                      display: "flex",
-                      flexShrink: 0,
-                    }}
-                  >
-                    {visibleStats?.assessmentMastered ? (
-                      <SvgIcon>
-                        <path d="M16.59 7.58 10 14.17l-3.59-3.58L5 12l5 5 8-8zM12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2m0 18c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8" />
-                      </SvgIcon>
+        <>
+          <Grid
+            container
+            spacing={2}
+            aria-label="Quick status"
+            sx={{
+              display: "grid",
+              gridTemplateColumns: "minmax(0, 1fr)",
+              "@media (min-width: 640px)": {
+                gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+              },
+            }}
+          >
+            <Grid sx={{ minWidth: 0 }}>
+              <Card sx={surfaceSx}>
+                <CardContent sx={contentSx}>
+                  <Stack sx={{ gap: 1.25, alignItems: "flex-start" }}>
+                    {isHomeAssessmentOpen ? (
+                      <HomeWorkIcon sx={{ color: primaryColor }} />
                     ) : (
-                      <WarningAmberIcon />
+                      <LockIcon sx={{ color: "#64748b" }} />
                     )}
-                  </Box>
-                  <Box
-                    sx={{
-                      overflow: "hidden",
-                      flex: 1,
-                      minWidth: 0,
-                      width: "100%",
-                    }}
-                  >
-                    <Typography
-                      variant="body2"
-                      noWrap
-                      sx={{ color: "text.secondary", fontWeight: "bold" }}
-                    >
-                      {visibleStats?.assessmentMastered
-                        ? "Assessment Complete"
-                        : "Needs Support In"}
+                    <Typography sx={{ fontSize: "0.75rem", color: "#64748b" }}>
+                      Home Checklist
                     </Typography>
-                    <Typography
-                      variant="h6"
-                      sx={{
-                        fontWeight: "bold",
-                        mt: 0.5,
-                        fontSize: "0.95rem",
-                        whiteSpace: "nowrap",
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        display: "block",
-                        color: visibleStats?.assessmentMastered
-                          ? "#15803d"
-                          : "inherit",
-                      }}
-                    >
-                      {visibleStats?.assessmentMastered
-                        ? "All Skills Mastered"
-                        : visibleStats?.needsSupportIn || "None"}
+                    <Typography sx={{ fontSize: "1rem", fontWeight: 600 }}>
+                      {!assessmentData
+                        ? assessment.error
+                          ? "Checklist unavailable"
+                          : "Checking home tasks…"
+                        : !isHomeAssessmentOpen
+                          ? "Editing Closed by Teacher"
+                          : pendingHomeCount > 0
+                            ? pendingHomeCount + " Questions Pending"
+                            : "✅ Home Submissions Up to Date"}
                     </Typography>
-                    <Typography
-                      variant="caption"
-                      sx={{
-                        color: visibleStats?.assessmentMastered
-                          ? "success.main"
-                          : "text.secondary",
-                        display: "block",
-                        fontWeight: visibleStats?.assessmentMastered
-                          ? 600
-                          : "normal",
-                      }}
-                      noWrap
-                    >
-                      {visibleStats?.assessmentMastered
-                        ? "Ready for Grade 1"
-                        : "Priority for improvement"}
-                    </Typography>
-                  </Box>
-                </CardContent>
-              </Card>
-            </Grid>
-
-            <Grid size={{ xs: 12, sm: 6, md: 3 }} sx={{ minWidth: 0 }}>
-              <Card
-                sx={{
-                  minHeight: 100,
-                  height: "100%",
-                  width: "100%",
-                  minWidth: 0,
-                  maxWidth: "100%",
-                  borderRadius: "12px",
-                  boxShadow: "0 4px 12px rgba(0,0,0,0.03)",
-                  border: "1px solid #f1f5f9",
-                }}
-              >
-                <CardContent
-                  sx={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 1.5,
-                    p: 2,
-                    "&:last-child": { pb: 2 },
-                  }}
-                >
-                  <Box
-                    sx={{
-                      p: 1,
-                      borderRadius: "10px",
-                      bgcolor: "#dcfce7",
-                      color: "#16a34a",
-                      display: "flex",
-                      flexShrink: 0,
-                    }}
-                  >
-                    <EmojiEventsIcon />
-                  </Box>
-                  <Box
-                    sx={{
-                      overflow: "hidden",
-                      flex: 1,
-                      minWidth: 0,
-                      width: "100%",
-                    }}
-                  >
-                    <Typography
-                      variant="body2"
-                      noWrap
-                      sx={{ color: "text.secondary", fontWeight: "bold" }}
-                    >
-                      Excels In
-                    </Typography>
-                    <Typography
-                      variant="h6"
-                      sx={{
-                        fontWeight: "bold",
-                        mt: 0.5,
-                        fontSize: "0.95rem",
-                        whiteSpace: "nowrap",
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        display: "block",
-                      }}
-                    >
-                      {visibleStats?.excelsIn || "No Data"}
-                    </Typography>
-                    <Typography
-                      variant="caption"
-                      sx={{ color: "text.secondary", display: "block" }}
-                      noWrap
-                    >
-                      Top performing domain
-                    </Typography>
-                  </Box>
-                </CardContent>
-              </Card>
-            </Grid>
-
-            <Grid size={{ xs: 12, sm: 6, md: 3 }} sx={{ minWidth: 0 }}>
-              <Card
-                sx={{
-                  minHeight: 100,
-                  height: "100%",
-                  width: "100%",
-                  minWidth: 0,
-                  maxWidth: "100%",
-                  borderRadius: "12px",
-                  boxShadow: "0 4px 12px rgba(0,0,0,0.03)",
-                  border: "1px solid #f1f5f9",
-                }}
-              >
-                <CardContent
-                  sx={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 1.5,
-                    p: 2,
-                    "&:last-child": { pb: 2 },
-                  }}
-                >
-                  <Box
-                    sx={{
-                      p: 1,
-                      borderRadius: "10px",
-                      bgcolor: "#f3e8ff",
-                      color: "#9333ea",
-                      display: "flex",
-                      flexShrink: 0,
-                    }}
-                  >
-                    <TimelineIcon />
-                  </Box>
-                  <Box
-                    sx={{
-                      overflow: "hidden",
-                      flex: 1,
-                      minWidth: 0,
-                      width: "100%",
-                    }}
-                  >
-                    <Typography
-                      variant="body2"
-                      noWrap
-                      sx={{ color: "text.secondary", fontWeight: "bold" }}
-                    >
-                      Current Phase
-                    </Typography>
-                    <Typography
-                      variant="h6"
-                      sx={{
-                        fontWeight: "bold",
-                        mt: 0.5,
-                        fontSize: "0.95rem",
-                        whiteSpace: "nowrap",
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        display: "block",
-                      }}
-                    >
-                      {visibleStats?.currentPhase || "Not Started"}
-                    </Typography>
-                    <Typography
-                      variant="caption"
-                      sx={{ color: "text.secondary", display: "block" }}
-                      noWrap
-                    >
-                      Latest recorded phase
-                    </Typography>
-                  </Box>
-                </CardContent>
-              </Card>
-            </Grid>
-          </Grid>
-
-          {/* 3. Split Layout: Domain Progress Overview & Recent Messages */}
-          <Grid container spacing={4}>
-            {/* Left Column: Domain Progress */}
-            <Grid size={{ xs: 12, md: 7 }}>
-              <Card
-                sx={{
-                  height: "100%",
-                  borderRadius: "12px",
-                  boxShadow: "0 4px 12px rgba(0,0,0,0.03)",
-                  border: "1px solid #f1f5f9",
-                }}
-              >
-                <CardContent sx={{ p: { xs: 3, md: 4 } }}>
-                  <Typography variant="h6" sx={{ fontWeight: "bold", mb: 4 }}>
-                    Domain Progress Overview
-                  </Typography>
-
-                  {domains.length === 0 ? (
-                    <Box sx={{ py: 4, textAlign: "center" }}>
-                      <Typography sx={{ color: "text.secondary" }}>
-                        No ECCD data available yet.
-                      </Typography>
-                    </Box>
-                  ) : (
-                    domains.map((domain, index) => {
-                      const maxProgress = currentProgress(domain) ?? 0;
-                      return (
-                        <Box
-                          key={domain.domain_id}
-                          sx={{ mb: index !== domains.length - 1 ? 3 : 0 }}
-                        >
-                          <Box
-                            sx={{
-                              display: "flex",
-                              justifyContent: "space-between",
-                              mb: 1,
-                            }}
-                          >
-                            <Typography
-                              variant="body2"
-                              sx={{
-                                fontWeight: "bold",
-                                whiteSpace: "nowrap",
-                                overflow: "hidden",
-                                textOverflow: "ellipsis",
-                                maxWidth: "85%",
-                              }}
-                            >
-                              {domain.domain_name}
-                            </Typography>
-                            <Typography
-                              variant="body2"
-                              sx={{ color: "primary.main", fontWeight: "bold" }}
-                            >
-                              {maxProgress}%
-                            </Typography>
-                          </Box>
-                          <LinearProgress
-                            variant="determinate"
-                            value={maxProgress}
-                            sx={{
-                              height: 8,
-                              borderRadius: 4,
-                              bgcolor: "#f1f5f9",
-                              "& .MuiLinearProgress-bar": {
-                                borderRadius: 4,
-                                bgcolor: "#3b82f6",
-                              },
-                            }}
-                          />
-                        </Box>
-                      );
-                    })
-                  )}
-                </CardContent>
-              </Card>
-            </Grid>
-
-            {/* Right Column: Recent Messages */}
-            <Grid size={{ xs: 12, md: 5 }}>
-              <Card
-                sx={{
-                  height: "100%",
-                  borderRadius: "12px",
-                  boxShadow: "0 4px 12px rgba(0,0,0,0.03)",
-                  border: "1px solid #f1f5f9",
-                }}
-              >
-                <CardContent sx={{ p: { xs: 3, md: 4 } }}>
-                  <Box
-                    sx={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                      mb: 3,
-                    }}
-                  >
-                    <Typography variant="h6" sx={{ fontWeight: "bold" }}>
-                      Recent Messages
+                    <Typography sx={{ fontSize: "0.75rem", color: "#64748b" }}>
+                      {isHomeAssessmentOpen
+                        ? "For open periods: " +
+                          editablePeriods
+                            .map((period) => PERIOD_LABELS[period])
+                            .join(", ") +
+                          ". Only saved submissions count."
+                        : "Your adviser controls when home observations can be submitted."}
                     </Typography>
                     <Button
-                      size="small"
-                      onClick={() => navigate("/parent/messages")}
-                      sx={{
-                        textTransform: "none",
-                        fontWeight: "bold",
-                        minHeight: "44px",
-                      }}
+                      variant="contained"
+                      disabled={!isHomeAssessmentOpen}
+                      onClick={() => navigate("/parent/eccdassessment")}
+                      sx={actionSx}
                     >
-                      View All
+                      {pendingHomeCount > 0
+                        ? "Answer Home Checklist →"
+                        : "View Home Checklist →"}
                     </Button>
-                  </Box>
-
-                  {recentMessages.length === 0 ? (
-                    <Box
-                      sx={{
-                        py: 4,
-                        textAlign: "center",
-                        bgcolor: "#f8fafc",
-                        borderRadius: 2,
-                      }}
-                    >
-                      <Typography
-                        sx={{ color: "text.secondary", fontWeight: "500" }}
-                      >
-                        No recent messages.
-                      </Typography>
-                    </Box>
-                  ) : (
-                    recentMessages.map((msg, idx) => (
-                      <Box
-                        key={msg.message_id}
-                        sx={{
-                          display: "flex",
-                          gap: 2,
-                          mb: idx === recentMessages.length - 1 ? 0 : 3,
-                          p: 2,
-                          bgcolor: "#f8fafc",
-                          borderRadius: 2,
-                        }}
-                      >
-                        <Avatar
-                          sx={{
-                            bgcolor:
-                              msg.sender_role === "teacher"
-                                ? "secondary.main"
-                                : "primary.main",
-                            width: 44,
-                            height: 44,
-                            fontWeight: "bold",
-                          }}
-                        >
-                          {msg.senderName.charAt(0).toUpperCase()}
-                        </Avatar>
-                        <Box sx={{ flexGrow: 1, overflow: "hidden" }}>
-                          <Box
-                            sx={{
-                              display: "flex",
-                              justifyContent: "space-between",
-                              alignItems: "center",
-                              mb: 0.5,
-                            }}
-                          >
-                            <Typography
-                              variant="subtitle2"
-                              noWrap
-                              sx={{ fontWeight: "bold", maxWidth: "65%" }}
-                            >
-                              {msg.senderName}
-                            </Typography>
-                            <Typography
-                              variant="caption"
-                              noWrap
-                              sx={{
-                                color: "text.secondary",
-                                fontWeight: "500",
-                              }}
-                            >
-                              {new Date(msg.sent_at).toLocaleDateString([], {
-                                month: "short",
-                                day: "numeric",
-                              })}
-                            </Typography>
-                          </Box>
-                          <Typography
-                            variant="body2"
-                            sx={{
-                              color: "text.secondary",
-                              overflow: "hidden",
-                              textOverflow: "ellipsis",
-                              display: "-webkit-box",
-                              WebkitLineClamp: 2,
-                              WebkitBoxOrient: "vertical",
-                            }}
-                          >
-                            {msg.message_body}
-                          </Typography>
-                        </Box>
-                      </Box>
-                    ))
-                  )}
+                  </Stack>
+                </CardContent>
+              </Card>
+            </Grid>
+            <Grid sx={{ minWidth: 0 }}>
+              <Card sx={surfaceSx}>
+                <CardContent sx={contentSx}>
+                  <Stack sx={{ gap: 1.25 }}>
+                    <EmojiEventsIcon sx={{ color: primaryColor }} />
+                    <Typography sx={{ fontSize: "0.75rem", color: "#64748b" }}>
+                      Strongest Area
+                    </Typography>
+                    <Typography sx={{ fontSize: "1rem", fontWeight: 600 }}>
+                      {visibleStats?.is_published
+                        ? visibleStats.excelsIn
+                        : visibleStats
+                          ? "Results Pending Adviser Release"
+                          : "Awaiting results"}
+                    </Typography>
+                    <Typography sx={{ fontSize: "0.75rem", color: "#64748b" }}>
+                      A strength to celebrate in everyday play.
+                    </Typography>
+                  </Stack>
+                </CardContent>
+              </Card>
+            </Grid>
+            <Grid sx={{ minWidth: 0 }}>
+              <Card sx={surfaceSx}>
+                <CardContent sx={contentSx}>
+                  <Stack sx={{ gap: 1.25 }}>
+                    <TimelineIcon sx={{ color: primaryColor }} />
+                    <Typography sx={{ fontSize: "0.75rem", color: "#64748b" }}>
+                      ECCD Phase
+                    </Typography>
+                    <Typography sx={{ fontSize: "1rem", fontWeight: 600 }}>
+                      {visibleStats?.currentPhase || "Awaiting results"}
+                    </Typography>
+                    <Typography sx={{ fontSize: "0.75rem", color: "#64748b" }}>
+                      Latest recorded developmental checklist period.
+                    </Typography>
+                  </Stack>
                 </CardContent>
               </Card>
             </Grid>
           </Grid>
-        </Box>
+
+          <Card
+            sx={{
+              ...surfaceSx,
+              borderInlineStart: `3px solid ${primaryColor}`,
+            }}
+          >
+            <CardContent sx={contentSx}>
+              <Stack
+                direction={{ xs: "column", lg: "row" }}
+                sx={{ gap: 2, alignItems: { xs: "stretch", lg: "center" } }}
+              >
+                <Stack sx={{ gap: 0.75, flex: 1, minWidth: 0 }}>
+                  <Typography component="h2" sx={titleSx}>
+                    ✨ Early Developmental Insights &amp; Home Activities
+                  </Typography>
+                  <Typography
+                    sx={{
+                      fontSize: { xs: "0.75rem", sm: "0.875rem" },
+                      color: "#64748b",
+                    }}
+                  >
+                    Review milestone forecasts and recommended home support
+                    activities for {childName || "your child"}.
+                  </Typography>
+                </Stack>
+                <Button
+                  variant="contained"
+                  onClick={() => navigate("/parent/ml-insights")}
+                  sx={{
+                    ...actionSx,
+                    flexShrink: 0,
+                    alignSelf: {
+                      xs: "stretch",
+                      sm: "flex-start",
+                      lg: "center",
+                    },
+                  }}
+                >
+                  View ML Insights →
+                </Button>
+              </Stack>
+            </CardContent>
+          </Card>
+
+          <Grid
+            container
+            spacing={3}
+            sx={{
+              display: "grid",
+              gridTemplateColumns: "minmax(0, 1fr)",
+              "@media (min-width: 1024px)": {
+                gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+              },
+            }}
+          >
+            <Grid
+              sx={{
+                minWidth: 0,
+                "@media (min-width: 1024px)": { gridColumn: "span 2" },
+              }}
+            >
+              <Card sx={surfaceSx}>
+                <CardContent sx={contentSx}>
+                  <Stack sx={{ gap: 2 }}>
+                    <Stack sx={{ gap: 0.5 }}>
+                      <Typography component="h2" sx={titleSx}>
+                        ECCD Assessment Progress
+                      </Typography>
+                      <Typography
+                        sx={{ fontSize: "0.75rem", color: "#64748b" }}
+                      >
+                        Tracks checklist completion status, not an academic
+                        score percentage.
+                      </Typography>
+                    </Stack>
+                    {PERIODS.map((period) => {
+                      const status = periodStatus(period);
+                      const complete = status === "Complete";
+                      return (
+                        <Stack
+                          key={period}
+                          direction={{ xs: "column", sm: "row" }}
+                          sx={{
+                            gap: 1,
+                            p: 1.5,
+                            borderRadius: 3,
+                            bgcolor: complete ? primaryTint : "#f8fafc",
+                            alignItems: { xs: "flex-start", sm: "center" },
+                            justifyContent: "space-between",
+                          }}
+                        >
+                          <Stack
+                            direction="row"
+                            sx={{ gap: 1, alignItems: "center", minWidth: 0 }}
+                          >
+                            {complete ? (
+                              <CheckCircleOutlineIcon
+                                sx={{
+                                  fontSize: "1.25rem",
+                                  color: primaryColor,
+                                }}
+                              />
+                            ) : (
+                              <TimelineIcon
+                                sx={{
+                                  fontSize: "1.25rem",
+                                  color: "#64748b",
+                                }}
+                              />
+                            )}
+                            <Typography
+                              sx={{ fontSize: "0.875rem", fontWeight: 600 }}
+                            >
+                              {PERIOD_LABELS[period]}
+                            </Typography>
+                          </Stack>
+                          <Typography
+                            sx={{
+                              fontSize: "0.75rem",
+                              fontWeight: 500,
+                              color: complete ? primaryColor : "#64748b",
+                              maxWidth: "100%",
+                            }}
+                          >
+                            {status}
+                          </Typography>
+                        </Stack>
+                      );
+                    })}
+                    <Button
+                      variant="contained"
+                      onClick={() => navigate("/parent/eccdassessment")}
+                      sx={{
+                        ...actionSx,
+                        alignSelf: { xs: "stretch", sm: "flex-start" },
+                      }}
+                    >
+                      View ECCD Checklist →
+                    </Button>
+                  </Stack>
+                </CardContent>
+              </Card>
+            </Grid>
+            <Grid sx={{ minWidth: 0 }}>
+              <Card sx={surfaceSx}>
+                <CardContent sx={contentSx}>
+                  <Stack sx={{ gap: 2 }}>
+                    <Typography component="h2" sx={titleSx}>
+                      Recent Messages
+                    </Typography>
+                    {recentMessages.length === 0 ? (
+                      <Stack
+                        sx={{
+                          gap: 0.5,
+                          p: 1.5,
+                          borderRadius: 3,
+                          bgcolor: "#f8fafc",
+                        }}
+                      >
+                        <Typography
+                          sx={{ fontSize: "0.875rem", fontWeight: 500 }}
+                        >
+                          No recent teacher messages.
+                        </Typography>
+                        <Typography
+                          sx={{ fontSize: "0.75rem", color: "#64748b" }}
+                        >
+                          Reach out to your child’s adviser anytime.
+                        </Typography>
+                      </Stack>
+                    ) : (
+                      recentMessages.map((message) => (
+                        <Stack
+                          key={message.message_id}
+                          direction="row"
+                          sx={{ gap: 1, minWidth: 0 }}
+                        >
+                          <Avatar
+                            sx={{
+                              bgcolor: primaryTint,
+                              color: primaryColor,
+                              flexShrink: 0,
+                              fontSize: "0.875rem",
+                            }}
+                          >
+                            {message.senderName.charAt(0).toUpperCase()}
+                          </Avatar>
+                          <Stack sx={{ gap: 0.5, minWidth: 0, flex: 1 }}>
+                            <Typography
+                              sx={{ fontSize: "0.875rem", fontWeight: 600 }}
+                            >
+                              {message.senderName}
+                            </Typography>
+                            <Typography
+                              component="time"
+                              dateTime={message.sent_at}
+                              sx={{
+                                fontSize: "0.75rem",
+                                color: "#64748b",
+                              }}
+                            >
+                              {new Date(message.sent_at).toLocaleDateString(
+                                [],
+                                { month: "short", day: "numeric" },
+                              )}
+                            </Typography>
+                            <Typography
+                              sx={{
+                                fontSize: "0.75rem",
+                                color: "#64748b",
+                                display: "-webkit-box",
+                                WebkitLineClamp: 2,
+                                WebkitBoxOrient: "vertical",
+                                overflow: "hidden",
+                              }}
+                            >
+                              {message.message_body}
+                            </Typography>
+                          </Stack>
+                        </Stack>
+                      ))
+                    )}
+                    <Button
+                      variant="contained"
+                      onClick={() => navigate("/parent/messages")}
+                      sx={{
+                        ...actionSx,
+                        alignSelf: { xs: "stretch", sm: "flex-start" },
+                      }}
+                    >
+                      Message Teacher →
+                    </Button>
+                  </Stack>
+                </CardContent>
+              </Card>
+            </Grid>
+          </Grid>
+        </>
       )}
 
       <Dialog
         open={lrnModalOpen}
         onClose={() => setLrnModalOpen(false)}
-        slotProps={{ paper: { sx: { borderRadius: 3, p: 1, maxWidth: 400 } } }}
+        slotProps={{
+          paper: { sx: { borderRadius: 3, p: 1, minWidth: 0, maxWidth: "sm" } },
+        }}
       >
         <DialogTitle
-          sx={{ fontWeight: "900", color: "#111827", textAlign: "center" }}
+          sx={{ fontWeight: 600, color: "#0f172a", textAlign: "center" }}
         >
           Connect Your Child
         </DialogTitle>
         <DialogContent>
           <Typography
             variant="body2"
-            sx={{ mb: 3, color: "text.secondary", textAlign: "center" }}
+            sx={{ mb: 3, color: "#64748b", textAlign: "center" }}
           >
             To view your child's progress records and message their teacher,
             please securely link your account by entering their Learner
@@ -1137,7 +971,7 @@ const Dashboard: React.FC = () => {
               fontWeight: "bold",
               mb: 0.5,
               display: "block",
-              color: "text.secondary",
+              color: "#64748b",
             }}
           >
             STUDENT LRN
@@ -1153,17 +987,30 @@ const Dashboard: React.FC = () => {
               "& .MuiOutlinedInput-root": {
                 borderRadius: 2,
                 bgcolor: "#F9FAFB",
+                "&.Mui-focused .MuiOutlinedInput-notchedOutline": {
+                  borderColor: primaryColor,
+                },
               },
             }}
           />
         </DialogContent>
 
-        <DialogActions sx={{ p: 3, pt: 1, display: "flex", gap: 1 }}>
+        <DialogActions
+          sx={{
+            p: 3,
+            pt: 1,
+            display: "flex",
+            flexDirection: { xs: "column", sm: "row" },
+            gap: 1,
+            "& > :not(style) ~ :not(style)": { ml: 0 },
+          }}
+        >
           <Button
-            variant="outlined"
+            variant="contained"
             onClick={() => setLrnModalOpen(false)}
             disabled={isLinking}
             sx={{
+              ...actionSx,
               flex: 1,
               py: 1.2,
               fontWeight: "bold",
@@ -1178,11 +1025,11 @@ const Dashboard: React.FC = () => {
             onClick={handleLinkLrn}
             disabled={isLinking}
             sx={{
+              ...actionSx,
               flex: 1,
               py: 1.2,
               fontWeight: "bold",
               borderRadius: 2,
-              boxShadow: "none",
               minHeight: "44px",
             }}
           >
@@ -1203,7 +1050,7 @@ const Dashboard: React.FC = () => {
           {linkNotice}
         </Alert>
       </Snackbar>
-    </Box>
+    </Stack>
   );
 };
 

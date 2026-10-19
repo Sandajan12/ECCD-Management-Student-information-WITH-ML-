@@ -40,6 +40,7 @@ class UserBackupRow(BackupRow):
 
 
 class TeacherBackupRow(BackupRow):
+    allow_parent_predictions: bool = False
     teacher_id: PositiveId
     user_id: PositiveId | None
     first_name: str | None = Field(max_length=100)

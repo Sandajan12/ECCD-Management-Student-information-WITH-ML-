@@ -35,6 +35,7 @@ export interface ChallengeResponse {
 }
 export type AuthResponse = SessionResponse | ChallengeResponse;
 export interface Permissions {
+  allow_parent_predictions?: boolean;
   allow_parent_view_student_info: boolean;
   allow_parent_view_eccd_pre: boolean;
   allow_parent_view_eccd_mid: boolean;
@@ -44,6 +45,7 @@ export interface Permissions {
   allow_parent_edit_home_based_eccd: boolean;
 }
 export const PERMISSION_LABELS: Record<keyof Permissions, string> = {
+  allow_parent_predictions: "View developmental predictions",
   allow_parent_view_student_info: "View child information",
   allow_parent_view_eccd_pre: "Release Pre-Test results",
   allow_parent_view_eccd_mid: "Release Mid-Test results",

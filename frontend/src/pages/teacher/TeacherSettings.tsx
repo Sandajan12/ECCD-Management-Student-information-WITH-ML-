@@ -48,6 +48,7 @@ interface AccessFeedback {
   severity: "success" | "error";
 }
 const initialPermissions: Permissions = {
+  allow_parent_predictions: false,
   allow_parent_view_student_info: true,
   allow_parent_view_eccd_pre: false,
   allow_parent_view_eccd_mid: false,
@@ -57,6 +58,7 @@ const initialPermissions: Permissions = {
   allow_parent_edit_home_based_eccd: false,
 };
 const parentPermissions = (source: Permissions): Permissions => ({
+  allow_parent_predictions: source.allow_parent_predictions === true,
   allow_parent_view_student_info: source.allow_parent_view_student_info,
   allow_parent_view_eccd_pre: source.allow_parent_view_eccd_pre,
   allow_parent_view_eccd_mid: source.allow_parent_view_eccd_mid,
@@ -424,6 +426,43 @@ const TeacherSettings: React.FC = () => {
             Student Record Permissions
           </Typography>
           <Grid container spacing={3} sx={{ mb: 3 }}>
+            <Grid size={{ xs: 12, sm: 6 }}>
+              <Paper variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
+                <Box
+                  sx={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    gap: 2,
+                  }}
+                >
+                  <Box>
+                    <Typography variant="body2" sx={{ fontWeight: "bold" }}>
+                      Student Prediction
+                    </Typography>
+                    <Typography
+                      variant="caption"
+                      sx={{ color: "text.secondary" }}
+                    >
+                      Allow parents to view early developmental predictions and intervention guides for their child.
+                    </Typography>
+                  </Box>
+                  <Switch
+                    disabled={accessDisabled}
+                    slotProps={{
+                      input: { "aria-label": "Student Prediction" },
+                    }}
+                    checked={access.allow_parent_predictions === true}
+                    onChange={(e) =>
+                      persistSettingChange({
+                        allow_parent_predictions: e.target.checked,
+                      })
+                    }
+                    color="primary"
+                  />
+                </Box>
+              </Paper>
+            </Grid>
             <Grid size={{ xs: 12, sm: 6 }}>
               <Paper variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
                 <Box

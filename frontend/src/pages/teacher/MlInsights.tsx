@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import { Stack } from "@mui/material";
+import type { ReactNode } from "react";
+import { Modal, Stack } from "@mui/material";
 import AutoAwesomeRounded from "@mui/icons-material/AutoAwesomeRounded";
-import ScienceOutlined from "@mui/icons-material/ScienceOutlined";
 import PlayArrowRounded from "@mui/icons-material/PlayArrowRounded";
 import SchoolOutlined from "@mui/icons-material/SchoolOutlined";
 import HomeOutlined from "@mui/icons-material/HomeOutlined";
@@ -112,9 +112,10 @@ const classes = [
     tone: "bg-rose-50 text-rose-800",
   },
 ];
-const card = "min-w-0 rounded-2xl bg-white p-5 shadow-sm sm:p-6";
+const card =
+  "min-w-0 overflow-hidden rounded-xl border border-slate-200/80 bg-white p-5 shadow-xs sm:p-6";
 const input =
-  "w-full min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100";
+  "w-full min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-brand! focus:ring-2 focus:ring-brand/15!";
 const initialSandbox: SandboxValues = {
   pre_standard_score: "80",
   pre_total_scaled: "49",
@@ -326,7 +327,7 @@ function PredictionView({ prediction, sandbox = false }: PredictionViewProps) {
                 )}
                 <Stack direction={{ xs: "column", md: "row" }} sx={{ gap: 3 }}>
                   <div className="flex-1">
-                    <h3 className="mb-2 flex items-center gap-2 text-sm font-semibold text-blue-800">
+                    <h3 className="mb-2 flex items-center gap-2 text-sm font-semibold text-brand">
                       <SchoolOutlined fontSize="small" />
                       In the classroom
                     </h3>
@@ -359,7 +360,7 @@ function PredictionView({ prediction, sandbox = false }: PredictionViewProps) {
                   href={guide.source_url}
                   target="_blank"
                   rel="noreferrer"
-                  className="text-sm font-medium text-blue-700 underline"
+                  className="text-sm font-medium text-brand underline"
                 >
                   DepEd curriculum reference
                 </a>
@@ -378,19 +379,49 @@ function PredictionView({ prediction, sandbox = false }: PredictionViewProps) {
   );
 }
 
-function StudentEvaluation({ sectionId }: { sectionId: number }) {
+interface StudentEvaluationProps {
+  sectionId: number;
+  tabs: ReactNode;
+  active: boolean;
+}
+
+function StudentEvaluation({
+  sectionId,
+  tabs,
+  active,
+}: StudentEvaluationProps) {
+  const { section } = useTeacher();
   const [students, setStudents] = useState<StudentOption[]>([]);
+  const [selectedStudentModal, setSelectedStudentModal] =
+    useState<StudentOption | null>(null);
   const { values, change } = useDurableForm(`ml_selection_${sectionId}`, {
     studentId: "",
   });
   const [loading, setLoading] = useState<boolean>(true);
-  const [running, setRunning] = useState<boolean>(false);
+  const [batchStudents, setBatchStudents] = useState<StudentOption[]>([]);
+  const [pendingStudentIds, setPendingStudentIds] = useState<number[]>([]);
   const [error, setError] = useState<string>("");
-  const [prediction, setPrediction] = useState<Prediction | null>(null);
+  const [predictionsByStudentId, setPredictionsByStudentId] = useState<
+    Partial<Record<number, Prediction>>
+  >({});
   const [refresh, setRefresh] = useState<number>(0);
-  const selected = students.find(
-    (student) => String(student.student_id) === values.studentId,
-  );
+  const running = batchStudents.length > 0;
+  const readyStudents = students.filter((student) => student.pre_complete);
+  const selected =
+    students.find(
+      (student) => student.student_id === selectedStudentModal?.student_id,
+    ) ?? selectedStudentModal;
+  const openStudentModal = (student: StudentOption) => {
+    change({ studentId: String(student.student_id) });
+    setSelectedStudentModal(student);
+  };
+  const closeStudentModal = () => setSelectedStudentModal(null);
+  const selectedPending =
+    !!selected && pendingStudentIds.includes(selected.student_id);
+  const prediction =
+    selected?.pre_complete && !selectedPending
+      ? predictionsByStudentId[selected.student_id]
+      : undefined;
   useEffect(() => {
     const controller = new AbortController();
     setLoading(true);
@@ -413,95 +444,212 @@ function StudentEvaluation({ sectionId }: { sectionId: number }) {
     return () => controller.abort();
   }, [sectionId, refresh]);
   useEffect(() => {
-    if (!running || !selected) return;
+    if (batchStudents.length === 0) return;
     const controller = new AbortController();
-    void API.post<Prediction>(
-      `/api/ml/predict/student/${selected.student_id}`,
-      undefined,
-      { signal: controller.signal },
-    )
-      .then(({ data }) => {
-        if (!controller.signal.aborted) {
-          setPrediction(data);
-          setError("");
+    void Promise.allSettled(
+      batchStudents.map(async (student) => {
+        try {
+          const { data } = await API.post<Prediction>(
+            `/api/ml/predict/student/${student.student_id}`,
+            undefined,
+            { signal: controller.signal },
+          );
+          if (!controller.signal.aborted) {
+            setPredictionsByStudentId((previous) => ({
+              ...previous,
+              [student.student_id]: data,
+            }));
+          }
+        } finally {
+          if (!controller.signal.aborted) {
+            setPendingStudentIds((previous) =>
+              previous.filter((id) => id !== student.student_id),
+            );
+          }
         }
-      })
-      .catch((err: unknown) => {
-        if (!controller.signal.aborted) setError(errorMessage(err));
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setRunning(false);
-      });
+      }),
+    ).then((results) => {
+      if (controller.signal.aborted) return;
+      setError(
+        results
+          .flatMap((result, index) =>
+            result.status === "rejected"
+              ? [
+                  `${batchStudents[index].student_name}: ${errorMessage(result.reason)}`,
+                ]
+              : [],
+          )
+          .join(" "),
+      );
+      setBatchStudents([]);
+    });
     return () => controller.abort();
-  }, [running, selected]);
+  }, [batchStudents]);
   useEffect(() => {
     const retry = () => setRefresh((value) => value + 1);
     window.addEventListener("online", retry);
     return () => window.removeEventListener("online", retry);
   }, []);
   return (
-    <Stack sx={{ gap: 3 }}>
-      <section className={card}>
-        <h2 className="mb-4 text-lg font-semibold text-slate-800">
-          Student evaluation
-        </h2>
-        <Stack
-          direction={{ xs: "column", sm: "row" }}
-          sx={{ gap: 2, alignItems: { sm: "end" } }}
-        >
-          <label className="min-w-0 flex-1 text-sm font-medium text-slate-600">
-            Learner in your active section
-            <select
-              className={`${input} mt-2`}
-              value={values.studentId}
-              disabled={loading}
-              onChange={(event) => {
-                change({ studentId: event.target.value });
-                setPrediction(null);
-                setError("");
-                setRunning(false);
-              }}
-            >
-              <option value="">
-                {loading ? "Loading learners…" : "Choose a learner"}
-              </option>
-              {students.map((student) => (
-                <option key={student.student_id} value={student.student_id}>
-                  {student.student_name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <button
-            className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
-            disabled={!selected?.pre_complete || running || loading}
-            onClick={() => {
-              setPrediction(null);
-              setError("");
-              setRunning(true);
+    <Stack sx={{ gap: 1.5, minWidth: 0 }}>
+      <Stack
+        direction="row"
+        className="rounded-xl border border-slate-200/80 bg-white p-2 shadow-xs"
+        sx={{
+          flexWrap: "wrap",
+          gap: 1,
+          alignItems: "center",
+          justifyContent: "space-between",
+        }}
+      >
+        {tabs}
+        {active && (
+          <Stack
+            direction="row"
+            sx={{
+              flexWrap: "wrap",
+              alignItems: "center",
+              gap: 1.5,
+              ml: "auto",
             }}
           >
-            <PlayArrowRounded fontSize="small" />
-            {running ? "Running prediction…" : "Run Prediction"}
-          </button>
-        </Stack>
-        {selected && (
-          <p
-            className={`mt-4 rounded-xl px-3 py-2 text-sm ${selected.pre_complete ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-800"}`}
+            <p className="text-xs text-slate-500">
+              {loading
+                ? "Loading learners…"
+                : `${students.length} ${students.length === 1 ? "learner" : "learners"} in your active section · ${readyStudents.length} ready for prediction`}
+            </p>
+            <button
+              className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-brand px-4 py-2 text-sm font-semibold text-white shadow-xs transition-colors hover:bg-brand/90 disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={readyStudents.length === 0 || running || loading}
+              onClick={() => {
+                setPredictionsByStudentId({});
+                setPendingStudentIds(
+                  readyStudents.map((student) => student.student_id),
+                );
+                setError("");
+                setBatchStudents(readyStudents);
+              }}
+            >
+              <PlayArrowRounded fontSize="small" />
+              {running ? "Predicting..." : "Predict All Students"}
+            </button>
+          </Stack>
+        )}
+      </Stack>
+      <section
+        role="tabpanel"
+        id="panel-student"
+        aria-labelledby="tab-student"
+        hidden={!active}
+        className="min-w-0 overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-xs"
+      >
+        <div className="overflow-x-auto">
+          <table
+            className="w-full table-fixed text-left text-sm"
+            aria-label="Student evaluation"
           >
-            {selected.pre_complete ? "PRE complete · " : "PRE unavailable · "}
-            {selected.readiness_note}
-          </p>
-        )}
-        {!loading && !error && students.length === 0 && (
-          <p className="mt-4 text-sm text-slate-500">
-            No active learners in this section yet.
-          </p>
-        )}
+            <thead className="bg-slate-100/70 text-xs tracking-wider text-slate-600 uppercase [&_th]:border-b [&_th]:border-slate-200">
+              <tr className="border-b border-slate-200 last:border-b">
+                <th
+                  scope="col"
+                  className="px-2 py-4 font-medium tracking-wider text-slate-600 sm:px-4"
+                >
+                  Student Name
+                </th>
+                <th
+                  scope="col"
+                  className="px-2 py-4 font-medium tracking-wider text-slate-600 sm:px-4"
+                >
+                  PRE Assessment Status
+                </th>
+                <th
+                  scope="col"
+                  className="px-2 py-4 font-medium tracking-wider text-slate-600 sm:px-4"
+                >
+                  Prediction Result
+                </th>
+              </tr>
+            </thead>
+            <tbody
+              className="[&_td]:border-b [&_td]:border-slate-100 [&_tr:last-child_td]:border-b-0"
+              aria-busy={loading}
+            >
+              {loading ? (
+                <tr>
+                  <td
+                    colSpan={3}
+                    className="px-4 py-8 text-center text-slate-500"
+                  >
+                    Loading learners…
+                  </td>
+                </tr>
+              ) : (
+                students.map((student) => {
+                  const active =
+                    values.studentId === String(student.student_id);
+                  const pending =
+                    student.pre_complete &&
+                    pendingStudentIds.includes(student.student_id);
+                  const ready =
+                    student.pre_complete &&
+                    !!predictionsByStudentId[student.student_id];
+                  return (
+                    <tr
+                      key={student.student_id}
+                      tabIndex={0}
+                      aria-selected={active}
+                      aria-haspopup="dialog"
+                      onClick={() => openStudentModal(student)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          openStudentModal(student);
+                        }
+                      }}
+                      className={`cursor-pointer border-b border-slate-100 transition-colors last:border-b-0 focus-visible:outline-2 focus-visible:outline-brand focus-visible:-outline-offset-2 ${active ? "bg-brand/5 hover:bg-brand/10" : "hover:bg-slate-50/80"}`}
+                    >
+                      <td className="px-2 py-4 font-medium wrap-anywhere text-slate-800 sm:px-4">
+                        {student.student_name}
+                      </td>
+                      <td className="px-2 py-4 sm:px-4">
+                        <span
+                          className={`inline-block rounded-full px-2.5 py-1 text-xs font-medium ${student.pre_complete ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-800"}`}
+                        >
+                          {student.pre_complete ? "Ready" : "Not Ready"}
+                        </span>
+                      </td>
+                      <td className="px-2 py-4 sm:px-4">
+                        <span
+                          className={`inline-block rounded-full px-2.5 py-1 text-xs font-medium wrap-anywhere ${pending ? "bg-brand/10 text-brand" : ready ? "bg-emerald-50 text-emerald-800" : "bg-slate-100 text-slate-500"}`}
+                        >
+                          {pending
+                            ? "Predicting..."
+                            : ready
+                              ? "Ready"
+                              : "Not Ready"}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+              {!loading && students.length === 0 && (
+                <tr>
+                  <td
+                    colSpan={3}
+                    className="px-4 py-8 text-center text-slate-500"
+                  >
+                    No active learners in this section yet.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
         {error && (
           <div
             role="alert"
-            className="mt-4 rounded-xl bg-rose-50 p-3 text-sm text-rose-800"
+            className="m-3 rounded-xl bg-rose-50 p-3 text-sm text-rose-800"
           >
             {error}
             <button
@@ -513,13 +661,111 @@ function StudentEvaluation({ sectionId }: { sectionId: number }) {
           </div>
         )}
       </section>
-      {prediction && <PredictionView prediction={prediction} />}
-      {!prediction && !running && (
-        <p className="p-6 text-center text-sm text-slate-500">
-          Choose a learner with a completed PRE assessment to explore the
-          baseline and support activities.
-        </p>
-      )}
+      <Modal
+        open={selectedStudentModal !== null}
+        onClose={closeStudentModal}
+        className="fixed inset-0 flex items-center justify-center p-4"
+        slotProps={{
+          backdrop: { className: "!bg-black/50 backdrop-blur-xs" },
+        }}
+      >
+        <Stack
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="student-evaluation-modal-title"
+          aria-describedby="student-evaluation-modal-subtitle"
+          tabIndex={-1}
+          sx={{
+            position: "relative",
+            width: "100%",
+            minWidth: 0,
+            maxWidth: "56rem",
+            maxHeight: "90dvh",
+            overflowY: "auto",
+            borderRadius: 3,
+            border: "1px solid",
+            borderColor: "#e2e8f0",
+            bgcolor: "#f8fafc",
+            p: { xs: 2, sm: 3 },
+            gap: 3,
+            outline: "none",
+          }}
+          className="shadow-2xl"
+        >
+          <header className="pr-12">
+            <h2
+              id="student-evaluation-modal-title"
+              className="text-xl font-bold wrap-anywhere text-slate-800 sm:text-2xl"
+            >
+              {selected?.student_name}
+            </h2>
+            <p
+              id="student-evaluation-modal-subtitle"
+              className="mt-1 text-sm text-slate-500"
+            >
+              Active section: {section?.section_name}
+            </p>
+          </header>
+          <button
+            type="button"
+            aria-label="Close student evaluation"
+            autoFocus
+            onClick={closeStudentModal}
+            className="absolute top-4 right-4 rounded-xl p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-800 focus-visible:outline-2 focus-visible:outline-brand sm:top-6 sm:right-6"
+          >
+            ✕
+          </button>
+          {prediction ? (
+            <PredictionView prediction={prediction} />
+          ) : (
+            <Stack
+              role="status"
+              sx={{ gap: 3, alignItems: "center" }}
+              className={`rounded-xl p-6 text-center text-sm ${selected?.pre_complete ? "bg-slate-50 text-slate-600" : "bg-amber-50 text-amber-900"}`}
+            >
+              <p>
+                {!selected?.pre_complete
+                  ? "This learner's PRE assessment is incomplete. Complete the PRE assessment in the Assessments tab to enable post-test predictions and prescriptive guides."
+                  : selectedPending
+                    ? "Predicting this learner's post-test outcome..."
+                    : "Prediction has not been generated yet for this learner. Click 'Run Prediction' or use 'Predict All Students' on the main table."}
+              </p>
+              {selected?.pre_complete && !selectedPending && (
+                <button
+                  type="button"
+                  disabled={running || loading}
+                  onClick={() => {
+                    setPendingStudentIds([selected.student_id]);
+                    setError("");
+                    setBatchStudents([selected]);
+                  }}
+                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-brand px-5 py-3 text-sm font-semibold text-white shadow-xs transition-colors hover:bg-brand/90 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <PlayArrowRounded fontSize="small" />
+                  Run Prediction
+                </button>
+              )}
+            </Stack>
+          )}
+          {error && (
+            <p
+              role="alert"
+              className="rounded-xl bg-rose-50 p-3 text-sm text-rose-800"
+            >
+              {error}
+            </p>
+          )}
+          <Stack direction="row" sx={{ justifyContent: "flex-end" }}>
+            <button
+              type="button"
+              onClick={closeStudentModal}
+              className="rounded-xl bg-slate-100 px-5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-200 focus-visible:outline-2 focus-visible:outline-brand"
+            >
+              Close
+            </button>
+          </Stack>
+        </Stack>
+      </Modal>
     </Stack>
   );
 }
@@ -766,96 +1012,131 @@ export default function MlInsights() {
   const { section, loading } = useTeacher();
   const { user } = useAuth();
   const [tab, setTab] = useState<"student" | "sandbox">("student");
+  const tabs = (
+    <div
+      role="tablist"
+      aria-label="ML testing mode"
+      className="flex flex-wrap gap-1 rounded-2xl bg-slate-100 p-1"
+    >
+      {(["student", "sandbox"] as const).map((mode) => (
+        <button
+          key={mode}
+          id={`tab-${mode}`}
+          role="tab"
+          aria-selected={tab === mode}
+          aria-controls={`panel-${mode}`}
+          onClick={() => setTab(mode)}
+          className={`rounded-xl px-3 py-2 text-sm font-semibold transition-colors ${tab === mode ? "bg-white text-brand shadow-xs" : "text-slate-500 hover:bg-brand/5 hover:text-brand"}`}
+        >
+          {mode === "student" ? "Student Evaluation" : "Sandbox Simulator"}
+        </button>
+      ))}
+    </div>
+  );
   return (
-    <Stack sx={{ gap: 3, width: "100%", minWidth: 0 }}>
+    <Stack
+      sx={{
+        gap: 1.5,
+        width: "100%",
+        minWidth: 0,
+        "& :focus-visible": { outlineColor: "var(--color-brand)" },
+      }}
+      className="rounded-2xl bg-slate-50 p-2 sm:p-3"
+    >
       <header>
-        <div className="mb-3 flex flex-wrap items-center gap-2 text-xs font-medium">
-          <span className="rounded-full bg-blue-50 px-3 py-1 text-blue-700">
-            Random Forest · 18 inputs
-          </span>
-          <span className="rounded-full bg-violet-50 px-3 py-1 text-violet-700">
-            3 supported classes
-          </span>
-          <span className="rounded-full bg-amber-50 px-3 py-1 text-amber-800">
-            Research prototype
-          </span>
-        </div>
-        <h1 className="flex items-start gap-3 text-2xl leading-snug font-semibold tracking-tight text-slate-800">
-          <AutoAwesomeRounded className="mt-1 shrink-0 text-blue-600" />
-          Early Performance Analytics &amp; ML Insights
+        <h1 className="flex items-start gap-3 text-2xl leading-snug font-bold tracking-tight text-slate-900">
+          <AutoAwesomeRounded className="mt-1 shrink-0 text-brand" />
+          Early Performance ML Insights &amp; Prescription Guides
         </h1>
-        <p className="mt-2 text-sm text-slate-500">
+        <p className="mt-1 text-sm text-slate-500">
           Explore PRE profiles, possible Post-Test outcomes, and targeted
           teaching activities.
         </p>
-      </header>
-      <aside
-        className="rounded-2xl bg-amber-50 p-5 text-sm leading-relaxed text-amber-950"
-        aria-label="Research prototype notice"
-      >
-        <p className="flex items-start gap-2 font-semibold">
-          <ScienceOutlined fontSize="small" />
-          Educational research prototype for instructional planning, not a
-          formal clinical diagnosis.
-        </p>
-        <p className="mt-2">
-          The model has no independent real-world validation. Official ECCD
-          assessments remain the basis for evaluation. Advanced developmental
-          categories are unsupported.
-        </p>
-        <details className="mt-3">
-          <summary className="cursor-pointer font-medium">
-            Understand the evaluation limits
-          </summary>
-          <p className="mt-2">
-            The evaluation report records 88.9% accuracy on 459 mixed
-            real/synthetic holdout records, but only 25% accuracy on its eight
-            real holdout learners. All 29 real learners had Average Post-Test
-            outcomes, and all contributed to synthetic generation anchors.
-            Household effects reflect simulation assumptions; they are not
-            causal findings. Model probabilities and activity suggestions do not
-            demonstrate diagnostic validity or intervention effectiveness.
-          </p>
-        </details>
-      </aside>
-      <div
-        role="tablist"
-        aria-label="ML testing mode"
-        className="flex flex-wrap gap-2 rounded-2xl bg-slate-100 p-1.5"
-      >
-        {(["student", "sandbox"] as const).map((mode) => (
-          <button
-            key={mode}
-            id={`tab-${mode}`}
-            role="tab"
-            aria-selected={tab === mode}
-            aria-controls={`panel-${mode}`}
-            onClick={() => setTab(mode)}
-            className={`flex-1 rounded-xl px-4 py-3 text-sm font-semibold transition-colors ${tab === mode ? "bg-white text-blue-700 shadow-sm" : "text-slate-500 hover:bg-white/50"}`}
+        <Stack
+          component="aside"
+          direction="row"
+          sx={{
+            flexWrap: "wrap",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 1.5,
+          }}
+          className="mt-3 rounded-lg border border-amber-200/80 bg-amber-50/70 p-2.5 text-xs leading-relaxed text-amber-950"
+          aria-label="Research prototype notice"
+        >
+          <details className="group min-w-0 flex-[1_1_34rem]">
+            <summary className="flex cursor-pointer list-none flex-wrap items-center gap-x-2 gap-y-1 [&::-webkit-details-marker]:hidden">
+              <span className="font-semibold">
+                <span aria-hidden="true">⚠️ </span>
+                Educational research prototype for instructional planning, not a
+                formal clinical diagnosis.
+              </span>
+              <span className="inline-flex items-center gap-1 font-medium underline decoration-amber-400 underline-offset-2">
+                Evaluation Limits{" "}
+                <span
+                  aria-hidden="true"
+                  className="transition-transform group-open:rotate-180"
+                >
+                  ▾
+                </span>
+              </span>
+            </summary>
+            <p className="mt-2">
+              The model has no independent real-world validation. Official ECCD
+              assessments remain the basis for evaluation. Advanced
+              developmental categories are unsupported.
+            </p>
+            <p className="mt-2 font-medium">Understand the evaluation limits</p>
+            <p className="mt-2">
+              The evaluation report records 88.9% accuracy on 459 mixed
+              real/synthetic holdout records, but only 25% accuracy on its eight
+              real holdout learners. All 29 real learners had Average Post-Test
+              outcomes, and all contributed to synthetic generation anchors.
+              Household effects reflect simulation assumptions; they are not
+              causal findings. Model probabilities and activity suggestions do
+              not demonstrate diagnostic validity or intervention effectiveness.
+            </p>
+          </details>
+          <Stack
+            direction="row"
+            sx={{ flexWrap: "wrap", alignItems: "center", gap: 1, ml: "auto" }}
           >
-            {mode === "student" ? "Student Evaluation" : "Sandbox Simulator"}
-          </button>
-        ))}
-      </div>
-      <div
-        role="tabpanel"
-        id="panel-student"
-        aria-labelledby="tab-student"
-        hidden={tab !== "student"}
-      >
-        {section ? (
-          <StudentEvaluation
-            key={`${user?.id}_${section.section_id}`}
-            sectionId={section.section_id}
-          />
-        ) : (
-          <p className={`${card} text-sm text-slate-500`}>
-            {loading
-              ? "Loading your assigned section…"
-              : "An active section assignment is required to select a learner."}
-          </p>
-        )}
-      </div>
+            <span className="rounded border border-slate-200 bg-white/80 px-2 py-0.5 font-medium text-slate-600">
+              Random Forest · 18 inputs
+            </span>
+            <span className="rounded border border-slate-200 bg-white/80 px-2 py-0.5 font-medium text-slate-600">
+              3 supported classes
+            </span>
+            <span className="rounded border border-amber-300 bg-amber-100/80 px-2 py-0.5 font-medium text-amber-800">
+              Research prototype
+            </span>
+          </Stack>
+        </Stack>
+      </header>
+      {section ? (
+        <StudentEvaluation
+          key={`${user?.id}_${section.section_id}`}
+          sectionId={section.section_id}
+          tabs={tabs}
+          active={tab === "student"}
+        />
+      ) : (
+        <Stack sx={{ gap: 1.5 }}>
+          {tabs}
+          <div
+            role="tabpanel"
+            id="panel-student"
+            aria-labelledby="tab-student"
+            hidden={tab !== "student"}
+          >
+            <p className={`${card} text-sm text-slate-500`}>
+              {loading
+                ? "Loading your assigned section…"
+                : "An active section assignment is required to select a learner."}
+            </p>
+          </div>
+        </Stack>
+      )}
       <div
         role="tabpanel"
         id="panel-sandbox"

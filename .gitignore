@@ -66,6 +66,7 @@ frontend/dist/
 frontend/dist-ssr/
 frontend/build/
 frontend/test-results/
+frontend/tests
 frontend/playwright-report/
 dist/
 *.local
@@ -101,9 +102,7 @@ npm-cache/
 ehthumbs.db
 Thumbs.db
 [Dd]esktop.ini
-.vscode/*
-!.vscode/settings.json
-!.vscode/extensions.json
+.vscode/
 .idea/
 *.suo
 *.ntvs*
@@ -144,8 +143,11 @@ backend/assets/templates/*.xls
 !backend/tests/fixtures/phase1_baseline.sql
 
 # Local read-only migration reference; never add the embedded repository.
-/AMES-SYSTEM/
+/AMES-SYSTEM-LEGACY/
+/AMES-SYSTEM-LEGACY
 AMES-SYSTEM-LEGACY/
+
+
 
 # ML Raw Datasets and Generated Microdata
 backend/ml/raw_data/

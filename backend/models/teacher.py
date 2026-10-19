@@ -23,6 +23,7 @@ class Teacher(Base):
     allow_parent_view_eccd_mid = Column(Boolean, default=False)
     allow_parent_view_eccd_post = Column(Boolean, default=False)
     allow_parent_view_eccd_marks = Column(Boolean, nullable=False, default=False, server_default='0')
+    allow_parent_predictions = Column(Boolean, nullable=False, default=False, server_default='0')
     allow_parent_edit_student_info = Column(Boolean, default=True)
     allow_parent_edit_home_based_eccd = Column(Boolean, default=False)
     allow_eccd_question_management = Column(Boolean, default=False, nullable=False)

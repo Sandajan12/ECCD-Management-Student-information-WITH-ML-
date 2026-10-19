@@ -1,6 +1,13 @@
 import { useState } from "react";
 import type { ChangeEvent } from "react";
-import { Box, CircularProgress, Alert, Snackbar } from "@mui/material";
+import {
+  Box,
+  Grid,
+  Stack,
+  CircularProgress,
+  Alert,
+  Snackbar,
+} from "@mui/material";
 import BarChartIcon from "@mui/icons-material/BarChart";
 import AssignmentIcon from "@mui/icons-material/Assignment";
 import LockOutlinedIcon from "@mui/icons-material/LockOutlined";
@@ -146,97 +153,102 @@ const ParentEccdAssessment = () => {
     ];
 
   return (
-    <div className="w-full max-w-7xl mx-auto px-2 sm:px-4 md:px-6 py-3 sm:py-6 pb-20 md:pb-6">
+    <div className="w-full max-w-7xl mx-auto space-y-2.5 sm:space-y-4 px-3 py-2.5 sm:px-6 sm:py-6 pb-20 md:pb-6">
       {/* 1. Header Section */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-slate-200/80 mb-6">
+      <div className="min-w-0">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
+          <h1 className="text-lg sm:text-2xl font-bold text-slate-900">
             ECCD Assessment
           </h1>
-          <p className="text-sm text-slate-500 mt-1">
+          <p className="text-xs text-slate-500 mt-0.5 line-clamp-1 sm:line-clamp-none">
             View official DepEd assessment summaries and submit home-based
             evaluations.
           </p>
         </div>
 
         {/* Child Selector */}
-        <div className="flex items-center gap-3">
+        <div className="mt-1.5 flex min-w-0">
           {childrenList.length > 1 ? (
-            <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-xl border border-slate-200 shadow-xs">
-              <ChildCareIcon className="text-blue-600 text-lg" />
-              <div className="flex flex-col">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                  Select Child
-                </span>
-                <select
-                  value={selectedChildIndex}
-                  onChange={handleChildSwitch}
-                  className="text-sm font-semibold text-slate-800 bg-transparent outline-none cursor-pointer pr-4"
-                >
-                  {childrenList.map((c, idx) => (
-                    <option key={c.student_id} value={idx}>
-                      {c.first_name} {c.last_name} ({c.masked_lrn})
-                    </option>
-                  ))}
-                </select>
-              </div>
+            <div className="inline-flex max-w-full min-w-0 items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-100 text-slate-700 text-xs font-medium">
+              <ChildCareIcon sx={{ fontSize: 16, flexShrink: 0 }} />
+              <select
+                aria-label="Select child"
+                value={selectedChildIndex}
+                onChange={handleChildSwitch}
+                className="min-w-0 max-w-full text-xs font-medium text-slate-700 bg-transparent outline-none cursor-pointer"
+              >
+                {childrenList.map((c, idx) => (
+                  <option key={c.student_id} value={idx}>
+                    {c.first_name} {c.last_name} ({c.masked_lrn})
+                  </option>
+                ))}
+              </select>
             </div>
           ) : (
-            <div className="flex items-center gap-2.5 bg-white px-4 py-2 rounded-xl border border-slate-200 shadow-xs">
-              <ChildCareIcon className="text-blue-600" />
-              <div>
-                <span className="text-[10px] uppercase tracking-wider font-bold text-slate-400 block">
-                  Student
-                </span>
-                <span className="text-sm font-bold text-slate-800">
-                  {currentChild?.first_name} {currentChild?.last_name}
-                </span>
-                <span className="text-xs text-slate-500 ml-1.5 font-medium">
-                  ({currentChild?.masked_lrn})
-                </span>
-              </div>
+            <div className="inline-flex max-w-full items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-100 text-slate-700 text-xs font-medium">
+              <ChildCareIcon sx={{ fontSize: 16, flexShrink: 0 }} />
+              <span className="min-w-0 break-words">
+                {currentChild?.first_name} {currentChild?.last_name} (
+                {currentChild?.masked_lrn})
+              </span>
             </div>
           )}
         </div>
       </div>
 
       {error && (
-        <Alert severity="error" sx={{ mb: 4, borderRadius: 2 }}>
+        <Alert severity="error" sx={{ borderRadius: 2 }}>
           {error}
         </Alert>
       )}
 
-      {/* 2. Tab Switcher with Blue Highlight Indicator */}
-      <div className="flex flex-col sm:flex-row gap-2 border-b border-slate-200 mb-6 sm:mb-8 bg-white/60 p-1.5 rounded-2xl border backdrop-blur-xs">
+      {/* 2. Segmented View Switcher */}
+      <div className="grid grid-cols-2 p-1 bg-slate-100 rounded-lg gap-1 max-w-md w-full">
         <button
           type="button"
           onClick={() => setActiveTab("official")}
-          className={`flex-1 flex items-center justify-center gap-2 px-3 sm:px-5 py-2.5 sm:py-3 rounded-xl text-xs sm:text-sm font-bold transition-all duration-150 cursor-pointer ${
+          aria-pressed={activeTab === "official"}
+          className={`min-w-0 h-8 sm:h-9 px-1 text-xs sm:text-sm font-medium rounded-md transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
             activeTab === "official"
-              ? "bg-blue-600 text-white shadow-sm ring-2 ring-blue-600/20"
-              : "text-slate-600 hover:text-slate-900 hover:bg-slate-100/60"
+              ? "bg-white text-slate-900 shadow-xs"
+              : "text-slate-600 hover:text-slate-900"
           }`}
         >
-          <BarChartIcon sx={{ fontSize: 20 }} />
-          <span>Official Evaluation Summary</span>
+          <BarChartIcon
+            sx={{
+              fontSize: 18,
+              display: { xs: "none", sm: "block" },
+              flexShrink: 0,
+            }}
+          />
+          <span className="min-w-0 leading-tight">
+            Official Evaluation Summary
+          </span>
         </button>
 
         <button
           type="button"
           onClick={() => setActiveTab("checklist")}
-          className={`flex-1 flex items-center justify-center gap-2 px-3 sm:px-5 py-2.5 sm:py-3 rounded-xl text-xs sm:text-sm font-bold transition-all duration-150 cursor-pointer ${
+          aria-pressed={activeTab === "checklist"}
+          className={`min-w-0 h-8 sm:h-9 px-1 text-xs sm:text-sm font-medium rounded-md transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
             activeTab === "checklist"
-              ? "bg-blue-600 text-white shadow-sm ring-2 ring-blue-600/20"
-              : "text-slate-600 hover:text-slate-900 hover:bg-slate-100/60"
+              ? "bg-white text-slate-900 shadow-xs"
+              : "text-slate-600 hover:text-slate-900"
           }`}
         >
-          <AssignmentIcon sx={{ fontSize: 20 }} />
-          <span>Home-Based Checklist</span>
+          <AssignmentIcon
+            sx={{
+              fontSize: 18,
+              display: { xs: "none", sm: "block" },
+              flexShrink: 0,
+            }}
+          />
+          <span className="min-w-0 leading-tight">Home-Based Checklist</span>
           {homeChecklist.length > 0 && (
             <span
-              className={`text-xs px-2 py-0.5 rounded-full font-bold ${
+              className={`shrink-0 text-xs px-1.5 py-0.5 rounded-full font-medium ${
                 activeTab === "checklist"
-                  ? "bg-blue-500 text-white"
+                  ? "bg-slate-100 text-slate-900"
                   : "bg-slate-200 text-slate-700"
               }`}
             >
@@ -252,7 +264,7 @@ const ParentEccdAssessment = () => {
       {activeTab === "official" && (
         <div>
           {/* Section: Testing Period Status Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-8">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5 sm:gap-5 mb-4 sm:mb-8">
             {periodsConfig.map(({ key, title }) => {
               const periodData = summary[key] || {};
               const isReleased = assessment.isPeriodReleased(key);
@@ -515,14 +527,14 @@ const ParentEccdAssessment = () => {
       {/* TAB 2: HOME-BASED CHECKLIST                                    */}
       {/* ============================================================== */}
       {activeTab === "checklist" && (
-        <div>
-          {/* Access Enforcement Banner */}
+        <Stack>
+          {/* Keep guidance below the assessment on mobile to show domains first. */}
           {!assessment.hasOpenPeriod && (
-            <div className="flex items-start sm:items-center gap-3 p-4 mb-6 bg-amber-50 border border-amber-200/90 rounded-2xl text-amber-900 shadow-xs">
-              <div className="w-9 h-9 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center flex-shrink-0 mt-0.5 sm:mt-0">
+            <div className="order-1 sm:order-none flex items-start sm:items-center gap-2 sm:gap-3 p-2.5 sm:p-4 mt-2.5 sm:mt-0 mb-0 sm:mb-4 bg-amber-50 border border-amber-200/90 rounded-xl sm:rounded-2xl text-amber-900 shadow-xs">
+              <div className="p-1 sm:p-2 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center flex-shrink-0 mt-0.5 sm:mt-0">
                 <LockOutlinedIcon sx={{ fontSize: 20 }} />
               </div>
-              <div className="text-sm">
+              <div className="min-w-0 text-xs sm:text-sm">
                 <span className="font-bold block">
                   Submission Closed / Read-Only
                 </span>
@@ -535,11 +547,11 @@ const ParentEccdAssessment = () => {
           )}
 
           {assessment.hasOpenPeriod && (
-            <div className="flex items-start sm:items-center gap-3 p-4 mb-6 bg-blue-50 border border-blue-200/80 rounded-2xl text-blue-900 shadow-xs">
-              <div className="w-9 h-9 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center flex-shrink-0 mt-0.5 sm:mt-0">
+            <div className="order-1 sm:order-none flex items-start sm:items-center gap-2 sm:gap-3 p-2.5 sm:p-4 mt-2.5 sm:mt-0 mb-0 sm:mb-4 bg-blue-50 border border-blue-200/80 rounded-xl sm:rounded-2xl text-blue-900 shadow-xs">
+              <div className="p-1 sm:p-2 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center flex-shrink-0 mt-0.5 sm:mt-0">
                 <CheckCircleIcon sx={{ fontSize: 20 }} />
               </div>
-              <div className="text-sm">
+              <div className="min-w-0 text-xs sm:text-sm">
                 <span className="font-bold block">
                   Home-Based Checklist Open for Submission
                 </span>
@@ -552,43 +564,57 @@ const ParentEccdAssessment = () => {
             </div>
           )}
 
-          <div className="sticky top-14 z-20 legacy-md:top-0 flex flex-wrap items-center justify-between gap-3 mb-4 bg-white p-3.5 sm:p-4 rounded-2xl border border-slate-100 shadow-sm">
+          <div className="sticky top-14 z-20 legacy-md:top-0 flex flex-col sm:flex-row sm:flex-wrap sm:items-center justify-between sm:gap-3 mb-3 sm:mb-4 bg-white p-2.5 sm:p-4 rounded-2xl border border-slate-100 shadow-sm">
             <h2 className="text-base sm:text-lg lg:text-xl font-bold text-slate-900 tracking-tight leading-tight">
               Developmental Domains
             </h2>
-            <div className="flex flex-wrap items-center gap-2.5 sm:gap-3">
-              <div className="relative min-w-[130px]">
-                <select
-                  aria-label="Testing period"
-                  value={assessment.selectedPeriod || ""}
-                  disabled={
-                    saving || loading || !assessment.viewablePeriods.length
-                  }
-                  onChange={(event) =>
-                    assessment.setSelectedPeriod(event.target.value as Period)
-                  }
-                  className="w-full text-xs sm:text-sm py-1.5 px-3 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all cursor-pointer"
-                >
-                  {!assessment.viewablePeriods.length && (
-                    <option value="">No periods open</option>
-                  )}
-                  {assessment.viewablePeriods.map((period) => (
-                    <option key={period} value={period}>
-                      {
-                        periodsConfig.find((config) => config.key === period)
-                          ?.title
-                      }
-                    </option>
-                  ))}
-                </select>
-              </div>
+            <Stack
+              direction="row"
+              sx={{
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 1.25,
+                mt: 1,
+                width: "100%",
+                minWidth: 0,
+                "@media (min-width: 640px)": {
+                  mt: 0,
+                  width: "auto",
+                  flex: 1,
+                  maxWidth: "28rem",
+                },
+              }}
+            >
+              <select
+                aria-label="Testing period"
+                value={assessment.selectedPeriod || ""}
+                disabled={
+                  saving || loading || !assessment.viewablePeriods.length
+                }
+                onChange={(event) =>
+                  assessment.setSelectedPeriod(event.target.value as Period)
+                }
+                className="flex-1 min-w-0 h-[2.25rem] sm:h-10 px-2 sm:px-3 py-1.5 text-xs sm:text-sm bg-white border border-slate-300 rounded-lg font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all cursor-pointer"
+              >
+                {!assessment.viewablePeriods.length && (
+                  <option value="">No periods open</option>
+                )}
+                {assessment.viewablePeriods.map((period) => (
+                  <option key={period} value={period}>
+                    {
+                      periodsConfig.find((config) => config.key === period)
+                        ?.title
+                    }
+                  </option>
+                ))}
+              </select>
               <button
                 type="button"
                 onClick={handleSaveHomeBased}
                 disabled={
                   saving || loading || !assessment.canEditPeriod(selectedPeriod)
                 }
-                className="inline-flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm rounded-xl shadow-xs transition-colors cursor-pointer disabled:opacity-50"
+                className="h-[2.25rem] sm:h-10 px-2 sm:px-4 text-xs sm:text-sm font-medium rounded-lg flex items-center justify-center gap-1.5 shrink-0 whitespace-nowrap bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs transition-colors cursor-pointer disabled:opacity-50"
               >
                 {saving ? (
                   <CircularProgress size={16} color="inherit" />
@@ -597,7 +623,7 @@ const ParentEccdAssessment = () => {
                 )}
                 <span>{saving ? "Saving..." : "Save Assessment"}</span>
               </button>
-            </div>
+            </Stack>
           </div>
           {!assessment.canViewMarks && (
             <p className="text-xs text-slate-500 mb-4">
@@ -606,7 +632,25 @@ const ParentEccdAssessment = () => {
             </p>
           )}
           {!activeDomain ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 w-full max-w-7xl mx-auto">
+            <Grid
+              sx={{
+                display: "grid",
+                gridTemplateColumns: "minmax(0, 1fr)",
+                gap: 1.5,
+                mt: 0,
+                width: "100%",
+                maxWidth: "80rem",
+                mx: "auto",
+                "@media (min-width: 640px)": {
+                  gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                  gap: 2,
+                  mt: 2,
+                },
+                "@media (min-width: 1024px)": {
+                  gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+                },
+              }}
+            >
               {assessment.checklistDomains.map((domain, index) => {
                 const homeCount = domain.questions.filter(
                   (question) => question.is_home_based === true,
@@ -614,11 +658,11 @@ const ParentEccdAssessment = () => {
                 return (
                   <div
                     key={domain.domain_id}
-                    className="bg-white rounded-2xl p-6 border border-slate-100 shadow-sm flex flex-col justify-between h-full hover:shadow-md hover:border-slate-300 transition-all group"
+                    className="min-w-0 bg-white rounded-2xl p-3 sm:p-4 border border-slate-100 shadow-sm flex flex-col justify-between h-full hover:shadow-md hover:border-slate-300 transition-all group"
                   >
                     <div>
-                      <div className="flex items-start gap-3.5 mb-4">
-                        <div className="w-11 h-11 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center flex-shrink-0 font-black text-lg group-hover:bg-blue-600 group-hover:text-white transition-colors">
+                      <div className="flex items-start gap-2.5 sm:gap-3 mb-3">
+                        <div className="w-[2.25rem] h-[2.25rem] sm:w-10 sm:h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center flex-shrink-0 font-black text-base sm:text-lg group-hover:bg-blue-600 group-hover:text-white transition-colors">
                           {index + 1}
                         </div>
                         <div className="min-w-0 flex-1">
@@ -630,12 +674,12 @@ const ParentEccdAssessment = () => {
                           </p>
                         </div>
                       </div>
-                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-600 border border-slate-200">
+                      <span className="inline-flex max-w-full items-center px-2 py-0.5 rounded-full text-[0.625rem] sm:text-xs font-semibold bg-slate-100 text-slate-600 border border-slate-200">
                         {homeCount
                           ? "Contains Home Questions"
                           : "Teacher Assessed / View Only"}
                       </span>
-                      <div className="flex flex-col gap-2.5 my-4 pt-2 border-t border-slate-100">
+                      <div className="flex flex-col gap-2 sm:gap-2.5 my-3 sm:my-4 pt-2 border-t border-slate-100">
                         {periodsConfig.map(({ key, title }) => {
                           const progress = assessment.domainProgress(
                             domain,
@@ -643,19 +687,19 @@ const ParentEccdAssessment = () => {
                           );
                           return (
                             <div key={key}>
-                              <div className="flex justify-between items-center gap-2 mb-1 text-xs">
-                                <span className="font-semibold text-slate-600">
+                              <div className="flex flex-wrap justify-between items-center gap-x-2 gap-y-0.5 mb-1 text-[0.6875rem] sm:text-xs">
+                                <span className="font-semibold text-slate-600 whitespace-nowrap">
                                   {title}
                                 </span>
                                 <span
-                                  className={`font-bold ${key === "PRE" ? "text-blue-600" : key === "MID" ? "text-amber-600" : "text-emerald-600"}`}
+                                  className={`min-w-0 ml-auto text-right font-bold ${key === "PRE" ? "text-blue-600" : key === "MID" ? "text-amber-600" : "text-emerald-600"}`}
                                 >
                                   {progress.percentage === null
                                     ? "Pending Adviser Release"
                                     : `${progress.percentage}%${progress.provisional ? " (provisional)" : ""}`}
                                 </span>
                               </div>
-                              <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
+                              <div className="w-full h-1.5 sm:h-2 bg-slate-100 rounded-full overflow-hidden">
                                 <div
                                   className={`h-full rounded-full transition-all duration-500 ${key === "PRE" ? "bg-blue-500" : key === "MID" ? "bg-amber-500" : "bg-emerald-500"}`}
                                   style={{
@@ -678,14 +722,14 @@ const ParentEccdAssessment = () => {
                       type="button"
                       onClick={() => assessment.setActiveDomain(domain)}
                       aria-label={`${homeCount ? "Assess" : "View"} ${domain.domain_name}`}
-                      className="mt-auto w-full py-2.5 font-semibold rounded-xl bg-blue-600 hover:bg-blue-700 text-white transition-colors cursor-pointer text-sm shadow-xs flex items-center justify-center"
+                      className="mt-auto w-full h-[2.25rem] sm:h-10 px-3 font-medium rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition-colors cursor-pointer text-xs sm:text-sm shadow-xs flex items-center justify-center"
                     >
                       {homeCount ? "Assess Domain" : "View Domain"}
                     </button>
                   </div>
                 );
               })}
-            </div>
+            </Grid>
           ) : (
             <div className="flex flex-col min-h-0 w-full">
               <button
@@ -817,7 +861,7 @@ const ParentEccdAssessment = () => {
               </div>
             </div>
           )}
-        </div>
+        </Stack>
       )}
 
       {/* Snackbar feedback */}

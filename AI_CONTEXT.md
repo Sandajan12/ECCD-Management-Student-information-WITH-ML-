@@ -1,14 +1,16 @@
 # AMES System: Current Codebase Context
 
-Updated: **2026-10-14**. This document describes the active working tree in
+Updated: **2026-10-20**. This document describes the active working tree in
 `backend/` and `frontend/`, including existing uncommitted changes. Local
 configuration observations are a snapshot, not deployment defaults or a claim
 that every workflow has passed testing. Update this context when code changes.
 
-`AMES-SYSTEM-LEGACY/` is a read-only reference folder, excluded from the active
-workspace. Its code and configuration were not used for this update. Active
-source, manifests, schemas, and migrations establish the current contracts.
-Other documents may retain historical migration descriptions.
+Sections **1–11 are the authoritative current-state summary**. Section 12 is a
+historical implementation and research archive: its dated behavior, commands,
+experiments and test counts describe earlier work and do not override sections
+1–11. Active source, manifests, schemas and migrations establish the contracts.
+`AMES-SYSTEM-LEGACY/` is a read-only reference folder excluded from the active
+workspace; no legacy files are modified by this documentation update.
 
 ## 1. Purpose and implementation status
 
@@ -20,8 +22,13 @@ permitted home-based observations. The Chairman manages teachers, sections,
 records, question access, school settings, audit history, exports, and backups.
 
 These workflows exist in the active Python/FastAPI/PostgreSQL and React/TypeScript
-code. Predictive machine learning remains a goal, not an implemented service.
-Installed ML libraries do not establish that models or inference endpoints exist.
+code. **ML predictions are fully implemented for both Teacher and Parent
+portals**, using the shared V1 18-feature Random Forest inference service and
+`backend/ml/artifacts/rf_post_test_model.joblib`. Teachers have section-scoped
+batch predictions, student detail modals and a sandbox; parents request a
+prediction on demand for an authorized linked child. Feature implementation does
+not establish independent real-world model validity. Predictions support research
+and instructional planning; official ECCD scores remain deterministic (section 11).
 
 ## 2. Active stack and observed local setup
 
@@ -38,7 +45,8 @@ Installed ML libraries do not establish that models or inference endpoints exist
 | JS tooling | pnpm **12.11.2** pinned in root `package.json`; ESLint, Prettier, Playwright |
 | Workspace | `pnpm-workspace.yaml` includes only frontend, retains separate lockfiles, disables automatic dependency verification before script execution |
 | Spreadsheets | openpyxl handles active workbook import/export; pandas is installed |
-| Migrations | Explicit Python Phase 1/2 migrations; no active Alembic setup, pyproject.toml, or uv.lock |
+| ML | V1 fitted scikit-learn Random Forest pipeline, joblib artifact, 18 PRE/demographic inputs, three supported POST outcomes; shared teacher/parent inference |
+| Migrations | Explicit Python migrations 001–010, including Phase 1/2 and subsequent feature upgrades; no active Alembic setup, pyproject.toml, or uv.lock |
 
 Observed on this Windows checkout:
 
@@ -124,10 +132,16 @@ Never print or regenerate existing secrets. Preserve LRN encryption/HMAC keys
 and the backup key with backups. `scripts/configure_lrn.py` privately creates
 missing keys and refuses unsafe replacement scenarios.
 
-Lifespan in `backend/main.py` checks Phase 2 and both parity migrations in the connection's current schema, then seeds
-`assets/reference/eccd.json` (7 domains, 109 questions) only if **both** reference
-tables are empty. Existing/custom data stays intact. Startup does not call
-create_all, apply migrations, or provision users.
+Lifespan in `backend/main.py` checks evaluator provenance (007), adviser takeover
+(008), section parent editing windows (006), independent marks visibility (009),
+parent predictions (010), parent linking (005), Phase 2 (002), and deployment
+hardening (004, which also checks 003) in the connection's current schema. Missing
+or incompatible schema stops startup; it never applies migrations automatically.
+It then seeds `assets/reference/eccd.json` (7 domains, 109 questions) only if
+**both** reference tables are empty and warms the cached V1 model and guides.
+Unavailable/incompatible ML artifacts log a sanitized error and leave ordinary
+school workflows available; prediction requests return HTTP 503. Startup does not
+call create_all or provision users.
 
 HTTP and Socket.IO CORS share configured FRONTEND_URL/ALLOWED_ORIGINS and retain
 http://localhost:5173 and http://127.0.0.1:5173 defaults. Vite enables React/Tailwind
@@ -167,19 +181,53 @@ frontend guard lists also accept descriptive aliases. Chairman redirects remain.
 The teacher question route requires `allow_eccd_question_management`.
 Old workspace/shim page directories are absent.
 
+### Current teacher and parent presentation
+
+- Teacher `pages/teacher/MlInsights.tsx` mounts at `/teacher/ml-insights`. Its
+  Student Evaluation tab has a responsive three-column table: **STUDENT NAME**,
+  **PRE ASSESSMENT STATUS**, **PREDICTION RESULT**. **Predict All Students** runs
+  predictions for PRE-ready learners in the active section through concurrent
+  individual student requests. Rows expose readiness/pending/result availability;
+  clicking a row or pressing Enter/Space opens the student evaluation detail
+  modal. The modal shows learner/section identity, outcome probabilities, PRE
+  baseline domains and classroom/home guides; **Run Prediction** can evaluate one
+  ready learner. The separate Sandbox Simulator retains durable hypothetical inputs.
+- Parent `pages/parent/ParentMlInsights.tsx` mounts at `/parent/ml-insights`, with
+  an ML Insights navigation item. It supports one synced child without a redundant
+  selector and two or more synced children with a selector. Prediction is an
+  explicit **Predict Post-Test Outcome** action, gated by adviser permission,
+  complete official PRE data and PRE release. See section 11 for access and results.
+- Parent `pages/parent/Dashboard.tsx` uses a first-name greeting when the account's
+  given name can be resolved, otherwise `Welcome back!`. Resolution uses session
+  names or an unambiguous synced account-holder name, avoiding unrelated guardian
+  records. Compact responsive cards show permission-aware period status and pending
+  home observations; counts distinguish server-confirmed answers from local drafts.
+  Recent-message previews include teacher messages only.
+- Parent `pages/parent/ParentEccdAssessment.tsx` is the routed ECCD page. It uses
+  compact Official Evaluation Summary/Home-Based Checklist tabs, a responsive
+  domain grid and sticky Developmental Domains controls. Testing-period selection
+  and **Save Assessment** share one row, including mobile. School questions remain
+  read-only; marks, released scores and editing use their independent gates.
+- `layouts/MainLayout.tsx` uses a mobile-first parent layout: below the 900px
+  layout breakpoint, the redundant parent hamburger/drawer is removed, the fixed
+  school header has a **top-right Logout button**, and bottom navigation remains
+  available for pages. The desktop parent sidebar and teacher drawer remain.
+  ML cards, probabilities, selectors and dialogs adapt to small screens with
+  wrapping text, responsive grids, rounded controls and soft shadows.
+
 ## 4. Current relational model
 
 | Table / model file | Identity and important fields |
 | --- | --- |
 | users / `models/user.py` | user_id, unique username/email, password hash, role, active/pending/first-login flags; compatibility OTP columns remain |
-| teachers / `models/teacher.py` | teacher_id, unique nullable user_id, employee ID, names/class label, six parent flags, question-management permission |
+| teachers / `models/teacher.py` | teacher_id, unique nullable user_id, optional unique employee ID, names/class label, eight granular parent flags, separate question-management permission |
 | parents / `models/parent.py` | parent_id, unique nullable user_id, guardian name/age/education/occupation; guardian-only records can lack login accounts |
-| sections / `models/section.py` | section_id, unique name, adviser compatibility pointer |
+| sections / `models/section.py` | section_id, unique name, adviser compatibility pointer; non-null pre_test_parent_editable=true, mid_test_parent_editable=false, post_test_parent_editable=false |
 | section_teachers / `models/section_teacher.py` | Assignment ID, section/teacher FKs, assigned date; Primary Adviser only, Active/Inactive, one active assignment per section (migration 008) |
 | students / `models/student.py` | **Integer student_id PK**, encrypted LRN, unique HMAC hash, last four digits, names including middle name, DOB/gender, section, family/contact fields, school year, active flag |
-| family_access / `models/parent.py` | Parent/student-ID FKs, relationship type, timezone-aware date_linked |
+| family_access / `models/parent.py` | Parent/student-ID FKs, relationship type, timezone-aware date_linked/requested_at; status constrained to PENDING/SYNCED, default SYNCED for compatibility |
 | eccd_domains, eccd_questions / `models/eccd.py` | IDs, domain FK, question text, sequence_order, is_home_based |
-| student_eccd_evaluations / `models/eccd.py` | Evaluation/student/teacher/question IDs, PRE/MID/POST, KAYA/DI-KAYA, date; unique (student_id, question_id, testing_period) |
+| student_eccd_evaluations / `models/eccd.py` | Evaluation/student/question IDs, nullable teacher_id/parent_id, evaluator_role=teacher/parent, PRE/MID/POST, KAYA/DI-KAYA, compatibility evaluation_date, official teacher_evaluation_date, timezone-aware parent_submitted_at; unique (student_id, question_id, testing_period) |
 | messages / `models/message.py` | Teacher/parent FKs, sender role, subject/body, read/archive flags, creation time |
 | system_logs / `models/log.py` | User-linked actions, TEXT details including rollover snapshots/chunks, timestamp |
 | system_settings / `models/settings.py` | Singleton ID 1; branding/images, school/principal, opening month 1-12, current/previous year, rollover timestamp |
@@ -200,9 +248,24 @@ preserve those routes and their protection.
 
 ### Schema preparation and development tooling
 
-For a fresh configured database, create missing LRN keys, apply Phase 1, then
-Phase 2. For an existing Phase 1 database, apply only Phase 2. Stop dev servers
-before migration and preserve accounts/secrets.
+Stop API writers before upgrades and preserve accounts, backups and existing
+encryption/HMAC keys. A fresh configured database needs Phase 1, Phase 2 and all
+subsequent migrations. An existing Phase 2 database needs its missing feature
+upgrades before the final current-schema check; rerunning Phase 2 alone does not
+add the newer feature columns. The explicit migration inventory is:
+
+| Version | Module in `backend.migrations` | Current responsibility |
+| --- | --- | --- |
+| 001 | phase1 | Protected identity foundations and historical compatibility schema |
+| 002 | phase2 | ID-based final schema; remove plaintext LRN compatibility columns |
+| 003 | parity_batch1 | Widen section/cached class labels to 100 characters |
+| 004 | parity_batch2 | Performance indexes and production shared rate-limit storage |
+| 005 | parent_linking | PENDING/SYNCED family links and request timestamps |
+| 006 | parent_assessment_access | Section-scoped PRE/MID/POST parent editing windows |
+| 007 | eccd_evaluator_tracking | Parent provenance, evaluator role and official teacher dates |
+| 008 | adviser_takeover | Adviser-only assignments and one active adviser per section |
+| 009 | parent_eccd_marks | Independent default-off checklist marks visibility |
+| 010 | parent_predictions | Default-off parent prediction permission |
 
 ```powershell
 # Fresh database only, in order:
@@ -210,27 +273,41 @@ uv run --no-project --python .venv312 python -m backend.scripts.configure_lrn
 uv run --no-project --python .venv312 python -m backend.migrations.phase1 --apply
 uv run --no-project --python .venv312 python -m backend.migrations.phase2 --apply
 
-# After Phase 2, widen cached section labels on both fresh/existing databases.
+# Fresh installs and existing Phase 2 databases: apply missing feature upgrades.
 uv run --no-project --python .venv312 python -m backend.migrations.parity_batch1 --apply
-uv run --no-project --python .venv312 python -m backend.migrations.parity_batch1 --check
-
-# Performance indexes and shared production rate-limit storage:
 uv run --no-project --python .venv312 python -m backend.migrations.parity_batch2 --apply
-uv run --no-project --python .venv312 python -m backend.migrations.parity_batch2 --check
+uv run --no-project --python .venv312 python -m backend.migrations.parent_linking --apply
+uv run --no-project --python .venv312 python -m backend.migrations.parent_assessment_access --apply
+uv run --no-project --python .venv312 python -m backend.migrations.eccd_evaluator_tracking --apply
+uv run --no-project --python .venv312 python -m backend.migrations.adviser_takeover --apply
+uv run --no-project --python .venv312 python -m backend.migrations.parent_eccd_marks --apply
+uv run --no-project --python .venv312 python -m backend.migrations.parent_predictions --apply
 
-# Read-only final-schema/integrity check:
+# Final checks after the feature upgrades; each module also supports --check.
 uv run --no-project --python .venv312 python -m backend.migrations.phase2 --check
+uv run --no-project --python .venv312 python -m backend.migrations.parity_batch2 --check
+uv run --no-project --python .venv312 python -m backend.migrations.parent_linking --check
+uv run --no-project --python .venv312 python -m backend.migrations.parent_assessment_access --check
+uv run --no-project --python .venv312 python -m backend.migrations.eccd_evaluator_tracking --check
+uv run --no-project --python .venv312 python -m backend.migrations.adviser_takeover --check
+uv run --no-project --python .venv312 python -m backend.migrations.parent_eccd_marks --check
+uv run --no-project --python .venv312 python -m backend.migrations.parent_predictions --check
 ```
 
 Phase 2 records `002_student_identity_api` in ames_schema_migrations and checks
 data preservation in the same transaction as schema changes. Do not run
 historical Phase 1 checks against a final Phase 2 database.
+For a historical Phase 1 installation, inspect its existing columns before
+applying 002: that migration fingerprints current ORM fields, so an older
+snapshot lacking later additive columns needs an explicitly reviewed upgrade
+sequence. The fresh-install sequence above is not a universal historical repair.
 
 `scripts/setup_parity_dev.py` explicitly creates/selects local ames_parity_dev,
 updates local environment files, runs preparation, and invokes
 `scripts/seed_development.py`. Seeding is guarded to that loopback development
-database and preserves differing existing accounts. These utilities mutate
-state; they are not ordinary startup or read-only checks.
+database and preserves differing existing accounts. Its migration loop currently
+includes only Phase 1/2; it does not replace the complete 003–010 upgrade sequence.
+These utilities mutate state; they are not ordinary startup or read-only checks.
 
 ## 5. HTTP contract map
 
@@ -241,7 +318,9 @@ the complete method/path/query inventory.
 | Area | Principal paths | Handler |
 | --- | --- | --- |
 | Authentication | /api/auth/login, /login-step1, /verify-otp, /register-parent, /update-password, /send-otp, /request-otp, /logout | `routes/auth.py` |
-| Teacher CRUD/access | /api/teachers/, /active, /archived, /create, user-ID update/archive/unarchive/delete aliases, /me/access, /access-controls, password request/verify | `routes/teachers.py` |
+| Teacher CRUD/access | /api/teachers/, /active, /archived, /create, user-ID update/archive/unarchive/delete aliases, /me/access, /access-controls, /settings GET/PUT, password request/verify | `routes/teachers.py` |
+| Parent linking management | GET /api/teacher/students and /api/teachers/students; POST /api/teachers/students/{student_id}/approve-parent-link, /reject-parent-link, /unlink-parent | `routes/teachers.py` |
+| Section parent editing windows | GET/PUT /api/teacher/settings/parent-assessment-access, optional section_id for assigned-section selection | `routes/teachers.py` |
 | Teacher analytics | GET /api/teachers/dashboard-filters, /dashboard-pie, /dashboard-stats reuse teacher-gated analytics handlers | `routes/teachers.py`, `analytics.py` |
 | Students | /api/students/, /all, /create, /archived, /section/{section_id}, /archive-all, /my-child, /linked, /link, identifier read/update/archive/unarchive/delete aliases | `routes/students.py` |
 | Chairman records | /api/chairman/students, /students/transfer, /teachers, /teachers/{teacher_id}/permissions | `routes/students.py`, `chairman.py` |
@@ -257,6 +336,8 @@ the complete method/path/query inventory.
 | Settings/year | /api/settings, /update, /upload-background, /rollover, /undo-rollover, /revert-school-year; /api/chairman/rollover-year, /undo-rollover | `routes/settings.py` |
 | Chairman account | /api/chairman/verify-password, /account | `routes/chairman.py` |
 | Backup | /api/backup/export, /restore; /api/chairman/backup/export, /restore | `routes/backup.py` |
+| Teacher ML | GET /api/ml/students?section_id=N; POST /api/ml/predict/student/{student_id}, /api/ml/predict/sandbox | `routes/ml.py` |
+| Parent ML | GET /api/ml/parent/readiness/{student_id}; POST /api/ml/parent/predict/{student_id} | `routes/ml.py` |
 
 Shortened paths in each row are relative to that row's API prefix.
 
@@ -288,14 +369,15 @@ incorrect-current-password responses.
   prior credential-bound JWTs become invalid. Remembered devices store token
   hashes with 30-day expiry, not renewed by login. Ordinary logout preserves them;
   explicit forget-device revokes them.
-- Teacher ownership uses active SectionTeacher assignments. Primary Adviser
-  replacement deactivates previous adviser assignments; substitutes preserve the
-  adviser. Displaced teachers with no other active assignments are deactivated.
-  Handovers/transfers preserve evaluation rows and log actions.
+- Teacher ownership uses active Primary Adviser SectionTeacher assignments.
+  Replacement deactivates the previous adviser atomically; Substitute is a retired
+  historical role and grants no access. Displaced teachers with no other active
+  assignments are deactivated. Handovers/transfers preserve student records,
+  evaluation history, family links and section editing windows, and log actions.
 - Question-management permission defaults false. verify_eccd_question_access
   permits Chairman writes and teachers with allow_eccd_question_management.
 
-### Six granular parent permissions
+### Eight granular parent permissions
 
 | Teacher column | Default |
 | --- | --- |
@@ -303,34 +385,72 @@ incorrect-current-password responses.
 | allow_parent_view_eccd_pre | false |
 | allow_parent_view_eccd_mid | false |
 | allow_parent_view_eccd_post | false |
+| allow_parent_view_eccd_marks | false |
+| allow_parent_predictions | false |
 | allow_parent_edit_student_info | true |
 | allow_parent_edit_home_based_eccd | false |
 
 Inheritance uses the section's **active Primary Adviser with an active account**
 via utils/access.py. Neither a substitute nor cached adviser pointer determines
 permissions. No adviser means locked access. Coarse compatibility properties on
-Teacher are not new permission columns; new flows use the six flags above.
+Teacher are not new permission columns; new flows use the eight flags above.
+The question-management flag is a separate teacher permission, outside these eight.
 
-Unreleased scores, answers, dates, ages, matrix values, and progress must remain
-null, with is_published=false and interpretation **Pending Adviser Release**.
-Locked profile/guardian fields are masked. Parent updates/home saves enforce the
-respective permission with HTTP 403. Frontend placeholders/disabled controls
-supplement backend enforcement.
+Teacher Settings places **Student Prediction** under **Student Record
+Permissions**. It persists `allow_parent_predictions` through the existing
+revision-safe settings autosave/offline queue. Default off denies parent
+prediction generation with HTTP 403; enabling it does not release PRE scores,
+expose checklist marks or allow editing. Parent inference independently requires
+released PRE results and complete teacher-confirmed PRE data.
+
+Score release and checklist marks are independent gates:
+
+- Unreleased official scores, dates, ages, matrix values and progress remain
+  null, with `is_published=false` and interpretation **Pending Adviser Release**.
+  A locked latest phase cannot be exposed through an older released phase.
+- `allow_parent_view_eccd_marks=true` permits recorded answers and evaluator roles
+  across all seven domains and PRE/MID/POST, even for periods with unreleased
+  official scores. It never enables parent submission or releases score metrics.
+- With marks disabled, teacher-recorded answers and other linked parents'
+  observations remain masked. Only the authenticated parent's own home-based
+  observations remain visible when both global home editing and the section's
+  corresponding editing window are enabled. Local unsaved inputs remain durable.
+
+Parents must have a **SYNCED** family link; PENDING requests grant no child-data
+access. Parent-initiated linking creates a PENDING request until an assigned
+teacher approves it. Profile/guardian reads mask locked fields, and updates/home
+saves enforce their respective global permissions with HTTP 403. Section editing
+windows (`PRE=true`, `MID=false`, `POST=false` defaults) are additional write
+gates, controlled only by the active adviser. A closed period returns HTTP 403
+with `Editing for [Pre-Test/Mid-Test/Post-Test] is currently closed by the teacher.`
+Frontend locked states and disabled controls supplement backend enforcement.
 
 ## 7. Assessments, age, and analytics
 
 - Periods are PRE/MID/POST; answers are KAYA/DI-KAYA; question order follows
   sequence_order. Teacher batches reject unknown/duplicate questions and mismatched
   periods, and enforce **PRE < MID < POST** dates before writes.
-- Teacher saves lock the student, normalize existing dates in the selected period
-  to the supplied date, upsert submitted answers, and commit. They do not save
-  later-period answers automatically.
+- Teacher saves lock the student, normalize existing teacher-confirmed dates in
+  the selected period to the supplied date, upsert submitted answers with
+  evaluator_role=teacher and teacher_evaluation_date, and commit. Untouched
+  parent-only rows are not assigned an official teacher date. Earlier parent
+  provenance remains available. Later-period answers are not saved automatically.
 - Teacher UI carry-over in hooks/useTeacherAssessment.ts is virtual: earlier KAYA
   can prefill unsaved later periods; saved answers and deliberate drafts win.
   Each later period needs an explicit save and its own assessment date.
-- Parent saves accept only is_home_based questions. Changed/new answers use today's
-  date; unchanged answers retain their dates. This path is separate from teacher
-  batch-date validation.
+- Parent saves accept nonempty, unique home-based answers for one testing period,
+  with matching top-level/row period identifiers. They record parent_id,
+  evaluator_role=parent and parent_submitted_at without replacing teacher_id or
+  teacher_evaluation_date. Rows without an official teacher date use today's
+  compatibility evaluation_date. The global home-edit flag and section window
+  are checked before any writes. This path is separate from teacher date validation.
+- Assessment responses include all configured domains and school/home questions;
+  homeBasedChecklist remains a home-only compatibility projection. Official
+  periodDates/evaluationDates use the earliest teacher-confirmed date;
+  gradingDates prefers that date and otherwise uses the earliest observation
+  date, taking each row's parent submission timestamp before its compatibility
+  evaluation_date. Marks and score dates retain the independent access rules in
+  section 6. Parent-only dates do not make PRE ready for model inference.
 - Student age is dynamically derived, never read from a static stored age.
   utils/eccd_scorer.py uses elapsed years/completed months and one-decimal
   **ROUND_HALF_UP**. Scores use assessment-date age. Roster/profile decimal_age
@@ -451,59 +571,111 @@ Validation/permission failures retain inputs for review.
   scoring, evaluation history, permission masking, and confirmation-safe drafts
   when changing features. Do not infer behavior solely from historical docs.
 
-## 11. ML research inference and verification boundaries
+## 11. Implemented V1 ML service and verification boundaries
 
-The active `backend/ml/` training pipeline uses exactly 18 PRE and demographic
-features to predict three supported POST classes. Trusted artifacts, including
-`rf_post_test_model.joblib`, `prescriptive_guides.json`, and
-`MODEL_EVALUATION_REPORT.md`, live in `backend/ml/artifacts/`, as established by
-`common.py`. Model binaries and research datasets follow existing Git-ignore
-policy; deployments need the trusted locally generated artifacts.
+### Runtime architecture and exact 18-feature contract
 
-`inference.py` caches the fitted pipeline and JSON guides. FastAPI lifespan warms
-the cache; unavailable/incompatible artifacts produce a sanitized HTTP 503 for
-predictions without disabling ordinary school workflows. No inference refits,
-database migrations, assessment writes, or scoring-rule changes are introduced.
+Teacher and Parent predictions are fully implemented on the shared **V1**
+research inference path. `backend/ml/common.py` defines the feature order and
+artifact directory; `backend/schemas/ml.py::MLFeatures` validates inputs.
+`backend/ml/inference.py` loads the fitted preprocessing/Random Forest pipeline
+from **`backend/ml/artifacts/rf_post_test_model.joblib`** and caches it with
+`lru_cache`. Numeric missing values use the saved median imputers; categorical
+values use saved mode imputation and encoding. The same cached service supplies
+both portals. Inference does not train/refit or write official assessments.
 
-Teacher-only routes in `routes/ml.py` expose `GET /api/ml/students?section_id=N`,
+| Feature group | Count | Exact inputs |
+| --- | --- | --- |
+| Seven PRE domain scaled scores | 7 | gm_pre_scaled, fm_pre_scaled, sh_pre_scaled, rl_pre_scaled, el_pre_scaled, cog_pre_scaled, se_pre_scaled |
+| PRE composites | 3 | pre_total_scaled, pre_standard_score, pre_delayed_domains_count |
+| Age at official PRE date | 1 | age_months_pre (completed months) |
+| Child, parent and household demographics | 7 | gender, handedness, mother_education_level, father_education_level, household_occupation_tier, num_siblings, birth_order |
+
+The three supported POST outcomes are **Suggests Significant Delay in Overall
+Development**, **Suggests Slight Delay in Overall Development**, and **Average
+Overall Development**. Advanced classes are unsupported. IDs, names, LRNs,
+MID/POST scores and source labels are not predictor inputs. Load only trusted
+locally generated joblib files. Deployments require the trusted V1 artifact and
+`prescriptive_guides.json`; binary artifacts and research datasets follow Git
+ignore policy. Runtime does not select `rf_post_test_model_v2.joblib`; the V2
+nested-CV experiment is archived in section 12.
+
+### Teacher inference and batch workflow
+
+`routes/ml.py` exposes teacher-only `GET /api/ml/students?section_id=N`,
 `POST /api/ml/predict/student/{student_id}`, and `POST /api/ml/predict/sandbox`.
-The roster and student inference enforce active section assignments. Student
-inference requires all configured PRE questions, all seven domains, a teacher-
-confirmed PRE date, and a valid birth date. Existing deterministic scoring and
-completed-month age use that PRE date. Parent observations can contribute answers
-without turning their submission dates into an official teacher test date.
+Roster and student inference enforce active section ownership and active students.
+Student readiness requires all configured PRE questions, all seven domains, a
+teacher-confirmed PRE date and a birth date before that date. The existing
+deterministic scorer supplies scaled/standard scores at official PRE age;
+completed-month age uses the same date. Parent answers may contribute to PRE
+without their submission dates becoming an official teacher test date.
 
-Missing demographics go through the saved median/mode imputers. Canonical parent
-education values come only from synced family records. Free-text occupations have
-no reviewed training mapping and remain missing, rather than inferring household
-tiers. Imputed fields are disclosed. Returned baseline tiers and interventions
-follow the existing rules: scaled <=6 or explicit DI-KAYA items, independently of
-the predicted outcome. DI-KAYA item numbers are positions within each domain.
+The three-column table and detail modal are described in section 3. **Predict
+All Students** is client-side orchestration of individual authorized POSTs using
+`Promise.allSettled`; there is no separate batch API or persistent prediction
+table. Only PRE-ready learners are included. Per-learner pending state and errors
+are displayed, successful results are held in component memory, and the modal can
+request a single prediction. **PREDICTION RESULT** indicates result availability
+(`Not Ready`, `Predicting...`, `Ready`); the predicted class is shown in details.
 
-`/teacher/ml-insights` provides section-scoped student testing, probabilities,
-seven baseline cards, expandable classroom/home activities, and a debounced
-18-input sandbox. It reuses Tailwind cards, MUI Stack structure, and installed
-Material icons (Lucide is not installed). Sandbox values persist in owner-scoped
-drafts, remain after successful inference, and retry on reconnection; failed
-requests never discard inputs. No prediction is persisted as an assessment.
+Teacher results include the three probabilities, confidence caveat, official
+PRE date, seven baseline cards, model input/imputation disclosure and expandable
+classroom/home activities. Parent education is mapped from canonical values in
+SYNCED family records. Free-text occupations have no reviewed tier mapping and
+remain missing rather than inventing family circumstances.
 
-The page explicitly identifies educational research use, not clinical diagnosis,
-and documents the report's mixed-holdout 88.9% accuracy versus 25% on eight real
-holdout learners. All 29 observed real POST outcomes are Average; all contribute
-generator anchors, so there is no independent real-world validation. Probabilities
-are not calibrated clinical confidence; activities do not establish treatment
-effectiveness. Advanced developmental classes remain unsupported.
+The debounced Sandbox Simulator uses all 18 inputs with owner-scoped durable
+drafts. Domain edits recalculate the total scaled score and delayed-domain count;
+standard score remains independently adjustable for hypothetical exploration.
+Inconsistent scenarios may be unrealistic. Successful inference retains inputs;
+offline failures mark pending state and retry on reconnection.
 
-Fresh feature verification (2026-10-18): all 8 existing model acceptance tests
-and 6 new API/cache tests pass. API checks use disposable PostgreSQL schemas and
-cover section/role gates, incomplete/parent-only PRE sessions, missing-field
-imputation, canonical demographics, sanitized unavailability, cache reuse, and
-unchanged assessments. All 4 real-API desktop/mobile Playwright cases pass via
-`playwright.ml-insights.config.ts`, including readable 320px field widths,
-probabilities/activities, offline draft retention, reconnection, and reload.
-Screenshots are in `frontend/test-results/ml-insights/`. Changed Python files
-compile; app TypeScript and changed-file ESLint pass. Production build passes
-with the existing large-bundle advisory. No dependencies or branches were added.
+### Parent on-demand workflow and privacy
+
+`GET /api/ml/parent/readiness/{student_id}` and
+`POST /api/ml/parent/predict/{student_id}` require a signed-in parent, a SYNCED
+family link and an active enrolled child. Readiness reports completion and access
+flags without scores; a disabled prediction flag does not itself reject this
+readiness request. Prediction generation additionally enforces:
+
+1. The current active Primary Adviser's `allow_parent_predictions` flag, controlled
+   by **Student Prediction** in Teacher Settings. Disabled access returns HTTP 403.
+2. Complete PRE with an official teacher-confirmed date. Incomplete or parent-only
+   unconfirmed PRE returns HTTP 400 with the completion message.
+3. Independent PRE score release (`allow_parent_view_eccd_pre`). Closed release
+   returns HTTP 403 **Results Pending Adviser Release** before scores or
+   gap-derived guidance can leave the server.
+
+The parent page supports a single synced child or multiple synced children and
+requests inference only after **Predict Post-Test Outcome**. Restricted,
+incomplete, unreleased, ready, loading and error states are explicit. Results
+show probabilities, the official PRE date, seven scaled baseline domains, and
+home activities with practice, scaffolding, review and success guidance.
+`ParentPredictionResponse` excludes family model inputs, imputed-field details,
+individual checklist marks/item numbers and teacher-only guide fields. The marks
+permission never substitutes for PRE release or prediction access.
+
+Child selection reuses `useChildren`. Requests are cancelled/version-checked so
+late sibling responses cannot replace the selected child's results. Readiness
+refreshes on focus, reconnection and every 20 seconds; failed access checks hide
+predictions until successfully revalidated. Results are not persisted locally or
+saved as assessment records.
+
+### Guidance and research limits
+
+`prescriptive_guides.json` supplies transparent PRE-based activities independently
+of the predicted outcome: scaled score <=6 or explicit DI-KAYA items triggers
+support. Planning tiers are <=3 Delay, 4–6 Slight Delay and >=7 Average. Item
+numbers are positions within each domain. These locally authored suggestions
+support teacher/parent planning; they are not clinical diagnoses or evidence of
+treatment effectiveness.
+
+Both portals display the V1 research limits: the report's mixed-holdout accuracy
+is 88.9%, versus 25% on eight real holdout learners. All 29 observed real POST
+outcomes are Average and all contributed generator anchors, so there is no
+independent real-world validation. Probabilities are not calibrated clinical
+confidence. The separate V2 report does not replace these V1 runtime limits.
 
 ### Verification commands and isolation
 
@@ -536,13 +708,46 @@ with disposable schemas. Some visual tests need reference assets. Never deploy
 the test API or direct reset operations at school data. SMTP diagnostics can
 send real email and are not ordinary read-only checks.
 
-**This documentation refresh performed source/configuration inspection and
-tool/package metadata checks, not application tests, migrations, database
-connectivity, SMTP delivery, or browser verification.** Previous pass counts
-are not evidence for the current working tree. Preserve unrelated changes and
-report fresh verification results only when actually run.
+### Latest pre-push audit evidence (2026-10-20)
 
-## 12. Backend parity remediation Batch 1 (2026-10-14)
+The audit immediately preceding this synchronization verified the current working
+tree with `pnpm.cmd --filter frontend build` (TypeScript build and Vite), explicit
+`tsc --noEmit` for app/tooling projects, ESLint on all eight changed/new frontend
+TypeScript files, and staged/unstaged Git whitespace checks: all passed. The
+production build retains the advisory for chunks over 500 kB. Full frontend lint
+still reports three existing `react-hooks/refs` errors at lines 20/23 of unchanged
+`frontend/src/hooks/useParentProfile.ts`; changed-file lint passing does not mean
+the whole frontend is lint-clean.
+
+Secret/PII scans found no live tracked environment credentials or added hardcoded
+student PII. The three tracked `.env.example` files contain placeholders. Root
+and frontend `.gitignore` now exclude `.vscode/` completely. Existing localhost
+port defaults (API 8000, SMTP fallback 587) mean configuration is not exclusively
+environment-sourced for every port. Browser test sources/configuration remain
+excluded by existing frontend ignore rules and are not guaranteed to travel
+with a normal commit.
+
+The audit identified 21 candidate files, including backend/schema/migration/test
+work beyond the listed UI scope; the index was empty and no branch integration
+was performed. This synchronization edits only `AI_CONTEXT.md`. It uses source
+inspection and the preceding audit's actual frontend checks; it does not claim
+fresh backend tests, browser tests, migrations, database connectivity or SMTP
+verification. Historical pass counts and local migration-application reports
+below are records of earlier work, not fresh verification of another checkout.
+
+## 12. Historical implementation and research archive
+
+**Historical log only.** Entries below preserve earlier delivery notes, test
+counts, experiments and then-current commands. Statements such as "fresh
+verification", "six permissions", old release-coupled marks behavior, earlier
+UI structure or "no ML implementation" apply only to that entry's phase. They
+do not override sections 1–11, establish current deployment state, or imply that
+those tests were rerun during the latest audit. In particular, independent marks
+(009) superseded score-coupled checklist masking, and predictions (010) expanded
+the teacher-level parent matrix to eight flags. Use the current migration
+inventory and privacy rules above for present-day work.
+
+### Backend parity remediation Batch 1 (2026-10-14)
 
 Batch 1 repairs are implemented and **Verified** in
 `BACKEND_PARITY_READ_ONLY_AUDIT.md`. Authentication accepts rememberMe and both
@@ -588,7 +793,7 @@ manifests and lockfiles were untouched; intentional architectural upgrades and
 pre-existing unrelated work remain intact. No deployment or live SMTP/browser
 acceptance is claimed.
 
-## 13. Backend parity remediation Batch 2 (2026-10-14)
+### Backend parity remediation Batch 2 (2026-10-14)
 
 All remaining parity audit findings and unread-count polling log noise are
 Verified in `BACKEND_PARITY_READ_ONLY_AUDIT.md`. Health/readiness, configurable
@@ -622,7 +827,7 @@ All Batch 1 and intentional architecture upgrades, including protected section
 deletion for archived students, remain intact. This verifies backend behavior
 and local migrations, not remote deployment, SMTP or deployed-browser acceptance.
 
-## 14. Teacher parent link approval (2026-10-16)
+### Teacher parent link approval (2026-10-16)
 
 `family_access` now includes constrained `status` (`PENDING` or `SYNCED`) and
 timezone-aware `requested_at`. No account association means roster status `NONE`.
@@ -688,7 +893,7 @@ on this feature's base branch. The existing legacy route parity test requires
 available read-only reference checkout. Those unrelated files and all legacy
 files were left untouched. No new dependencies or deployment are involved.
 
-## 15. Parent assessment editing windows (2026-10-17)
+### Parent assessment editing windows (2026-10-17)
 
 Section-scoped non-null Boolean windows are `pre_test_parent_editable` (default
 true), `mid_test_parent_editable` and `post_test_parent_editable` (default false).
@@ -733,7 +938,7 @@ rate-limit assertions failing independently. Those tests expect 10 allowed login
 attempts, while the unchanged HEAD policy allows 15. Rate-limit code/tests remain
 untouched. Tests do not claim deployment or live-parent-account acceptance.
 
-## 16. Teacher checklist provenance contract (2026-10-18)
+### Teacher checklist provenance contract (2026-10-18)
 
 Assessment checklist questions expose Boolean `is_home_based` and
 `evaluator_roles` keyed by the existing `PRE`, `MID`, `POST` period values.
@@ -748,7 +953,7 @@ Verification: backend compilation and app TypeScript checking pass. All 10
 PostgreSQL schemas, including provenance transitions, mixed evaluator roles,
 empty periods, nullable legacy home flags, and unreleased parent masking.
 
-## 17. Teacher saved-only auto-fill (2026-10-18)
+### Teacher saved-only auto-fill (2026-10-18)
 
 `utils/eccdDrafts.ts` resolves each question independently into `savedAnswers`,
 `draftAnswers`, `inheritedAnswers`, and displayed `answers`. Only saved KAYA
@@ -775,7 +980,7 @@ Verification: all 11 resolver tests and 7 Chromium browser tests pass, including
 App TypeScript, changed-file ESLint, and all 10 backend Phase 2 lifecycle tests
 also pass. No backend application or legacy files changed in this step.
 
-## 18. Teacher checklist provenance and progress display (2026-10-18)
+### Teacher checklist provenance and progress display (2026-10-18)
 
 The routed `pages/teacher/EccdAssessment.tsx` uses loaded student checklist
 questions for Home-Based and selected-period Parent Assessed pills. Badges wrap
@@ -810,7 +1015,7 @@ using mocked APIs. Full `pnpm.cmd --dir frontend run lint` reports three existin
 That separate parent-profile hook is outside this change. No backend or legacy
 files, application database records, or dependency manifests are modified.
 
-## 19. Phase 3 teacher workflow regression coverage (2026-10-18)
+### Phase 3 teacher workflow regression coverage (2026-10-18)
 
 `tests/teacher-portal-parity.spec.ts` adds nine browser lifecycle cases across
 320px, 768px and 1280px. They observe actual PRE save requests independently of
@@ -855,7 +1060,7 @@ The generated review artifacts are `frontend/test-results/teacher-portal-report/
 under `frontend/test-results/teacher-portal/`. No school records were written;
 browser tests use mocks and backend tests use disposable schemas.
 
-## 20. Legacy Teacher Settings home-based controls (2026-10-18)
+### Legacy Teacher Settings home-based controls (2026-10-18)
 
 The legacy reference is `AMES-SYSTEM-LEGACY/frontend/src/pages/teacher/TeacherSettings.jsx`
 (editing controls at lines 301-355). The active Teacher Settings now separates
@@ -889,7 +1094,11 @@ All 18 backend parent-assessment-access tests pass. App TypeScript, ESLint for
 all changed frontend files and Prettier checks pass. No application database
 records, backend files, legacy sources or dependency manifests changed.
 
-## 21. Phase 4 parent checklist and selected-period saves (2026-10-18)
+### Phase 4 parent checklist and selected-period saves (2026-10-18)
+
+Historical visibility policy below predates independent marks permission 009.
+Current own-observation and marks access follows section 6, including access to
+permitted marks independently of official score release.
 
 The inspected legacy references are `backend/controllers/parentEccdController.js`,
 `frontend/src/pages/users/ParentEccdAssessment.jsx`, and `frontend/src/utils/eccdDrafts.js`
@@ -959,7 +1168,7 @@ Teacher views, legacy sources, dependency files, schema migrations and applicati
 database records were not changed in this phase. The browser suite uses the
 disposable real API; the synthetic sibling/account isolation reads are mocked.
 
-## 22. Adviser takeover and removal of Substitute access (2026-10-18)
+### Adviser takeover and removal of Substitute access (2026-10-18)
 
 Section assignments now have only `Primary Adviser` and Active/Inactive status.
 The assignment helper locks the section, deactivates the outgoing assignment,
@@ -1027,7 +1236,7 @@ then passed. The actual application lifespan now starts against that database,
 and `/healthz` and `/ready` both return HTTP 200 (`database: connected`). No
 application code or legacy files changed in this follow-up.
 
-## 23. Independent parent ECCD marks visibility (2026-10-18)
+### Independent parent ECCD marks visibility (2026-10-18)
 
 `teachers.allow_parent_view_eccd_marks` is a seventh granular permission, a
 non-null Boolean with Python/server defaults of false. The earlier descriptions
@@ -1073,7 +1282,7 @@ parent regression cases verified across those runs). App TypeScript,
 changed-file ESLint, Prettier and Python compilation pass. Local Uvicorn startup,
 `/healthz` and `/ready` pass; the temporary verification server was stopped.
 
-## 24. Teacher account creation validation (2026-10-18)
+### Teacher account creation validation (2026-10-18)
 
 The active Add Teacher form previously rendered one Full Name field and sent
 `last_name: ""`, while `TeacherProvisionRequest` requires both names. This caused
@@ -1127,7 +1336,7 @@ expectations. All six teacher-creation tests pass in this full run. Full output:
 `frontend/test-results/teacher-creation-backend-tests.log`. Those unrelated
 contracts and assertions were left unchanged.
 
-## 25. Sticky parent ECCD controls (2026-10-18)
+### Sticky parent ECCD controls (2026-10-18)
 
 The existing Developmental Domains control card in `ParentEccdAssessment.tsx`
 uses `sticky top-14 z-20 legacy-md:top-0`, preserving its background, shadow,
@@ -1143,7 +1352,7 @@ the verification script is `frontend/test-results/parent-sticky-check.cjs`.
 Full frontend lint reports three existing `react-hooks/refs` errors in the
 untouched `useParentProfile.ts`. Legacy sources and school records are unchanged.
 
-## 26. Chairman enrolled-student advisers (2026-10-18)
+### Chairman enrolled-student advisers (2026-10-18)
 
 `GET /api/chairman/students` uses `routes/students.py::roster`. The roster now
 batch-resolves `adviser_name` with one query joining SectionTeacher, Teacher and
@@ -1181,3 +1390,96 @@ expectations. All four adviser tests pass in that run. Full output is in
 `frontend/test-results/student-advisers-backend-tests.log`; browser screenshots
 are under `frontend/test-results/student-advisers/`. Legacy files, dependencies,
 application school records and Git branches were not changed.
+
+### Parent ML Insights and Student Prediction permission (2026-10-20)
+
+This feature-delivery record predates the subsequent UI/hygiene audit. Its
+statement that teacher ML and `.gitignore` were preserved applies to that
+delivery only; the current batch/modal UI and ignore rules are summarized above.
+
+Teacher Settings includes Student Prediction under Student Record Permissions.
+The granular `teachers.allow_parent_predictions` Boolean defaults off and uses
+the existing owner-scoped, revision-safe settings autosave/offline queue through
+`/api/teachers/me/access`. Settings/access aliases return and persist the flag;
+older partial updates preserve its saved value. Backups retain it and default
+older documents to false. The additive, idempotent migration
+`010_parent_predictions` verifies all other teacher fields are unchanged. It
+was applied and checked on local `ames_parity_dev`; startup validates it without
+automatically changing schema. Other environments must explicitly apply it using
+the commands in `backend/migrations/README.md`.
+
+`GET /api/ml/parent/readiness/{student_id}` and
+`POST /api/ml/parent/predict/{student_id}` accept authenticated parents only.
+Both require a SYNCED family link and an active enrolled child. Prediction
+permission inherits from the current active Primary Adviser with an active
+account; absent/inactive advisers fail closed. Disabled permission returns the
+requested HTTP 403 message. Incomplete PRE, including parent-only unconfirmed
+assessment dates, returns the requested HTTP 400 message. Actual PRE scores and
+gap-derived guidance also require the independent PRE release permission; closed
+release returns HTTP 403 Results Pending Adviser Release. Readiness returns no
+scores. Successful parent responses exclude family model inputs and individual
+checklist marks, preserving independent score/marks privacy controls. Inference
+shares the existing scorer/model path and never writes assessment records.
+Teacher prediction and sandbox route contracts remain intact.
+
+`/parent/ml-insights` and the sparkles ML Insights navigation link render the
+research disclaimer/evaluation limits, child identity, a selector only for two
+or more synced children, restricted/incomplete/unreleased/ready states, and the
+explicit Predict Post-Test Outcome action. Results show the three probabilities,
+confidence caveat, official PRE date, seven scaled baseline domains, and home
+activities with practice, parenting support and review guidance. Child selection
+reuses `useChildren`; late requests are cancelled/version-checked, and access
+refreshes on focus, reconnection and every 20 seconds. Failed access checks hide
+results until revalidated. No prediction persistence or assessment writes were
+added. Existing changes in teacher `MlInsights.tsx`, including Sandbox Simulator,
+and `.gitignore` were preserved without edits.
+
+Fresh verification: all 41 focused backend ML/parent access tests pass in
+disposable PostgreSQL schemas. All eight parent ML browser cases pass at 320px
+and 1280px, including real API toggle persistence, actual model predictions,
+revocation, PRE release gating, sibling request isolation, offline reload and
+reconnection. The sibling case mocks the synthetic sibling's read endpoints;
+ownership gates are covered separately by real API tests. Browser sources/config
+remain local under the repository's existing frontend test ignore rules.
+App TypeScript, production build, changed-file ESLint, Python compilation and
+Git whitespace checks pass. Build retains the existing bundle-size advisory.
+Local Uvicorn startup, `/healthz` and `/ready` pass after migration. Browser
+screenshots are under `frontend/test-results/parent-ml/`. No legacy sources,
+dependencies or school assessment records were changed.
+
+### V1 teacher ML feature verification (2026-10-18; historical record)
+
+The original teacher feature delivery recorded eight model acceptance tests,
+six API/cache tests and four real-API desktop/mobile Playwright cases passing.
+Coverage included section/role gates, incomplete/parent-only PRE sessions,
+missing-field imputation, canonical demographics, sanitized unavailability,
+cache reuse, unchanged assessments, 320px layouts, offline drafts and reconnect.
+Python compilation, app TypeScript, changed-file ESLint and the production build
+were reported passing, with the bundle-size advisory retained. Screenshots were
+written under `frontend/test-results/ml-insights/` using
+`playwright.ml-insights.config.ts`. These results belong to that delivery and
+were not rerun as part of this documentation synchronization.
+
+### V2 nested cross-validation review (archived experiment)
+
+Source: the local `backend/ml/artifacts/retraining_v2/MODEL_EVALUATION_REPORT.md`,
+reviewed during this synchronization. The experiment's separate
+`backend/ml/artifacts/rf_post_test_model_v2.joblib` retains the 18-feature,
+three-class contract but has **not replaced V1 runtime inference**. The active
+default remains `backend/ml/artifacts/rf_post_test_model.joblib`.
+
+The report describes five outer real-student folds and three-fold inner parameter
+search. Synthetic augmentation and preprocessing are fitted within each training
+partition; reported validation cases are real students only. For 29 pooled real
+out-of-fold cases it reports 100% accuracy and balanced accuracy, but three-class
+macro F1 is only 0.3333. All 29 observed outcomes are Average; an always-Average
+baseline has the same reported accuracy. There is no observed delay-class support
+with which to establish discrimination. Previously examined students are not a
+new external cohort, and the saved-baseline comparison overlaps earlier research.
+
+These are archived experimental findings, not the production model's metrics or
+evidence of independent clinical/generalization validity. Promotion would require
+a separate reviewed change; neither this report nor this documentation update
+switches the runtime artifact. Fold membership, anchors and individual predictions
+in local CSV/JSON files remain sensitive microdata; preserve the existing ignore
+policy and do not copy learner-level records into this context document.
