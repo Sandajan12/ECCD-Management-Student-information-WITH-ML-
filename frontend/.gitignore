@@ -3,7 +3,7 @@
 # =============================================================================
 
 # Logs
-logs
+logs/
 *.log
 npm-debug.log*
 yarn-debug.log*
@@ -20,21 +20,25 @@ build/
 .env.local
 .env.*.local
 
-# Generated tool caches and browser-test evidence (not test sources).
+# Generated Tool Caches & Linters
 .turbo/
 .cache/
 .vite/
 .vite-temp/
 *.tsbuildinfo
+.eslintcache
+
+# Playwright & Test Results (Test outputs only — never ignore test code or configs)
 test-results/
 nav-test-results/
 playwright-report/
 blob-report/
+playwright/.cache/
 coverage/
 
-# Editor files
+# Editor & OS Files
 .vscode/
-.idea
+.idea/
 .DS_Store
 Thumbs.db
 *.suo
@@ -42,7 +46,3 @@ Thumbs.db
 *.njsproj
 *.sln
 *.sw?
-backend/tests
-playwright*
-playwright*.config.ts
-tests/

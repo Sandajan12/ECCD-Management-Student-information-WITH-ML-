@@ -2,19 +2,24 @@
 # AMES System - Backend .gitignore
 # =============================================================================
 
-# Credentials - CRITICAL
+# Credentials & Database Certificates (CRITICAL)
 .env
 .env.*
 *.env
 !*.env.example
 
-# Python Cache & Environments
+# Public CA Certificate whitelist for Aiven MySQL SSL
+!ca.pem
+
+# Python Cache, Coverage & Environments
 __pycache__/
 *.py[cod]
 *$py.class
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.coverage
+htmlcov/
 venv/
 env/
 .venv/
@@ -27,8 +32,9 @@ backups/
 *.sqlite3
 *.enc
 *.sql
+!tests/fixtures/phase1_baseline.sql
 
-# ML Models
+# Machine Learning Large Model Binaries
 *.pkl
 *.joblib
 *.pt
@@ -36,6 +42,9 @@ backups/
 *.onnx
 *.h5
 *.bin
+# Production Model Whitelist: Keep inference model tracked for Render deployment
+!ml/rf_post_test_model.joblib
+!ml/artifacts/rf_post_test_model.joblib
 
 # Spreadsheets & Sensitive Student Data Templates
 *.xlsx
@@ -44,7 +53,18 @@ backups/
 assets/templates/*.xlsx
 assets/templates/*.xls
 
-# Reviewed blank templates contain no student data; fixture is schema-only.
+# Reviewed blank DepEd templates contain no student data
 !assets/templates/ECCD_Checklist_Blank_Template.xlsx
 !assets/templates/ECCD_Summary_Matrix_Template.xlsx
-!tests/fixtures/phase1_baseline.sql
+
+# Sensitive Research Datasets, Microdata & Beneficiary Acceptance Tests
+ml/raw_data/
+ml/data/
+ml/artifacts/real_beneficiary_benchmark.csv
+ml/artifacts/real_beneficiary_interventions.json
+ml/artifacts/dataset_audit.json
+ml/artifacts/MODEL_EVALUATION_REPORT.md
+ml/artifacts/plots/
+ml/artifacts/retraining_v2/
+ml/.mplconfig/
+tests/test_ml_model.py

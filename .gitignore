@@ -8,7 +8,7 @@
 *.env
 !*.env.example
 
-# Private keys and credential containers; keep the public reference CA certificate.
+# Private keys and database certificates
 *.pem
 *.key
 *.p8
@@ -16,12 +16,16 @@
 *.pfx
 id_rsa
 id_ed25519
-!AMES-SYSTEM/backend/ca.pem
+# Allow the public reference CA certificate for Aiven MySQL SSL
+!backend/ca.pem
+!**/ca.pem
 
 # 2. Legacy Migration Reference & Raw Database Dumps
 _legacy_reference/
+AMES-SYSTEM-LEGACY/
 *.sql
 *.enc
+!backend/tests/fixtures/phase1_baseline.sql
 
 # 3. Virtual Environments & Dependencies
 .venv/
@@ -33,8 +37,10 @@ env.bak/
 venv.bak/
 node_modules/
 .pnpm-store/
+npm-cache/
+.npm/
 
-# 4. Python Build, Cache & Test Artifacts
+# 4. Python Build, Cache & Test Outputs
 __pycache__/
 *.py[cod]
 *$py.class
@@ -60,27 +66,30 @@ wheels/
 .ruff_cache/
 .coverage
 htmlcov/
+backend/.pytest_cache/
 
-# 5. Frontend & Build Outputs
+# 5. Frontend & Build Outputs (Keeps frontend/tests/ tracked)
 frontend/dist/
 frontend/dist-ssr/
 frontend/build/
 frontend/test-results/
-frontend/tests
 frontend/playwright-report/
+frontend/playwright/.cache/
 dist/
 *.local
 
-# Generated caches and browser-test reports at any workspace depth.
+# Generated caches, linters, and browser-test reports (test outputs only)
 .turbo/
 .cache/
 .vite/
 .vite-temp/
 *.tsbuildinfo
+.eslintcache
 test-results/
 nav-test-results/
 playwright-report/
 blob-report/
+playwright/.cache/
 coverage/
 
 # 6. Package Manager Logs
@@ -90,8 +99,6 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 *.log
-npm-cache/
-.npm/
 
 # 7. Operating System & Editor Files
 .DS_Store
@@ -110,7 +117,7 @@ Thumbs.db
 *.sln
 *.sw?
 
-# 8. Machine Learning Large Model Binaries / Checkpoints (>100MB)
+# 8. Machine Learning Model Binaries
 *.pkl
 *.joblib
 *.pt
@@ -119,6 +126,9 @@ Thumbs.db
 *.h5
 *.bin
 *.ckpt
+# Production Model Whitelist: Keep inference model tracked for Render deployment
+!backend/ml/rf_post_test_model.joblib
+!backend/ml/artifacts/rf_post_test_model.joblib
 
 # 9. Runtime Uploads, Generated Exports, and SQLite Databases
 backend/uploads/
@@ -136,35 +146,20 @@ backups/
 *.csv
 backend/assets/templates/*.xlsx
 backend/assets/templates/*.xls
-
-# Reviewed blank DepEd templates and schema-only migration fixture.
+# Reviewed blank DepEd templates
 !backend/assets/templates/ECCD_Checklist_Blank_Template.xlsx
 !backend/assets/templates/ECCD_Summary_Matrix_Template.xlsx
-!backend/tests/fixtures/phase1_baseline.sql
 
-# Local read-only migration reference; never add the embedded repository.
-/AMES-SYSTEM-LEGACY/
-/AMES-SYSTEM-LEGACY
-AMES-SYSTEM-LEGACY/
-
-
-
-# ML Raw Datasets and Generated Microdata
+# 11. ML Raw Datasets, Benchmarks & Learner Microdata
 backend/ml/raw_data/
 backend/ml/data/
 backend/ml/artifacts/real_beneficiary_benchmark.csv
 backend/ml/artifacts/real_beneficiary_interventions.json
-
-
-# These outputs also contain individual learner assessments or repair records.
 backend/ml/artifacts/dataset_audit.json
 backend/ml/artifacts/MODEL_EVALUATION_REPORT.md
 backend/ml/artifacts/plots/05_real_beneficiary_pre_vs_post_comparison.png
-
-# Existing acceptance tests include beneficiary-specific repair/exclusion facts.
-backend/tests/test_ml_model.py
-
-# Local plotting cache.
+backend/ml/artifacts/retraining_v2/
 backend/ml/.mplconfig/
 
-backend/ml/artifacts/retraining_v2/
+# Existing acceptance tests containing real beneficiary exclusion facts
+backend/tests/test_ml_model.py
