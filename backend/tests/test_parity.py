@@ -1,6 +1,5 @@
 """Legacy/client contract regressions using the existing isolated DB fixture."""
 from datetime import date
-from pathlib import Path
 import re
 import unittest
 
@@ -30,16 +29,53 @@ class ParityTests(unittest.TestCase):
         self.fixture.tearDown()
 
     def test_all_legacy_functional_routes_registered(self):
-        mounts = {"auth": "auth", "teacher": "teachers", "student": "students", "message": "messages", "log": "logs", "settings": "settings", "eccd": "eccd", "chairman": "chairman"}
+        # Portable client contract: independent of removed historical source files.
+        routes = {
+            "auth": {
+                "post": ["/login", "/login-step1", "/verify-otp", "/register-parent", "/send-otp", "/request-otp", "/logout"],
+                "put": ["/update-password"],
+            },
+            "teachers": {
+                "get": ["/", "/active", "/archived", "/dashboard-filters", "/dashboard-stats", "/dashboard-pie", "/download/{lrn}", "/download-all", "/access-controls"],
+                "post": ["/create", "/import-students", "/change-password-request", "/change-password-verify"],
+                "put": ["/update/{user_id}", "/archive/{user_id}", "/unarchive/{user_id}", "/access-controls"],
+                "delete": ["/delete/{user_id}"],
+            },
+            "students": {
+                "get": ["/all", "/archived", "/section/{section_id}", "/my-child", "/{identifier}"],
+                "post": ["/create", "/link"],
+                "put": ["/archive-all", "/update/{identifier}", "/archive/{identifier}", "/unarchive/{identifier}"],
+                "delete": ["/delete/{identifier}"],
+            },
+            "messages": {
+                "get": ["/contacts", "/history", "/unread-count"],
+                "post": ["/send", "/notify-student", "/link-lrn"],
+                "put": ["/mark-read"],
+            },
+            "logs": {"get": ["/"]},
+            "settings": {
+                "get": ["/"], "put": ["/update"],
+                "post": ["/upload-background", "/rollover", "/undo-rollover", "/revert-school-year"],
+            },
+            "eccd": {
+                "get": ["/students", "/domains-progress", "/assessment/{lrn}", "/student/{student_lrn}", "/section/{section_id}/summary", "/section/{section_id}/export", "/export-all", "/parent/assessment/{student_lrn}", "/parent/domains-progress/{student_lrn}", "/parent/dashboard-stats/{student_lrn}", "/parent/progress/{student_lrn}"],
+                "post": ["/evaluate", "/parent/evaluate"],
+            },
+            "chairman": {
+                "get": ["/students", "/sections", "/teachers", "/dashboard-filters", "/dashboard-stats", "/dashboard-pie", "/export-eccd", "/sections/{section_id}/export-summary", "/eccd-data", "/backup/export"],
+                "post": ["/sections", "/teachers", "/verify-password", "/eccd-questions", "/backup/restore", "/rollover-year", "/undo-rollover"],
+                "put": ["/account", "/sections/{section_id}/assign", "/teachers/{teacher_id}/permissions", "/students/transfer", "/eccd-questions/{question_id}", "/eccd-questions/{question_id}/home-based"],
+                "delete": ["/sections/{section_id}", "/eccd-questions/{question_id}"],
+            },
+        }
         def normalize(path):
             return re.sub(r"\{[^}]+\}|:[A-Za-z_][A-Za-z_0-9]*", "{}", path).rstrip("/")
         actual = {(method, normalize(path)) for path, operations in api.openapi()["paths"].items() for method in operations}
-        root = Path(__file__).resolve().parents[2]
-        for filename, prefix in mounts.items():
-            source = (root / "AMES-SYSTEM-LEGACY/backend/routes" / f"{filename}Routes.js").read_text(encoding="utf-8")
-            for method, suffix in re.findall(r"router\.(get|post|put|delete)\(['\"]([^'\"]+)['\"]", source):
-                with self.subTest(method=method, path=suffix, prefix=prefix):
-                    self.assertIn((method, normalize(f"/api/{prefix}{suffix}")), actual)
+        for prefix, methods in routes.items():
+            for method, suffixes in methods.items():
+                for suffix in suffixes:
+                    with self.subTest(method=method, path=suffix, prefix=prefix):
+                        self.assertIn((method, normalize(f"/api/{prefix}{suffix}")), actual)
 
     def test_teacher_filters_stats_and_pie_use_assigned_sections_and_years(self):
         with self.sessions() as db:
@@ -48,20 +84,20 @@ class ParityTests(unittest.TestCase):
             db.get(Teacher, 1).allow_eccd_question_management = True
             db.commit()
         filters = self.call("GET", "/api/teachers/dashboard-filters", 2).json()
-        self.assertEqual(filters["sections"], ["Test A", "Test B"])
-        self.assertEqual(filters["schoolYears"], ["2026-2027", "2025-2026"])
+        self.assertEqual(filters["sections"], ["Test B"])
+        self.assertEqual(filters["schoolYears"], ["2026-2027"])
         progress = self.call("GET", "/api/eccd/domains-progress", 2)
         self.assertEqual(progress.status_code, 200, progress.text)
         self.assertTrue(all(question["domain_id"] == domain["domain_id"] and "is_home_based" in question for domain in progress.json() for question in domain["questions"]))
-        for section, year, count in [("Test A", "All", "2"), ("Test B", "All", "1"), ("Test A", "2025-2026", "2"), ("Test A", "2026-2027", "1"), ("Not Assigned", "All", "0")]:
+        for section, year, count in [("Test A", "All", "0"), ("Test B", "All", "1"), ("Test A", "2025-2026", "0"), ("Test A", "2026-2027", "0"), ("Not Assigned", "All", "0")]:
             response = self.call("GET", "/api/teachers/dashboard-stats", 2, params={"section": section, "schoolYear": year})
             self.assertEqual(response.status_code, 200, response.text)
             self.assertEqual(response.json()["stats"]["totalStudents"], count)
             self.assertTrue(response.json()["allow_eccd_question_management"])
-        self.assertEqual(self.fixture.evaluate().status_code, 200)
+        self.assertEqual(self.fixture.evaluate().status_code, 403)
         own = self.call("GET", "/api/teachers/dashboard-pie", 2, params={"section": "Test A", "schoolYear": "2026-2027"}).json()
         other = self.call("GET", "/api/teachers/dashboard-pie", 2, params={"section": "Test B"}).json()
-        self.assertEqual(sum(row["value"] for row in own), 1)
+        self.assertEqual(sum(row["value"] for row in own), 0)
         self.assertEqual(sum(row["value"] for row in other), 0)
         # The configured year remains selectable when this teacher has no records.
         with self.sessions() as db:
@@ -195,7 +231,12 @@ class ParityTests(unittest.TestCase):
         self.assertTrue(dashboard["is_published"])
         self.assertTrue(dashboard["assessmentMastered"])
         self.assertTrue(any(card["progress"] == 100 for card in dashboard["domainCards"]))
-        self.assertTrue(all(question["is_home_based"] for domain in self.call("GET", "/api/eccd/parent/domains-progress/1", 5).json() for question in domain["questions"]))
+        progress = self.call("GET", "/api/eccd/parent/domains-progress/1", 5).json()
+        fields = ("question_id", "domain_id", "question_text", "sequence_order", "is_home_based")
+        self.assertEqual(
+            [(domain["domain_id"], [tuple(question[field] for field in fields) for question in domain["questions"]]) for domain in progress],
+            [(domain["domain_id"], [tuple(question[field] for field in fields) for question in domain["questions"]]) for domain in assessment["domains"]],
+        )
         self.assertEqual(self.call("GET", "/api/parents/children/3/eccd-summary", 5).status_code, 403)
 
     def test_audit_aliases_full_history_and_teacher_names(self):

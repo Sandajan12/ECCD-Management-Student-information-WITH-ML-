@@ -1,5 +1,31 @@
 # Feature migrations: Phase 2 is the current backend schema
 
+For a fresh PostgreSQL/Supabase database, the explicit
+[bootstrap command](../scripts/README.md) applies pending migrations 001–012 and
+seeds the exact tracked 7-domain/109-question ECCD baseline plus an
+environment-configured Chairman in one transaction:
+
+```sh
+uv run --no-project --python 3.12 python -m backend.scripts.seed_supabase --apply
+```
+
+Repeated runs preserve existing accounts and matching reference data. Existing
+school/account exports are not embedded in the seed fixture.
+
+## Credential revocation version (012)
+
+Stop API writers before upgrading, then run from the repository root:
+
+```sh
+uv run --no-project --python 3.12 python -m backend.migrations.auth_security_version --apply
+uv run --no-project --python 3.12 python -m backend.migrations.auth_security_version --check
+```
+
+Adds non-null `users.security_version` with default zero without changing existing
+account fields. Archive/restore and adviser deactivation advance this version so
+previous sessions cannot revive. Repeated application preserves versions. Startup
+checks the column and never runs DDL; backup restore preserves live user versions.
+
 The Phase 2 backend is implemented in Python/FastAPI, SQLAlchemy/PostgreSQL and
 Pydantic V2. React/Tailwind integration is Phase 3. Stop the dev server before
 applying database upgrades; preserve the existing `backend/.env` and LRN keys.

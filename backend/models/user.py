@@ -28,6 +28,7 @@ class User(Base):
     # Existing accounts are backfilled False; new teacher provisioning opts in in Phase 2.
     is_first_login = Column(Boolean, default=False, server_default="false", nullable=False)
     is_registration_pending = Column(Boolean, default=False, server_default="false", nullable=False)
+    security_version = Column(Integer, default=0, server_default="0", nullable=False)
     otp_code = Column(String(10), nullable=True)
     otp_expires_at = Column(DateTime, nullable=True)
 

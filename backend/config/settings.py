@@ -1,6 +1,7 @@
 import os
 import re
-from pydantic import AliasChoices, Field, SecretStr, field_validator, model_validator
+from typing import Literal
+from pydantic import AliasChoices, EmailStr, Field, SecretStr, field_validator, model_validator
 from sqlalchemy.engine import make_url
 from urllib.parse import urlsplit
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -11,14 +12,24 @@ BACKEND_DIR = os.path.dirname(CONFIG_DIR)
 ENV_FILE_PATH = os.path.join(BACKEND_DIR, ".env")
 
 class Settings(BaseSettings):
-    DATABASE_URL: str
+    DATABASE_URL: str = Field(validation_alias=AliasChoices("DATABASE_URL", "SUPABASE_DB_URL"))
     SECRET_KEY: str = Field(validation_alias=AliasChoices("JWT_SECRET", "SECRET_KEY"))
-    ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    ALGORITHM: Literal["HS256"] = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(default=30, gt=0)
     ENABLE_OTP: bool = True
     ENVIRONMENT: str = Field(default="production", validation_alias=AliasChoices("ENV", "ENVIRONMENT"))
     FRONTEND_URL: str = ""
     ALLOWED_ORIGINS: str = ""
+    CORS_ORIGINS: str = ""
+    EMAIL_TRANSPORT: Literal["smtp", "brevo_api"] = "smtp"
+    BREVO_API_KEY: SecretStr | None = None
+    MAIL_FROM: EmailStr = "noreply@example.com"
+    MAIL_USERNAME: str = "noreply@example.com"
+    MAIL_PASSWORD: SecretStr = SecretStr("")
+    MAIL_SERVER: str = "smtp.gmail.com"
+    MAIL_PORT: int = Field(default=587, ge=1, le=65535)
+    MAIL_STARTTLS: bool = True
+    MAIL_SSL_TLS: bool = False
     DATABASE_SSL_ROOT_CERT: str | None = None
     BACKUP_ENCRYPTION_KEY: str
     BACKUP_IV: str
@@ -38,6 +49,7 @@ class Settings(BaseSettings):
         values = ["http://localhost:5173", "http://127.0.0.1:5173"]
         values.extend(self.FRONTEND_URL.split(","))
         values.extend(self.ALLOWED_ORIGINS.split(","))
+        values.extend(self.CORS_ORIGINS.split(","))
         return list(dict.fromkeys(value.strip().rstrip("/") for value in values if value.strip()))
 
     @model_validator(mode="after")
@@ -51,6 +63,21 @@ class Settings(BaseSettings):
             if self.production and origin not in ("http://localhost:5173", "http://127.0.0.1:5173") and parsed.scheme != "https":
                 raise ValueError("Production frontend origins must use HTTPS")
         if self.production:
+            if not self.ENABLE_OTP:
+                raise ValueError("Production requires ENABLE_OTP=true")
+            sender_domain = str(self.MAIL_FROM).rsplit("@", 1)[-1].lower()
+            if sender_domain in ("example.com", "example.org", "example.net"):
+                raise ValueError("Production requires a verified MAIL_FROM sender")
+            if self.EMAIL_TRANSPORT == "brevo_api":
+                key = self.BREVO_API_KEY.get_secret_value().strip() if self.BREVO_API_KEY else ""
+                if len(key) < 20 or any(word in key.lower() for word in ("replace", "your_", "your-", "example", "changeme")):
+                    raise ValueError("Production brevo_api transport requires a BREVO_API_KEY")
+            else:
+                password = self.MAIL_PASSWORD.get_secret_value().strip()
+                if not self.MAIL_SERVER.strip() or not self.MAIL_USERNAME.strip() or self.MAIL_USERNAME == "noreply@example.com" or not password or any(word in password.lower() for word in ("replace", "your_", "your-", "changeme")):
+                    raise ValueError("Production SMTP requires MAIL_SERVER, MAIL_USERNAME and MAIL_PASSWORD")
+                if self.MAIL_STARTTLS == self.MAIL_SSL_TLS:
+                    raise ValueError("Production SMTP requires exactly one of STARTTLS or SSL/TLS")
             secret = self.SECRET_KEY
             if len(secret) < 32 or len(set(secret)) < 8 or any(word in secret.lower() for word in ("change-me", "changeme", "your-secret", "default-secret")):
                 raise ValueError("Production JWT_SECRET must be a strong secret of at least 32 characters")

@@ -3,12 +3,15 @@ from collections import defaultdict
 from datetime import date, datetime
 from io import BytesIO
 from pathlib import Path
+import posixpath
 import re
 from zipfile import ZipFile
+from xml.parsers import expat
 
 import openpyxl
 from openpyxl.cell.cell import MergedCell
 from openpyxl.utils.datetime import from_excel
+from openpyxl.utils.cell import range_boundaries
 from fastapi import HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
@@ -28,6 +31,109 @@ from backend.utils.students import upsert_guardian
 TEMPLATES = Path(__file__).resolve().parents[1] / "assets" / "templates"
 DOMAIN_SHEETS = {1: "GM", 2: "FM", 3: "SH", 4: "RL", 5: "EL", 6: "C", 7: "SE"}
 XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+MAX_XLSX_EXPANDED_BYTES = 50 * 1024 * 1024
+MAX_XLSX_MEMBERS = 128
+MAX_SHEET_ROWS = 2000
+MAX_SHEET_COLUMNS = 256
+MAX_WORKBOOK_CELLS = 250_000
+MAX_WORKBOOK_SHEETS = 16
+
+
+def validate_xlsx_resources(content: bytes) -> set[str]:
+    """Reject expanded archives and sparse/forged sheet bounds before openpyxl."""
+    total_read = cell_count = sheet_count = 0
+    validated_members: set[str] = set()
+    row_tag = "http://schemas.openxmlformats.org/spreadsheetml/2006/main}row"
+
+    def check_range(reference: str) -> None:
+        bounds = range_boundaries(reference)
+        if any(value is None or value < 1 for value in bounds):
+            raise ValueError("Invalid worksheet range")
+        if bounds[2] > MAX_SHEET_COLUMNS or bounds[3] > MAX_SHEET_ROWS:
+            raise HTTPException(413, "Excel worksheet exceeds the row or column limit.")
+
+    try:
+        with ZipFile(BytesIO(content)) as archive:
+            members = archive.infolist()
+            if len(members) > MAX_XLSX_MEMBERS or sum(item.file_size for item in members) > MAX_XLSX_EXPANDED_BYTES:
+                raise HTTPException(413, "Excel archive exceeds the expanded size or member limit.")
+            for member in members:
+                if not member.filename.lower().endswith((".xml", ".rels")):
+                    continue
+                row_index = column_index = 0
+                element_stack: list[str] = []
+                sheet_ids: set[str] = set()
+                worksheet_targets: set[str] = set()
+                parser = expat.ParserCreate(namespace_separator="}")
+
+                def reject_doctype(*args):
+                    raise ValueError("XML document types are not supported")
+
+                def start_element(tag, attributes):
+                    nonlocal row_index, column_index, cell_count, sheet_count
+                    parent_tag = element_stack[-1] if element_stack else None
+                    element_stack.append(tag)
+                    if tag == "http://schemas.openxmlformats.org/package/2006/relationships}Relationship" and attributes.get("Type", "").endswith("/worksheet"):
+                        target = attributes["Target"]
+                        base = posixpath.dirname(posixpath.dirname(member.filename))
+                        target = posixpath.normpath(target.lstrip("/") if target.startswith("/") else posixpath.join(base, target))
+                        if target in worksheet_targets:
+                            raise HTTPException(400, "Duplicate Excel worksheet resource.")
+                        worksheet_targets.add(target)
+                    # openpyxl treats every direct child of a row as a cell,
+                    # including children with unexpected tags or namespaces.
+                    if parent_tag == row_tag:
+                        cell_count += 1
+                        column_index += 1
+                        if attributes.get("r"):
+                            check_range(attributes["r"])
+                            column_index = range_boundaries(attributes["r"])[0]
+                        if column_index > MAX_SHEET_COLUMNS or cell_count > MAX_WORKBOOK_CELLS:
+                            raise HTTPException(413, "Excel workbook exceeds the cell limit.")
+                    # Inspect worksheet markup regardless of the ZIP member path.
+                    if not tag.startswith("http://schemas.openxmlformats.org/spreadsheetml/2006/main}"):
+                        return
+                    name = tag.rsplit("}", 1)[-1]
+                    if name in ("dimension", "mergeCell") and attributes.get("ref"):
+                        check_range(attributes["ref"])
+                    elif name == "row":
+                        if parent_tag != "http://schemas.openxmlformats.org/spreadsheetml/2006/main}sheetData" or row_tag in element_stack[:-1]:
+                            raise HTTPException(400, "Invalid or nested Excel worksheet rows.")
+                        row_index = int(attributes.get("r", row_index + 1))
+                        column_index = 0
+                        if not 1 <= row_index <= MAX_SHEET_ROWS:
+                            raise HTTPException(413, "Excel worksheet exceeds the row limit.")
+                    elif name == "col":
+                        if not 1 <= int(attributes["min"]) <= int(attributes["max"]) <= MAX_SHEET_COLUMNS:
+                            raise HTTPException(413, "Excel worksheet exceeds the column limit.")
+                    elif name == "sheet":
+                        sheet_count += 1
+                        if sheet_count > MAX_WORKBOOK_SHEETS:
+                            raise HTTPException(413, "Excel workbook exceeds the worksheet limit.")
+                        relationship_id = attributes.get("http://schemas.openxmlformats.org/officeDocument/2006/relationships}id")
+                        if not relationship_id or relationship_id in sheet_ids:
+                            raise HTTPException(400, "Duplicate or invalid Excel worksheet relationship.")
+                        sheet_ids.add(relationship_id)
+
+                def end_element(tag):
+                    element_stack.pop()
+
+                parser.StartDoctypeDeclHandler = reject_doctype
+                parser.StartElementHandler = start_element
+                parser.EndElementHandler = end_element
+                with archive.open(member) as source:
+                    while chunk := source.read(64 * 1024):
+                        total_read += len(chunk)
+                        if total_read > MAX_XLSX_EXPANDED_BYTES:
+                            raise HTTPException(413, "Excel archive exceeds the expanded size limit.")
+                        parser.Parse(chunk, False)
+                    parser.Parse(b"", True)
+                validated_members.add(member.filename)
+        return validated_members
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(400, "Invalid Excel file. Upload a valid .xlsx workbook.") from None
 
 
 def safe_filename(value: str) -> str:
@@ -42,6 +148,8 @@ def write_cell(sheet, row: int, column: int, value) -> None:
                 target = sheet.cell(merged.min_row, merged.min_col)
                 break
     target.value = value
+    if isinstance(value, str):
+        target.data_type = "s"
 
 
 def stream_bytes(content: bytes, filename: str, content_type: str = XLSX) -> StreamingResponse:
@@ -221,12 +329,37 @@ def import_students(db: Session, user: User, content: bytes, section_id: int | N
         raise HTTPException(403, "Teacher is not assigned to this section.")
     section = db.get(Section, section_id)
     try:
-        wb = openpyxl.load_workbook(BytesIO(content), data_only=True)
+        validated_members = validate_xlsx_resources(content)
+        wb = openpyxl.load_workbook(BytesIO(content), data_only=True, read_only=True)
+    except HTTPException:
+        raise
     except Exception:
         raise HTTPException(400, "Invalid Excel file. Upload a valid .xlsx workbook.") from None
+    try:
+        if any(sheet._worksheet_path not in validated_members for sheet in wb):
+            raise HTTPException(400, "Invalid Excel worksheet resource.")
+        return import_workbook(db, user, teacher, section, section_id, wb)
+    finally:
+        wb.close()
+
+
+def import_sheet_rows(sheet) -> list[tuple[object, ...]]:
+    # Read-only workbooks defer cell conversion until iteration. Preserve the
+    # invalid-workbook HTTP 400 contract for parser errors at this boundary.
+    try:
+        return list(sheet.values)
+    except Exception:
+        raise HTTPException(400, "Invalid Excel file. Upload a valid .xlsx workbook.") from None
+
+
+def import_workbook(db: Session, user: User, teacher: Teacher, section: Section, section_id: int, wb) -> dict:
     if "Info Sheet" not in wb.sheetnames:
         raise HTTPException(400, 'Invalid Excel format. "Info Sheet" tab is missing.')
-    rows = list(wb["Info Sheet"].values)
+    # XML has already been bounded. Ignore declared dimensions so understated
+    # metadata cannot hide populated rows or columns from the importer.
+    for sheet in wb:
+        sheet.reset_dimensions()
+    rows = import_sheet_rows(wb["Info Sheet"])
     if len(rows) < 3:
         raise HTTPException(400, "No data found in Info Sheet starting at row 3.")
     if not any(isinstance(value, str) and value.strip().casefold() == section.section_name.strip().casefold() for row in rows[:20] for value in row):
@@ -236,6 +369,14 @@ def import_students(db: Session, user: User, content: bytes, section_id: int | N
         raise HTTPException(400, "Missing or invalid PRETEST DATE; school year cannot be calculated.")
     school_year = f"{first_pre.year}-{first_pre.year + 1}"
     questions = db.query(EccdQuestion).order_by(EccdQuestion.sequence_order).all()
+    domain_rows = {}
+    for sheet_name in DOMAIN_SHEETS.values():
+        if sheet_name in wb.sheetnames:
+            index = {}
+            for values in import_sheet_rows(wb[sheet_name]):
+                if len(values) > 1 and isinstance(values[1], str):
+                    index.setdefault(" ".join(values[1].split()).casefold(), values)
+            domain_rows[sheet_name] = index
     # Relational anchors are reads. Each student and all their scores commit together.
     db.commit()
     result = {"successCount": 0, "failedCount": 0, "errors": []}
@@ -277,7 +418,7 @@ def import_students(db: Session, user: User, content: bytes, section_id: int | N
                 validate_person_name(name)
                 if len(name) > 100:
                     raise ValueError("Names must not exceed 100 characters.")
-                upsert_guardian(db, student, relationship, name, age, string(start + 2)[:50] or None, string(start + 3)[:20] or None)
+                upsert_guardian(db, student, relationship, name, age, string(start + 2)[:50] or None, string(start + 3)[:20] or None, user=user)
             dates = {TestingPeriod.PRE: parse_date(cell(10), wb.epoch), TestingPeriod.MID: parse_date(cell(12), wb.epoch), TestingPeriod.POST: parse_date(cell(14), wb.epoch)}
             evaluations = db.query(StudentEccdEvaluation).filter_by(student_id=student.student_id).all()
             by_question_period = {(record.question_id, record.testing_period): record for record in evaluations}
@@ -287,7 +428,7 @@ def import_students(db: Session, user: User, content: bytes, section_id: int | N
                 sheet_name = DOMAIN_SHEETS.get(question.domain_id)
                 if sheet_name not in wb.sheetnames:
                     continue
-                domain_row = next((values for values in wb[sheet_name].values if len(values) > 1 and isinstance(values[1], str) and " ".join(values[1].split()).casefold() == normalized_name), None)
+                domain_row = domain_rows[sheet_name].get(normalized_name)
                 if domain_row is None:
                     continue
                 base = 2 + (question.sequence_order - 1) * 6
@@ -338,5 +479,4 @@ def import_students(db: Session, user: User, content: bytes, section_id: int | N
             result["failedCount"] += 1
             message = str(error) if type(error) is ValueError else "Invalid student, guardian or assessment data. No row changes saved."
             result["errors"].append({"row": row_number, "error": message})
-    wb.close()
     return result

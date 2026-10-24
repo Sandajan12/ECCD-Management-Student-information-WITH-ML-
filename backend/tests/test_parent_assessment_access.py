@@ -347,10 +347,11 @@ class ParentAssessmentAccessTests(unittest.TestCase):
             from backend.utils.teachers import assign_teacher
             assign_teacher(db, db.get(User, 1), 2, 1)
             db.commit()
-        self.assertEqual(self.call("GET", PATH, 2).status_code, 400)
-        self.assertEqual(self.update().status_code, 200)
+        self.assertEqual(self.call("GET", PATH, 2).status_code, 200)
+        self.assertEqual(self.update().status_code, 403)
         self.assertEqual(self.update({**FLAGS, "mid_test_parent_editable": True}, section=2).status_code, 200)
-        self.assertFalse(self.call("GET", PATH, 2, params={"section_id": 1}).json()["mid_test_parent_editable"])
+        self.assertEqual(self.call("GET", PATH, 2, params={"section_id": 1}).status_code, 403)
+        self.assertTrue(self.call("GET", PATH, 2, params={"section_id": 2}).json()["mid_test_parent_editable"])
 
     def test_unlinked_pending_and_archived_accounts_cannot_write(self):
         self.assertEqual(self.save(actor=6).status_code, 403)

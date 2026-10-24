@@ -7,6 +7,7 @@
     "pnpm": "12.11.2"
   },
   "scripts": {
+    "start:prod": "uvicorn backend.main:app --host 0.0.0.0 --port ${PORT:-8000}",
     "backend": "uvicorn backend.main:app --reload --port 8000",
     "frontend": "pnpm --dir frontend dev",
     "dev": "pnpm run \"/^(backend|frontend)$/\""

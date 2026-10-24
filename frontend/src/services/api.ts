@@ -1,12 +1,32 @@
 import axios from "axios";
+import type { AxiosRequestConfig } from "axios";
+const apiBaseUrl = import.meta.env.VITE_API_URL || "http://localhost:8000";
 const API = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || "http://localhost:8000",
+  baseURL: apiBaseUrl,
   withCredentials: true,
-  timeout: 20000,
+  timeout: 60000,
 });
+export function isApiDestination(config: AxiosRequestConfig): boolean {
+  try {
+    // Resolve exactly what Axios will send, including per-request baseURL
+    // overrides and protocol-relative URLs, before attaching a school session.
+    const destination = new URL(API.getUri(config), window.location.origin);
+    const configured = new URL(apiBaseUrl, window.location.origin);
+    return (
+      ["http:", "https:"].includes(destination.protocol) &&
+      destination.origin === configured.origin &&
+      !destination.username &&
+      !destination.password
+    );
+  } catch {
+    return false;
+  }
+}
 API.interceptors.request.use((config) => {
   const token = localStorage.getItem("token");
-  if (token) config.headers.Authorization = `Bearer ${token}`;
+  if (isApiDestination(config)) {
+    if (token) config.headers.set("Authorization", `Bearer ${token}`);
+  } else config.headers.delete("Authorization");
   if (
     config.url === "/api/settings/update" &&
     config.data &&
@@ -30,6 +50,8 @@ API.interceptors.response.use(
     if (
       axios.isAxiosError(error) &&
       error.response?.status === 401 &&
+      error.config &&
+      isApiDestination(error.config) &&
       error.response.data?.message !== "Incorrect current password." &&
       error.response.data?.detail !== "Incorrect current password." &&
       !error.config?.url?.startsWith("/api/auth/")

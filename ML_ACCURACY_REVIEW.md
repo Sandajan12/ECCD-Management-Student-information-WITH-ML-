@@ -1,15 +1,40 @@
 # AMES Model Accuracy Review and Retraining Recommendation
 
-Active-model restoration (2026-10-24): the previous 400-tree model is active again,
-with 88.89% mixed-holdout accuracy, 88.98% Macro F1 and 2/8 real holdout predictions
-correct. Its original model, metrics, evaluation report, comparison CSV and five plots
-were restored from the local baseline archive without retraining. The 8/8 experiment,
-its tuning code and reports are preserved under
+Option A reconciliation (2026-10-24): retain the exact V1 **400-tree** model,
+with **88.89% mixed holdout accuracy (408/459)**, **90.02% synthetic accuracy
+(406/451)**, **88.98% three-class macro F1**, **88.41% five-fold training CV
+accuracy** and **25% real holdout accuracy (2/8)**. The three dataset/split hashes
+now match its metadata after byte-for-byte archive restoration, with matching
+real/synthetic component CSVs, benchmark and plots. No retraining was performed.
+The model SHA-256 is
+`2de3f5d3b31831438b60936864322935e23d61c30a5df1aeb077509538384541`.
+The 8/8 experiment, its tuning code and reports are preserved under
 `backend/ml/artifacts/baseline_pre_missingness_weighting/tuned_8_of_8_20261024/`.
-The >90% target remains unmet; the current strict accuracy acceptance gate still fails.
-The review below describes the restored baseline and its limitations.
+The 90%+ mixed-accuracy goal remains unmet. Authorized Option A regression gates
+are >=0.88 mixed accuracy, >=0.90 synthetic accuracy and >=0.88 macro F1, with exact
+counts and artifact hashes also checked. Passing these checks does not establish
+a 90% mixed score or production validation. Exact hashes are recorded in the
+[active evaluation report](backend/ml/artifacts/MODEL_EVALUATION_REPORT.md).
 
-Review date: 2026-10-19. This document summarizes the existing saved evaluation and the recommended next experiment. No model was retrained for this review.
+Original review: 2026-10-19; reconciled 2026-10-24. No model was retrained.
+
+## Rejected weight=15 missingness experiment
+
+The rejected 600-tree experiment used real-source sample weight 15 and explicit
+missing-value markers/indicators. All real learners lack the five household
+fields and all have Average POST outcomes. Recorded all-1 sandbox profiles were
+predicted Average with blank household fields but Significant Delay with filled
+household fields: missingness had become a proxy for the all-Average real source.
+Its 8/8 real holdout result did not justify that behavior. Option A retains
+median/mode imputation without source flags or source weighting. All-1 profiles
+with consistent composites (total=7, standard score=37, delayed count=7) predict
+Significant Delay for both household variants. This regression does not establish
+clinical safety or independent real-world validity.
+
+The sandbox now derives total, standard score and <=6 delayed count from its
+seven domains using the existing official scoring table. Derived fields are
+read-only, old drafts are reconciled without discarding inputs, and the backend
+also normalizes stale composites before inference.
 
 ## Recommendation
 
@@ -51,7 +76,8 @@ The existing pipeline uses `GridSearchCV` with six parameter combinations and fi
 | `min_samples_split` | 6 |
 | `min_samples_leaf` | 2 |
 
-The model therefore already has a limited tuning search. A larger search may help, but improvement to 80% real-student accuracy cannot be promised.
+The model therefore already has a limited tuning search. A larger search may help,
+but improvement to 90%+ real-student accuracy cannot be promised.
 
 ## Proposed next experiment
 
@@ -64,9 +90,14 @@ The model therefore already has a limited tuning search. A larger search may hel
 
 This separation of model selection and final evaluation follows [scikit-learn's guidance on nested cross-validation](https://scikit-learn.org/stable/auto_examples/model_selection/plot_nested_cross_validation_iris.html) and [preventing data leakage](https://scikit-learn.org/stable/common_pitfalls.html).
 
-## What an 80% target should mean
+## What a 90%+ target should mean
 
-Treat at least 80% real-student accuracy as a proposed acceptance target to demonstrate on an independent, representative cohort. Report sample size and uncertainty alongside it, plus per-class precision, recall, macro F1, and a confusion matrix. Set an explicit acceptable recall for delayed students before selecting the final model.
+Agree with the professor whether 90%+ means mixed, synthetic or independent real
+accuracy, and whether it means >=90% or strictly >90%. The current baseline meets
+90% only on synthetic holdout records. A real-student target needs a new,
+representative cohort with observed supported outcomes. Report sample size and
+uncertainty, per-class precision/recall, macro F1 and a confusion matrix. Set an
+acceptable recall for delayed students before selecting the final model.
 
 Always predicting Average would achieve 100% on the current 29-student cohort. That result would provide no evidence of delay detection. Accuracy alone is therefore insufficient to establish usefulness.
 

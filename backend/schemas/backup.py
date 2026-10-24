@@ -35,6 +35,7 @@ class UserBackupRow(BackupRow):
     is_active: bool | None
     is_first_login: bool
     is_registration_pending: bool
+    security_version: int = Field(default=0, ge=0)
     otp_code: str | None = Field(max_length=10)
     otp_expires_at: datetime | None
 

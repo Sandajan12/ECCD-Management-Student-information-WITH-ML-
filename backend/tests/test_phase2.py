@@ -170,7 +170,8 @@ class BackendTests(unittest.TestCase):
             for _ in range(5):
                 self.assertEqual(self.client.post('/api/auth/verify-otp',json={'challengeToken':challenge,'otp':bad}).status_code,400)
             self.assertEqual(self.client.post('/api/auth/verify-otp',json={'challengeToken':challenge,'otp':codes[-1]}).status_code,400)
-            challenge=self.login(rememberDevice=True).json()['challengeToken']
+            with patch('backend.utils.authentication.now', return_value=datetime.now(timezone.utc) + timedelta(seconds=61)):
+                challenge=self.login(rememberDevice=True).json()['challengeToken']
             response=self.client.post('/api/auth/verify-otp',json={'challengeToken':challenge,'otp':codes[-1]})
             self.assertEqual(response.status_code,200)
             self.assertIn('deviceToken',response.json())
@@ -184,7 +185,8 @@ class BackendTests(unittest.TestCase):
             codes.append(code)
         with patch.object(settings, 'ENABLE_OTP', True), patch('backend.routes.auth.send_otp_email', side_effect=delivered_email):
             first = self.login('chairman').json()['challengeToken']
-            second = self.login('chairman').json()['challengeToken']
+            with patch('backend.utils.authentication.now', return_value=datetime.now(timezone.utc) + timedelta(seconds=61)):
+                second = self.login('chairman').json()['challengeToken']
             stale = self.client.post('/api/auth/verify-otp', json={'challengeToken': first, 'otp': codes[0]})
             self.assertEqual(stale.status_code, 400)
             invalid = self.client.post('/api/auth/verify-otp', json={'challengeToken': second, 'otp': '000000'})
@@ -200,6 +202,9 @@ class BackendTests(unittest.TestCase):
             self.assertEqual(expired.status_code, 400)
             self.assertIn('Code expired', expired.json()['detail'])
             from backend.utils.authentication import now
+            with self.sessions() as db:
+                db.query(EmailVerification).filter_by(user_id=1).delete()
+                db.commit()
             with patch('backend.utils.authentication.now', return_value=now() - timedelta(minutes=11)):
                 expired_token = self.login('chairman').json()['challengeToken']
             expired = self.client.post('/api/auth/verify-otp', json={'challengeToken': expired_token, 'otp': codes[-1]})
@@ -602,7 +607,7 @@ class BackendTests(unittest.TestCase):
         self.assertEqual(result.status_code,200)
         self.assertEqual(self.call('GET','/api/students/all',2).status_code,401)
         with self.sessions() as db:
-            self.assertEqual(db.get(User,2).username,'renamed')
+            self.assertEqual(db.get(User,2).username,'renamed@example.com')
             self.assertEqual(db.get(Teacher,1).first_name,'Edited')
             self.tokens[2]=build_session(db,db.get(User,2))['token']
         self.assertEqual(self.call('PUT','/api/teachers/update/2',json={'email':'other@example.com','first_name':'Rejected'}).status_code,400)

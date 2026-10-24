@@ -187,6 +187,11 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+overrides:
+  follow-redirects@<1.16.1: 1.16.1
+  source-map-js@<1.2.2: 1.2.2
+  zod@>=4.0.0 <4.6.6: 4.6.6
+
 importers:
 
   .: {}

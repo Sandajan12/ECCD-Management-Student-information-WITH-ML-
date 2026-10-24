@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { Modal, Stack } from "@mui/material";
 import AutoAwesomeRounded from "@mui/icons-material/AutoAwesomeRounded";
@@ -9,6 +9,7 @@ import API, { errorMessage, isNetworkError } from "../../services/api";
 import { useTeacher } from "../../context/TeacherContext";
 import { useAuth } from "../../context/AuthContext";
 import { readDraft, storeDraft, useDurableForm } from "../../utils/drafts";
+import { sandboxStandardScore } from "../../utils/mlScoring";
 
 interface MLFeatures {
   pre_standard_score: number;
@@ -117,7 +118,7 @@ const card =
 const input =
   "w-full min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-brand! focus:ring-2 focus:ring-brand/15!";
 const initialSandbox: SandboxValues = {
-  pre_standard_score: "80",
+  pre_standard_score: "66",
   pre_total_scaled: "49",
   pre_delayed_domains_count: "0",
   gm_pre_scaled: "7",
@@ -770,26 +771,54 @@ function StudentEvaluation({
   );
 }
 
-function SandboxSimulator() {
-  const { values, change, key } = useDurableForm<SandboxValues>(
-    "ml_sandbox_v1",
-    initialSandbox,
+function derivedSandboxValues(values: SandboxValues): SandboxValues {
+  const scores = domains.map((domain) => Number(values[domain.key]));
+  const validDomains = domains.every(
+    (domain, index) =>
+      values[domain.key].trim() !== "" &&
+      Number.isInteger(scores[index]) &&
+      scores[index] >= 0 &&
+      scores[index] <= 19,
   );
+  const total = scores.reduce((sum, score) => sum + score, 0);
+  const age = Number(values.age_months_pre);
+  const validAge = Number.isInteger(age) && age >= 1 && age <= 216;
+  return {
+    ...values,
+    pre_total_scaled: validDomains ? String(total) : "",
+    pre_delayed_domains_count: validDomains
+      ? String(scores.filter((score) => score <= 6).length)
+      : "",
+    pre_standard_score:
+      validDomains && validAge ? String(sandboxStandardScore(total, age)) : "",
+  };
+}
+
+function SandboxSimulator() {
+  const {
+    values: draftValues,
+    change,
+    key,
+  } = useDurableForm<SandboxValues>("ml_sandbox_v1", initialSandbox);
   const [prediction, setPrediction] = useState<Prediction | null>(null);
   const [error, setError] = useState<string>("");
   const [running, setRunning] = useState<boolean>(false);
   const [retry, setRetry] = useState<number>(0);
-  const update = (field: keyof MLFeatures, value: string) => {
-    const next = { ...values, [field]: value };
-    if (domains.some((domain) => domain.key === field)) {
-      next.pre_total_scaled = String(
-        domains.reduce((sum, domain) => sum + Number(next[domain.key]), 0),
-      );
-      next.pre_delayed_domains_count = String(
-        domains.filter((domain) => Number(next[domain.key]) <= 6).length,
-      );
+  const values = useMemo(
+    () => derivedSandboxValues(draftValues),
+    [draftValues],
+  );
+  useEffect(() => {
+    if (
+      values.pre_total_scaled !== draftValues.pre_total_scaled ||
+      values.pre_standard_score !== draftValues.pre_standard_score ||
+      values.pre_delayed_domains_count !== draftValues.pre_delayed_domains_count
+    ) {
+      change(values);
     }
-    change(next);
+  }, [values, draftValues, change]);
+  const update = (field: keyof MLFeatures, value: string) => {
+    change(derivedSandboxValues({ ...values, [field]: value }));
   };
   useEffect(() => {
     const online = () => setRetry((previous) => previous + 1);
@@ -910,10 +939,9 @@ function SandboxSimulator() {
         </h2>
         <p className="mt-1 mb-5 text-sm leading-relaxed text-slate-500">
           Explore hypothetical inputs. Predictions update as you adjust values.
-          Total scaled score and delayed-domain count follow the seven domains;
-          set the standard score separately. Inconsistent hypothetical standard
-          scores may produce unrealistic profiles. Sandbox inputs stay on this
-          device across reloads.
+          Total scaled score, standard score and delayed-domain count follow the
+          seven domains using the official ECCD lookup table. Sandbox inputs
+          stay on this device across reloads.
         </p>
         <Stack
           direction="row"
@@ -933,7 +961,13 @@ function SandboxSimulator() {
           {domains.map((domain) =>
             numberField(domain.key, `${domain.name} scaled score`, 0, 19),
           )}
-          {numberField("pre_standard_score", "PRE standard score", 0, 200)}
+          {numberField(
+            "pre_standard_score",
+            "PRE standard score (calculated)",
+            0,
+            200,
+            true,
+          )}
           {numberField(
             "pre_total_scaled",
             "PRE total scaled (calculated)",

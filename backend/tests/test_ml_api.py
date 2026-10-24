@@ -3,11 +3,12 @@ from datetime import date
 import unittest
 from unittest.mock import patch
 
-from backend.ml.common import ACTIVE_CLASSES, ARTIFACTS, DOMAINS
+from backend.ml.common import ACTIVE_CLASSES, ARTIFACTS, DOMAINS, sandbox_composites
 from backend.ml.inference import load_model, predict_student, warm_inference
 from backend.models import EccdQuestion, Parent, StudentEccdEvaluation
 from backend.models.eccd import EccdAnswer, TestingPeriod
 from backend.tests import test_phase2
+from backend.utils.eccd_scorer import lookup_standard_score, scoring_data
 
 
 def sandbox_features():
@@ -111,6 +112,48 @@ class MLApiTests(unittest.TestCase):
         result = self.call("POST", "/api/ml/predict/student/1", 2).json()
         self.assertEqual(result["features"]["mother_education_level"], "High School")
         self.assertIsNone(result["features"]["household_occupation_tier"])
+
+    def test_sandbox_normalizes_stale_composites_and_all_one_households(self):
+        for months in (36, 48, 60, 66, 80):
+            for household in ({}, {"mother_education_level": "College",
+                    "father_education_level": "College", "household_occupation_tier": "Professional",
+                    "num_siblings": 2, "birth_order": 1}):
+                with self.subTest(months=months, household=bool(household)):
+                    payload = {**sandbox_features(), **dict.fromkeys(
+                        [f"{prefix}_pre_scaled" for prefix, _ in DOMAINS.values()], 1),
+                        "pre_standard_score": 80, "pre_total_scaled": 49,
+                        "pre_delayed_domains_count": 0, "age_months_pre": months, **household}
+                    response = self.call("POST", "/api/ml/predict/sandbox", 2, json=payload)
+                    self.assertEqual(response.status_code, 200, response.text)
+                    result = response.json()
+                    for name, expected in (("pre_total_scaled", 7), ("pre_standard_score", 37),
+                                           ("pre_delayed_domains_count", 7)):
+                        self.assertEqual(result["features"][name], expected)
+                    self.assertEqual(result["predicted_post_interpretation"], ACTIVE_CLASSES[0])
+
+
+class MLSandboxScoringTests(unittest.TestCase):
+    def test_standard_lookup_matches_existing_exact_and_fallback_rules(self):
+        for age, bracket in ((3.5, "AGE 3.1 - 4.0"), (4.5, "AGE 4.1 - 5.0"),
+                             (5.5, "AGE 5.1 - 5.11")):
+            entries = scoring_data[bracket]["standardScores"]
+            sums = sorted(map(int, entries))
+            for total in range(134):
+                closest = max((value for value in sums if value <= total), default=sums[0])
+                self.assertEqual(lookup_standard_score(total, age), entries[str(closest)])
+
+    def test_sandbox_composites_match_table_for_domain_and_age_changes(self):
+        for months in (1, 36, 48, 49, 60, 61, 66, 80, 216):
+            for score in (0, 1, 3, 6, 7, 12, 19):
+                features = {**sandbox_features(), **dict.fromkeys(
+                    [f"{prefix}_pre_scaled" for prefix, _ in DOMAINS.values()], score),
+                    "age_months_pre": months}
+                result = sandbox_composites(features)
+                self.assertEqual(result["pre_total_scaled"], score * 7)
+                self.assertEqual(result["pre_delayed_domains_count"], 7 if score <= 6 else 0)
+                # Score tables are currently identical across age brackets.
+                self.assertEqual(result["pre_standard_score"],
+                                 lookup_standard_score(score * 7, 5.5)["standardScore"])
 
 
 class MLCacheTests(unittest.TestCase):

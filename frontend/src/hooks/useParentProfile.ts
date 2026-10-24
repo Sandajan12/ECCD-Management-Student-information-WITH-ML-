@@ -13,14 +13,13 @@ export function useParentProfile(id: number) {
   const [record, setRecord] = useState<Student | null>(null);
   const [failure, setFailure] = useState({ id: 0, message: "" });
   const [loading, setLoading] = useState(false);
-  const [, updateDrafts] = useState(0);
+  const [drafts, updateDrafts] = useState(new Map<string, Draft<ParentProfileValues>>());
   const memoryDrafts = useRef(new Map<string, Draft<ParentProfileValues>>());
   const version = useRef(0);
   const currentKey = useRef(key);
-  currentKey.current = key;
   const child = record?.student_id === id ? record : null;
   const error = failure.id === id ? failure.message : "";
-  const draft = memoryDrafts.current.get(key) || readDraft<ParentProfileValues>(key);
+  const draft = drafts.get(key) || readDraft<ParentProfileValues>(key);
   const values = draft?.owner_id === owner ? draft.values : profileValues(child || undefined);
   const refresh = useCallback(async () => {
     if (currentKey.current !== key) return;
@@ -41,16 +40,18 @@ export function useParentProfile(id: number) {
     }
   }, [id, key]);
   useEffect(() => {
+    currentKey.current = key;
     setRecord(null);
     void refresh();
     const reload = () => void refresh();
-    const redraw = () => updateDrafts(value => value + 1);
+    const redraw = () => updateDrafts(new Map(memoryDrafts.current));
     window.addEventListener("online", reload);
     window.addEventListener("focus", reload);
     window.addEventListener("ames-record-synced", reload);
     window.addEventListener("ames-drafts-changed", redraw);
     window.addEventListener("storage", redraw);
     return () => {
+      currentKey.current = "";
       ++version.current;
       window.removeEventListener("online", reload);
       window.removeEventListener("focus", reload);
@@ -58,12 +59,12 @@ export function useParentProfile(id: number) {
       window.removeEventListener("ames-drafts-changed", redraw);
       window.removeEventListener("storage", redraw);
     };
-  }, [refresh]);
+  }, [key, refresh]);
   const write = (snapshot: Draft<ParentProfileValues>) => {
     storeDraft(key, snapshot);
     if (readDraft<ParentProfileValues>(key)?.revision === snapshot.revision) memoryDrafts.current.delete(key);
     else memoryDrafts.current.set(key, snapshot);
-    updateDrafts(value => value + 1);
+    updateDrafts(new Map(memoryDrafts.current));
   };
   const change = (next: ParentProfileValues) => write({ owner_id: owner, values: next, revision: crypto.randomUUID(), is_pending_sync: false });
   const save = async (path: string, method: "put", data: unknown): Promise<"saved" | "pending"> => {
@@ -75,7 +76,7 @@ export function useParentProfile(id: number) {
       if (response.status !== 200 && response.status !== 201) throw new Error("The server did not confirm this save.");
       confirmDraft(key, snapshot.revision);
       if (memoryDrafts.current.get(key)?.revision === snapshot.revision) memoryDrafts.current.delete(key);
-      updateDrafts(value => value + 1);
+      updateDrafts(new Map(memoryDrafts.current));
       return "saved";
     } catch (err) {
       if (isNetworkError(err) || (isAxiosError(err) && (err.response?.status || 0) >= 500)) return "pending";

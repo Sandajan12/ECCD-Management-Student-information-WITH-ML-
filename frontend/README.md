@@ -1,9 +1,37 @@
 # AMES frontend
 
-React + TypeScript + Vite + Tailwind CSS, connected to the FastAPI/PostgreSQL
-backend. The read-only `AMES-SYSTEM-LEGACY/frontend/` guided the layout and flows:
-dark sidebar, rounded cards, blue actions, assessment tabs and role dashboards.
-The active frontend has no MUI/Emotion dependency.
+React + TypeScript + Vite, using MUI/Emotion and Tailwind CSS, connected to the
+FastAPI/PostgreSQL backend. The active `src/` implementation and tracked tests
+define current behavior; legacy folders are not required.
+
+## Production deployment
+
+The approved stack is **Vercel + Render + Brevo HTTPS API + Supabase**.
+Use `frontend` as Vercel's Root Directory, `pnpm build`, and output `dist`;
+`vercel.json` supplies SPA fallback routing and security headers. Render runs
+the Python 3.12 Socket.IO/FastAPI wrapper `backend.main:app` from the repository
+root using `render.yaml`, with `/ready` as its readiness endpoint.
+
+The frontend pins pnpm 12.11.2 and carries its own `pnpm-workspace.yaml` so
+isolated frontend installs retain the dependency security overrides. Keep those
+overrides synchronized with the repository-root workspace configuration; pnpm 12
+reads project settings from YAML ([migration guide](https://pnpm.io/migration)).
+
+Set public `VITE_API_URL` and `VITE_SOCKET_URL` to the Render HTTPS origin
+without `/api`, and configure the exact Vercel origin in backend `CORS_ORIGINS`.
+Keep database, encryption, JWT, and email credentials out of `VITE_*` variables.
+Production enables OTP with `EMAIL_TRANSPORT=brevo_api` and `BREVO_API_KEY`;
+Supabase requires `sslmode=verify-full` and a trusted CA. Bootstrap the database
+before API startup as described in [the deployment guide](../DEPLOYMENT.md).
+
+The sandbox imports `src/assets/eccd_scoring_data.json` within the frontend
+root. Copy updates from `backend/eccd_scoring_data.json` without reformatting;
+`backend/tests/test_scoring_asset.py` verifies byte-for-byte parity. The build
+does not import backend files.
+
+Teacher ownership permits one active Primary Adviser section per teacher.
+Assigning a new section retires the former ownership; transfers preserve
+student records and evaluation history.
 
 ## Run locally
 
@@ -55,34 +83,31 @@ is used. Keep the page open if the browser reports unavailable/full device stora
 pnpm.cmd --dir frontend exec tsc --noEmit -p tsconfig.app.json
 pnpm.cmd --dir frontend run lint
 pnpm.cmd --dir frontend run build
-pnpm.cmd --dir frontend run test:e2e --reporter=list
 ```
 
-The browser suite runs the same 13 workflows on desktop and mobile Chromium, plus
-visual comparisons against the original authentication and navigation components.
-See [VISUAL_PARITY.md](VISUAL_PARITY.md) for the per-file reference audit.
-Install the isolated visual harness once with:
+Select an existing Playwright configuration explicitly for browser work; there
+is no default `playwright.config.ts`. For example:
 
 ```powershell
-pnpm.cmd --dir frontend/tests/legacy-visual install --ignore-workspace
+pnpm.cmd --dir frontend run test:e2e --config playwright.ml-sandbox.config.ts
 ```
 
-Final migration verification passed all 26 browser checks, 52 backend tests,
-TypeScript, lint and the production build. The build reports a non-blocking
-bundle-size warning.
-It uses a loopback-only API on port 8767 with disposable PostgreSQL schemas and
-synthetic accounts, separate from the school database tables. PostgreSQL must be
-running. Install the test browser once with:
+The sandbox configuration starts a loopback test API on port 8774 and Vite on
+5186, using disposable PostgreSQL schemas and synthetic accounts. PostgreSQL
+must be running. Other current configurations cover audit logs, teacher
+management, parent ML, teacher ML insights and terms/privacy; see
+[AI_CONTEXT.md](../AI_CONTEXT.md) for their ports and server setup. These checks
+use active source and do not require removed legacy visual harnesses.
+Install the test browser once with:
 
 ```powershell
 pnpm.cmd --dir frontend exec playwright install chromium
 ```
 
-Playwright starts missing Vite/test servers automatically. To run the test API
-manually from the repository root:
+To run the test API manually from the repository root:
 
 ```powershell
-uv run --no-project --python 3.12 python -m backend.tests.serve_phase3
+uv run --no-project --python .venv312 python -m backend.tests.serve_phase3
 ```
 
 Stop that server with Ctrl+C when finished so its temporary schema is removed.

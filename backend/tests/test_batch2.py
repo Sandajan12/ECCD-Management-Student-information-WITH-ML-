@@ -31,7 +31,7 @@ main = importlib.import_module("backend.main")
 
 
 def configuration(**changes):
-    values = dict(_env_file=None, DATABASE_URL="postgresql://localhost/test", SECRET_KEY="SyntheticSecret0123456789abcdefXYZ", ENVIRONMENT="development", BACKUP_ENCRYPTION_KEY="unused", BACKUP_IV="unused")
+    values = dict(_env_file=None, DATABASE_URL="postgresql://localhost/test", SECRET_KEY="SyntheticSecret0123456789abcdefXYZ", ENVIRONMENT="development", BACKUP_ENCRYPTION_KEY="unused", BACKUP_IV="unused", ENABLE_OTP=True, EMAIL_TRANSPORT="brevo_api", BREVO_API_KEY="xkeysib-synthetic-config-test-secret", MAIL_FROM="otp@school.example.com")
     return Settings(**{**values, **changes})
 
 
@@ -48,7 +48,7 @@ class Batch2GuardTests(unittest.TestCase):
         limits.reset()
 
     def test_production_aliases_and_verified_tls_validation(self):
-        good = {"ENV": "production", "JWT_SECRET": "SyntheticProductionSecret0123456789ABC", "DATABASE_URL": "postgresql://localhost/test?sslmode=verify-full&sslrootcert=system", "FRONTEND_URL": "https://ames.vercel.app"}
+        good = {"ENV": "production", "JWT_SECRET": "SyntheticProductionSecret0123456789ABC", "DATABASE_URL": "postgresql://localhost/test?sslmode=verify-full&sslrootcert=system", "FRONTEND_URL": "https://ames.vercel.app", "ENABLE_OTP": "true", "EMAIL_TRANSPORT": "brevo_api", "BREVO_API_KEY": "xkeysib-synthetic-config-test-secret", "MAIL_FROM": "otp@school.example.com"}
         with patch.dict("os.environ", good, clear=True):
             value = Settings(_env_file=None, BACKUP_ENCRYPTION_KEY="unused", BACKUP_IV="unused")
         self.assertTrue(value.production)

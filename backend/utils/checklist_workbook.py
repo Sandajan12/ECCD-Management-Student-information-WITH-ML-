@@ -29,6 +29,8 @@ def generate_student_workbook(student, teacher, parents, evaluations, questions,
             merged = next(area for area in ws.merged_cells.ranges if coordinate in area)
             cell = ws.cell(merged.min_row,merged.min_col)
         cell.value = value
+        if isinstance(value, str):
+            cell.data_type = 's'
         if font: cell.font = font
 
     section_name = student.section.section_name if student.section else student.section_name or ''

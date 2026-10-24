@@ -1,0 +1,41 @@
+# Repo root must remain the working directory for backend.main:app and assets.
+# See DEPLOYMENT.md for explicit migrations, Supabase TLS and verified sender setup.
+services:
+  - type: web
+    name: ames-api
+    runtime: python
+    plan: free
+    buildCommand: pip install -r backend/requirements.txt
+    startCommand: uvicorn backend.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /ready
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.13
+      - key: ENVIRONMENT
+        value: production
+      - key: ENABLE_OTP
+        value: "true"
+      - key: ALGORITHM
+        value: HS256
+      - key: EMAIL_TRANSPORT
+        value: brevo_api
+      - key: BREVO_API_KEY
+        sync: false
+      - key: MAIL_FROM
+        sync: false
+      - key: SUPABASE_DB_URL
+        sync: false
+      - key: DATABASE_SSL_ROOT_CERT
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+      - key: BACKUP_ENCRYPTION_KEY
+        sync: false
+      - key: BACKUP_IV
+        sync: false
+      - key: LRN_ENCRYPTION_KEY
+        sync: false
+      - key: LRN_HMAC_SECRET
+        sync: false

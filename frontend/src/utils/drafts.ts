@@ -2,12 +2,52 @@ import { useCallback, useEffect, useState } from "react";
 import API, { errorMessage, isNetworkError } from "../services/api";
 import { useAuth } from "../context/AuthContext";
 
+type DraftMethod = "post" | "put" | "patch" | "delete";
+export interface DraftRequest {
+  path: string;
+  method: DraftMethod | Uppercase<DraftMethod>;
+  data: unknown;
+}
+function hasUnsafePathCharacters(value: string): boolean {
+  return [...value].some(
+    (character) =>
+      character === "\\" ||
+      character.charCodeAt(0) <= 32 ||
+      character.charCodeAt(0) === 127,
+  );
+}
+export function isDraftRequest(value: unknown): value is DraftRequest {
+  if (!value || typeof value !== "object") return false;
+  const request = value as Partial<DraftRequest>;
+  if (
+    typeof request.path !== "string" ||
+    !request.path.startsWith("/") ||
+    request.path.startsWith("//") ||
+    hasUnsafePathCharacters(request.path) ||
+    typeof request.method !== "string" ||
+    !["post", "put", "patch", "delete"].includes(request.method.toLowerCase())
+  )
+    return false;
+  try {
+    const url = new URL(request.path, "https://draft.invalid");
+    const decoded = decodeURIComponent(url.pathname);
+    return (
+      url.origin === "https://draft.invalid" &&
+      url.pathname.startsWith("/api/") &&
+      new URL(decoded, "https://draft.invalid").pathname.startsWith("/api/") &&
+      !hasUnsafePathCharacters(decoded) &&
+      !url.hash
+    );
+  } catch {
+    return false;
+  }
+}
 export interface Draft<T> {
   owner_id: number;
   values: T;
   revision: string;
   is_pending_sync: boolean;
-  request?: { path: string; method: "post" | "put"; data: unknown };
+  request?: DraftRequest;
   error?: string;
 }
 export function readDraft<T>(key: string): Draft<T> | null {
@@ -59,11 +99,26 @@ export async function syncDrafts(owner: number): Promise<void> {
   syncing = true;
   try {
     for (const { key, draft } of listPending(owner)) {
-      const session = JSON.parse(localStorage.getItem("user") || "null") as {
-        id?: number;
-      } | null;
+      let session: { id?: number } | null;
+      try {
+        session = JSON.parse(localStorage.getItem("user") || "null") as {
+          id?: number;
+        } | null;
+      } catch {
+        break;
+      }
       if (session?.id !== owner || !localStorage.getItem("token")) break;
       if (readDraft<unknown>(key)?.revision !== draft.revision) continue;
+      if (!isDraftRequest(draft.request)) {
+        // Keep inputs for review. Persisted browser storage is untrusted and
+        // must never turn replay into a cross-origin or arbitrary-method call.
+        storeDraft(key, {
+          ...draft,
+          error:
+            "This queued save has an invalid API path or method. Open the form and save it again.",
+        });
+        continue;
+      }
       try {
         const res = await API.request({
           url: draft.request!.path,
@@ -127,6 +182,8 @@ export function useDurableForm<T>(resource: string, initial: T) {
     };
     storeDraft(key, draft);
     try {
+      if (!isDraftRequest(draft.request))
+        throw new Error("This save has an invalid API path or method.");
       const res = await API.request({ url: path, method, data });
       if (res.status !== 200 && res.status !== 201)
         throw new Error("The server did not confirm this save.");

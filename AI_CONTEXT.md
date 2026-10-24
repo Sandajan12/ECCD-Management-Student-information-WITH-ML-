@@ -1,16 +1,30 @@
 # AMES System: Current Codebase Context
 
-Updated: **2026-10-24**. This document describes the active working tree in
+Updated: **2026-10-25**. This document describes the active working tree in
 `backend/` and `frontend/`, including existing uncommitted changes. Local
 configuration observations are a snapshot, not deployment defaults or a claim
-that every workflow has passed testing. Update this context when code changes.
+that every workflow has passed testing. Current-state descriptions were checked
+against active source, manifests, migration modules, browser-test configurations,
+installed Python metadata, and the trusted V1 artifact on this date. Update this
+context when code changes.
 
 Sections **1–11 are the authoritative current-state summary**. Section 12 is a
 historical implementation and research archive: its dated behavior, commands,
 experiments and test counts describe earlier work and do not override sections
 1–11. Active source, manifests, schemas and migrations establish the contracts.
-`AMES-SYSTEM-LEGACY/` is a read-only reference folder excluded from the active
-workspace; no legacy files are modified by this documentation update.
+Dated delivery notes and test counts anywhere in this document describe their
+recorded runs; they are not fresh verification of the current working tree.
+
+The Node.js-to-Python and JavaScript-to-TypeScript migration is complete.
+The legacy reference folders (`_legacy_reference/` and `AMES-SYSTEM-LEGACY/`)
+have been removed. For feature work, maintenance, and code analysis, inspect the
+current `backend/` and `frontend/` implementations and their related tests,
+schemas, migrations, manifests, and configuration templates. Preserve the
+current contracts and domain rules unless a requested change requires updating
+them. Do not require legacy-file checks, legacy comparisons, or restoration of
+removed folders, and do not ask for legacy files before proceeding. Search the
+active codebase first; ask only when required current information or a material
+requirement remains unresolved.
 
 ## 1. Purpose and implementation status
 
@@ -43,20 +57,21 @@ and instructional planning; official ECCD scores remain deterministic (section 1
 | Styling | **MUI 9 and Emotion are active**, alongside Tailwind CSS 4, scoped CSS, native components, and Poppins fonts |
 | UI architecture | Teacher/parent layouts use MUI ThemeProvider/CssBaseline and `components/teacher/theme.ts`; Chairman/auth/shared UI also use native/Tailwind components |
 | JS tooling | pnpm **12.11.2** pinned in root `package.json`; ESLint, Prettier, Playwright |
-| Workspace | `pnpm-workspace.yaml` includes only frontend, retains separate lockfiles, disables automatic dependency verification before script execution |
+| Workspace | Root `pnpm-workspace.yaml` includes frontend and retains separate lockfiles; frontend has matching pnpm 12 YAML overrides and its own package-manager pin for isolated installs; automatic dependency verification before scripts is disabled |
 | Spreadsheets | openpyxl handles active workbook import/export; pandas is installed |
 | ML | V1 fitted scikit-learn Random Forest pipeline, joblib artifact, 18 PRE/demographic inputs, three supported POST outcomes; shared teacher/parent inference |
-| Migrations | Explicit Python migrations 001–011, including Phase 1/2 and subsequent feature upgrades; no active Alembic setup, pyproject.toml, or uv.lock |
+| Migrations | Explicit Python migrations 001–012, including Phase 1/2 and credential revocation versioning; no active Alembic setup, pyproject.toml, or uv.lock |
 
-Observed on this Windows checkout:
+Observed on this Windows checkout on **2026-10-25**:
 
 - `.venv312` contains **Python 3.12.13**. `.venv/pyvenv.cfg` reports **Python 3.14**;
   do not assume `.venv` meets the Python 3.12 requirement.
-- Node **24.11.1**, uv **0.11.26**, pnpm **12.11.2** were observed. Root Node
-  engine range: `^20.19.0 || ^22.13.0 || >=24`.
+- Node **24.11.1** and uv **0.11.26** were observed. Root `package.json` pins
+  pnpm **12.11.2** and the Node engine range `^20.19.0 || ^22.13.0 || >=24`.
 - Installed metadata in `.venv312`: FastAPI **0.141.1**, SQLAlchemy **2.0.54**,
-  Pydantic **2.13.5**, Uvicorn **0.53.0**, python-socketio **5.17.0**.
-- `backend/.env` exists: `ENVIRONMENT=development`, **`ENABLE_OTP=true`**, HS256,
+  Pydantic **2.13.5**, Uvicorn **0.53.0**, python-socketio **5.17.0**,
+  scikit-learn **1.9.1**, and joblib **1.6.0**.
+- `backend/.env` exists: `ENVIRONMENT=development`, **`ENABLE_OTP=False`**, HS256,
   60-minute access tokens, PostgreSQL at `localhost:5432/ames_parity_dev`.
   JWT, backup, and LRN secret values are present; their contents remain private.
 - `frontend/.env.local` sets both `VITE_API_URL` and `VITE_SOCKET_URL` to
@@ -65,6 +80,19 @@ Observed on this Windows checkout:
   migration ledger, SMTP delivery, or running servers.
 
 ### Commands and configuration
+
+The approved deployment stack is **Vercel** for the static frontend (Root
+Directory `frontend`), **Render** for Python 3.12/FastAPI/Socket.IO,
+**Brevo HTTPS API** for OTP delivery, and **Supabase PostgreSQL** with
+`sslmode=verify-full` and a trusted CA. See `DEPLOYMENT.md`,
+`frontend/vercel.json`, and root `render.yaml`. Production requires OTP enabled;
+provider secrets belong only in backend/provider settings. Vercel's public
+`VITE_API_URL` and `VITE_SOCKET_URL` point at the Render HTTPS origin without
+`/api`; backend CORS lists the exact frontend origin.
+
+Teacher ownership is limited to one active Primary Adviser section per teacher.
+Moving a teacher retires the previous ownership; it does not accumulate active
+sections. Student records and evaluations survive section moves and transfers.
 
 Run from the repository root. Use pnpm for JavaScript dependencies; on Windows,
 `pnpm.cmd` avoids PowerShell restrictions on the .ps1 launcher.
@@ -89,8 +117,8 @@ Root scripts currently define:
 
 `pnpm.cmd run dev` dispatches both scripts, but the backend script needs uvicorn
 on PATH from the intended interpreter. It does **not** invoke uv or select Python
-3.12. uvicorn was not resolved by the current shell's Get-Command inspection;
-the explicit uv command above avoids that dependency.
+3.12. The explicit uv command above selects the intended interpreter without
+depending on a globally available uvicorn executable.
 
 For dependency preparation, inspect existing environments first:
 
@@ -108,23 +136,24 @@ Manifests/lockfiles establish versions; never freeze an unrelated interpreter
 over the project's requirements.
 
 `backend/config/settings.py` loads the absolute backend/.env path through
-Pydantic Settings; process variables override it. `utils/email.py` also loads
-that file for SMTP. Copy environment templates only when local files are absent.
+Pydantic Settings; process variables override it. `utils/email.py` uses those
+typed settings for Brevo HTTPS or SMTP. Copy templates only when files are absent.
 
 | Setting | Contract |
 | --- | --- |
-| `DATABASE_URL` | Required PostgreSQL URL; engine and SessionLocal are in `config/database.py` |
+| `DATABASE_URL` / `SUPABASE_DB_URL` | Required PostgreSQL URL; DATABASE_URL takes precedence; engine and SessionLocal are in `config/database.py` |
 | `JWT_SECRET` / `SECRET_KEY`, `ALGORITHM` | JWT_SECRET alias has precedence; production requires a strong secret of at least 32 characters; algorithm defaults HS256 |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | Code default 30; template and observed local file use 60 |
-| `ENABLE_OTP` | Defaults **true**, independently of ENVIRONMENT; controls OTP and SMTP |
+| `ENABLE_OTP` | Defaults **true**; production requires true and configured email transport; local development can bypass OTP |
 | `ENV` / `ENVIRONMENT` | ENV alias has precedence; defaults production; enables production deployment validation, shared rate limits, HSTS and secure cookies |
-| `FRONTEND_URL`, `ALLOWED_ORIGINS` | Comma-separated exact HTTP(S) origins; combined with localhost defaults for HTTP and Socket.IO; remote production origins require HTTPS |
+| `FRONTEND_URL`, `ALLOWED_ORIGINS`, `CORS_ORIGINS` | Combined comma-separated exact HTTP(S) origins plus localhost defaults for HTTP and Socket.IO; remote production origins require HTTPS |
 | `DATABASE_SSL_ROOT_CERT` | Optional trusted CA path (or libpq system roots); production DATABASE_URL requires sslmode=verify-full and this setting or a URL sslrootcert |
 | `BACKUP_ENCRYPTION_KEY` | Stable Fernet key, normally 44 URL-safe base64 characters; invalid keys are rejected |
 | `BACKUP_IV` | Required by Settings, unused by the current Fernet implementation |
 | `LRN_ENCRYPTION_KEY` | 64 hexadecimal characters; required for LRN protection operations |
 | `LRN_HMAC_SECRET` | At least 32 characters; required for exact LRN lookup |
 | `MAIL_*` | SMTP account/password/sender/server/port and STARTTLS/SSL settings |
+| `EMAIL_TRANSPORT`, `BREVO_API_KEY` | smtp (local-compatible default) or brevo_api (HTTPS 443); production requires credentials and a real MAIL_FROM; Render blueprint selects brevo_api |
 | `VITE_API_URL` | Public backend origin without /api; fallback http://localhost:8000 |
 | `VITE_SOCKET_URL` | Optional chat-origin override; otherwise chat uses API origin |
 
@@ -134,14 +163,28 @@ missing keys and refuses unsafe replacement scenarios.
 
 Lifespan in `backend/main.py` checks evaluator provenance (007), adviser takeover
 (008), section parent editing windows (006), independent marks visibility (009),
-parent predictions (010), parent linking (005), Phase 2 (002), and deployment
-hardening (004, which also checks 003) in the connection's current schema. Missing
-or incompatible schema stops startup; it never applies migrations automatically.
+parent predictions (010), parent linking (005), credential revocation version
+(012), Phase 2 (002), and deployment
+hardening (004, which also checks 003) in the connection's current schema.
+Migration 011 is an explicit ownership-data cleanup; lifespan does not call its
+checker or apply it. Missing or incompatible schema stops startup; it never
+applies migrations automatically.
 It then seeds `assets/reference/eccd.json` (7 domains, 109 questions) only if
 **both** reference tables are empty and warms the cached V1 model and guides.
 Unavailable/incompatible ML artifacts log a sanitized error and leave ordinary
 school workflows available; prediction requests return HTTP 503. Startup does not
 call create_all or provision users.
+
+For a fresh PostgreSQL/Supabase database, explicitly run
+`backend.scripts.seed_supabase --apply` as a module before API startup. It applies
+pending migrations 001–012 in order and seeds the tracked 7-domain/109-question
+ECCD fixture plus an environment-configured Chairman (`INITIAL_CHAIRMAN_EMAIL`,
+`INITIAL_CHAIRMAN_PASSWORD`, `INITIAL_CHAIRMAN_NAME`). The name uses the existing
+`users.username` column. Repeated runs preserve existing accounts/reference rows;
+conflicting ECCD data aborts. An explicit `--update-chairman` can update the
+selected Chairman and revoke old credentials. All operations share a transaction;
+no local account hashes or school records are exported. See
+`backend/scripts/README.md` for provisioning and verification.
 
 HTTP and Socket.IO CORS share configured FRONTEND_URL/ALLOWED_ORIGINS and retain
 http://localhost:5173 and http://127.0.0.1:5173 defaults. Vite enables React/Tailwind
@@ -213,7 +256,7 @@ Old workspace/shim page directories are absent.
   Audit GET aliases preserve existing fields and readable string `details`, adding
   `actor_name`, `actor_email`, `role` and `metadata`; historical plain text remains
   readable. Internal rollover snapshots/chunks remain stored for undo and are
-  excluded from audit listings, matching the read-only legacy controller.
+  excluded from audit listings by the current audit-listing implementation.
 - Chairman `TeacherManagement.tsx` owns both Add/Edit Teacher forms. They have
   no separate username input: first/optional last name share the first row,
   email/optional employee ID share the second, and section spans the third.
@@ -372,12 +415,15 @@ applying 002: that migration fingerprints current ORM fields, so an older
 snapshot lacking later additive columns needs an explicitly reviewed upgrade
 sequence. The fresh-install sequence above is not a universal historical repair.
 
-`scripts/setup_parity_dev.py` explicitly creates/selects local ames_parity_dev,
-updates local environment files, runs preparation, and invokes
-`scripts/seed_development.py`. Seeding is guarded to that loopback development
-database and preserves differing existing accounts. Its migration loop currently
-includes only Phase 1/2; it does not replace the complete 003–010 upgrade sequence.
-These utilities mutate state; they are not ordinary startup or read-only checks.
+`backend/scripts/setup_parity_dev.py` creates/selects local ames_parity_dev,
+backs up and updates local environment files, disables OTP for that setup, and
+runs Phase 1/2 preparation. Its final step invokes
+`backend.scripts.seed_development`, but that module is **absent from this
+checkout**. The helper is therefore incomplete and must not be presented as a
+working bootstrap command. It also omits feature upgrades 003–011. Use the
+explicit migration inventory for schema work; ordinary API startup provisions
+no accounts. Setup and migration commands mutate state, so a documentation or
+code review must not run them merely to inspect the system.
 
 ## 5. HTTP contract map
 
@@ -388,7 +434,7 @@ the complete method/path/query inventory.
 | Area | Principal paths | Handler |
 | --- | --- | --- |
 | Authentication | /api/auth/login, /login-step1, /verify-otp, /register-parent, /update-password, /send-otp, /request-otp, /logout | `routes/auth.py` |
-| Teacher CRUD/access | /api/teachers/, /active, /archived, /create, user-ID update/archive/unarchive/delete aliases, /me/access, /access-controls, /settings GET/PUT, password request/verify | `routes/teachers.py` |
+| Teacher CRUD/access | /api/teachers/, /active, /archived, /create, user-ID update/archive/unarchive/delete aliases, /me/access, /access-controls, /settings GET/PUT, password request/verify; POST /api/chairman/teachers provisioning alias | `routes/teachers.py`, `chairman.py` |
 | Parent linking management | GET /api/teacher/students and /api/teachers/students; POST /api/teachers/students/{student_id}/approve-parent-link, /reject-parent-link, /unlink-parent | `routes/teachers.py` |
 | Section parent editing windows | GET/PUT /api/teacher/settings/parent-assessment-access, optional section_id for assigned-section selection | `routes/teachers.py` |
 | Teacher analytics | GET /api/teachers/dashboard-filters, /dashboard-pie, /dashboard-stats reuse teacher-gated analytics handlers | `routes/teachers.py`, `analytics.py` |
@@ -411,8 +457,10 @@ the complete method/path/query inventory.
 
 Shortened paths in each row are relative to that row's API prefix.
 
-Axios uses localStorage bearer tokens, credentials, and a 20-second default
-timeout. Downloads use 120 seconds, decode blob-contained JSON errors, and honor
+Axios uses localStorage bearer tokens, credentials, and a 60-second default
+timeout (including login). Bearers attach only to the configured API origin,
+including resolved relative URLs; foreign destinations lose Authorization.
+Downloads use 120 seconds, decode blob-contained JSON errors, and honor
 Content-Disposition. Relevant settings payloads convert to multipart. HTTP
 errors expose detail/message; 422 responses retain location/type/message without
 echoing sensitive inputs. Non-auth 401 responses trigger session expiry except
@@ -420,6 +468,50 @@ incorrect-current-password responses.
 
 ## 6. Authentication and access invariants
 
+- `components/common/TermsAndPrivacyModal.tsx` provides the shared AMES Terms and
+  Conditions and Data Privacy Notice, including the actual learner/family/ECCD
+  data categories, advisory Random Forest limits, encrypted LRNs/backups,
+  adviser-gated parent access, retention principles, user rights/responsibilities,
+  and official RA 10173/DepEd references. `TermsPrivacyAcknowledgment.tsx` is used
+  by login, registration, and both OTP recovery views. Checkboxes start unchecked;
+  the modal's **I Agree & Accept** action checks them. Closing or pressing Escape
+  does not accept, and nested privacy review preserves the native login OTP dialog.
+  Unchecked submissions and OTP resends are blocked with explanatory feedback.
+  Login, registration and OTP verification send `terms_accepted: true`. Explicit
+  false/null or malformed values are rejected by the API; omission remains
+  compatible with existing API helpers. This is not a stored consent ledger.
+  Versioned, separate tab-scoped
+  acknowledgment keys survive reloads/network failures and are removed only
+  after a successful authenticated response, alongside the existing auth drafts.
+  Enforcement is frontend-only; backend routes/schemas and database records have
+  no new consent-history field or migration. Retention wording does not claim
+  automatic deletion or invent a school retention schedule.
+  Verification (2026-10-24): all 27 checks in
+  `frontend/playwright.terms-privacy.config.ts` pass at 320/768/1280px using
+  disposable PostgreSQL schemas. Registration and all three role logins use the
+  real API; browser OTP scenarios mock challenge/verification responses. Five
+  existing backend auth regressions separately verify actual OTP binding,
+  expiry/retry, pending registration, and first-login behavior. Root/app
+  TypeScript and changed-file ESLint passed at that stage. Batch 3 subsequently
+  moved `useParentProfile.ts` ref access out of render; full frontend lint passed
+  with zero errors and warnings on 2026-10-25.
+  Login presentation follow-up (2026-10-25): the login/OTP label reads **I have
+  read and agree to the Terms and Conditions.** Login's Remember Device and terms
+  rows share native 16px checkboxes, `text-sm` typography and `text-gray-600`.
+  Terms keeps its full privacy modal and acceptance checks; its helper remains
+  accessible to screen readers without adding visible height. The subsequent
+  registration follow-up applies this same short label and matching 16px/14px
+  checkbox/text styling to registration and its OTP recovery view. Both pages
+  retain the full privacy modal. Narrow screens wrap the text naturally.
+  Follow-up verification: app TypeScript, focused ESLint/Prettier, and all nine
+  login/registration review and login OTP browser checks pass. Browser layout
+  measurements at 320/768/1280px confirm matching checkbox dimensions, font size,
+  color and line height, with single-line rows at 768/1280px and no overflow.
+  The registration follow-up passes app TypeScript, focused ESLint/Prettier and
+  nine registration browser checks (review/acceptance, real account creation and
+  OTP recovery). Registration layout measurements at the same three widths
+  confirm both checkbox rows use matching 16px controls, 14px gray text and 20px
+  line height without horizontal overflow.
 - Personal passwords require 8+ characters, uppercase, lowercase, a number, and
   at most 72 UTF-8 bytes for bcrypt. Chairman-provisioned teacher temporary
   passwords require only 8+ characters (not whitespace-only) within the same
@@ -435,8 +527,13 @@ incorrect-current-password responses.
 - OTP disabled: login/registration sign in without SMTP. The challenge utility
   uses 123456 only in this disabled mode; verification still requires a valid
   bound challenge. Frontend follows server responses, not a separate OTP flag.
+  The production settings validator requires OTP and email credentials.
+  Disabled-mode checks do not verify mail delivery.
 - Credential changes return replacement sessions and revoke challenges/devices;
-  prior credential-bound JWTs become invalid. Remembered devices store token
+  prior credential-bound JWTs become invalid. Persistent users.security_version
+  advances on revocation, including archive/restore and adviser deactivation;
+  restored accounts cannot revive old sessions. New remembered tokens also bind
+  to current credentials. Remembered devices store token
   hashes with 30-day expiry, not renewed by login. Ordinary logout preserves them;
   explicit forget-device revokes them.
 - Teacher ownership uses active Primary Adviser SectionTeacher assignments.
@@ -448,6 +545,12 @@ incorrect-current-password responses.
   evaluation history, family links and section editing windows, and log actions.
 - Question-management permission defaults false. verify_eccd_question_access
   permits Chairman writes and teachers with allow_eccd_question_management.
+- `utils/rate_limits.py` defines fixed-window HTTP and Socket.IO budgets. The
+  login budget is **15 requests per 15 minutes**, shared across login aliases;
+  general API traffic is 120 requests per minute. Production counters use the
+  PostgreSQL `api_rate_limits` table, except per-socket packet counters; development
+  uses process-local counters. Exhaustion returns HTTP 429 with Retry-After;
+  unavailable shared storage returns sanitized HTTP 503.
 
 ### Eight granular parent permissions
 
@@ -467,6 +570,10 @@ via utils/access.py. Neither a substitute nor cached adviser pointer determines
 permissions. No adviser means locked access. Coarse compatibility properties on
 Teacher are not new permission columns; new flows use the eight flags above.
 The question-management flag is a separate teacher permission, outside these eight.
+Older six-permission and Substitute-assignment descriptions in other repository
+documents, including the architectural examples in `AGENTS.md`, are stale
+descriptions of implemented behavior. Current models, access helpers, schemas,
+and the eight-flag table above describe the active contracts.
 
 Teacher Settings places **Student Prediction** under **Student Record
 Permissions**. It persists `allow_parent_predictions` through the existing
@@ -533,6 +640,10 @@ Frontend locked states and disabled controls supplement backend enforcement.
   and interpretation tables for GM/FM/SH/RL/EL/C/SE. The scorer falls back to the
   closest lower available raw/sum lookup entry when the exact entry is absent.
   Preserve these deterministic tables and rules.
+  The frontend bundles an identical copy at
+  `frontend/src/assets/eccd_scoring_data.json`, imported locally by `mlScoring.ts`
+  so Vercel can build from `frontend` without backend source access. Update both
+  copies together; `backend/tests/test_scoring_asset.py` checks exact bytes.
 - Parent dashboard selects latest evaluated **POST > MID > PRE**, with release
   gating that does not expose a locked latest period through an older one.
   Current parent_dashboard ranks domains by **KAYA ratio among recorded answers**,
@@ -616,13 +727,6 @@ not reasons to generate temporary replacement keys. Backup routes are Chairman-o
 
 ## 10. Offline durability and development rules
 
-`frontend/playwright.ml-insights.config.ts` is self-contained: desktop Chromium,
-`./tests/ml-insights.spec.ts`, and Vite at `http://localhost:5173` with existing
-server reuse. It no longer imports the missing parent-assessment-access config.
-It starts only Vite; the teacher ML tests still require their test API at
-`http://127.0.0.1:8769` separately. The parent ML config is already independent
-and retains its disposable API/Vite servers on ports 8771/5183.
-
 Preserve inputs across reload, network failure, offline operation, and session
 expiry. **Never call localStorage.clear().** Evict only the exact confirmed record
 and revision after HTTP 200/201; older responses cannot erase newer edits.
@@ -630,6 +734,8 @@ Validation/permission failures retain inputs for review.
 
 - utils/drafts.ts stores owner_id, values, revision, is_pending_sync, optional
   request/error in owner-scoped localStorage. Sequential sync checks owner/revision.
+  Replay permits only relative `/api/` paths and POST/PUT/PATCH/DELETE; invalid
+  requests and unconfirmed saves stay stored for review.
 - Teacher keys: `eccd_draft_<studentId>_<period>_<domainId>_<ownerId>`.
   Parent keys: `eccd_draft_<studentId>_<period>_<domainId>_home_<ownerId>`.
   Generic keys: `ames_draft_<ownerId>_<resource>`.
@@ -676,8 +782,10 @@ Development**, **Suggests Slight Delay in Overall Development**, and **Average
 Overall Development**. Advanced classes are unsupported. IDs, names, LRNs,
 MID/POST scores and source labels are not predictor inputs. Load only trusted
 locally generated joblib files. Deployments require the trusted V1 artifact and
-`prescriptive_guides.json`; binary artifacts and research datasets follow Git
-ignore policy. Runtime does not select `rf_post_test_model_v2.joblib`; the V2
+`prescriptive_guides.json`. The active V1 binary is tracked through an explicit
+root `.gitignore` exception; datasets, learner-level benchmarks, experimental
+binaries and archived research outputs remain subject to their ignore rules.
+Runtime does not select `rf_post_test_model_v2.joblib`; the V2
 nested-CV experiment is archived in section 12.
 
 ### Teacher inference and batch workflow
@@ -705,11 +813,14 @@ classroom/home activities. Parent education is mapped from canonical values in
 SYNCED family records. Free-text occupations have no reviewed tier mapping and
 remain missing rather than inventing family circumstances.
 
-The debounced Sandbox Simulator uses all 18 inputs with owner-scoped durable
-drafts. Domain edits recalculate the total scaled score and delayed-domain count;
-standard score remains independently adjustable for hypothetical exploration.
-Inconsistent scenarios may be unrealistic. Successful inference retains inputs;
-offline failures mark pending state and retry on reconnection.
+The debounced Sandbox Simulator preserves the 18-field API contract with
+owner-scoped durable drafts. Domain edits recalculate total scaled score, standard
+score and the count of domains <=6. The standard score comes from the existing
+official scoring JSON and closest-lower fallback; all three composites are
+read-only. The backend independently derives the same composites before sandbox
+inference. Old drafts recalculate stale composites while retaining domain and
+household inputs. Successful inference retains inputs; offline failures mark
+pending state and retry on reconnection.
 
 ### Parent on-demand workflow and privacy
 
@@ -762,11 +873,143 @@ the original trainer and teacher/parent notices were restored as well.
 
 Active mixed-holdout accuracy is **88.89% (408/459)**, Macro F1 **88.98%**,
 synthetic accuracy **90.02% (406/451)** and real holdout accuracy **25% (2/8)**.
-Five-fold training CV accuracy is **88.41%**. The strict >90% acceptance target
-remains unmet. Both portals disclose the baseline scores and research limitations.
+Five-fold training CV accuracy is **88.41%**. The 90%+ mixed-accuracy goal
+remains unmet. The accepted Option A regression gates are now >=0.88 mixed
+accuracy, >=0.90 synthetic accuracy and >=0.88 three-class macro F1; tests also
+pin exact artifact hashes and holdout counts. These consistency gates are not
+production acceptance. Both portals disclose the baseline scores and limitations.
 All 29 real POST outcomes are Average and contributed generator anchors, so neither
 this baseline nor the 8/8 experiment establishes independent real-world validity
 or real delay detection. Probabilities are not calibrated clinical confidence.
+
+### Current verification setup (source checked 2026-10-25)
+
+Run checks from the repository root and select those relevant to the change:
+
+```powershell
+uv pip check --python .venv312
+pnpm.cmd --dir frontend exec tsc --noEmit -p tsconfig.app.json
+pnpm.cmd --dir frontend exec tsc --noEmit -p tsconfig.node.json
+pnpm.cmd --dir frontend run lint
+pnpm.cmd --dir frontend run build
+
+# Focused active backend regressions; these use disposable PostgreSQL schemas.
+uv run --no-project --python .venv312 python -m unittest backend.tests.test_audit_logs backend.tests.test_section_ownership backend.tests.test_teacher_creation backend.tests.test_adviser_takeover backend.tests.test_parent_linking -v
+
+# Teacher/parent ML API regressions.
+uv run --no-project --python .venv312 python -m unittest backend.tests.test_ml_api backend.tests.test_parent_ml -v
+```
+
+`frontend/tsconfig.json` has project references and no root input files; plain
+`tsc --noEmit` alone does not check the app and tooling projects. The frontend
+build runs `tsc -b && vite build`. App configuration enables `resolveJsonModule`
+for the shared ECCD scoring JSON. Frontend scripts are dev, build, lint, preview,
+test:e2e, and format; there is no separate unit-test script in that manifest.
+
+Backend regression files live in `backend/tests/` and use unittest. The Phase 1/2
+fixtures prepare disposable schemas on the configured PostgreSQL server;
+`backend/tests/serve_phase3.py` wraps those fixtures as a loopback-only browser
+API, with reset/import helper routes and a default port of 8767. Never deploy
+that test server or direct reset operations at school data.
+`backend/tests/test_dev_otp.py` additionally contains a rollback-contained check
+restricted to the local development database. SMTP diagnostic scripts can send
+real mail and are not ordinary read-only checks.
+
+The following are the **six Playwright configurations currently present** in
+`frontend/`; each selects the correspondingly named spec in `frontend/tests/`:
+
+| Configuration | Spec | UI origin | Test API | Server management |
+| --- | --- | --- | --- | --- |
+| `playwright.audit.config.ts` | `audit-logs.spec.ts` | http://127.0.0.1:5185 | 8773 | Starts disposable API and Vite; desktop/tablet/mobile |
+| `playwright.teacher-management.config.ts` | `teacher-management.spec.ts` | http://127.0.0.1:5184 | 8772 | Starts disposable API and Vite; desktop/mobile |
+| `playwright.parent-ml.config.ts` | `parent-ml.spec.ts` | http://127.0.0.1:5183 | 8771 | Starts disposable API and Vite; spec sets desktop/mobile sizes |
+| `playwright.ml-sandbox.config.ts` | `ml-sandbox.spec.ts` | http://127.0.0.1:5186 | 8774 | Starts disposable API and Vite; desktop/mobile |
+| `playwright.terms-privacy.config.ts` | `terms-privacy.spec.ts` | http://127.0.0.1:5188 | 8775 | Starts disposable API and Vite; desktop/tablet/mobile |
+| `playwright.ml-insights.config.ts` | `ml-insights.spec.ts` | http://localhost:5173 | 8769, started separately | Starts/reuses Vite only; Desktop Chrome project, spec adjusts viewport |
+
+Use an explicit configuration, for example:
+
+```powershell
+pnpm.cmd --dir frontend exec playwright test --config playwright.ml-sandbox.config.ts
+pnpm.cmd --dir frontend exec playwright test --config playwright.terms-privacy.config.ts
+
+# Original teacher ML spec needs this API running in a separate terminal first:
+uv run --no-project --python .venv312 python -m backend.tests.serve_phase3 --port 8769
+pnpm.cmd --dir frontend exec playwright test --config playwright.ml-insights.config.ts
+```
+
+`frontend/playwright.config.ts` is **absent**. The manifest's `test:e2e` script
+only runs `playwright test`; pass `--config` when using it. The `format` script
+still names the absent default config, so use explicit existing file paths for
+focused formatting. Historical teacher/parent parity, editing-window and visual
+harness configurations in section 12 are not available in this checkout.
+
+`backend/tests/test_parity.py::test_all_legacy_functional_routes_registered`
+uses a self-contained route-contract list; it no longer reads legacy files.
+Batch 3 reconciled section counts/access with single-section ownership and
+released-question lists with the current contract while preserving masking,
+session-revocation and score-preservation assertions. The three targeted modules
+(`test_parent_assessment_access`, `test_parity`, `test_phase2`) passed all 72
+tests on 2026-10-25; this is not a full-suite result.
+
+`backend/tests/test_ml_model.py` is present locally but Git-ignored. It needs the
+ignored datasets, matching split files, reports, plots and audit artifacts; it
+is not guaranteed to run from a clean clone. Its current Option A consistency
+gates are >=0.88 mixed accuracy, >=0.90 synthetic accuracy and >=0.88 three-class
+macro F1, plus exact model/data/metrics hashes. They do not establish production
+acceptance. Do not retrain or regenerate datasets as a documentation check.
+
+Root and frontend `.gitignore` rules ignore generated browser reports/caches,
+but **do not ignore browser test source or configuration files**. Existing audit,
+teacher-management, parent-ML and teacher-ML specs/configs are tracked; the new
+sandbox and terms/privacy specs/configs are currently untracked and eligible for
+review/addition. The active V1 model is tracked; raw workbooks, CSV datasets,
+learner-level benchmarks and the archived experiments remain ignored. Ignored
+local files and generated screenshots are not guaranteed to accompany a clone.
+
+### Verification of this documentation refresh (2026-10-25)
+
+This refresh inspected active source and manifests, the migration inventory,
+all six browser-test configurations, installed Python package metadata, and
+selected non-secret local settings. The V1 artifact loads with 18 features,
+median/mode preprocessing and the documented 400-tree parameters. Its SHA-256 is
+`2de3f5d3b31831438b60936864322935e23d61c30a5df1aeb077509538384541`.
+The hybrid dataset, `train_set_70.csv`, `test_set_30.csv` and official scoring JSON
+match their hashes in the saved metrics metadata. Metrics in this document are
+saved evaluation results; this refresh did not retrain or rerun holdout inference.
+
+Frontend lint was rerun and still fails with **three `react-hooks/refs` errors**
+in `frontend/src/hooks/useParentProfile.ts` at lines 20/23. These are existing
+application issues; this documentation task does not fix the hook. No fresh
+backend regression, browser acceptance, TypeScript, production build, database
+connectivity, migration-ledger, SMTP, or deployment result is claimed by this
+refresh. Earlier run counts and environment-specific successes are archived
+below. `DEPLOYMENT_READINESS_AUDIT.md`, `ML_ACCURACY_REVIEW.md`, and
+`MODEL_PRODUCTION_DEFENSE_AUDIT_AND_PLAN.md` provide separate dated assessments
+and proposals; proposals in those files are not implemented runtime behavior.
+
+## 12. Historical implementation and research archive
+
+**Historical log only.** Entries below preserve earlier delivery notes, test
+counts, experiments and then-current commands. Statements such as "fresh
+verification", "six permissions", old release-coupled marks behavior, earlier
+UI structure or "no ML implementation" apply only to that entry's phase. They
+do not override sections 1–11, establish current deployment state, or imply that
+those tests were rerun during the latest audit. In particular, independent marks
+(009) superseded score-coupled checklist masking, and predictions (010) expanded
+the teacher-level parent matrix to eight flags. Use the current migration
+inventory and privacy rules above for present-day work. References below to
+legacy paths, inspecting legacy controllers, read-only reference folders, parity
+comparisons, or legacy-dependent test commands are historical records only.
+Those folders have been removed; these entries do not require locating,
+restoring, or requesting legacy files for any current task.
+
+
+### Earlier baseline restoration and sandbox delivery evidence (2026-10-24)
+
+The following records were moved from the former current-state section during
+the 2026-10-25 refresh. Model-selection history, branch names and reported test
+results apply to those earlier runs, not to the verification of this document.
 
 The archived 8/8 experiment used constant missing-value markers, real-row weight
 15 and a 600-tree forest. It measured 89.98% mixed-holdout accuracy, 90.09% Macro
@@ -777,12 +1020,12 @@ That extreme profile also lies below the training total-score range. Its artifac
 reports, tuning code, preprocessing tests and source snapshots are preserved under
 `backend/ml/artifacts/baseline_pre_missingness_weighting/tuned_8_of_8_20261024/`.
 The original baseline archive is retained. Experiment-specific sentinel tests and
-screening cache are archived; the strict >90% metric gate and generic None/NaN
-runtime parity checks remain active. No dependencies, scoring rules, API contracts,
+screening cache are archived; generic None/NaN runtime parity checks remain
+active. No dependencies, scoring rules, API contracts,
 school records or unrelated working-tree changes are changed by restoration.
 Restart running backend processes after replacing the cached artifact.
 
-Restoration verification (2026-10-24): all nine restored artifact hashes match
+Earlier restoration verification (2026-10-24, before Option A reconciliation): all nine restored artifact hashes match
 the original archive, the comparison CSV again reports 2/8 real holdout matches,
 and dataset/train/test hashes are unchanged. A fresh-process all-1 domain probe
 with blank household fields predicts Significant Delay. Of 23 focused ML artifact,
@@ -790,6 +1033,53 @@ teacher API and parent API checks, 22 pass; only the retained >90% accuracy gate
 fails at 88.89%. None/NaN parity, sandbox inference, permissions, shared caching
 and unchanged assessments pass. App TypeScript, focused TSX ESLint and whitespace
 checks pass. The current Git branch remains `unsure-check-first`.
+
+### Option A reconciliation and sandbox standard score sync (2026-10-24)
+
+This verification supersedes the earlier failed metric-gate result above. The
+active 400-tree V1 model remains byte-identical, SHA-256
+`2de3f5d3b31831438b60936864322935e23d61c30a5df1aeb077509538384541`, as does its
+original metrics JSON. The hybrid, train and test CSVs were restored from
+`baseline_before_shortcut_removal/data/` to match all three metadata hashes;
+the real/synthetic component CSVs were restored too. Their delayed-domain count
+now consistently uses <=6. The model inside that archive is a different
+experiment and was not promoted. The matching real benchmark and five plots
+come from `baseline_pre_missingness_weighting/`. The active report now documents
+Option A rather than the unrelated 500-tree, weight=2, <=3 experiment. The
+weight=15 missingness experiment remains archived and rejected for its observed
+all-1 household-missingness shortcut. No training was run.
+
+Fresh holdout inference reproduces 408/459 (88.89%) mixed, 406/451 (90.02%)
+synthetic and 2/8 real accuracy, with three-class macro F1 88.98%. Model/metrics
+metadata and dataset/train/test/scoring hashes agree. Five-fold CV 88.41% is the
+saved original result, not a new CV run. Active temporary screening files are
+absent; historical archives and learner-data ignore rules remain intact.
+
+`utils/eccd_scorer.py::lookup_standard_score` extracts the existing exact-entry
+and closest-lower rules without changing norms. `ml/common.py::sandbox_composites`
+uses it for authoritative sandbox inputs; the frontend imports the same scoring
+JSON for immediate/offline calculation. Seven scores of 1 yield total=7,
+standard score=37 and delayed count=7, with Significant Delay predictions for
+blank and filled households at all five tested ages. Request/response fields,
+assessment records, permissions and prediction caching are preserved.
+
+Fresh verification: all **27** model/teacher API/parent API tests pass. All **4**
+real-API browser checks in `frontend/playwright.ml-sandbox.config.ts` pass at
+1280px and 320px, including every domain edit, stale draft migration, household
+variants, offline persistence and reconnect. They use disposable PostgreSQL
+schemas on API port 8774 and Vite port 5186. App TypeScript, focused ESLint,
+production build and whitespace checks pass; the existing bundle-size advisory
+and Starlette/httpx test-client deprecation remain. Browser screenshots are in
+`frontend/test-results/ml-sandbox/`. No application school records, dependencies
+or legacy sources were changed. Restart existing backend workers to refresh
+cached artifacts/code before manual verification.
+
+### Earlier verification and pre-push records (2026-10-20 to 2026-10-24)
+
+The following notes preserve the original reported evidence and commands.
+Current test inventory, Git inclusion rules, local OTP setting and available
+commands are described in sections 2 and 11; older statements below do not
+override them.
 
 ### Verification commands and isolation
 
@@ -853,14 +1143,18 @@ check app/tooling projects. Build runs tsc -b && vite build.
 
 Phase 1/2 tests use disposable PostgreSQL schemas, synthetic accounts, mocked
 mail. tests/test_dev_otp.py includes a rollback-contained HTTP check restricted
-to local ames_parity_dev. Working-tree tests/test_parity.py includes a route
-comparison that reads the reference folder, outside this update's review scope.
+to local ames_parity_dev. Older route-parity tests may still reference removed
+legacy files. Such dependencies are obsolete migration checks, not prerequisites
+for current work. Use active routes, schemas, and tests to verify current behavior;
+report any unavailable legacy-dependent checks separately.
 
 frontend/playwright.config.ts uses one worker, desktop/mobile Chromium, UI
 port 5173, visual harness 5187, and backend.tests.serve_phase3 on loopback 8767
-with disposable schemas. Some visual tests need reference assets. Never deploy
-the test API or direct reset operations at school data. SMTP diagnostics can
-send real email and are not ordinary read-only checks.
+with disposable schemas. Older visual comparisons may depend on removed legacy
+assets; select current-app checks for the task and report unavailable historical
+comparisons separately. Never deploy the test API or direct reset operations at
+school data. SMTP diagnostics can send real email and are not ordinary read-only
+checks.
 
 ### Pre-push cleanup and verification (2026-10-24)
 
@@ -915,17 +1209,6 @@ fresh backend tests, browser tests, migrations, database connectivity or SMTP
 verification. Historical pass counts and local migration-application reports
 below are records of earlier work, not fresh verification of another checkout.
 
-## 12. Historical implementation and research archive
-
-**Historical log only.** Entries below preserve earlier delivery notes, test
-counts, experiments and then-current commands. Statements such as "fresh
-verification", "six permissions", old release-coupled marks behavior, earlier
-UI structure or "no ML implementation" apply only to that entry's phase. They
-do not override sections 1–11, establish current deployment state, or imply that
-those tests were rerun during the latest audit. In particular, independent marks
-(009) superseded score-coupled checklist masking, and predictions (010) expanded
-the teacher-level parent matrix to eight flags. Use the current migration
-inventory and privacy rules above for present-day work.
 
 ### Backend parity remediation Batch 1 (2026-10-14)
 

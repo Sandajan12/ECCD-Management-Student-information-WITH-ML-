@@ -39,8 +39,10 @@ inputs; all POST/MID scores, source labels and IDs are excluded from predictors.
 The 70/30 split is stratified, with five-fold training-only parameter selection.
 The serialized model remains fitted on the 1,070 training records.
 
-`artifacts/MODEL_EVALUATION_REPORT.md` documents actual metrics, all 18 importances,
-the confusion matrix, all 29 real comparisons, source overlap and limitations.
+`artifacts/MODEL_EVALUATION_REPORT.md` documents Option A metrics, exact bundle
+hashes, the confusion matrix, source overlap and limitations. All 18 feature
+importances remain in `evaluation_metrics.json`; individual real comparisons
+remain local in `real_beneficiary_benchmark.csv`.
 `dataset_audit.json` records input hashes, repair decisions and generator parameters.
 All real learners anchor the generator before splitting, so the holdout does not
 constitute independent real-cohort validation. All 29 real POST outcomes are Average;
@@ -71,9 +73,11 @@ Pydantic request/response contracts live in `backend/schemas/ml.py`. Student
 inference checks section ownership and complete PRE data, uses the official
 teacher PRE date for age/scoring, and discloses missing imputed demographics.
 Free-text occupations remain missing because no reviewed tier mapping exists.
-The sandbox accepts all 18 model inputs; its total and delayed-domain controls
-are calculated from the seven domains, while standard score is independently
-adjustable for hypothetical testing. Inconsistent scenarios may be unrealistic.
+The sandbox preserves the 18-field API contract but derives total scaled score,
+standard score and the count of domains <=6 from the seven domains using the
+official scoring JSON. Composites are read-only in the UI and normalized again
+by the backend; all-1 domains yield total=7 and standard score=37. Saved drafts
+retain domain/household inputs and recalculate stale composites on reload.
 No predictions alter official assessments. Startup caches artifacts in memory;
 missing artifacts return HTTP 503 for prediction requests.
 
@@ -81,11 +85,12 @@ Additional integration checks:
 
 ```powershell
 uv run --no-project --python .venv312 python -m unittest backend.tests.test_ml_api -v
-pnpm.cmd --dir frontend exec playwright test --config playwright.ml-insights.config.ts
+pnpm.cmd --dir frontend exec playwright test --config playwright.ml-sandbox.config.ts
 ```
 
 Load only trusted joblib artifacts. Names and LRNs never enter exported CSVs, but
-pseudonymous developmental records are still sensitive. Workbooks, CSVs and the
-model binary remain Git-ignored by existing project policy. Generated reports and
-figures are reproducible locally. Offline training and local inference require no
+pseudonymous developmental records are still sensitive. Workbooks and datasets
+remain Git-ignored by existing project policy. The active V1 binary is explicitly
+tracked for deployment. Generated reports and figures are reproducible locally.
+Offline training and local inference require no
 database or API server; the teacher integration uses the existing application DB.

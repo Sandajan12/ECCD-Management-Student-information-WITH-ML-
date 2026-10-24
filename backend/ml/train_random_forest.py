@@ -236,7 +236,9 @@ curriculum areas; exact ELDS indicator equivalence and official endorsement are 
 - Metrics/audit: `evaluation_metrics.json`, `dataset_audit.json`.
 - Interventions: `prescriptive_guides.json`, `real_beneficiary_interventions.json`, `real_beneficiary_benchmark.csv`.
 - Figures: five numbered, headless matplotlib PNGs at 300 dpi under `plots/`.
-- Requested accuracy/macro-F1 >0.85 gate: **{'PASS' if holdout['accuracy'] > .85 and holdout['macro_f1'] > .85 else 'FAIL'}**.
+- Option A regression gates (mixed accuracy >=0.88, macro F1 >=0.88,
+  synthetic accuracy >=0.90): **{'PASS' if holdout['accuracy'] >= .88 and holdout['macro_f1'] >= .88 and metrics['by_source']['synthetic']['accuracy'] >= .90 else 'FAIL'}**.
+  These preserve the research baseline; a 90%+ mixed/real target is separate.
   Unit-test results are established by running the command below, not by this report alone.
 
 ```powershell

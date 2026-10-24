@@ -284,6 +284,8 @@ def get_dashboard_stats(
             else 0
         )
 
+        from backend.utils.messaging import conversation_relationship
+        message_relationship = conversation_relationship(db, Message.teacher_id, Message.parent_id)
         unread_messages = (
             db.query(Message)
             .filter(
@@ -291,6 +293,7 @@ def get_dashboard_stats(
                 Message.sender_role == "parent",
                 Message.is_read == False,
                 Message.is_archived == False,
+                message_relationship,
             )
             .count()
         )
@@ -361,7 +364,8 @@ def get_dashboard_stats(
             .filter(
                 Message.teacher_id == teacher.teacher_id,
                 Message.sender_role == "parent",
-                Message.is_archived == False
+                Message.is_archived == False,
+                message_relationship,
             )
             .order_by(Message.created_at.desc())
             .limit(5)

@@ -14,6 +14,7 @@ from backend.utils.deps import verify_role
 from backend.utils.security import verify_password
 from backend.utils.email import send_otp_email
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile
+from fastapi.concurrency import run_in_threadpool
 from backend.schemas.operations import ImportResult, TeacherListItem
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
@@ -121,7 +122,8 @@ async def import_student_records(file: UploadFile = File(...), section_id: int |
     if not file.filename or not file.filename.lower().endswith(".xlsx"):
         raise HTTPException(400, "Upload an .xlsx workbook containing InfoSheet and ECCD domain sheets.")
     from backend.utils.uploads import EXCEL_LIMIT, read_upload
-    return import_students(db, current_user, await read_upload(file, EXCEL_LIMIT), section_id)
+    content = await read_upload(file, EXCEL_LIMIT)
+    return await run_in_threadpool(import_students, db, current_user, content, section_id)
 
 
 @router.get("/active", response_model=list[TeacherListItem])
@@ -191,7 +193,7 @@ def create_teacher(payload: TeacherProvisionRequest, db: Session = Depends(get_d
 
 @router.post("/change-password-request", response_model=ChallengeResult, response_model_exclude_none=True)
 async def request_password_change(payload: PasswordChangeRequest, db: Session = Depends(get_db), current_user: User = Depends(verify_role(["admin"]))):
-    from backend.utils.authentication import issue_challenge
+    from backend.utils.authentication import discard_failed_challenge, issue_challenge
     from backend.models.email_verification import OtpPurpose
     if not verify_password(payload.oldPassword, current_user.password_hash):
         raise HTTPException(401, "Incorrect current password.")
@@ -202,6 +204,7 @@ async def request_password_change(payload: PasswordChangeRequest, db: Session = 
     try:
         await send_otp_email(current_user.email, otp)
     except Exception:
+        discard_failed_challenge(db, token)
         raise HTTPException(502, "Unable to deliver the verification email.") from None
     return {"message": "Verification code sent to your email.", "email": current_user.email, "challengeToken": token}
 
@@ -280,7 +283,8 @@ def update_teacher(user_id: int, payload: TeacherUpdate, db: Session = Depends(g
 
 
 def _update_teacher(user_id: int, payload: TeacherUpdate, db: Session, current_user: User):
-    from backend.utils.teachers import assign_teacher
+    from backend.utils.teachers import assign_teacher, lock_teacher_assignments
+    lock_teacher_assignments(db)
     teacher = db.query(Teacher).filter_by(user_id=user_id).first()
     if teacher is None:
         raise HTTPException(404, "Teacher not found.")
@@ -321,6 +325,8 @@ def _update_teacher(user_id: int, payload: TeacherUpdate, db: Session, current_u
 @router.put("/{user_id}/archive", response_model=MessageResult)
 @router.put("/archive/{user_id}", response_model=MessageResult)
 def archive_teacher(user_id: int, db: Session = Depends(get_db), current_user=Depends(verify_role(["super-admin"]))):
+    from backend.utils.teachers import lock_teacher_assignments
+    lock_teacher_assignments(db)
     user = db.query(User).filter_by(user_id=user_id, role=UserRole.ADMIN).first()
     if user is None:
         raise HTTPException(404, "Teacher not found.")
@@ -343,6 +349,8 @@ def archive_teacher(user_id: int, db: Session = Depends(get_db), current_user=De
 @router.put("/{user_id}/unarchive", response_model=MessageResult)
 @router.put("/unarchive/{user_id}", response_model=MessageResult)
 def unarchive_teacher(user_id: int, db: Session = Depends(get_db), current_user=Depends(verify_role(["super-admin"]))):
+    from backend.utils.teachers import lock_teacher_assignments
+    lock_teacher_assignments(db)
     user = db.query(User).filter_by(user_id=user_id, role=UserRole.ADMIN).first()
     if user is None:
         raise HTTPException(404, "Teacher not found.")

@@ -11,7 +11,7 @@ from backend.models.user import UserRole
 from backend.models.email_verification import OtpPurpose
 from backend.schemas.auth import LoginRequest, LoginResponse, LogoutRequest, LogoutResponse, OtpChallengeResponse, RegisterParentRequest, UpdatePasswordRequest, VerifyOtpRequest
 from backend.schemas.account import SendOtpRequest, ChallengeResult
-from backend.utils.authentication import build_session, clear_device_cookies, complete_login, consume_challenge, device_tokens, digest, issue_challenge, require_active, revoke_credentials, set_device_cookies, trusted_token
+from backend.utils.authentication import build_session, clear_device_cookies, complete_login, consume_challenge, device_tokens, digest, discard_failed_challenge, issue_challenge, require_active, revoke_credentials, set_device_cookies, trusted_token
 from backend.utils.deps import get_first_login_user, verify_role
 from backend.utils.email import send_otp_email
 from backend.utils.security import get_password_hash, verify_password
@@ -47,6 +47,7 @@ async def login(data: LoginRequest, request: Request, response: Response, db: Se
     try:
         await send_otp_email(user.email, otp)
     except Exception:
+        discard_failed_challenge(db, token)
         raise HTTPException(502, "Unable to deliver the verification email. Please retry.") from None
     return {"success": True, "requireOtp": True, "requiresOtp": True, "challengeToken": token, "email": user.email}
 
@@ -93,6 +94,7 @@ async def register_parent(data: RegisterParentRequest, request: Request, respons
     try:
         await send_otp_email(data.email, otp)
     except Exception:
+        discard_failed_challenge(db, token)
         result.update(emailSent=False, code="REGISTRATION_EMAIL_FAILED", message="Your account is awaiting verification. Submit registration again with the same email and password to retry delivery.")
     return result
 
@@ -126,6 +128,7 @@ async def send_otp(data: SendOtpRequest, db: Session = Depends(get_db), user: Us
     try:
         await send_otp_email(data.email, otp)
     except Exception:
+        discard_failed_challenge(db, token)
         raise HTTPException(502, "Unable to deliver the verification email.") from None
     return {"message": "Verification code sent.", "challengeToken": token, "success": True}
 

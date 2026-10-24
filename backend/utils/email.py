@@ -1,28 +1,19 @@
 import asyncio
-import os
 import logging
 
-from dotenv import load_dotenv
+import httpx
 from fastapi_mail import ConnectionConfig, FastMail, MessageSchema, MessageType
 from backend.config.settings import settings
 
-env_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env')
-load_dotenv(dotenv_path=env_path)
-
 def get_connection_config():
-    port = int(os.getenv("MAIL_PORT", "587"))
-    
-    mail_starttls = os.getenv("MAIL_STARTTLS", "True").lower() in ("true", "1", "t", "yes")
-    mail_ssl_tls = os.getenv("MAIL_SSL_TLS", "False").lower() in ("true", "1", "t", "yes")
-
     return ConnectionConfig(
-        MAIL_USERNAME=os.getenv("MAIL_USERNAME", "noreply@example.com"),
-        MAIL_PASSWORD=os.getenv("MAIL_PASSWORD", "").strip().replace(" ", ""),
-        MAIL_FROM=os.getenv("MAIL_FROM", "noreply@example.com"),
-        MAIL_PORT=port,
-        MAIL_SERVER=os.getenv("MAIL_SERVER", "smtp.gmail.com"),
-        MAIL_STARTTLS=mail_starttls,
-        MAIL_SSL_TLS=mail_ssl_tls,
+        MAIL_USERNAME=settings.MAIL_USERNAME,
+        MAIL_PASSWORD=settings.MAIL_PASSWORD.get_secret_value().strip().replace(" ", ""),
+        MAIL_FROM=settings.MAIL_FROM,
+        MAIL_PORT=settings.MAIL_PORT,
+        MAIL_SERVER=settings.MAIL_SERVER,
+        MAIL_STARTTLS=settings.MAIL_STARTTLS,
+        MAIL_SSL_TLS=settings.MAIL_SSL_TLS,
         USE_CREDENTIALS=True,
         VALIDATE_CERTS=True,
         MAIL_DEBUG=0,
@@ -46,13 +37,24 @@ async def send_otp_email(email: str, otp: str):
     </div>
     """
     
-    message = MessageSchema(
-        subject="Your Verification Code",
-        recipients=[email],
-        body=html,
-        subtype=MessageType.html
-    )
-    
-    fm = FastMail(get_connection_config())
-    await asyncio.wait_for(fm.send_message(message), timeout=30)
+    if settings.EMAIL_TRANSPORT == "brevo_api":
+        key = settings.BREVO_API_KEY.get_secret_value().strip() if settings.BREVO_API_KEY else ""
+        if not key:
+            raise RuntimeError("Email API is not configured")
+        # Fixed HTTPS endpoint, certificate validation on, redirects off: credentials
+        # and OTPs must never be forwarded to a provider-selected redirect.
+        async with httpx.AsyncClient(timeout=15, follow_redirects=False) as client:
+            result = await asyncio.wait_for(client.post(
+                "https://api.brevo.com/v3/smtp/email",
+                headers={"api-key": key, "accept": "application/json"},
+                json={"sender": {"email": str(settings.MAIL_FROM)}, "to": [{"email": email}],
+                      "subject": "Your Verification Code", "htmlContent": html},
+            ), timeout=30)
+            if result.status_code != 201:
+                # Never surface provider bodies, headers, credentials or OTPs.
+                raise RuntimeError("Verification email delivery failed")
+    else:
+        message = MessageSchema(subject="Your Verification Code", recipients=[email], body=html, subtype=MessageType.html)
+        fm = FastMail(get_connection_config())
+        await asyncio.wait_for(fm.send_message(message), timeout=30)
     logging.getLogger("uvicorn.error").info("[AUTH] OTP sent via email to %s", email)

@@ -105,6 +105,24 @@ class ParentMLTests(unittest.TestCase):
         self.settings(allow_parent_predictions=False)
         self.assertEqual(self.call("POST", "/api/ml/parent/predict/1", 5).status_code, 403)
 
+    def test_profile_name_masking_is_independent_of_prediction_and_pre_release(self):
+        self.complete_pre()
+        self.settings(allow_parent_predictions=True, allow_parent_view_eccd_pre=True,
+                      allow_parent_view_student_info=False)
+        for method, path in (("GET", "/api/ml/parent/readiness/1"), ("POST", "/api/ml/parent/predict/1")):
+            response = self.call(method, path, 5)
+            self.assertEqual(response.status_code, 200, response.text)
+            self.assertEqual(response.json()["student_name"], "")
+            self.assertNotIn("Test Middle Student", response.text)
+        teacher = self.call("POST", "/api/ml/predict/student/1", 2)
+        self.assertEqual(teacher.status_code, 200, teacher.text)
+        self.assertEqual(teacher.json()["student_name"], "Test Middle Student")
+        self.settings(allow_parent_view_student_info=True)
+        for method, path in (("GET", "/api/ml/parent/readiness/1"), ("POST", "/api/ml/parent/predict/1")):
+            response = self.call(method, path, 5)
+            self.assertEqual(response.status_code, 200, response.text)
+            self.assertEqual(response.json()["student_name"], "Test Middle Student")
+
     def test_active_adviser_inheritance_and_no_adviser_fail_closed(self):
         self.settings(allow_parent_predictions=True)
         with self.fixture.sessions() as db:

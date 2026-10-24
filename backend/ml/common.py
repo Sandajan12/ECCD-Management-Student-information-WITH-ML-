@@ -3,11 +3,12 @@ from __future__ import annotations
 
 import hashlib
 import json
+from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 
 import numpy as np
 
-from backend.utils.eccd_scorer import calculate_scores
+from backend.utils.eccd_scorer import calculate_scores, lookup_standard_score
 
 ROOT = Path(__file__).resolve().parent
 DATA = ROOT / "data"
@@ -31,6 +32,17 @@ CATEGORICAL_FEATURES = ["gender", "handedness", "mother_education_level",
 FEATURES = NUMERIC_FEATURES[:11] + ["gender", "handedness", "mother_education_level",
     "father_education_level", "household_occupation_tier", "num_siblings", "birth_order"]
 TARGET = "post_interpretation"
+
+
+def sandbox_composites(features: dict) -> dict[str, int]:
+    """Derive V1 PRE composites without accepting stale client-supplied totals."""
+    scaled = [features[f"{prefix}_pre_scaled"] for prefix, _ in DOMAINS.values()]
+    total = sum(scaled)
+    age = float((Decimal(features["age_months_pre"]) / 12).quantize(
+        Decimal("0.1"), rounding=ROUND_HALF_UP))
+    return {"pre_total_scaled": total,
+            "pre_standard_score": lookup_standard_score(total, age)["standardScore"],
+            "pre_delayed_domains_count": sum(value <= 6 for value in scaled)}
 
 
 def interpretation(score: int | float) -> str:

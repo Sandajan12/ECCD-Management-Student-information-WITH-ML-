@@ -7,7 +7,7 @@ from pydantic import ValidationError
 from sqlalchemy.orm import Session, selectinload
 
 from backend.config.database import get_db
-from backend.ml.common import DOMAINS, DOMAIN_NAMES
+from backend.ml.common import DOMAINS, DOMAIN_NAMES, sandbox_composites
 from backend.ml.inference import predict_student
 from backend.models import EccdQuestion, FamilyAccess, Parent, Student, StudentEccdEvaluation, User
 from backend.models.eccd import TestingPeriod
@@ -17,6 +17,7 @@ from backend.utils.access import authorize_student, current_teacher, resolve_stu
 from backend.utils.deps import verify_role
 from backend.utils.eccd_dates import get_official_testing_date
 from backend.utils.eccd_scorer import calculate_decimal_age, calculate_scores
+from backend.utils.students import parent_student_name
 
 router = APIRouter(prefix="/api/ml", tags=["ML Research"])
 teacher_only = verify_role(["admin"])
@@ -102,7 +103,8 @@ def prediction_response(features: MLFeatures, item_features: dict | None = None)
 
 @router.post("/predict/sandbox", response_model=PredictionResponse)
 def predict_sandbox(payload: MLFeatures, user: User = Depends(teacher_only)):
-    return prediction_response(payload)
+    values = payload.model_dump()
+    return prediction_response(MLFeatures(**{**values, **sandbox_composites(values)}))
 
 
 @router.post("/predict/student/{student_id}", response_model=PredictionResponse)
@@ -143,7 +145,7 @@ def predict_student_record(db: Session, student: Student, *, parent_request: boo
     except ValidationError:
         raise HTTPException(409, "The PRE profile contains values outside the model input limits. Review the student record.") from None
     return {**prediction_response(features, item_features), "student_id": student_id,
-            "student_name": student_name(student), "assessment_date": assessment_date}
+            "student_name": parent_student_name(db, student) if parent_request else student_name(student), "assessment_date": assessment_date}
 
 
 def parent_prediction_student(db: Session, user: User, student_id: int) -> Student:
@@ -161,7 +163,7 @@ def parent_prediction_readiness(student_id: PositiveId, db: Session = Depends(ge
     questions = db.query(EccdQuestion).all()
     records = db.query(StudentEccdEvaluation).filter_by(student_id=student_id, testing_period=TestingPeriod.PRE).all()
     complete, _ = pre_readiness(student, records, questions)
-    return {"student_id": student_id, "student_name": student_name(student), "pre_complete": complete,
+    return {"student_id": student_id, "student_name": parent_student_name(db, student), "pre_complete": complete,
             "readiness_note": "Completed PRE assessment available" if complete else "PRE assessment must be completed before generating a prediction.",
             "allow_parent_predictions": permissions.allow_parent_predictions,
             "is_published": permissions.allow_parent_view_eccd_pre}

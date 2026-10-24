@@ -18,23 +18,49 @@ import {
   AuthField,
   OtpFields,
   PasswordCriteria,
-  RememberDevice,
   fallbackLogo,
 } from "../components/auth-ui";
 import LegacyRipple from "../components/LegacyRipple";
 import LegacyIcon from "../components/LegacyIcon";
+import TermsPrivacyAcknowledgment from "../components/common/TermsPrivacyAcknowledgment";
+
+interface RegistrationForm {
+  firstName: string;
+  lastName: string;
+  email: string;
+  password: string;
+  confirm: string;
+  relationship: string;
+}
+
+interface RegistrationPayload {
+  firstName: string;
+  lastName: string;
+  email: string;
+  password: string;
+  relationship: string;
+  rememberDevice: boolean;
+  terms_accepted: true;
+}
+
+const termsRequiredMessage =
+  "Please accept the Terms and Conditions before continuing.";
+
 export default function RegisterParentPage() {
   const { user, login } = useAuth();
   const { settings } = useSettings();
   const navigate = useNavigate();
-  const [form, setForm, confirmForm] = useSessionField("ames_registration", {
-    firstName: "",
-    lastName: "",
-    email: "",
-    password: "",
-    confirm: "",
-    relationship: "Mother",
-  });
+  const [form, setForm, confirmForm] = useSessionField<RegistrationForm>(
+    "ames_registration",
+    {
+      firstName: "",
+      lastName: "",
+      email: "",
+      password: "",
+      confirm: "",
+      relationship: "Mother",
+    },
+  );
   const [otp, setOtp, confirmOtp] = useSessionField(
     "ames_registration_otp",
     "",
@@ -49,21 +75,29 @@ export default function RegisterParentPage() {
     false,
   );
   const [busy, setBusy] = useState(false);
+  const [termsAccepted, setTermsAccepted, confirmTermsAccepted] =
+    useSessionField<boolean>("ames_registration_terms_accepted_v1", false);
   const submitting = useRef(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const acknowledgeTerms = (checked: boolean) => {
+    setTermsAccepted(checked);
+    if (checked && error === termsRequiredMessage) setError("");
+  };
   if (user) return <Navigate to={roleHome(user.role)} replace />;
-  const register = async (): Promise<AuthResponse> =>
-    (
-      await API.post<AuthResponse>("/api/auth/register-parent", {
-        firstName: form.firstName.trim(),
-        lastName: form.lastName.trim(),
-        email: form.email.trim(),
-        password: form.password,
-        relationship: form.relationship,
-        rememberDevice: remember,
-      })
-    ).data;
+  const register = async (): Promise<AuthResponse> => {
+    const payload: RegistrationPayload = {
+      firstName: form.firstName.trim(),
+      lastName: form.lastName.trim(),
+      email: form.email.trim(),
+      password: form.password,
+      relationship: form.relationship,
+      rememberDevice: remember,
+      terms_accepted: true,
+    };
+    return (await API.post<AuthResponse>("/api/auth/register-parent", payload))
+      .data;
+  };
   const accept = (data: AuthResponse) => {
     if (data.requireOtp) {
       setOtp("");
@@ -80,6 +114,7 @@ export default function RegisterParentPage() {
       confirmOtp();
       confirmChallenge();
       confirmRemember();
+      confirmTermsAccepted();
       login(data);
       navigate("/parent/dashboard");
     }
@@ -112,6 +147,10 @@ export default function RegisterParentPage() {
             if (submitting.current) return;
             setError("");
             setMessage("");
+            if (!termsAccepted) {
+              setError(termsRequiredMessage);
+              return;
+            }
             if (challenge && !/^\d{6}$/.test(otp)) {
               setError("Please enter the complete 6-digit verification code.");
               return;
@@ -121,16 +160,35 @@ export default function RegisterParentPage() {
                 setError("First and last names are required.");
                 return;
               }
-              if ([form.firstName, form.lastName].some(name => name.trim().length > 100 || !/^[\p{L}\p{M} .'-]+$/u.test(name.trim()) || !/\p{L}/u.test(name))) {
-                setError("Names may contain only letters, spaces, hyphens, apostrophes and periods, up to 100 characters.");
+              if (
+                [form.firstName, form.lastName].some(
+                  (name) =>
+                    name.trim().length > 100 ||
+                    !/^[\p{L}\p{M} .'-]+$/u.test(name.trim()) ||
+                    !/\p{L}/u.test(name),
+                )
+              ) {
+                setError(
+                  "Names may contain only letters, spaces, hyphens, apostrophes and periods, up to 100 characters.",
+                );
                 return;
               }
-              if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim()) || form.email.trim().length > 100) {
-                setError("Please enter a valid email address, up to 100 characters.");
+              if (
+                !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim()) ||
+                form.email.trim().length > 100
+              ) {
+                setError(
+                  "Please enter a valid email address, up to 100 characters.",
+                );
                 return;
               }
-              if (!passwordValid(form.password) || new TextEncoder().encode(form.password).length > 72) {
-                setError("Please satisfy all password requirements. Passwords must not exceed 72 UTF-8 bytes.");
+              if (
+                !passwordValid(form.password) ||
+                new TextEncoder().encode(form.password).length > 72
+              ) {
+                setError(
+                  "Please satisfy all password requirements. Passwords must not exceed 72 UTF-8 bytes.",
+                );
                 return;
               }
               if (form.password !== form.confirm) {
@@ -147,6 +205,7 @@ export default function RegisterParentPage() {
                       await API.post<SessionResponse>("/api/auth/verify-otp", {
                         challengeToken: challenge.challengeToken,
                         otp,
+                        terms_accepted: true,
                         rememberDevice: remember,
                       })
                     ).data
@@ -184,15 +243,29 @@ export default function RegisterParentPage() {
                 <strong>{challenge.email || form.email}</strong>
               </p>
               <OtpFields value={otp} onChange={setOtp} compact />
-              <AuthButton type="submit" disabled={busy} kind="registration">
+              <TermsPrivacyAcknowledgment
+                context="registration"
+                checked={termsAccepted}
+                onChange={acknowledgeTerms}
+                disabled={busy}
+              />
+              <AuthButton
+                type="submit"
+                disabled={busy || !termsAccepted}
+                kind="registration"
+              >
                 {busy ? "Verifying..." : "Verify & Activate Account"}
               </AuthButton>
               <button
                 type="button"
-                disabled={busy}
+                disabled={busy || !termsAccepted}
                 className="relative mt-2 w-full rounded-lg px-2 py-1.5 text-sm leading-[1.75] font-medium text-[#4543c0] outline-none hover:bg-[#4543c0]/4 focus-visible:bg-[#4543c0]/12 focus-visible:outline-none disabled:text-black/26"
                 onClick={async () => {
                   if (submitting.current) return;
+                  if (!termsAccepted) {
+                    setError(termsRequiredMessage);
+                    return;
+                  }
                   submitting.current = true;
                   setError("");
                   setMessage("");
@@ -305,16 +378,28 @@ export default function RegisterParentPage() {
                 />
               </div>
               <PasswordCriteria value={form.password} compact />
-              <RememberDevice
-                checked={remember}
-                onChange={setRemember}
-                compact
+              <label className="mb-2 flex cursor-pointer select-none items-center gap-2 text-left text-sm text-gray-600">
+                <input
+                  type="checkbox"
+                  name="remember_device"
+                  checked={remember}
+                  onChange={(event) => setRemember(event.target.checked)}
+                  className="h-4 w-4 shrink-0 rounded border-gray-300 text-blue-600 accent-blue-600 focus:ring-blue-500"
+                />
+                <span>Remember this device (Skip OTP on this browser)</span>
+              </label>
+              <TermsPrivacyAcknowledgment
+                context="registration"
+                checked={termsAccepted}
+                onChange={acknowledgeTerms}
+                disabled={busy}
               />
               <AuthButton
                 type="submit"
                 kind="registration"
                 disabled={
                   busy ||
+                  !termsAccepted ||
                   !passwordValid(form.password) ||
                   form.password !== form.confirm
                 }

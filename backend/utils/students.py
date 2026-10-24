@@ -1,8 +1,8 @@
 import math
 from sqlalchemy.orm import Session
-from backend.models import FamilyAccess, Parent, Student
+from backend.models import FamilyAccess, Parent, Student, User
 from backend.schemas.student import StudentRecordResponse
-from backend.utils.access import get_active_adviser_for_student, permissions_for_student, student_age
+from backend.utils.access import authorize_student, get_active_adviser_for_student, permissions_for_student, student_age
 
 
 def public_student(db: Session, student: Student) -> dict:
@@ -36,10 +36,25 @@ def child_profile(db: Session, student: Student) -> dict:
     return result
 
 
-def upsert_guardian(db: Session, student: Student, relationship: str, name: str | None, age: int | None, occupation: str | None, education: str | None) -> None:
+def parent_student_name(db: Session, student: Student) -> str:
+    # Parent ML schemas require a string, as does the parent ECCD summary.
+    if not permissions_for_student(db, student).allow_parent_view_student_info:
+        return ""
+    return " ".join(part for part in (student.first_name, student.middle_name, student.last_name) if part) or f"Student {student.student_id}"
+
+
+def upsert_guardian(db: Session, student: Student, relationship: str, name: str | None, age: int | None, occupation: str | None, education: str | None, *, user: User) -> None:
     if not name or not name.strip():
         return
-    parent = db.query(Parent).join(FamilyAccess).filter(FamilyAccess.status == "SYNCED", FamilyAccess.student_id == student.student_id, FamilyAccess.relationship_type == relationship).first()
+    parent = db.query(Parent).join(FamilyAccess).filter(FamilyAccess.status == "SYNCED", FamilyAccess.student_id == student.student_id, FamilyAccess.relationship_type == relationship).with_for_update(of=Parent).first()
+    if parent is not None:
+        if (parent.fullname, parent.age, parent.occupation, parent.educational_attainment) == (name.strip(), age, occupation, education):
+            return
+        # Pending and archived siblings also share these fields. A target's
+        # permission cannot grant writes to another child's guardian profile.
+        linked_children = db.query(Student).join(FamilyAccess).filter(FamilyAccess.parent_id == parent.parent_id).distinct().all()
+        for child in linked_children:
+            authorize_student(db, user, child, parent_edit=user.role.value == "user")
     if parent is None:
         parent = Parent(relationship_type=relationship)
         db.add(parent)

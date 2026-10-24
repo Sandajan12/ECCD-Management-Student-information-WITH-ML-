@@ -1,0 +1,1250 @@
+{
+  "AGE 3.1 - 4.0": {
+    "domains": {
+      "GM": {
+        "0": 1,
+        "1": 1,
+        "2": 1,
+        "3": 1,
+        "4": 2,
+        "5": 3,
+        "6": 5,
+        "7": 6,
+        "8": 7,
+        "9": 8,
+        "10": 10,
+        "11": 11,
+        "12": 12,
+        "13": 14
+      },
+      "FM": {
+        "0": 2,
+        "1": 2,
+        "2": 2,
+        "3": 2,
+        "4": 4,
+        "5": 5,
+        "6": 7,
+        "7": 9,
+        "8": 10,
+        "9": 12,
+        "10": 14,
+        "11": 15
+      },
+      "SH": {
+        "0": 1,
+        "1": 1,
+        "2": 1,
+        "3": 1,
+        "4": 1,
+        "5": 1,
+        "6": 1,
+        "7": 1,
+        "8": 1,
+        "9": 1,
+        "10": 2,
+        "11": 3,
+        "12": 4,
+        "13": 5,
+        "14": 5,
+        "15": 6,
+        "16": 7,
+        "17": 8,
+        "18": 9,
+        "19": 9,
+        "20": 10,
+        "21": 11,
+        "22": 12,
+        "23": 13,
+        "24": 13,
+        "25": 14,
+        "26": 15,
+        "27": 16
+      },
+      "RL": {
+        "0": 3,
+        "1": 3,
+        "2": 5,
+        "3": 7,
+        "4": 10,
+        "5": 12
+      },
+      "EL": {
+        "0": 1,
+        "1": 1,
+        "2": 1,
+        "3": 3,
+        "4": 4,
+        "5": 6,
+        "6": 9,
+        "7": 11,
+        "8": 13
+      },
+      "C": {
+        "0": 3,
+        "1": 4,
+        "2": 5,
+        "3": 5,
+        "4": 6,
+        "5": 7,
+        "6": 8,
+        "7": 9,
+        "8": 10,
+        "9": 10,
+        "10": 11,
+        "11": 12,
+        "12": 13,
+        "13": 14,
+        "14": 14,
+        "15": 15,
+        "16": 16,
+        "17": 17,
+        "18": 17,
+        "19": 19,
+        "20": 19,
+        "21": 19
+      },
+      "SE": {
+        "0": 1,
+        "1": 1,
+        "2": 1,
+        "3": 1,
+        "4": 1,
+        "5": 1,
+        "6": 1,
+        "7": 1,
+        "8": 1,
+        "9": 1,
+        "10": 2,
+        "11": 2,
+        "12": 3,
+        "13": 4,
+        "14": 5,
+        "15": 6,
+        "16": 7,
+        "17": 8,
+        "18": 8,
+        "19": 9,
+        "20": 10,
+        "21": 11,
+        "22": 12,
+        "23": 13,
+        "24": 14
+      }
+    },
+    "standardScores": {
+      "29": {
+        "standardScore": 37,
+        "interpretation": "Delay"
+      },
+      "30": {
+        "standardScore": 38,
+        "interpretation": "Delay"
+      },
+      "31": {
+        "standardScore": 40,
+        "interpretation": "Delay"
+      },
+      "32": {
+        "standardScore": 41,
+        "interpretation": "Delay"
+      },
+      "33": {
+        "standardScore": 43,
+        "interpretation": "Delay"
+      },
+      "34": {
+        "standardScore": 44,
+        "interpretation": "Delay"
+      },
+      "35": {
+        "standardScore": 45,
+        "interpretation": "Delay"
+      },
+      "36": {
+        "standardScore": 47,
+        "interpretation": "Delay"
+      },
+      "37": {
+        "standardScore": 48,
+        "interpretation": "Delay"
+      },
+      "38": {
+        "standardScore": 50,
+        "interpretation": "Delay"
+      },
+      "39": {
+        "standardScore": 51,
+        "interpretation": "Delay"
+      },
+      "40": {
+        "standardScore": 53,
+        "interpretation": "Delay"
+      },
+      "41": {
+        "standardScore": 54,
+        "interpretation": "Delay"
+      },
+      "42": {
+        "standardScore": 56,
+        "interpretation": "Delay"
+      },
+      "43": {
+        "standardScore": 57,
+        "interpretation": "Delay"
+      },
+      "44": {
+        "standardScore": 59,
+        "interpretation": "Delay"
+      },
+      "45": {
+        "standardScore": 60,
+        "interpretation": "Delay"
+      },
+      "46": {
+        "standardScore": 62,
+        "interpretation": "Delay"
+      },
+      "47": {
+        "standardScore": 63,
+        "interpretation": "Delay"
+      },
+      "48": {
+        "standardScore": 65,
+        "interpretation": "Delay"
+      },
+      "49": {
+        "standardScore": 66,
+        "interpretation": "Delay"
+      },
+      "50": {
+        "standardScore": 67,
+        "interpretation": "Delay"
+      },
+      "51": {
+        "standardScore": 69,
+        "interpretation": "Delay"
+      },
+      "52": {
+        "standardScore": 70,
+        "interpretation": "Slight Delay"
+      },
+      "53": {
+        "standardScore": 72,
+        "interpretation": "Slight Delay"
+      },
+      "54": {
+        "standardScore": 73,
+        "interpretation": "Slight Delay"
+      },
+      "55": {
+        "standardScore": 75,
+        "interpretation": "Slight Delay"
+      },
+      "56": {
+        "standardScore": 76,
+        "interpretation": "Slight Delay"
+      },
+      "57": {
+        "standardScore": 78,
+        "interpretation": "Slight Delay"
+      },
+      "58": {
+        "standardScore": 79,
+        "interpretation": "Slight Delay"
+      },
+      "59": {
+        "standardScore": 81,
+        "interpretation": "Average"
+      },
+      "60": {
+        "standardScore": 82,
+        "interpretation": "Average"
+      },
+      "61": {
+        "standardScore": 84,
+        "interpretation": "Average"
+      },
+      "62": {
+        "standardScore": 85,
+        "interpretation": "Average"
+      },
+      "63": {
+        "standardScore": 86,
+        "interpretation": "Average"
+      },
+      "64": {
+        "standardScore": 88,
+        "interpretation": "Average"
+      },
+      "65": {
+        "standardScore": 89,
+        "interpretation": "Average"
+      },
+      "66": {
+        "standardScore": 91,
+        "interpretation": "Average"
+      },
+      "67": {
+        "standardScore": 92,
+        "interpretation": "Average"
+      },
+      "68": {
+        "standardScore": 94,
+        "interpretation": "Average"
+      },
+      "69": {
+        "standardScore": 95,
+        "interpretation": "Average"
+      },
+      "70": {
+        "standardScore": 97,
+        "interpretation": "Average"
+      },
+      "71": {
+        "standardScore": 98,
+        "interpretation": "Average"
+      },
+      "72": {
+        "standardScore": 100,
+        "interpretation": "Average"
+      },
+      "73": {
+        "standardScore": 101,
+        "interpretation": "Average"
+      },
+      "74": {
+        "standardScore": 103,
+        "interpretation": "Average"
+      },
+      "75": {
+        "standardScore": 104,
+        "interpretation": "Average"
+      },
+      "76": {
+        "standardScore": 105,
+        "interpretation": "Average"
+      },
+      "77": {
+        "standardScore": 107,
+        "interpretation": "Average"
+      },
+      "78": {
+        "standardScore": 108,
+        "interpretation": "Average"
+      },
+      "79": {
+        "standardScore": 110,
+        "interpretation": "Average"
+      },
+      "80": {
+        "standardScore": 111,
+        "interpretation": "Average"
+      },
+      "81": {
+        "standardScore": 113,
+        "interpretation": "Average"
+      },
+      "82": {
+        "standardScore": 114,
+        "interpretation": "Average"
+      },
+      "83": {
+        "standardScore": 116,
+        "interpretation": "Average"
+      },
+      "84": {
+        "standardScore": 117,
+        "interpretation": "Average"
+      },
+      "85": {
+        "standardScore": 119,
+        "interpretation": "Average"
+      },
+      "86": {
+        "standardScore": 120,
+        "interpretation": "Slight Advance"
+      },
+      "87": {
+        "standardScore": 122,
+        "interpretation": "Slight Advance"
+      },
+      "88": {
+        "standardScore": 123,
+        "interpretation": "Slight Advance"
+      },
+      "89": {
+        "standardScore": 124,
+        "interpretation": "Slight Advance"
+      },
+      "90": {
+        "standardScore": 126,
+        "interpretation": "Slight Advance"
+      },
+      "91": {
+        "standardScore": 127,
+        "interpretation": "Slight Advance"
+      },
+      "92": {
+        "standardScore": 129,
+        "interpretation": "Slight Advance"
+      },
+      "93": {
+        "standardScore": 130,
+        "interpretation": "Highly Advance"
+      },
+      "94": {
+        "standardScore": 132,
+        "interpretation": "Highly Advance"
+      },
+      "95": {
+        "standardScore": 133,
+        "interpretation": "Highly Advance"
+      },
+      "96": {
+        "standardScore": 135,
+        "interpretation": "Highly Advance"
+      },
+      "97": {
+        "standardScore": 136,
+        "interpretation": "Highly Advance"
+      },
+      "98": {
+        "standardScore": 138,
+        "interpretation": "Highly Advance"
+      }
+    }
+  },
+  "AGE 4.1 - 5.0": {
+    "domains": {
+      "GM": {
+        "0": 1,
+        "1": 1,
+        "2": 1,
+        "3": 1,
+        "4": 1,
+        "5": 1,
+        "6": 2,
+        "7": 4,
+        "8": 5,
+        "9": 7,
+        "10": 8,
+        "11": 10,
+        "12": 11,
+        "13": 13
+      },
+      "FM": {
+        "0": 1,
+        "1": 1,
+        "2": 1,
+        "3": 1,
+        "4": 2,
+        "5": 4,
+        "6": 5,
+        "7": 7,
+        "8": 9,
+        "9": 10,
+        "10": 12,
+        "11": 14
+      },
+      "SH": {
+        "0": 1,
+        "1": 1,
+        "2": 1,
+        "3": 1,
+        "4": 1,
+        "5": 1,
+        "6": 1,
+        "7": 1,
+        "8": 1,
+        "9": 1,
+        "10": 1,
+        "11": 1,
+        "12": 1,
+        "13": 1,
+        "14": 1,
+        "15": 1,
+        "16": 2,
+        "17": 3,
+        "18": 4,
+        "19": 5,
+        "20": 6,
+        "21": 8,
+        "22": 9,
+        "23": 10,
+        "24": 11,
+        "25": 12,
+        "26": 13,
+        "27": 14
+      },
+      "RL": {
+        "0": 1,
+        "1": 1,
+        "2": 3,
+        "3": 6,
+        "4": 9,
+        "5": 11
+      },
+      "EL": {
+        "0": 2,
+        "1": 2,
+        "2": 2,
+        "3": 2,
+        "4": 2,
+        "5": 2,
+        "6": 5,
+        "7": 8,
+        "8": 11
+      },
+      "C": {
+        "0": 0,
+        "1": 0,
+        "2": 3,
+        "3": 3,
+        "4": 4,
+        "5": 5,
+        "6": 6,
+        "7": 6,
+        "8": 7,
+        "9": 8,
+        "10": 8,
+        "11": 9,
+        "12": 10,
+        "13": 11,
+        "14": 11,
+        "15": 12,
+        "16": 13,
+        "17": 13,
+        "18": 14,
+        "19": 15,
+        "20": 15,
+        "21": 16
+      },
+      "SE": {
+        "0": 1,
+        "1": 1,
+        "2": 1,
+        "3": 1,
+        "4": 1,
+        "5": 1,
+        "6": 1,
+        "7": 1,
+        "8": 1,
+        "9": 1,
+        "10": 1,
+        "11": 1,
+        "12": 1,
+        "13": 1,
+        "14": 2,
+        "15": 3,
+        "16": 4,
+        "17": 5,
+        "18": 7,
+        "19": 8,
+        "20": 9,
+        "21": 10,
+        "22": 11,
+        "23": 12,
+        "24": 13
+      }
+    },
+    "standardScores": {
+      "29": {
+        "standardScore": 37,
+        "interpretation": "Delay"
+      },
+      "30": {
+        "standardScore": 38,
+        "interpretation": "Delay"
+      },
+      "31": {
+        "standardScore": 40,
+        "interpretation": "Delay"
+      },
+      "32": {
+        "standardScore": 41,
+        "interpretation": "Delay"
+      },
+      "33": {
+        "standardScore": 43,
+        "interpretation": "Delay"
+      },
+      "34": {
+        "standardScore": 44,
+        "interpretation": "Delay"
+      },
+      "35": {
+        "standardScore": 45,
+        "interpretation": "Delay"
+      },
+      "36": {
+        "standardScore": 47,
+        "interpretation": "Delay"
+      },
+      "37": {
+        "standardScore": 48,
+        "interpretation": "Delay"
+      },
+      "38": {
+        "standardScore": 50,
+        "interpretation": "Delay"
+      },
+      "39": {
+        "standardScore": 51,
+        "interpretation": "Delay"
+      },
+      "40": {
+        "standardScore": 53,
+        "interpretation": "Delay"
+      },
+      "41": {
+        "standardScore": 54,
+        "interpretation": "Delay"
+      },
+      "42": {
+        "standardScore": 56,
+        "interpretation": "Delay"
+      },
+      "43": {
+        "standardScore": 57,
+        "interpretation": "Delay"
+      },
+      "44": {
+        "standardScore": 59,
+        "interpretation": "Delay"
+      },
+      "45": {
+        "standardScore": 60,
+        "interpretation": "Delay"
+      },
+      "46": {
+        "standardScore": 62,
+        "interpretation": "Delay"
+      },
+      "47": {
+        "standardScore": 63,
+        "interpretation": "Delay"
+      },
+      "48": {
+        "standardScore": 65,
+        "interpretation": "Delay"
+      },
+      "49": {
+        "standardScore": 66,
+        "interpretation": "Delay"
+      },
+      "50": {
+        "standardScore": 67,
+        "interpretation": "Delay"
+      },
+      "51": {
+        "standardScore": 69,
+        "interpretation": "Delay"
+      },
+      "52": {
+        "standardScore": 70,
+        "interpretation": "Slight Delay"
+      },
+      "53": {
+        "standardScore": 72,
+        "interpretation": "Slight Delay"
+      },
+      "54": {
+        "standardScore": 73,
+        "interpretation": "Slight Delay"
+      },
+      "55": {
+        "standardScore": 75,
+        "interpretation": "Slight Delay"
+      },
+      "56": {
+        "standardScore": 76,
+        "interpretation": "Slight Delay"
+      },
+      "57": {
+        "standardScore": 78,
+        "interpretation": "Slight Delay"
+      },
+      "58": {
+        "standardScore": 79,
+        "interpretation": "Slight Delay"
+      },
+      "59": {
+        "standardScore": 81,
+        "interpretation": "Average"
+      },
+      "60": {
+        "standardScore": 82,
+        "interpretation": "Average"
+      },
+      "61": {
+        "standardScore": 84,
+        "interpretation": "Average"
+      },
+      "62": {
+        "standardScore": 85,
+        "interpretation": "Average"
+      },
+      "63": {
+        "standardScore": 86,
+        "interpretation": "Average"
+      },
+      "64": {
+        "standardScore": 88,
+        "interpretation": "Average"
+      },
+      "65": {
+        "standardScore": 89,
+        "interpretation": "Average"
+      },
+      "66": {
+        "standardScore": 91,
+        "interpretation": "Average"
+      },
+      "67": {
+        "standardScore": 92,
+        "interpretation": "Average"
+      },
+      "68": {
+        "standardScore": 94,
+        "interpretation": "Average"
+      },
+      "69": {
+        "standardScore": 95,
+        "interpretation": "Average"
+      },
+      "70": {
+        "standardScore": 97,
+        "interpretation": "Average"
+      },
+      "71": {
+        "standardScore": 98,
+        "interpretation": "Average"
+      },
+      "72": {
+        "standardScore": 100,
+        "interpretation": "Average"
+      },
+      "73": {
+        "standardScore": 101,
+        "interpretation": "Average"
+      },
+      "74": {
+        "standardScore": 103,
+        "interpretation": "Average"
+      },
+      "75": {
+        "standardScore": 104,
+        "interpretation": "Average"
+      },
+      "76": {
+        "standardScore": 105,
+        "interpretation": "Average"
+      },
+      "77": {
+        "standardScore": 107,
+        "interpretation": "Average"
+      },
+      "78": {
+        "standardScore": 108,
+        "interpretation": "Average"
+      },
+      "79": {
+        "standardScore": 110,
+        "interpretation": "Average"
+      },
+      "80": {
+        "standardScore": 111,
+        "interpretation": "Average"
+      },
+      "81": {
+        "standardScore": 113,
+        "interpretation": "Average"
+      },
+      "82": {
+        "standardScore": 114,
+        "interpretation": "Average"
+      },
+      "83": {
+        "standardScore": 116,
+        "interpretation": "Average"
+      },
+      "84": {
+        "standardScore": 117,
+        "interpretation": "Average"
+      },
+      "85": {
+        "standardScore": 119,
+        "interpretation": "Average"
+      },
+      "86": {
+        "standardScore": 120,
+        "interpretation": "Slight Advance"
+      },
+      "87": {
+        "standardScore": 122,
+        "interpretation": "Slight Advance"
+      },
+      "88": {
+        "standardScore": 123,
+        "interpretation": "Slight Advance"
+      },
+      "89": {
+        "standardScore": 124,
+        "interpretation": "Slight Advance"
+      },
+      "90": {
+        "standardScore": 126,
+        "interpretation": "Slight Advance"
+      },
+      "91": {
+        "standardScore": 127,
+        "interpretation": "Slight Advance"
+      },
+      "92": {
+        "standardScore": 129,
+        "interpretation": "Slight Advance"
+      },
+      "93": {
+        "standardScore": 130,
+        "interpretation": "Highly Advance"
+      },
+      "94": {
+        "standardScore": 132,
+        "interpretation": "Highly Advance"
+      },
+      "95": {
+        "standardScore": 133,
+        "interpretation": "Highly Advance"
+      },
+      "96": {
+        "standardScore": 135,
+        "interpretation": "Highly Advance"
+      },
+      "97": {
+        "standardScore": 136,
+        "interpretation": "Highly Advance"
+      },
+      "98": {
+        "standardScore": 138,
+        "interpretation": "Highly Advance"
+      }
+    }
+  },
+  "AGE 5.1 - 5.11": {
+    "domains": {
+      "GM": {
+        "0": 1,
+        "1": 1,
+        "2": 1,
+        "3": 1,
+        "4": 1,
+        "5": 1,
+        "6": 1,
+        "7": 1,
+        "8": 1,
+        "9": 1,
+        "10": 1,
+        "11": 4,
+        "12": 7,
+        "13": 11
+      },
+      "FM": {
+        "0": 1,
+        "1": 1,
+        "2": 1,
+        "3": 1,
+        "4": 1,
+        "5": 1,
+        "6": 3,
+        "7": 5,
+        "8": 7,
+        "9": 8,
+        "10": 10,
+        "11": 12
+      },
+      "SH": {
+        "0": 2,
+        "1": 2,
+        "2": 2,
+        "3": 2,
+        "4": 2,
+        "5": 2,
+        "6": 2,
+        "7": 2,
+        "8": 2,
+        "9": 2,
+        "10": 2,
+        "11": 2,
+        "12": 2,
+        "13": 2,
+        "14": 2,
+        "15": 2,
+        "16": 2,
+        "17": 2,
+        "18": 2,
+        "19": 2,
+        "20": 3,
+        "21": 4,
+        "22": 6,
+        "23": 7,
+        "24": 9,
+        "25": 10,
+        "26": 12,
+        "27": 13
+      },
+      "RL": {
+        "0": 1,
+        "1": 1,
+        "2": 1,
+        "3": 4,
+        "4": 8,
+        "5": 11
+      },
+      "EL": {
+        "0": 5,
+        "1": 5,
+        "2": 5,
+        "3": 5,
+        "4": 5,
+        "5": 5,
+        "6": 5,
+        "7": 5,
+        "8": 11
+      },
+      "C": {
+        "0": 1,
+        "1": 1,
+        "2": 1,
+        "3": 1,
+        "4": 1,
+        "5": 1,
+        "6": 1,
+        "7": 1,
+        "8": 1,
+        "9": 1,
+        "10": 2,
+        "11": 3,
+        "12": 4,
+        "13": 5,
+        "14": 6,
+        "15": 7,
+        "16": 8,
+        "17": 9,
+        "18": 10,
+        "19": 11,
+        "20": 12,
+        "21": 13
+      },
+      "SE": {
+        "0": 1,
+        "1": 1,
+        "2": 1,
+        "3": 1,
+        "4": 1,
+        "5": 1,
+        "6": 1,
+        "7": 1,
+        "8": 1,
+        "9": 1,
+        "10": 1,
+        "11": 1,
+        "12": 1,
+        "13": 1,
+        "14": 1,
+        "15": 1,
+        "16": 2,
+        "17": 3,
+        "18": 5,
+        "19": 6,
+        "20": 7,
+        "21": 9,
+        "22": 10,
+        "23": 11,
+        "24": 13
+      }
+    },
+    "standardScores": {
+      "29": {
+        "standardScore": 37,
+        "interpretation": "Delay"
+      },
+      "30": {
+        "standardScore": 38,
+        "interpretation": "Delay"
+      },
+      "31": {
+        "standardScore": 40,
+        "interpretation": "Delay"
+      },
+      "32": {
+        "standardScore": 41,
+        "interpretation": "Delay"
+      },
+      "33": {
+        "standardScore": 43,
+        "interpretation": "Delay"
+      },
+      "34": {
+        "standardScore": 44,
+        "interpretation": "Delay"
+      },
+      "35": {
+        "standardScore": 45,
+        "interpretation": "Delay"
+      },
+      "36": {
+        "standardScore": 47,
+        "interpretation": "Delay"
+      },
+      "37": {
+        "standardScore": 48,
+        "interpretation": "Delay"
+      },
+      "38": {
+        "standardScore": 50,
+        "interpretation": "Delay"
+      },
+      "39": {
+        "standardScore": 51,
+        "interpretation": "Delay"
+      },
+      "40": {
+        "standardScore": 53,
+        "interpretation": "Delay"
+      },
+      "41": {
+        "standardScore": 54,
+        "interpretation": "Delay"
+      },
+      "42": {
+        "standardScore": 56,
+        "interpretation": "Delay"
+      },
+      "43": {
+        "standardScore": 57,
+        "interpretation": "Delay"
+      },
+      "44": {
+        "standardScore": 59,
+        "interpretation": "Delay"
+      },
+      "45": {
+        "standardScore": 60,
+        "interpretation": "Delay"
+      },
+      "46": {
+        "standardScore": 62,
+        "interpretation": "Delay"
+      },
+      "47": {
+        "standardScore": 63,
+        "interpretation": "Delay"
+      },
+      "48": {
+        "standardScore": 65,
+        "interpretation": "Delay"
+      },
+      "49": {
+        "standardScore": 66,
+        "interpretation": "Delay"
+      },
+      "50": {
+        "standardScore": 67,
+        "interpretation": "Delay"
+      },
+      "51": {
+        "standardScore": 69,
+        "interpretation": "Delay"
+      },
+      "52": {
+        "standardScore": 70,
+        "interpretation": "Slight Delay"
+      },
+      "53": {
+        "standardScore": 72,
+        "interpretation": "Slight Delay"
+      },
+      "54": {
+        "standardScore": 73,
+        "interpretation": "Slight Delay"
+      },
+      "55": {
+        "standardScore": 75,
+        "interpretation": "Slight Delay"
+      },
+      "56": {
+        "standardScore": 76,
+        "interpretation": "Slight Delay"
+      },
+      "57": {
+        "standardScore": 78,
+        "interpretation": "Slight Delay"
+      },
+      "58": {
+        "standardScore": 79,
+        "interpretation": "Slight Delay"
+      },
+      "59": {
+        "standardScore": 81,
+        "interpretation": "Average"
+      },
+      "60": {
+        "standardScore": 82,
+        "interpretation": "Average"
+      },
+      "61": {
+        "standardScore": 84,
+        "interpretation": "Average"
+      },
+      "62": {
+        "standardScore": 85,
+        "interpretation": "Average"
+      },
+      "63": {
+        "standardScore": 86,
+        "interpretation": "Average"
+      },
+      "64": {
+        "standardScore": 88,
+        "interpretation": "Average"
+      },
+      "65": {
+        "standardScore": 89,
+        "interpretation": "Average"
+      },
+      "66": {
+        "standardScore": 91,
+        "interpretation": "Average"
+      },
+      "67": {
+        "standardScore": 92,
+        "interpretation": "Average"
+      },
+      "68": {
+        "standardScore": 94,
+        "interpretation": "Average"
+      },
+      "69": {
+        "standardScore": 95,
+        "interpretation": "Average"
+      },
+      "70": {
+        "standardScore": 97,
+        "interpretation": "Average"
+      },
+      "71": {
+        "standardScore": 98,
+        "interpretation": "Average"
+      },
+      "72": {
+        "standardScore": 100,
+        "interpretation": "Average"
+      },
+      "73": {
+        "standardScore": 101,
+        "interpretation": "Average"
+      },
+      "74": {
+        "standardScore": 103,
+        "interpretation": "Average"
+      },
+      "75": {
+        "standardScore": 104,
+        "interpretation": "Average"
+      },
+      "76": {
+        "standardScore": 105,
+        "interpretation": "Average"
+      },
+      "77": {
+        "standardScore": 107,
+        "interpretation": "Average"
+      },
+      "78": {
+        "standardScore": 108,
+        "interpretation": "Average"
+      },
+      "79": {
+        "standardScore": 110,
+        "interpretation": "Average"
+      },
+      "80": {
+        "standardScore": 111,
+        "interpretation": "Average"
+      },
+      "81": {
+        "standardScore": 113,
+        "interpretation": "Average"
+      },
+      "82": {
+        "standardScore": 114,
+        "interpretation": "Average"
+      },
+      "83": {
+        "standardScore": 116,
+        "interpretation": "Average"
+      },
+      "84": {
+        "standardScore": 117,
+        "interpretation": "Average"
+      },
+      "85": {
+        "standardScore": 119,
+        "interpretation": "Average"
+      },
+      "86": {
+        "standardScore": 120,
+        "interpretation": "Slight Advance"
+      },
+      "87": {
+        "standardScore": 122,
+        "interpretation": "Slight Advance"
+      },
+      "88": {
+        "standardScore": 123,
+        "interpretation": "Slight Advance"
+      },
+      "89": {
+        "standardScore": 124,
+        "interpretation": "Slight Advance"
+      },
+      "90": {
+        "standardScore": 126,
+        "interpretation": "Slight Advance"
+      },
+      "91": {
+        "standardScore": 127,
+        "interpretation": "Slight Advance"
+      },
+      "92": {
+        "standardScore": 129,
+        "interpretation": "Slight Advance"
+      },
+      "93": {
+        "standardScore": 130,
+        "interpretation": "Highly Advance"
+      },
+      "94": {
+        "standardScore": 132,
+        "interpretation": "Highly Advance"
+      },
+      "95": {
+        "standardScore": 133,
+        "interpretation": "Highly Advance"
+      },
+      "96": {
+        "standardScore": 135,
+        "interpretation": "Highly Advance"
+      },
+      "97": {
+        "standardScore": 136,
+        "interpretation": "Highly Advance"
+      },
+      "98": {
+        "standardScore": 138,
+        "interpretation": "Highly Advance"
+      }
+    }
+  }
+}

@@ -2,12 +2,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session, aliased
 from sqlalchemy import func
 from backend.config.database import get_db
-from backend.models import FamilyAccess, Message, Parent, SectionTeacher, Student, Teacher, User
+from backend.models import FamilyAccess, Message, Parent, Student, Teacher, User
 from backend.models.message import SenderRole
 from backend.schemas.message import ContactsResponse, ConversationRequest, MessageCreate, MessageResponse, NotifyStudentRequest, NotifyStudentResponse, PersistedMessageResponse, SuccessResponse, UnreadResponse
 from backend.utils.access import authorize_student, current_teacher, resolve_student, teacher_sections
 from backend.utils.deps import verify_role
-from backend.utils.messaging import authorize_conversation
+from backend.utils.messaging import authorize_conversation, conversation_relationship
 
 router = APIRouter(prefix="/api/messages", tags=["Messages"])
 
@@ -85,14 +85,7 @@ def unread(db: Session = Depends(get_db), user: User = Depends(verify_role(["adm
     teacher_user, parent_user = aliased(User), aliased(User)
     # EXISTS avoids multiplying messages when siblings or duplicate assignment
     # records connect the same teacher and parent. No message bodies are loaded.
-    relationship = db.query(Student.student_id).join(FamilyAccess, FamilyAccess.student_id == Student.student_id).join(SectionTeacher, SectionTeacher.section_id == Student.section_id).filter(
-        FamilyAccess.status == "SYNCED",
-        FamilyAccess.parent_id == Message.parent_id,
-        SectionTeacher.teacher_id == Message.teacher_id,
-        SectionTeacher.status == "Active",
-        SectionTeacher.role == "Primary Adviser",
-        Student.is_active.is_(True),
-    ).correlate(Message).exists()
+    relationship = conversation_relationship(db, Message.teacher_id, Message.parent_id)
     query = db.query(func.count(Message.message_id)).select_from(Message).join(Teacher, Teacher.teacher_id == Message.teacher_id).join(Parent, Parent.parent_id == Message.parent_id).join(teacher_user, teacher_user.user_id == Teacher.user_id).join(parent_user, parent_user.user_id == Parent.user_id).filter(
         Message.is_read.is_(False), Message.is_archived.is_(False),
         teacher_user.is_active.is_(True), teacher_user.role == "admin",

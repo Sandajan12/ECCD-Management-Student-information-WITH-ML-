@@ -1,17 +1,17 @@
-# Agent Instructions: AMES Tech Stack Migration
+# Agent Instructions: AMES Current Codebase
 
 ## 1. System Overview & Architecture
-You are assisting in migrating the AMES (Early Childhood Performance Analytics) system.
+You are maintaining and extending the AMES (Early Childhood Performance Analytics) system. The Node.js-to-Python and JavaScript-to-TypeScript migration is complete.
 - **Backend:** Python (FastAPI, SQLAlchemy ORM, PostgreSQL)
 - **Frontend:** React + TypeScript (Vite)
-- **Legacy Reference:** All legacy Node.js and JavaScript files are located in `_legacy_reference/`.
+- **Source of Truth:** Use the active code in `backend/` and `frontend/`, including related models, schemas, migrations, tests, manifests, and configuration templates. The legacy reference folders have been removed and are not prerequisites for any task.
 - **Context Requirement:** Before starting any planning or coding task, you MUST silently read AI_CONTEXT.md to understand the domain logic, database schema, and machine learning goals. Do not deviate from the business logic defined in that file.
 
 ## 2. Operating Principles
-- **Check Legacy Logic First:** Always inspect the corresponding legacy Node.js/Express controller or React component in `_legacy_reference/` before generating new code.
+- **Check Current Logic First:** Before planning, implementing features, or analyzing code, inspect the relevant active FastAPI routes, utilities, models, schemas, React components, hooks, services, and tests. Trace existing behavior in the current codebase.
 - **Self-Annealing & Verification:** If a command fails, inspect the stack trace, fix the implementation, and re-test. 
-- **Preserve Business Logic:** Keep all database schemas, API route paths, and JSON response shapes 1:1 compatible with the original Node.js system.
-- **Zero-Assumption Rule:** Do not guess, fabricate configurations, or hallucinate legacy implementations. If a request is unclear, incomplete, or you are missing a file reference, you must stop the planning process immediately and respond with clarification questions only.
+- **Preserve Business Logic:** Preserve current database contracts, API route paths, JSON response shapes, and domain rules unless the requested change explicitly requires updating them. Use active source and current tests to establish compatibility.
+- **Evidence-Based Clarification:** Do not fabricate implementations or configuration. Search the current codebase and AI_CONTEXT.md first. Ask for clarification only when a material requirement remains ambiguous or required current information cannot be found. Missing legacy files or historical references must never block feature work or code analysis, and must not prompt requests to restore or supply those files.
 
 ## 3. Backend Rules (FastAPI)
 - **Directory Separation:** Maintain strict layers:
@@ -39,7 +39,7 @@ You are assisting in migrating the AMES (Early Childhood Performance Analytics) 
 
 ## 5. Agent Workflow Constraints
 - **Plan First:** Always generate a structured implementation plan before writing or modifying code.
-- **Read-Only Legacy:** You must NEVER delete, modify, or overwrite any files in `_legacy_reference/`.
+- **Current-Codebase Workflow:** Base implementation and verification on the active source and tests. Do not require legacy comparisons or restore removed legacy folders. Historical migration notes are archival context, not instructions for current work.
 
 ## 6. Current Architectural State & Generated Endpoints
 ### Normalized Section-Teacher Model & Granular RBAC

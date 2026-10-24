@@ -209,7 +209,7 @@ def update(identifier: str, payload: StudentUpdate, db: Session = Depends(get_db
         if key in Student.__table__.columns and key not in ("section_id", "section_name", "school_year", "is_active") and (user.role.value != "user" or key in parent_fields):
             setattr(student, key, value)
     for relationship, prefix in (("Father", "father"), ("Mother", "mother"), ("Guardian", "legal_guardian")):
-        upsert_guardian(db, student, relationship, getattr(payload, f"{prefix}_name"), getattr(payload, f"{prefix}_age"), getattr(payload, f"{prefix}_occ"), getattr(payload, f"{prefix}_educ"))
+        upsert_guardian(db, student, relationship, getattr(payload, f"{prefix}_name"), getattr(payload, f"{prefix}_age"), getattr(payload, f"{prefix}_occ"), getattr(payload, f"{prefix}_educ"), user=user)
     try:
         db.flush()
         after = student_change_snapshot(db, student)

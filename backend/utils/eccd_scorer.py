@@ -37,6 +37,23 @@ def calculate_decimal_age(birth_date: date, evaluation_date: date) -> float:
         
     return float((Decimal(years) + Decimal(months) / 12).quantize(Decimal('0.1'), rounding=ROUND_HALF_UP))
 
+def lookup_standard_score(total_scaled: int, decimal_age: float) -> dict:
+    """Use the official table's exact entry or existing closest-lower fallback."""
+    bracket = get_age_bracket(decimal_age)
+    lookup = scoring_data.get(bracket)
+    if not lookup:
+        raise ValueError(f"Scoring data not found for age bracket: {bracket}")
+    entries = lookup["standardScores"]
+    entry = entries.get(str(total_scaled))
+    if entry is None:
+        available = sorted(int(key) for key in entries)
+        closest = available[0] if available else 0
+        for value in available:
+            if value <= total_scaled:
+                closest = value
+        entry = entries.get(str(closest))
+    return entry or {"standardScore": None, "interpretation": None}
+
 def calculate_scores(evaluations: List[Dict[str, Any]], decimal_age: float) -> Dict[str, Any]:
     bracket = get_age_bracket(decimal_age)
     lookup = scoring_data.get(bracket)
@@ -87,28 +104,13 @@ def calculate_scores(evaluations: List[Dict[str, Any]], decimal_age: float) -> D
         scaled_scores[domain] = scaled
         sum_of_scaled_scores += scaled
 
-    standard_score = None
-    interpretation = None
-
-    ss_lookup = lookup["standardScores"].get(str(sum_of_scaled_scores))
-    if ss_lookup:
-        standard_score = ss_lookup["standardScore"]
-        interpretation = ss_lookup["interpretation"]
-    else:
-        available_sums = sorted([int(k) for k in lookup["standardScores"].keys()])
-        closest_sum = available_sums[0] if available_sums else 0
-        for s in available_sums:
-            if s <= sum_of_scaled_scores:
-                closest_sum = s
-        if str(closest_sum) in lookup["standardScores"]:
-            standard_score = lookup["standardScores"][str(closest_sum)]["standardScore"]
-            interpretation = lookup["standardScores"][str(closest_sum)]["interpretation"]
+    ss_lookup = lookup_standard_score(sum_of_scaled_scores, decimal_age)
 
     return {
         "raw_scores": raw_scores,
         "scaled_scores": scaled_scores,
         "sum_of_scaled_scores": sum_of_scaled_scores,
-        "standard_score": standard_score,
-        "interpretation": interpretation,
+        "standard_score": ss_lookup["standardScore"],
+        "interpretation": ss_lookup["interpretation"],
         "bracket": bracket
     }

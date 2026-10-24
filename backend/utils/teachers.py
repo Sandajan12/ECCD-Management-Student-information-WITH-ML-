@@ -7,12 +7,17 @@ from backend.models.user import UserRole
 from backend.schemas.teacher import TeacherProvisionRequest
 from backend.utils.security import get_password_hash
 from backend.utils.audit import record_audit, teacher_name
+from backend.utils.authentication import revoke_credentials
+
+
+def lock_teacher_assignments(db: Session) -> None:
+    # Serialize moves/handover across sections, including simultaneous requests
+    # changing account credentials. Acquire before account/assignment row locks.
+    db.execute(text("SELECT pg_advisory_xact_lock(hashtext('ames.section_assignment'))"))
 
 
 def assign_teacher(db: Session, user: User, section_id: int, teacher_id: int | None) -> Section:
-    # Serialize moves/handover across sections, including simultaneous requests
-    # assigning the same teacher to different sections. Held until commit/rollback.
-    db.execute(text("SELECT pg_advisory_xact_lock(hashtext('ames.section_assignment'))"))
+    lock_teacher_assignments(db)
     section = db.query(Section).filter_by(section_id=section_id).with_for_update().first()
     if section is None:
         raise HTTPException(404, "Section not found.")
@@ -45,10 +50,13 @@ def assign_teacher(db: Session, user: User, section_id: int, teacher_id: int | N
             previous_teacher.class_name = None
             if previous_teacher.user:
                 previous_teacher.user.is_active = False
+                revoke_credentials(db, previous_teacher.user)
         else:
             previous_teacher.class_name = other.section.section_name
     section.adviser_teacher_id = teacher_id
     if teacher:
+        if not teacher.user.is_active:
+            revoke_credentials(db, teacher.user)
         teacher.user.is_active = True
         teacher.class_name = section.section_name
         assignment = db.query(SectionTeacher).filter_by(section_id=section_id, teacher_id=teacher_id, role="Primary Adviser").order_by((SectionTeacher.status == "Active").desc(), SectionTeacher.id.desc()).first()

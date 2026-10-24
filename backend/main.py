@@ -28,6 +28,7 @@ from backend.migrations.eccd_evaluator_tracking import check_eccd_evaluator_trac
 from backend.migrations.adviser_takeover import check_adviser_takeover
 from backend.migrations.parent_eccd_marks import check_parent_eccd_marks
 from backend.migrations.parent_predictions import check_parent_predictions
+from backend.migrations.auth_security_version import check_auth_security_version
 from backend.migrations.phase1 import MigrationError
 
 access_logger = logging.getLogger("uvicorn.access")
@@ -69,6 +70,7 @@ async def lifespan(api):
         check_parent_eccd_marks(connection, schema)
         check_parent_predictions(connection, schema)
         check_parent_linking(connection, schema)
+        check_auth_security_version(connection, schema)
         check_phase2(connection, schema)
         check_batch2(connection, schema)
     with SessionLocal() as db:
@@ -78,7 +80,7 @@ async def lifespan(api):
     except (OSError, ValueError, KeyError, TypeError):
         logging.getLogger("uvicorn.error").error("ML research artifacts unavailable; prediction endpoints will return 503.")
     if runtime_settings.otp_enabled:
-        logging.getLogger("uvicorn.error").info("[AUTH] Email OTP enabled; SMTP delivery active.")
+        logging.getLogger("uvicorn.error").info("[AUTH] Email OTP enabled; %s delivery active.", runtime_settings.EMAIL_TRANSPORT)
     else:
         logging.getLogger("uvicorn.error").info("[DEV] OTP bypass enabled; SMTP delivery skipped.")
     yield

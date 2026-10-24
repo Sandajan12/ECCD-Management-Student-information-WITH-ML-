@@ -17,12 +17,23 @@ import {
   AuthButton,
   AuthField,
   OtpFields,
-  RememberDevice,
   fallbackLogo,
 } from "../components/auth-ui";
 import LegacyRipple from "../components/LegacyRipple";
 import LegacyIcon from "../components/LegacyIcon";
 import { Modal } from "../components/ui";
+import TermsPrivacyAcknowledgment from "../components/common/TermsPrivacyAcknowledgment";
+
+interface LoginPayload {
+  email: string;
+  password: string;
+  rememberDevice: boolean;
+  deviceToken: string | null;
+  terms_accepted: true;
+}
+
+const termsRequiredMessage =
+  "Please accept the Terms and Conditions before signing in.";
 
 export function AuthFrame({ children }: { children: ReactNode }) {
   const { settings } = useSettings();
@@ -78,9 +89,15 @@ export default function LoginPage() {
     Boolean(localStorage.getItem("ames_device_token")),
   );
   const [busy, setBusy] = useState(false);
+  const [termsAccepted, setTermsAccepted, confirmTermsAccepted] =
+    useSessionField<boolean>("ames_login_terms_accepted_v1", false);
   const [error, setError] = useState("");
   const [resending, setResending] = useState(false);
   const [notice, setNotice] = useState("");
+  const acknowledgeTerms = (checked: boolean) => {
+    setTermsAccepted(checked);
+    if (checked && error === termsRequiredMessage) setError("");
+  };
   const [resendAt, setResendAt, confirmResendAt] = useSessionField<number>(
     "ames_login_resend_at",
     0,
@@ -102,6 +119,7 @@ export default function LoginPage() {
     confirmChallenge();
     confirmRemember();
     confirmResendAt();
+    confirmTermsAccepted();
     login(data);
     navigate(
       data.user.role === "super-admin"
@@ -111,16 +129,18 @@ export default function LoginPage() {
     );
   };
   const requestCode = async (resend = false) => {
-    const res = await API.post<AuthResponse>(
-      "/api/auth/login",
-      {
-        email: email.trim(),
-        password,
-        rememberDevice: remember,
-        deviceToken: localStorage.getItem("ames_device_token"),
-      },
-      { timeout: 45000 },
-    );
+    if (!termsAccepted) {
+      setError(termsRequiredMessage);
+      return;
+    }
+    const payload: LoginPayload = {
+      email: email.trim(),
+      password,
+      rememberDevice: remember,
+      deviceToken: localStorage.getItem("ames_device_token"),
+      terms_accepted: true,
+    };
+    const res = await API.post<AuthResponse>("/api/auth/login", payload);
     if (res.data.requireOtp) {
       setChallenge(res.data);
       setOtp("");
@@ -188,10 +208,27 @@ export default function LoginPage() {
           disabled={busy || Boolean(challenge)}
           required
         />
-        <RememberDevice checked={remember} onChange={setRemember} />
+        <label className="mb-2 flex cursor-pointer select-none items-center gap-2 text-left text-sm text-gray-600">
+          <input
+            type="checkbox"
+            name="remember_device"
+            checked={remember}
+            onChange={(event) => setRemember(event.target.checked)}
+            className="h-4 w-4 shrink-0 rounded border-gray-300 text-blue-600 accent-blue-600 focus:ring-blue-500"
+          />
+          <span>Remember this device (Skip OTP for 30 days)</span>
+        </label>
+        {!challenge && (
+          <TermsPrivacyAcknowledgment
+            context="login"
+            checked={termsAccepted}
+            onChange={acknowledgeTerms}
+            disabled={busy}
+          />
+        )}
         <AuthButton
           type="submit"
-          disabled={busy || Boolean(challenge)}
+          disabled={busy || Boolean(challenge) || !termsAccepted}
           aria-busy={busy}
         >
           {busy && !challenge && <LoginSpinner />}
@@ -217,6 +254,10 @@ export default function LoginPage() {
               if (busy) return;
               setError("");
               setNotice("");
+              if (!termsAccepted) {
+                setError(termsRequiredMessage);
+                return;
+              }
               if (!/^\d{6}$/.test(otp)) {
                 setError(
                   "Please enter the complete 6-digit verification code.",
@@ -230,6 +271,7 @@ export default function LoginPage() {
                   {
                     challengeToken: challenge.challengeToken,
                     otp,
+                    terms_accepted: true,
                   },
                 );
                 finishLogin(res.data);
@@ -271,7 +313,17 @@ export default function LoginPage() {
               disabled={busy}
               autoFocus
             />
-            <AuthButton type="submit" disabled={busy} aria-busy={busy}>
+            <TermsPrivacyAcknowledgment
+              context="login"
+              checked={termsAccepted}
+              onChange={acknowledgeTerms}
+              disabled={busy}
+            />
+            <AuthButton
+              type="submit"
+              disabled={busy || !termsAccepted}
+              aria-busy={busy}
+            >
               {busy && <LoginSpinner />}
               {busy
                 ? resending
@@ -281,7 +333,7 @@ export default function LoginPage() {
             </AuthButton>
             <button
               type="button"
-              disabled={busy || countdown > 0}
+              disabled={busy || countdown > 0 || !termsAccepted}
               className="mt-4 rounded-lg px-4 py-2 text-sm font-semibold text-brand disabled:text-slate-400"
               onClick={async () => {
                 if (busy || countdown > 0) return;
