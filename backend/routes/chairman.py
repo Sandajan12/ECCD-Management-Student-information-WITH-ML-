@@ -77,7 +77,6 @@ from backend.models.teacher import Teacher
 from backend.models.section import Section
 from backend.models.section_teacher import SectionTeacher
 from backend.models.student import Student
-from backend.models.log import SystemLog
 from backend.schemas.teacher import TeacherPermissionUpdate, AssignTeacherSectionRequest
 from backend.schemas.student import StudentTransferRequest
 
@@ -106,12 +105,10 @@ def update_teacher_permissions(
     teacher.allow_eccd_question_management = payload.allow_eccd_question_management
 
     status_str = "granted" if payload.allow_eccd_question_management else "revoked"
-    action_log = SystemLog(
-        user_id=current_user.user_id,
-        action_type="UPDATE_TEACHER_PERMISSION",
-        details=f"{status_str.upper()} ECCD Question Management permission for Teacher {teacher.first_name} {teacher.last_name} (ID: {teacher_id})",
-    )
-    db.add(action_log)
+    from backend.utils.audit import record_audit, teacher_name
+    record_audit(db, current_user, "UPDATE_TEACHER_PERMISSION",
+                 f'{status_str.capitalize()} ECCD Question Management permission for Teacher "{teacher_name(teacher)}".',
+                 teacherId=teacher_id, teacherName=teacher_name(teacher))
     db.commit()
 
     return {
@@ -131,7 +128,11 @@ def transfer_students(payload: StudentIdTransferRequest | StudentTransferRequest
     students = [resolve_student(db, identifier) for identifier in identifiers]
     for student in students:
         student.section_id, student.section_name = section.section_id, section.section_name
-    db.add(SystemLog(user_id=current_user.user_id, action_type="TRANSFER_STUDENTS", details=f"Transferred {len(students)} students to section {section.section_id}; assessments preserved."))
+    from backend.utils.audit import person_name, record_audit
+    names = ", ".join(f'"{person_name(student)}"' for student in students)
+    record_audit(db, current_user, "TRANSFER_STUDENTS",
+                 f'Transferred {len(students)} students ({names}) to Section "{section.section_name}"; assessments preserved.',
+                 sectionId=section.section_id, sectionName=section.section_name)
     db.commit()
     return {"message": f"Successfully transferred {len(students)} student(s) to section {section.section_name}.", "transferred_count": len(students)}
 
@@ -140,8 +141,12 @@ def transfer_students(payload: StudentIdTransferRequest | StudentTransferRequest
 @router.put("/sections/{section_id}/assign", response_model=AssignmentResponse)
 def assign_teacher_to_section(section_id: int, payload: AssignTeacherSectionRequest, db: Session = Depends(get_db), current_user=Depends(verify_role(["super-admin"]))):
     from backend.utils.teachers import assign_teacher
-    assign_teacher(db, current_user, section_id, payload.teacher_id)
-    db.commit()
+    try:
+        assign_teacher(db, current_user, section_id, payload.teacher_id)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
     return {"message": "Teacher successfully assigned to section.", "section_id": section_id}
 
 
@@ -203,48 +208,8 @@ def get_chairman_teachers(
     db: Session = Depends(get_db),
     current_user=Depends(verify_role(["super-admin", "chairman"])),
 ):
-    teachers = (
-        db.query(Teacher)
-        .join(User, Teacher.user_id == User.user_id)
-        .filter(User.is_active == True)
-        .all()
-    )
-    results = []
-    for t in teachers:
-        active_assignment = (
-            db.query(SectionTeacher, Section)
-            .join(Section, SectionTeacher.section_id == Section.section_id)
-            .filter(
-                SectionTeacher.teacher_id == t.teacher_id,
-                SectionTeacher.status == "Active",
-                SectionTeacher.role == "Primary Adviser",
-            )
-            .order_by(SectionTeacher.id)
-            .first()
-        )
-        sec_name = active_assignment[1].section_name if active_assignment else None
-        sec_id = active_assignment[1].section_id if active_assignment else None
-        sec_role = active_assignment[0].role if active_assignment else None
-        results.append(
-            {
-                "teacher_id": t.teacher_id,
-                "user_id": t.user_id,
-                "username": t.user.username if t.user else None,
-                "first_name": t.first_name,
-                "last_name": t.last_name,
-                "employee_id": t.employee_id,
-                "email": t.user.email if t.user else None,
-                "allow_eccd_question_management": bool(
-                    t.allow_eccd_question_management
-                ),
-                "class_name": sec_name,
-                "section_name": sec_name,
-                "section_id": sec_id,
-                "role": sec_role,
-                "is_active": t.user.is_active if t.user else True,
-            }
-        )
-    return results
+    from backend.routes.teachers import get_teachers
+    return get_teachers(True, db, current_user)
 
 
 

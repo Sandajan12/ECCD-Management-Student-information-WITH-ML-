@@ -159,6 +159,7 @@ backend/ml/artifacts/dataset_audit.json
 backend/ml/artifacts/MODEL_EVALUATION_REPORT.md
 backend/ml/artifacts/plots/05_real_beneficiary_pre_vs_post_comparison.png
 backend/ml/artifacts/retraining_v2/
+backend/ml/artifacts/baseline_pre_missingness_weighting/
 backend/ml/.mplconfig/
 
 # Existing acceptance tests containing real beneficiary exclusion facts

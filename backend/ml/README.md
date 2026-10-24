@@ -1,5 +1,16 @@
 # ECCD model research and teacher insights
 
+The previous 400-tree baseline was restored on 2026-10-24 without retraining:
+88.89% mixed-holdout accuracy, 88.98% Macro F1, 88.41% five-fold CV accuracy and
+2/8 real holdout predictions correct. Numeric inputs use training-median
+imputation; categorical inputs use training-mode imputation. The 8/8 tuning
+experiment and its source snapshots are preserved locally under
+`artifacts/baseline_pre_missingness_weighting/tuned_8_of_8_20261024/`.
+The strict >90% accuracy target remains unmet. Restart the backend after switching
+artifacts because inference caches the fitted model. Reuse the existing dataset
+and split files when reproducing this comparison; the builder command below is
+only for initial dataset preparation.
+
 Run from the repository root with Python 3.12 and the project's environment:
 
 ```powershell

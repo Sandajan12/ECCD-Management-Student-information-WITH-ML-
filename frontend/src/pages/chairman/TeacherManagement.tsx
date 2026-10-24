@@ -37,7 +37,7 @@ interface TeacherFormProps {
   onSaved: () => void;
 }
 interface HandoverProps {
-  section: Section;
+  section?: Section | null;
   busy: boolean;
   onCancel: () => void;
   onConfirm: () => void;
@@ -50,7 +50,7 @@ function incumbentSection(
   return sections.find(
     (section) =>
       String(section.section_id) === sectionId &&
-      section.adviser_teacher_id != null &&
+      Boolean(section.adviser_teacher_id) &&
       section.adviser_teacher_id !== teacherId &&
       section.role === "Primary Adviser" &&
       section.status === "Active",
@@ -63,7 +63,7 @@ function SectionHandover({
   onConfirm,
 }: HandoverProps) {
   const name =
-    [section.first_name, section.last_name].filter(Boolean).join(" ") ||
+    [section?.first_name, section?.last_name].filter(Boolean).join(" ") ||
     "another teacher";
   return (
     <Modal
@@ -90,17 +90,19 @@ function SectionHandover({
           </Button>
           <Button
             className="bg-[#ed6c02] font-bold hover:bg-[#e65100]"
-            disabled={busy}
+            disabled={busy || !section}
             onClick={onConfirm}
           >
+            {busy && <ActionSpinner />}
             Confirm Handover
           </Button>
         </>
       }
     >
       <p className="text-base leading-[1.5]">
-        Section <strong>{section.section_name}</strong> is currently assigned to{" "}
-        <strong>{name}</strong>.
+        Section{" "}
+        <strong>{section?.section_name || "the selected section"}</strong> is
+        currently assigned to <strong>{name}</strong>.
       </p>
       <p className="mt-4 text-sm leading-[1.43] text-[#777]">
         Assigning this section will detach the current Primary Adviser. Teachers
@@ -109,6 +111,15 @@ function SectionHandover({
         preserved.
       </p>
     </Modal>
+  );
+}
+function ActionSpinner() {
+  return (
+    <span
+      role="status"
+      aria-label="Saving changes"
+      className="mr-2 inline-block size-4 animate-spin rounded-full border-2 border-current border-r-transparent"
+    />
   );
 }
 function TeacherForm({
@@ -126,7 +137,6 @@ function TeacherForm({
       first_name: teacher?.first_name || "",
       last_name: teacher?.last_name || "",
       email: teacher?.email || "",
-      username: teacher?.username || "",
       employee_id: teacher?.employee_id || "",
       section_id: String(teacher?.section_id || ""),
     },
@@ -154,13 +164,7 @@ function TeacherForm({
     const section = sections.find(
       (item) => String(item.section_id) === values.section_id,
     );
-    if (
-      !values.first_name.trim() ||
-      (!teacher && !values.last_name.trim()) ||
-      !values.email.trim() ||
-      !section ||
-      (teacher && !values.username.trim())
-    ) {
+    if (!values.first_name.trim() || !values.email.trim() || !section) {
       setError("Please fill in all required fields.");
       return;
     }
@@ -179,7 +183,7 @@ function TeacherForm({
         first_name: values.first_name.trim(),
         last_name: values.last_name.trim(),
         email: values.email.trim(),
-        username: teacher ? values.username.trim() : values.email.trim(),
+        username: values.email.trim(),
         employee_id: values.employee_id.trim() || null,
         class_name: section.section_name,
       };
@@ -229,10 +233,8 @@ function TeacherForm({
           setError("");
           if (
             !values.first_name.trim() ||
-            (!teacher && !values.last_name.trim()) ||
             !values.email.trim() ||
-            !values.section_id ||
-            (teacher && !values.username.trim())
+            !values.section_id
           ) {
             setError("Please fill in all required fields.");
             return;
@@ -254,58 +256,42 @@ function TeacherForm({
       >
         <Notice tone="error">{error}</Notice>
         <div className="mt-4 grid grid-cols-1 gap-4 legacy-sm:grid-cols-2">
-          {(teacher
-            ? ([
-                "first_name",
-                "last_name",
-                "username",
-                "email",
-                "employee_id",
-              ] as const)
-            : (["first_name", "last_name", "email", "employee_id"] as const)
-          ).map((name) => (
-            <Field
-              key={name}
-              captionLabel
-              containerClassName={
-                !teacher && name !== "employee_id" ? "col-span-full" : ""
-              }
-              className="bg-[#f9f9f9]"
-              label={
-                {
-                  first_name: "First Name",
-                  last_name: teacher ? "Last Name (optional)" : "Last Name",
-                  username: "Username",
-                  email: "Email",
-                  employee_id: "Employee ID (optional)",
-                }[name]
-              }
-              value={values[name]}
-              type={name === "email" ? "email" : "text"}
-              required={
-                name !== "employee_id" && (!teacher || name !== "last_name")
-              }
-              disabled={busy}
-              maxLength={
-                name === "first_name" || name === "last_name"
-                  ? 100
-                  : name === "email" && teacher
-                    ? 100
-                    : 50
-              }
-              onChange={(e) =>
-                change({
-                  ...values,
-                  [name]:
-                    name === "first_name" || name === "last_name"
-                      ? e.target.value.replace(/\p{Nd}/gu, "")
-                      : e.target.value,
-                })
-              }
-            />
-          ))}
+          {(["first_name", "last_name", "email", "employee_id"] as const).map(
+            (name) => (
+              <Field
+                key={name}
+                captionLabel
+                className="bg-[#f9f9f9]"
+                label={
+                  {
+                    first_name: "First Name",
+                    last_name: "Last Name (optional)",
+                    email: "Email",
+                    employee_id: "Employee ID (optional)",
+                  }[name]
+                }
+                value={values[name]}
+                type={name === "email" ? "email" : "text"}
+                required={name === "first_name" || name === "email"}
+                disabled={busy}
+                maxLength={
+                  name === "first_name" || name === "last_name" ? 100 : 50
+                }
+                onChange={(e) =>
+                  change({
+                    ...values,
+                    [name]:
+                      name === "first_name" || name === "last_name"
+                        ? e.target.value.replace(/\p{Nd}/gu, "")
+                        : e.target.value,
+                  })
+                }
+              />
+            ),
+          )}
           <Select
             label="Class Name / Section"
+            containerClassName="col-span-full"
             captionLabel
             floating={false}
             className={`bg-[#f9f9f9] ${values.section_id ? "" : "[&_button>span]:text-[#aaa]"}`}
@@ -636,40 +622,68 @@ export default function TeacherManagement() {
   const [accessBusy, setAccessBusy] = useState(false);
   const [createdSectionName, setCreatedSectionName] = useState("");
   const confirmationSubmitting = useRef(false);
+  const refreshVersion = useRef(0);
   const [confirmation, setConfirmation] = useState<{
     title: string;
     text: string;
     path: string;
     method: "put" | "delete";
     data?: object;
+    action?: "archive" | "restore";
   } | null>(null);
   const refresh = useCallback(async () => {
+    const version = ++refreshVersion.current;
     try {
-      const [rows, secs] = await Promise.all([
-        API.get<Teacher[]>(
-          archived ? "/api/teachers/archived" : "/api/teachers/active",
-        ),
+      const [activeRows, archiveRows, secs] = await Promise.all([
+        API.get<Teacher[]>("/api/teachers/active"),
+        API.get<Teacher[]>("/api/teachers/archived"),
         API.get<Section[]>("/api/chairman/sections"),
       ]);
-      setTeachers(rows.data);
-      if (!archived) setActiveTeachers(rows.data);
+      if (version !== refreshVersion.current) return;
+      setTeachers(archiveRows.data);
+      setActiveTeachers(activeRows.data);
       setSections(secs.data);
       setAccess((current) =>
         current
-          ? rows.data.find((item) => item.teacher_id === current.teacher_id) ||
-            current
+          ? activeRows.data.find(
+              (item) => item.teacher_id === current.teacher_id,
+            ) || null
           : null,
       );
     } catch (err) {
-      setError(errorMessage(err));
+      if (version === refreshVersion.current) setError(errorMessage(err));
     }
-  }, [archived]);
+  }, []);
   useEffect(() => {
     void refresh();
     const handler = () => void refresh();
     window.addEventListener("ames-record-synced", handler);
     return () => window.removeEventListener("ames-record-synced", handler);
-  }, [refresh]);
+  }, [refresh, archived]);
+  const confirmAction = async () => {
+    if (!confirmation || confirmationSubmitting.current) return;
+    const pending = confirmation;
+    confirmationSubmitting.current = true;
+    setBusy(true);
+    setError("");
+    try {
+      const response = await API.request({
+        url: pending.path,
+        method: pending.method,
+        data: pending.data,
+      });
+      if (response.status !== 200 && response.status !== 201)
+        throw new Error("The server did not confirm this save.");
+      setConfirmation(null);
+      setMessage("Changes saved.");
+      await refresh();
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      confirmationSubmitting.current = false;
+      setBusy(false);
+    }
+  };
   const act = async (run: () => Promise<unknown>, text: string) => {
     setBusy(true);
     setError("");
@@ -738,16 +752,20 @@ export default function TeacherManagement() {
                     title={archive ? "Restore Teacher" : "Archive Teacher"}
                     aria-label={`${archive ? "Restore" : "Archive"} ${t.first_name}`}
                     className={archive ? "text-[#2e7d32]" : "text-[#ed6c02]"}
-                    onClick={() =>
+                    onClick={() => {
+                      setError("");
                       setConfirmation({
                         title: archive
-                          ? "Restore teacher?"
-                          : "Archive teacher?",
-                        text: "The teacher's assessment history will be retained.",
+                          ? "Restore Teacher Account"
+                          : "Archive Teacher Account",
+                        text: archive
+                          ? `Restore ${[t.first_name, t.last_name].filter(Boolean).join(" ") || "this teacher"}'s account? A section must be manually assigned after restoration. Assessment history will be retained.`
+                          : `Archive ${[t.first_name, t.last_name].filter(Boolean).join(" ") || "this teacher"}'s account? This will revoke active access and release their assigned section. Assessment history will be retained.`,
                         path: `/api/teachers/${t.user_id}/${archive ? "unarchive" : "archive"}`,
                         method: "put",
-                      })
-                    }
+                        action: archive ? "restore" : "archive",
+                      });
+                    }}
                   >
                     <Icon name={archive ? "Restore" : "Archive"} />
                   </IconButton>
@@ -822,12 +840,20 @@ export default function TeacherManagement() {
       {archived && (
         <Modal
           title="Archived Teacher Accounts"
+          locked={busy || !!confirmation}
           footerClassName="p-4"
           size="md"
           titleClassName="bg-[#f4f5f7] [&_h2]:font-bold"
           bodyClassName="p-0!"
           onClose={() => setArchived(false)}
-          footer={<Button onClick={() => setArchived(false)}>Close</Button>}
+          footer={
+            <Button
+              disabled={busy || !!confirmation}
+              onClick={() => setArchived(false)}
+            >
+              Close
+            </Button>
+          }
         >
           {teacherTable(teachers, true)}
         </Modal>
@@ -934,6 +960,7 @@ export default function TeacherManagement() {
                 className="px-8!"
                 disabled={formBusy}
               >
+                {formBusy && <ActionSpinner />}
                 {form === "new" ? "Save" : "Save Changes"}
               </Button>
             </>
@@ -1058,48 +1085,51 @@ export default function TeacherManagement() {
       {confirmation && (
         <Modal
           title={confirmation.title}
+          className={confirmation.action ? "rounded-2xl p-2" : ""}
+          titleClassName={
+            confirmation.action
+              ? `[&_h2]:font-bold ${confirmation.action === "restore" ? "text-[#4F46E5]" : "text-[#ed6c02]"}`
+              : ""
+          }
           locked={busy}
           onClose={() => setConfirmation(null)}
+          footerClassName={confirmation.action ? "p-4" : ""}
           footer={
-            <Button
-              variant="text"
-              className="px-2!"
-              disabled={busy}
-              onClick={() => setConfirmation(null)}
-            >
-              Cancel
-            </Button>
+            <>
+              <Button
+                variant={confirmation.action ? "secondary" : "text"}
+                className={
+                  confirmation.action ? "border-[#aaa]! text-[#777]" : "px-2!"
+                }
+                disabled={busy}
+                onClick={() => setConfirmation(null)}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant={
+                  confirmation.action === "restore" ? "primary" : "danger"
+                }
+                className={
+                  confirmation.action === "restore"
+                    ? "bg-[#4F46E5] hover:bg-[#4338ca]"
+                    : ""
+                }
+                disabled={busy}
+                onClick={() => void confirmAction()}
+              >
+                {busy && <ActionSpinner />}
+                {confirmation.action === "restore"
+                  ? "Restore Account"
+                  : confirmation.action === "archive"
+                    ? "Archive Account"
+                    : "Confirm"}
+              </Button>
+            </>
           }
         >
           <p className="text-sm text-slate-600">{confirmation.text}</p>
           <Notice tone="error">{error}</Notice>
-          <Button
-            variant="danger"
-            disabled={busy}
-            onClick={async () => {
-              if (confirmationSubmitting.current) return;
-              confirmationSubmitting.current = true;
-              setBusy(true);
-              setError("");
-              try {
-                await API.request({
-                  url: confirmation.path,
-                  method: confirmation.method,
-                  data: confirmation.data,
-                });
-                setConfirmation(null);
-                setMessage("Changes saved.");
-                await refresh();
-              } catch (err) {
-                setError(errorMessage(err));
-              } finally {
-                confirmationSubmitting.current = false;
-                setBusy(false);
-              }
-            }}
-          >
-            Confirm
-          </Button>
         </Modal>
       )}
     </>

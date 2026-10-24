@@ -1,5 +1,14 @@
 # AMES Model Accuracy Review and Retraining Recommendation
 
+Active-model restoration (2026-10-24): the previous 400-tree model is active again,
+with 88.89% mixed-holdout accuracy, 88.98% Macro F1 and 2/8 real holdout predictions
+correct. Its original model, metrics, evaluation report, comparison CSV and five plots
+were restored from the local baseline archive without retraining. The 8/8 experiment,
+its tuning code and reports are preserved under
+`backend/ml/artifacts/baseline_pre_missingness_weighting/tuned_8_of_8_20261024/`.
+The >90% target remains unmet; the current strict accuracy acceptance gate still fails.
+The review below describes the restored baseline and its limitations.
+
 Review date: 2026-10-19. This document summarizes the existing saved evaluation and the recommended next experiment. No model was retrained for this review.
 
 ## Recommendation

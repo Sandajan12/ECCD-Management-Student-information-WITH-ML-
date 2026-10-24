@@ -10,6 +10,7 @@ from backend.utils.access import authorize_student, current_teacher, get_active_
 from backend.utils.eccd_scorer import calculate_decimal_age, calculate_scores
 from backend.utils.eccd_dates import get_grading_date, get_official_testing_date
 from backend.utils.students import public_student
+from backend.utils.audit import person_name, record_audit, teacher_name
 
 PERIODS = (TestingPeriod.PRE, TestingPeriod.MID, TestingPeriod.POST)
 DOMAIN_CODES = {1: "GM", 2: "FM", 3: "SH", 4: "RL", 5: "EL", 6: "C", 7: "SE"}
@@ -54,6 +55,11 @@ def save_evaluation(db: Session, user: User, payload: EvaluationBatch) -> dict:
         record.teacher_evaluation_date = payload.assessment_date
         record.evaluation_date = payload.assessment_date
         # Keep parent_id and parent_submitted_at as historical provenance.
+    record_audit(db, user, "STUDENT_EVALUATION_SAVED",
+                 f'Saved {payload.testing_period.value} assessment for Student "{person_name(student)}".',
+                 studentId=student.student_id, studentName=person_name(student),
+                 teacherId=teacher.teacher_id if teacher else None, teacherName=teacher_name(teacher) if teacher else None,
+                 testingPeriod=payload.testing_period.value)
     db.commit()
     return {"message": "Assessment and evaluation date saved successfully!", "period": payload.testing_period, "evaluation_date": payload.assessment_date, "student_id": student.student_id}
 
@@ -93,6 +99,11 @@ def save_home_evaluation(db: Session, user: User, payload: ParentEvaluationBatch
         if record.teacher_evaluation_date is None:
             record.evaluation_date = compatibility_date
         # Parent observations never replace teacher_id or teacher_evaluation_date.
+    name = current_parent.fullname or user.email or user.username
+    record_audit(db, user, "PARENT_ASSESSMENT_SUBMITTED",
+                 f'Parent "{name}" submitted {payload.testing_period.value} home-based assessment for Student "{person_name(student)}".',
+                 parentId=current_parent.parent_id, parentName=name, studentId=student.student_id,
+                 studentName=person_name(student), testingPeriod=payload.testing_period.value)
     db.commit()
     return {"message": "Assessment saved successfully!", "testing_period": payload.testing_period}
 

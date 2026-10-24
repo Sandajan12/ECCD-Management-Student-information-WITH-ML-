@@ -207,3 +207,23 @@ prediction permission, a complete teacher-confirmed PRE assessment, and released
 PRE results. Individual checklist marks and family model inputs are excluded
 from the parent prediction response. Teacher prediction and sandbox routes retain
 their existing contracts.
+
+## Orphaned section ownership (011)
+
+Run the explicit cleanup against an existing database:
+
+```powershell
+uv run --no-project --python .venv312 python -m backend.migrations.section_ownership --apply
+uv run --no-project --python .venv312 python -m backend.migrations.section_ownership --check
+```
+
+Keeps at most one active Primary Adviser assignment per teacher. The teacher's
+displayed current class wins when backed by an active assignment; otherwise the
+latest assignment date and ID win. Section IDs alone do not establish recency.
+Older assignment rows become Inactive and section adviser pointers synchronize
+to the retained active assignments. Pointer-only orphans become NULL. The cleanup
+is transactional and repeatable, retaining assignment IDs/dates, all accounts,
+teacher permissions, students, evaluations, family links and section settings.
+No teacher is archived during cleanup. Startup does not apply this data migration.
+Future moves vacate old section pointers and deactivate old assignments in the
+same transaction as the new assignment, with concurrent moves serialized.

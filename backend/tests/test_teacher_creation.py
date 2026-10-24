@@ -4,7 +4,7 @@ import unittest
 from pydantic import ValidationError
 from sqlalchemy import inspect
 
-from backend.models import SectionTeacher, Teacher, User
+from backend.models import Section, SectionTeacher, Teacher, User
 from backend.schemas.auth import RegisterParentRequest, UpdatePasswordRequest
 from backend.schemas.teacher import TeacherProvisionRequest
 from backend.tests import test_phase2
@@ -33,13 +33,19 @@ class TeacherCreationSchemaTests(unittest.TestCase):
         self.assertEqual((teacher.first_name, teacher.last_name, teacher.employee_id, teacher.section_id),
                          ("Ana-María", "O'Neill", None, 1))
 
-    def test_names_required_without_digits_and_payload_types_stay_validated(self):
+    def test_first_name_required_optional_last_name_and_payload_types_stay_validated(self):
         for field in ("first_name", "last_name"):
-            for invalid in ("", " ", "Ana1", "Ana١", "Ana１", None, 123):
+            for invalid in ("Ana1", "Ana١", "Ana１", None, 123):
                 with self.subTest(field=field, invalid=invalid), self.assertRaises(ValidationError):
                     TeacherProvisionRequest.model_validate(payload(**{field: invalid}))
+        for invalid in ("", " "):
             with self.assertRaises(ValidationError):
-                TeacherProvisionRequest.model_validate({k: v for k, v in payload().items() if k != field})
+                TeacherProvisionRequest.model_validate(payload(first_name=invalid))
+        with self.assertRaises(ValidationError):
+            TeacherProvisionRequest.model_validate({k: v for k, v in payload().items() if k != "first_name"})
+        for optional in ({"last_name": ""}, {"last_name": " "}):
+            self.assertEqual(TeacherProvisionRequest.model_validate(payload(**optional)).last_name, "")
+        self.assertEqual(TeacherProvisionRequest.model_validate({k: v for k, v in payload().items() if k != "last_name"}).last_name, "")
         for changes in ({"section_id": True}, {"section_id": 0}, {"employee_id": 123},
                         {"employee_id": "x" * 51}, {"email": "invalid"}):
             with self.subTest(changes=changes), self.assertRaises(ValidationError):
@@ -94,7 +100,7 @@ class TeacherCreationApiTests(unittest.TestCase):
     def test_invalid_input_and_unauthorized_requests_do_not_create_accounts(self):
         with self.fixture.sessions() as db:
             before = db.query(User).count()
-        for changes in ({"first_name": "Ana1"}, {"last_name": "Cruz١"}, {"last_name": ""}, {"password": "short"}):
+        for changes in ({"first_name": "Ana1"}, {"last_name": "Cruz١"}, {"password": "short"}):
             response = self.fixture.call("POST", "/api/teachers/", json=payload(**changes))
             self.assertEqual(response.status_code, 422, response.text)
         self.assertEqual(self.fixture.call("POST", "/api/teachers/", 2, json=payload()).status_code, 403)
@@ -108,3 +114,60 @@ class TeacherCreationApiTests(unittest.TestCase):
         self.assertEqual(duplicate.status_code, 400, duplicate.text)
         with self.fixture.sessions() as db:
             self.assertIsNone(db.query(User).filter_by(email="duplicate@example.com").first())
+
+    def test_email_is_username_and_takeover_archive_restore_release_sections(self):
+        self.assertEqual(self.fixture.evaluate().status_code, 200)
+        created = self.fixture.call("POST", "/api/teachers/", json=payload(last_name="", username="ignored"))
+        self.assertEqual(created.status_code, 201, created.text)
+        incoming = created.json()
+        with self.fixture.sessions() as db:
+            self.assertEqual(db.get(User, incoming["user_id"]).username, "newteacher@example.com")
+            self.assertFalse(db.get(User, 2).is_active)
+            self.assertIsNone(db.get(Teacher, 1).class_name)
+            self.assertEqual(db.get(Section, 1).adviser_teacher_id, incoming["teacher_id"])
+        for path in ("/api/teachers/active", "/api/teachers/", "/api/chairman/teachers"):
+            rows = self.fixture.call("GET", path).json()
+            self.assertEqual(next(row for row in rows if row["teacher_id"] == incoming["teacher_id"])["class_name"], "Test A")
+            self.assertFalse(any(row["teacher_id"] == 1 for row in rows))
+            self.assertIsNone(next(row for row in rows if row["teacher_id"] == 3)["section_id"])
+        archived = self.fixture.call("GET", "/api/teachers/archived").json()
+        self.assertIsNone(next(row for row in archived if row["teacher_id"] == 1)["class_name"])
+        changed = self.fixture.call("PUT", f'/api/teachers/{incoming["user_id"]}', json={"email": "changed@example.com", "username": ""})
+        self.assertEqual(changed.status_code, 200, changed.text)
+        with self.fixture.sessions() as db:
+            self.assertEqual(db.get(User, incoming["user_id"]).username, "changed@example.com")
+        for action in ("archive", "unarchive"):
+            result = self.fixture.call("PUT", f'/api/teachers/{incoming["user_id"]}/{action}')
+            self.assertEqual(result.status_code, 200, result.text)
+        active = self.fixture.call("GET", "/api/teachers/active").json()
+        restored = next(row for row in active if row["teacher_id"] == incoming["teacher_id"])
+        self.assertIsNone(restored["section_id"])
+        self.assertIsNone(restored["class_name"])
+        with self.fixture.sessions() as db:
+            self.assertIsNone(db.get(Section, 1).adviser_teacher_id)
+
+    def test_failed_update_rolls_back_profile_and_section_handover(self):
+        result = self.fixture.call("PUT", "/api/teachers/3", json={"employee_id": "USED"})
+        self.assertEqual(result.status_code, 200, result.text)
+        result = self.fixture.call("PUT", "/api/teachers/4", json={"first_name": "Changed", "employee_id": "USED", "section_id": 1})
+        self.assertEqual(result.status_code, 400, result.text)
+        with self.fixture.sessions() as db:
+            self.assertEqual(db.get(Section, 1).adviser_teacher_id, 1)
+            self.assertTrue(db.get(User, 2).is_active)
+            self.assertEqual(db.get(Teacher, 3).first_name, "Test")
+            self.assertEqual(db.query(SectionTeacher).filter_by(section_id=1, status="Active").one().teacher_id, 1)
+
+    def test_directory_shows_new_assignment_instead_of_older_active_section(self):
+        for section_id in (2, 1, 2):
+            result = self.fixture.call("PUT", "/api/teachers/2", json={"section_id": section_id})
+            self.assertEqual(result.status_code, 200, result.text)
+            for path in ("/api/teachers/active", "/api/chairman/teachers"):
+                rows = self.fixture.call("GET", path).json()
+                row = next(row for row in rows if row["user_id"] == 2)
+                self.assertEqual(row["section_id"], section_id)
+        # A cached label alone cannot assign a teacher to a section.
+        with self.fixture.sessions() as db:
+            db.get(Teacher, 3).class_name = "Test A"
+            db.commit()
+        rows = self.fixture.call("GET", "/api/teachers/active").json()
+        self.assertIsNone(next(row for row in rows if row["teacher_id"] == 3)["class_name"])

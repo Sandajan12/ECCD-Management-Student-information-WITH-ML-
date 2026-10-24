@@ -177,8 +177,9 @@ class Batch2GuardTests(unittest.TestCase):
 
     def test_window_expiry_ipv6_and_safe_fixture_bypass(self):
         counter = RateLimits()
+        self.assertEqual((POLICIES["login"].window, POLICIES["login"].limit), (900, 15))
         with patch("backend.utils.rate_limits.time.time", return_value=100):
-            for _ in range(10):
+            for _ in range(15):
                 self.assertEqual(counter.hit("login", "test"), 0)
             self.assertEqual(counter.hit("login", "test"), 900)
         with patch("backend.utils.rate_limits.time.time", return_value=1000):
@@ -307,8 +308,8 @@ class Batch2DatabaseTests(unittest.TestCase):
         with patch.object(settings, "ENVIRONMENT", "production"), patch("backend.utils.rate_limits.engine", self.fixture.test_engine):
             with ThreadPoolExecutor(max_workers=8) as executor:
                 results = list(executor.map(lambda index: (first if index % 2 else second).hit("login", "shared-test-ip"), range(20)))
-            self.assertEqual(results.count(0), 10)
-            self.assertEqual(sum(value > 0 for value in results), 10)
+            self.assertEqual(results.count(0), 15)
+            self.assertEqual(sum(value > 0 for value in results), 5)
         with self.sessions() as db:
             row = db.execute(text("SELECT bucket_key,total_hits FROM api_rate_limits")).one()
             self.assertEqual(row.total_hits, 20)

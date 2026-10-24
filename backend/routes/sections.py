@@ -43,8 +43,12 @@ from backend.models.log import SystemLog
 @router.put("/{section_id}/assign", response_model=SectionResponse)
 def assign_teacher(section_id: int, payload: AssignTeacherSectionRequest, db: Session = Depends(get_db), current_user=Depends(verify_role(["super-admin"]))):
     from backend.utils.teachers import assign_teacher as assign
-    section = assign(db, current_user, section_id, payload.teacher_id)
-    db.commit()
+    try:
+        section = assign(db, current_user, section_id, payload.teacher_id)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
     return section
 
 

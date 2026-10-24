@@ -3,6 +3,11 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict
 
 
+class AuditDetails(BaseModel):
+    summary: str
+    metadata: dict[str, str | int | None]
+
+
 class SystemLogBase(BaseModel):
     action_type: str
     details: str | None = None

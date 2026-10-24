@@ -35,7 +35,7 @@ import EditIcon from "@mui/icons-material/Edit";
 import ArchiveIcon from "@mui/icons-material/Archive";
 import DeleteIcon from "@mui/icons-material/Delete";
 import RestoreIcon from "@mui/icons-material/Restore";
-import PhotoCameraOutlinedIcon from "@mui/icons-material/PhotoCameraOutlined";
+import PersonOutlinedIcon from "@mui/icons-material/PersonOutlined";
 import PeopleAltOutlinedIcon from "@mui/icons-material/PeopleAltOutlined";
 import api, { errorMessage, isNetworkError } from "../../services/api";
 import { useSettings } from "../../context/SettingsContext";
@@ -50,10 +50,8 @@ import {
 import type { Draft } from "../../utils/drafts";
 import { useDurableFile } from "../../utils/fileDrafts";
 import { calculateRosterAge } from "../../utils/dateUtils";
-import type { ImportResult, Student as PublicStudent } from "../../types";
-interface Student extends PublicStudent {
-  profile_picture_url?: string;
-}
+import type { ImportResult, Student, Teacher } from "../../types";
+type TeacherIdentity = Pick<Teacher, "user_id" | "first_name" | "last_name">;
 interface StudentFormValues {
   lrn_number: string;
   first_name: string;
@@ -198,6 +196,7 @@ const StudentManagement: React.FC = () => {
   const { settings } = useSettings();
   const { section } = useTeacher();
   const owner = user?.id || 0;
+  const [teacher, setTeacher] = useState<TeacherIdentity | null>(null);
   const teacherClass = section?.section_name || "";
   const [open, setOpen] = useState(false);
   const [archiveOpen, setArchiveOpen] = useState(false);
@@ -230,11 +229,60 @@ const StudentManagement: React.FC = () => {
   const formData = { ...createForm.values, section_name: teacherClass };
   const [editFormData, setEditFormData] =
     useState<StudentFormValues>(emptyForm);
-  const [profilePreview, setProfilePreview] = useState<string | null>(null);
-  const photoKey = (id: number) =>
-    "ames_draft_" + owner + "_teacher_student_photo_" + id;
   const editKey = (id: number) =>
     "ames_draft_" + owner + "_teacher_student_" + id;
+  const teacherDisplayName =
+    (teacher?.user_id === owner
+      ? [teacher.first_name, teacher.last_name].filter(Boolean).join(" ").trim()
+      : "") ||
+    [section?.first_name, section?.last_name]
+      .filter(Boolean)
+      .join(" ")
+      .trim() ||
+    user?.email ||
+    user?.username ||
+    "";
+  useEffect(() => {
+    let current = true;
+    const cacheKey = "ames_teacher_identity_" + owner;
+    try {
+      setTeacher(
+        JSON.parse(
+          localStorage.getItem(cacheKey) || "null",
+        ) as TeacherIdentity | null,
+      );
+    } catch {
+      setTeacher(null);
+    }
+    const load = async () => {
+      try {
+        const response = await api.get<Teacher[]>("/api/teachers/active");
+        if (!current) return;
+        const profile = response.data.find((item) => item.user_id === owner);
+        const identity: TeacherIdentity | null = profile
+          ? {
+              user_id: profile.user_id,
+              first_name: profile.first_name,
+              last_name: profile.last_name,
+            }
+          : null;
+        setTeacher(identity);
+        try {
+          localStorage.setItem(cacheKey, JSON.stringify(identity));
+        } catch {
+          /* The teacher name remains available when device storage is full. */
+        }
+      } catch {
+        /* Keep the cached identity available offline. */
+      }
+    };
+    void load();
+    window.addEventListener("online", load);
+    return () => {
+      current = false;
+      window.removeEventListener("online", load);
+    };
+  }, [owner]);
   const fetchActiveStudents = useCallback(async () => {
     try {
       const response = await api.get<Student[]>("/api/students/");
@@ -322,23 +370,6 @@ const StudentManagement: React.FC = () => {
     });
     setEditFormData(next);
   };
-  const handleProfileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    const id = editingLrn;
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      if (typeof reader.result !== "string") return;
-      storeDraft(photoKey(id), {
-        owner_id: owner,
-        values: { preview: reader.result },
-        revision: crypto.randomUUID(),
-        is_pending_sync: false,
-      });
-      if (editingId.current === id) setProfilePreview(reader.result);
-    };
-    reader.readAsDataURL(file);
-  };
   const handleSaveStudent = async () => {
     if (submissionLock.current) return;
     const validation = validateStudent(formData, true);
@@ -395,11 +426,6 @@ const StudentManagement: React.FC = () => {
     setEditFormData(
       readDraft<StudentFormValues>(editKey(id))?.values || emptyForm,
     );
-    setProfilePreview(
-      readDraft<{
-        preview: string;
-      }>(photoKey(id))?.values.preview || null,
-    );
     setEditOpen(true);
     setDetailLoading(true);
     try {
@@ -429,13 +455,6 @@ const StudentManagement: React.FC = () => {
       hydrated.date_of_birth = data.date_of_birth?.split("T")[0] || "";
       setEditFormData(
         readDraft<StudentFormValues>(editKey(id))?.values || hydrated,
-      );
-      setProfilePreview(
-        readDraft<{
-          preview: string;
-        }>(photoKey(id))?.values.preview ||
-          data.profile_picture_url ||
-          null,
       );
     } catch (err) {
       if (version === editVersion.current) setEditError(errorMessage(err));
@@ -786,7 +805,6 @@ const StudentManagement: React.FC = () => {
                           width: 40,
                           height: 40,
                         }}
-                        src={student.profile_picture_url || ""}
                       >
                         {getInitials(student.first_name, student.last_name)}
                       </Avatar>
@@ -1021,55 +1039,31 @@ const StudentManagement: React.FC = () => {
               gap: 3,
             }}
           >
-            {/* === LEFT CARD: Profile Data === */}
+            {/* === LEFT CARD: Personal Information === */}
             <Paper
               sx={{
                 flex: 1,
                 borderRadius: 4,
-                p: 4,
+                p: { xs: 2, sm: 4 },
+                minWidth: 0,
                 display: "flex",
                 flexDirection: "column",
                 alignItems: "center",
                 boxShadow: "0 4px 15px rgba(0,0,0,0.05)",
               }}
             >
-              <Box sx={{ position: "relative", mb: 2 }}>
-                <Avatar
-                  src={profilePreview || ""}
-                  sx={{
-                    width: 100,
-                    height: 100,
-                    boxShadow: "0 4px 10px rgba(0,0,0,0.1)",
-                    border: "4px solid white",
-                    bgcolor: "primary.light",
-                    fontSize: "2.5rem",
-                  }}
+              <Stack
+                direction="row"
+                sx={{ alignItems: "center", gap: 1, mb: 3, width: "100%" }}
+              >
+                <PersonOutlinedIcon color="action" />
+                <Typography
+                  variant="h6"
+                  sx={{ fontWeight: "800", color: "#333" }}
                 >
-                  {getInitials(editFormData.first_name, editFormData.last_name)}
-                </Avatar>
-                <IconButton
-                  color="primary"
-                  component="label"
-                  sx={{
-                    position: "absolute",
-                    bottom: -5,
-                    right: -5,
-                    bgcolor: "white",
-                    boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
-                    "&:hover": { bgcolor: "#f9f9f9" },
-                    width: 35,
-                    height: 35,
-                  }}
-                >
-                  <input
-                    hidden
-                    accept="image/*"
-                    type="file"
-                    onChange={handleProfileChange}
-                  />
-                  <PhotoCameraOutlinedIcon fontSize="small" />
-                </IconButton>
-              </Box>
+                  Personal Information
+                </Typography>
+              </Stack>
 
               <Grid container spacing={1.5} sx={{ mb: 3 }}>
                 <Grid size={{ xs: 12 }}>
@@ -1097,7 +1091,7 @@ const StudentManagement: React.FC = () => {
                     }}
                   />
                 </Grid>
-                <Grid size={{ xs: 6 }}>
+                <Grid size={{ xs: 12, sm: 6 }}>
                   <Typography
                     variant="caption"
                     color="textSecondary"
@@ -1122,7 +1116,7 @@ const StudentManagement: React.FC = () => {
                     }}
                   />
                 </Grid>
-                <Grid size={{ xs: 6 }}>
+                <Grid size={{ xs: 12, sm: 6 }}>
                   <Typography
                     variant="caption"
                     color="textSecondary"
@@ -1222,13 +1216,7 @@ const StudentManagement: React.FC = () => {
                 </Typography>
                 <TextField
                   fullWidth
-                  value={
-                    section
-                      ? [section.first_name, section.last_name]
-                          .filter(Boolean)
-                          .join(" ") || user?.username
-                      : user?.username
-                  }
+                  value={teacherDisplayName}
                   size="small"
                   disabled
                   sx={{
@@ -1241,7 +1229,7 @@ const StudentManagement: React.FC = () => {
               </Box>
 
               <Grid container spacing={2} sx={{ mb: 2, width: "100%" }}>
-                <Grid size={{ xs: 6 }}>
+                <Grid size={{ xs: 12, sm: 6 }}>
                   <Typography
                     variant="caption"
                     color="textSecondary"
@@ -1263,7 +1251,7 @@ const StudentManagement: React.FC = () => {
                     <MenuItem value="Female">Female</MenuItem>
                   </Select>
                 </Grid>
-                <Grid size={{ xs: 6 }}>
+                <Grid size={{ xs: 12, sm: 6 }}>
                   <Typography
                     variant="caption"
                     color="textSecondary"
@@ -1340,7 +1328,8 @@ const StudentManagement: React.FC = () => {
               sx={{
                 flex: 1.8,
                 borderRadius: 4,
-                p: 4,
+                p: { xs: 2, sm: 4 },
+                minWidth: 0,
                 boxShadow: "0 4px 15px rgba(0,0,0,0.05)",
                 display: "flex",
                 flexDirection: "column",
@@ -1383,7 +1372,7 @@ const StudentManagement: React.FC = () => {
                     }}
                   />
                 </Grid>
-                <Grid size={{ xs: 6 }}>
+                <Grid size={{ xs: 12, sm: 6 }}>
                   <Typography
                     variant="caption"
                     color="textSecondary"
@@ -1405,7 +1394,7 @@ const StudentManagement: React.FC = () => {
                     <MenuItem value="Left">Left</MenuItem>
                   </Select>
                 </Grid>
-                <Grid size={{ xs: 6 }}>
+                <Grid size={{ xs: 12, sm: 6 }}>
                   <Typography
                     variant="caption"
                     color="textSecondary"
@@ -1444,7 +1433,7 @@ const StudentManagement: React.FC = () => {
                 }}
               >
                 <Grid container spacing={2}>
-                  <Grid size={{ xs: 6 }}>
+                  <Grid size={{ xs: 12, sm: 6 }}>
                     <Typography
                       variant="caption"
                       color="textSecondary"
@@ -1468,7 +1457,7 @@ const StudentManagement: React.FC = () => {
                       }}
                     />
                   </Grid>
-                  <Grid size={{ xs: 6 }}>
+                  <Grid size={{ xs: 12, sm: 6 }}>
                     <Typography
                       variant="caption"
                       color="textSecondary"
@@ -1492,7 +1481,7 @@ const StudentManagement: React.FC = () => {
                       }}
                     />
                   </Grid>
-                  <Grid size={{ xs: 6 }}>
+                  <Grid size={{ xs: 12, sm: 6 }}>
                     <Typography
                       variant="caption"
                       color="textSecondary"
@@ -1516,7 +1505,7 @@ const StudentManagement: React.FC = () => {
                       }}
                     />
                   </Grid>
-                  <Grid size={{ xs: 6 }}>
+                  <Grid size={{ xs: 12, sm: 6 }}>
                     <Typography
                       variant="caption"
                       color="textSecondary"
@@ -1552,7 +1541,7 @@ const StudentManagement: React.FC = () => {
                 }}
               >
                 <Grid container spacing={2}>
-                  <Grid size={{ xs: 6 }}>
+                  <Grid size={{ xs: 12, sm: 6 }}>
                     <Typography
                       variant="caption"
                       color="textSecondary"
@@ -1576,7 +1565,7 @@ const StudentManagement: React.FC = () => {
                       }}
                     />
                   </Grid>
-                  <Grid size={{ xs: 6 }}>
+                  <Grid size={{ xs: 12, sm: 6 }}>
                     <Typography
                       variant="caption"
                       color="textSecondary"
@@ -1600,7 +1589,7 @@ const StudentManagement: React.FC = () => {
                       }}
                     />
                   </Grid>
-                  <Grid size={{ xs: 6 }}>
+                  <Grid size={{ xs: 12, sm: 6 }}>
                     <Typography
                       variant="caption"
                       color="textSecondary"
@@ -1624,7 +1613,7 @@ const StudentManagement: React.FC = () => {
                       }}
                     />
                   </Grid>
-                  <Grid size={{ xs: 6 }}>
+                  <Grid size={{ xs: 12, sm: 6 }}>
                     <Typography
                       variant="caption"
                       color="textSecondary"
@@ -1689,7 +1678,7 @@ const StudentManagement: React.FC = () => {
               </Box>
 
               <Grid container spacing={2} sx={{ mb: 4 }}>
-                <Grid size={{ xs: 6 }}>
+                <Grid size={{ xs: 12, sm: 6 }}>
                   <Typography
                     variant="caption"
                     color="textSecondary"
@@ -1714,7 +1703,7 @@ const StudentManagement: React.FC = () => {
                     }}
                   />
                 </Grid>
-                <Grid size={{ xs: 6 }}>
+                <Grid size={{ xs: 12, sm: 6 }}>
                   <Typography
                     variant="caption"
                     color="textSecondary"
@@ -1750,7 +1739,10 @@ const StudentManagement: React.FC = () => {
               >
                 <Box sx={{ display: "flex", gap: 2 }}></Box>
 
-                <Box sx={{ display: "flex", gap: 2 }}>
+                <Stack
+                  direction={{ xs: "column", sm: "row" }}
+                  sx={{ gap: 2, width: { xs: "100%", sm: "auto" } }}
+                >
                   <Button
                     onClick={() => setEditOpen(false)}
                     sx={{
@@ -1776,7 +1768,7 @@ const StudentManagement: React.FC = () => {
                   >
                     Save Changes
                   </Button>
-                </Box>
+                </Stack>
               </Box>
             </Paper>
           </Box>
@@ -1990,6 +1982,28 @@ const StudentManagement: React.FC = () => {
                 variant="outlined"
                 size="small"
                 sx={{ mt: 1 }}
+              />
+            </Box>
+            <Box sx={{ gridColumn: { xs: "span 1", sm: "span 2" } }}>
+              <Typography
+                variant="caption"
+                color="textSecondary"
+                sx={{ fontWeight: "bold" }}
+              >
+                Teacher
+              </Typography>
+              <TextField
+                fullWidth
+                value={teacherDisplayName}
+                size="small"
+                disabled
+                sx={{
+                  mt: 1,
+                  "& .MuiOutlinedInput-root": {
+                    borderRadius: 2,
+                    bgcolor: "#f4f5f7",
+                  },
+                }}
               />
             </Box>
           </Box>

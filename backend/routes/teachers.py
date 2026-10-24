@@ -34,12 +34,14 @@ def get_parent_assessment_access(section_id: PositiveId | None = None, db: Sessi
 
 @student_router.put("/settings/parent-assessment-access", response_model=SectionAssessmentAccess)
 def update_parent_assessment_access(payload: ParentAssessmentAccess, section_id: PositiveId | None = None, db: Session = Depends(get_db), current_user: User = Depends(verify_role(["admin"]))):
-    from backend.models import SystemLog
     section = teacher_access_section(db, current_user, section_id)
     for key, value in payload.model_dump().items():
         setattr(section, key, value)
     result = {"section_id": section.section_id, **window_values(section)}
-    db.add(SystemLog(user_id=current_user.user_id, action_type="PARENT_ASSESSMENT_ACCESS", details=f"Section {section.section_id} parent assessment windows: {payload.model_dump()}"))
+    from backend.utils.audit import record_audit
+    record_audit(db, current_user, "PARENT_ASSESSMENT_ACCESS",
+                 f'Updated parent assessment windows for Section "{section.section_name}": {payload.model_dump()}',
+                 sectionId=section.section_id, sectionName=section.section_name)
     db.commit()
     return result
 
@@ -55,7 +57,7 @@ def teacher_students(db: Session = Depends(get_db), current_user: User = Depends
 
 def change_parent_link(db: Session, user: User, student_id: int, payload: ParentLinkActionRequest | None, action: str) -> dict:
     from datetime import datetime, timezone
-    from backend.models import FamilyAccess, Parent, Student, SystemLog
+    from backend.models import FamilyAccess, Parent, Student
     from backend.utils.access import authorize_student
     from backend.utils.parent_links import selected_link
     student = db.query(Student).filter_by(student_id=student_id).with_for_update().first()
@@ -78,7 +80,9 @@ def change_parent_link(db: Session, user: User, student_id: int, payload: Parent
         event, preposition, message = ("Unlinked Parent", "from", "Parent account successfully unlinked.") if action == "unlink" else ("Rejected Parent Link", "for", "Parent link request declined.")
     parent_name = parent.fullname or account.username
     student_name = " ".join(value for value in (student.first_name, student.middle_name, student.last_name) if value)
-    db.add(SystemLog(user_id=user.user_id, action_type=event, details=f"{event}: {parent_name} {preposition} student {student_name}"))
+    from backend.utils.audit import record_audit
+    record_audit(db, user, event, f'{event}: Parent "{parent_name}" {preposition} Student "{student_name}".',
+                 parentId=parent.parent_id, parentName=parent_name, studentId=student.student_id, studentName=student_name)
     try:
         db.commit()
     except Exception:
@@ -127,27 +131,31 @@ def get_teachers(
     db: Session = Depends(get_db),
     current_user: User = Depends(verify_role(["super-admin", "chairman", "admin", "teacher"])),
 ):
+    # Prefer the just-assigned class when a teacher advises several sections,
+    # but only if it still has an active assignment. Never expose stale labels.
+    displayed_assignment = (
+        db.query(SectionTeacher.id)
+        .join(Section, Section.section_id == SectionTeacher.section_id)
+        .filter(SectionTeacher.teacher_id == Teacher.teacher_id,
+                SectionTeacher.status == "Active", SectionTeacher.role == "Primary Adviser")
+        .order_by((Section.section_name == Teacher.class_name).desc().nullslast(), SectionTeacher.id.desc())
+        .limit(1)
+        .correlate(Teacher)
+        .scalar_subquery()
+    )
     query = (
-        db.query(Teacher, User)
+        db.query(Teacher, User, SectionTeacher, Section)
         .join(User, Teacher.user_id == User.user_id)
+        .outerjoin(SectionTeacher, SectionTeacher.id == displayed_assignment)
+        .outerjoin(Section, Section.section_id == SectionTeacher.section_id)
         .filter(User.is_active == active)
+        .order_by(Teacher.teacher_id)
     )
     results = []
-    for teacher, user in query.all():
-        active_assignment = (
-            db.query(SectionTeacher, Section)
-            .join(Section, SectionTeacher.section_id == Section.section_id)
-            .filter(
-                SectionTeacher.teacher_id == teacher.teacher_id,
-                SectionTeacher.status == "Active",
-                SectionTeacher.role == "Primary Adviser",
-            )
-            .order_by(SectionTeacher.id)
-            .first()
-        )
-        sec_name = active_assignment[1].section_name if active_assignment else teacher.class_name
-        sec_id = active_assignment[1].section_id if active_assignment else None
-        sec_role = active_assignment[0].role if active_assignment else None
+    for teacher, user, assignment, section in query.all():
+        sec_name = section.section_name if section else None
+        sec_id = section.section_id if section else None
+        sec_role = assignment.role if assignment else None
 
         results.append(
             {
@@ -261,16 +269,28 @@ def download_all_assessments(db: Session = Depends(get_db), current_user=Depends
 @router.put("/{user_id}", response_model=MessageResult)
 @router.put("/update/{user_id}", response_model=MessageResult)
 def update_teacher(user_id: int, payload: TeacherUpdate, db: Session = Depends(get_db), current_user: User = Depends(verify_role(["super-admin"]))):
+    try:
+        return _update_teacher(user_id, payload, db, current_user)
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(400, "Email or employee ID is already in use.") from None
+    except Exception:
+        db.rollback()
+        raise
+
+
+def _update_teacher(user_id: int, payload: TeacherUpdate, db: Session, current_user: User):
     from backend.utils.teachers import assign_teacher
     teacher = db.query(Teacher).filter_by(user_id=user_id).first()
     if teacher is None:
         raise HTTPException(404, "Teacher not found.")
     data = payload.model_dump(exclude_unset=True)
+    data["username"] = str(data.get("email") or teacher.user.email)
     for key in ("username", "email"):
         if key in data and data[key] is not None:
             duplicate = db.query(User).filter(getattr(User, key) == data[key], User.user_id != user_id).first()
             if duplicate:
-                raise HTTPException(400, "Username or email is already in use.")
+                raise HTTPException(400, "Email is already in use.")
             if getattr(teacher.user, key) != data[key]:
                 from backend.utils.authentication import revoke_credentials
                 revoke_credentials(db, teacher.user)
@@ -294,11 +314,7 @@ def update_teacher(user_id: int, payload: TeacherUpdate, db: Session = Depends(g
         for section in db.query(Section).filter_by(adviser_teacher_id=teacher.teacher_id):
             section.adviser_teacher_id = None
         teacher.class_name = None
-    try:
-        db.commit()
-    except IntegrityError:
-        db.rollback()
-        raise HTTPException(400, "Username, email or employee ID is already in use.") from None
+    db.commit()
     return {"message": "Teacher successfully updated."}
 
 
@@ -316,6 +332,10 @@ def archive_teacher(user_id: int, db: Session = Depends(get_db), current_user=De
         teacher.class_name = None
     from backend.utils.authentication import revoke_credentials
     revoke_credentials(db, user)
+    from backend.utils.audit import record_audit, teacher_name
+    name = teacher_name(teacher) if teacher else user.email or user.username
+    record_audit(db, current_user, "TEACHER_ARCHIVED", f'Archived Teacher account for "{name}"; released active section assignments.',
+                 teacherId=teacher.teacher_id if teacher else None, teacherName=name)
     db.commit()
     return {"message": "Teacher archived."}
 
@@ -329,6 +349,11 @@ def unarchive_teacher(user_id: int, db: Session = Depends(get_db), current_user=
     user.is_active = True
     from backend.utils.authentication import revoke_credentials
     revoke_credentials(db, user)
+    from backend.utils.audit import record_audit, teacher_name
+    teacher = db.query(Teacher).filter_by(user_id=user_id).first()
+    name = teacher_name(teacher) if teacher else user.email or user.username
+    record_audit(db, current_user, "TEACHER_RESTORED", f'Restored Teacher account for "{name}"; section assignment requires manual selection.',
+                 teacherId=teacher.teacher_id if teacher else None, teacherName=name)
     db.commit()
     return {"message": "Teacher unarchived."}
 

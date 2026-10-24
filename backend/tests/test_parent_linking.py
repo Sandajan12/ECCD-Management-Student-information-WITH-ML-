@@ -8,6 +8,7 @@ from sqlalchemy import text
 
 from backend.migrations.parent_linking import apply_parent_linking, check_parent_linking
 from backend.models import FamilyAccess, Parent, SectionTeacher, Student, StudentEccdEvaluation, SystemLog
+from backend.utils.audit import read_details
 from backend.tests import test_phase2
 from backend.utils.backups import export_backup, restore_backup
 from backend.routes.teachers import change_parent_link
@@ -82,7 +83,10 @@ class ParentLinkingTests(unittest.TestCase):
             self.assertEqual(list(db.execute(StudentEccdEvaluation.__table__.select())), before)
             self.assertEqual(db.query(FamilyAccess).filter_by(student_id=1).count(), 1)
             event = db.query(SystemLog).filter_by(action_type="Unlinked Parent").one()
-            self.assertEqual(event.details, "Unlinked Parent: Test Parent from student Test Middle Student")
+            summary, metadata = read_details(event.details)
+            self.assertEqual(summary, 'Unlinked Parent: Parent "Test Parent" from Student "Test Middle Student".')
+            self.assertEqual(metadata["parentId"], 1)
+            self.assertEqual(metadata["studentName"], "Test Middle Student")
             self.assertEqual(event.user_id, 2)
 
     def assert_parent_denied(self, parent, student):
@@ -123,7 +127,9 @@ class ParentLinkingTests(unittest.TestCase):
             link = db.query(FamilyAccess).filter_by(student_id=3).one()
             self.assertEqual(link.status, "SYNCED")
             self.assertGreaterEqual(link.date_linked, link.requested_at)
-            self.assertEqual(db.query(SystemLog).filter_by(action_type="Approved Parent Link").one().details, "Approved Parent Link: Stranger for student Other Class")
+            summary, metadata = read_details(db.query(SystemLog).filter_by(action_type="Approved Parent Link").one().details)
+            self.assertEqual(summary, 'Approved Parent Link: Parent "Stranger" for Student "Other Class".')
+            self.assertEqual(metadata["parentName"], "Stranger")
 
     def test_rejection_clears_request_and_relink_requires_new_approval(self):
         self.assertEqual(self.request_link().status_code, 200)
@@ -132,7 +138,9 @@ class ParentLinkingTests(unittest.TestCase):
         self.assert_parent_denied(6, 3)
         with self.sessions() as db:
             self.assertEqual(db.query(FamilyAccess).filter_by(student_id=3).count(), 0)
-            self.assertEqual(db.query(SystemLog).filter_by(action_type="Rejected Parent Link").one().details, "Rejected Parent Link: Stranger for student Other Class")
+            summary, metadata = read_details(db.query(SystemLog).filter_by(action_type="Rejected Parent Link").one().details)
+            self.assertEqual(summary, 'Rejected Parent Link: Parent "Stranger" for Student "Other Class".')
+            self.assertEqual(metadata["studentName"], "Other Class")
         self.assertEqual(self.request_link().status_code, 200)
         self.assert_parent_denied(6, 3)
 

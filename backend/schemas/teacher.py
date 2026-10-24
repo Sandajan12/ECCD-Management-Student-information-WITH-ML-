@@ -45,8 +45,9 @@ class TeacherUpdate(ApiModel):
     employee_id: str | None = Field(default=None, max_length=50, validation_alias=AliasChoices("employee_id", "employeeId"))
     class_name: str | None = Field(default=None, max_length=100)
     section_id: PositiveId | None = Field(default=None, validation_alias=AliasChoices("section_id", "sectionId"))
-    username: str | None = Field(default=None, min_length=1, max_length=50)
-    email: LoginEmail | None = None
+    # Retain the compatibility field, but always derive it from email on save.
+    username: str | None = None
+    email: LoginEmail | None = Field(default=None, max_length=50)
 
     @field_validator("class_name", "username", "email", mode="before")
     @classmethod
@@ -99,11 +100,12 @@ class AssignTeacherSectionRequest(BaseModel):
 
 
 class TeacherProvisionRequest(TeacherUpdate):
-    email: EmailStr = Field(max_length=100)
+    # users.username remains VARCHAR(50); the email is also the username.
+    email: EmailStr = Field(max_length=50)
     password: TemporaryPassword = Field(validation_alias=AliasChoices("initial_password", "password"))
-    username: str | None = Field(default=None, max_length=50)
+    username: str | None = None
     first_name: Name = Field(min_length=1, validation_alias=AliasChoices("first_name", "firstName", "fullName"))
-    last_name: Name = Field(min_length=1, validation_alias=AliasChoices("last_name", "lastName"))
+    last_name: Name = Field(default="", validation_alias=AliasChoices("last_name", "lastName"))
     employee_id: str | None = Field(default=None, max_length=50, validation_alias=AliasChoices("employee_id", "employeeId"))
     section_id: PositiveId | None = Field(default=None, validation_alias=AliasChoices("section_id", "sectionId"))
     class_name: str | None = Field(default=None, max_length=100)
@@ -112,9 +114,7 @@ class TeacherProvisionRequest(TeacherUpdate):
     def derive_username(self) -> "TeacherProvisionRequest":
         if self.section_id is None and not self.class_name:
             raise ValueError("A section or class is required")
-        self.username = self.username or str(self.email)
-        if len(self.username) > 50:
-            raise ValueError("Teacher username must not exceed 50 characters; email-derived usernames use this limit")
+        self.username = str(self.email)
         return self
 
 

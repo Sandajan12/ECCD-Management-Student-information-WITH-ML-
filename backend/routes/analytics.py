@@ -4,6 +4,7 @@ import math
 from backend.config.database import get_db
 from backend.models.eccd import EccdDomain, EccdQuestion, StudentEccdEvaluation, TestingPeriod
 from backend.models.message import Message
+from backend.models.parent import Parent
 from backend.models.section import Section
 from backend.models.section_teacher import SectionTeacher
 from backend.models.student import Student
@@ -396,15 +397,27 @@ def get_system_logs(
     db: Session = Depends(get_db),
     current_user=Depends(verify_role(["super-admin", "chairman"])),
 ):
-    logs = db.query(SystemLog, User.username, Teacher.first_name, Teacher.last_name).outerjoin(User, SystemLog.user_id == User.user_id).outerjoin(Teacher, Teacher.user_id == User.user_id).order_by(SystemLog.timestamp.desc(), SystemLog.log_id.desc()).all()
+    from backend.utils.audit import read_details
+    logs = (db.query(SystemLog, User.username, User.email, User.role, Teacher.first_name, Teacher.last_name, Parent.fullname)
+            .outerjoin(User, SystemLog.user_id == User.user_id)
+            .outerjoin(Teacher, Teacher.user_id == User.user_id)
+            .outerjoin(Parent, Parent.user_id == User.user_id)
+            .filter(SystemLog.action_type.notin_(("ROLLOVER_SNAPSHOT", "ROLLOVER_RECORDS")))
+            .order_by(SystemLog.timestamp.desc(), SystemLog.log_id.desc()).all())
     results = []
-    for log, username, first_name, last_name in logs:
+    for log, username, email, role, first_name, last_name, parent_name in logs:
+        name = " ".join(name for name in (first_name, last_name) if name) or parent_name or username or email or "System"
+        details, metadata = read_details(log.details)
         results.append({
             "id": log.log_id,
             "action": log.action_type,
             "performed_by": username or "System",
-            "teacher_name": " ".join(name for name in (first_name, last_name) if name) or username or "Unknown User",
-            "details": log.details,
+            "teacher_name": name,
+            "actor_name": name,
+            "actor_email": email,
+            "role": {"super-admin": "Super Admin", "admin": "Teacher", "user": "Parent"}.get(role, "System"),
+            "details": details,
+            "metadata": metadata,
             "timestamp": log.timestamp.isoformat() if log.timestamp else None
         })
     return results

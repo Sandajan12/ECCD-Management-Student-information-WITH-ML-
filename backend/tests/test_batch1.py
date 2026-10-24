@@ -60,13 +60,15 @@ class Batch1ValidationTests(unittest.TestCase):
     def test_teacher_required_fields_aliases_and_normalization(self):
         payload = {"email": " teacher@example.com ", "password": test_phase2.PASSWORD, "firstName": " Ada ", "lastName": " Cruz ", "employeeId": " EMP-1 ", "sectionId": 1, "username": " teacher "}
         teacher = TeacherProvisionRequest.model_validate(payload)
-        self.assertEqual((teacher.first_name, teacher.last_name, teacher.employee_id, teacher.username), ("Ada", "Cruz", "EMP-1", "teacher"))
-        for key in ("email", "firstName", "lastName", "sectionId"):
+        self.assertEqual((teacher.first_name, teacher.last_name, teacher.employee_id, teacher.username), ("Ada", "Cruz", "EMP-1", "teacher@example.com"))
+        for key in ("email", "firstName", "sectionId"):
             with self.subTest(key=key), self.assertRaises(ValidationError):
                 TeacherProvisionRequest.model_validate({field: value for field, value in payload.items() if field != key})
-        for key in ("firstName", "lastName"):
-            with self.assertRaises(ValidationError):
-                TeacherProvisionRequest.model_validate({**payload, key: " "})
+        with self.assertRaises(ValidationError):
+            TeacherProvisionRequest.model_validate({**payload, "firstName": " "})
+        for optional in ({key: value for key, value in payload.items() if key != "lastName"},
+                         {**payload, "lastName": " "}):
+            self.assertEqual(TeacherProvisionRequest.model_validate(optional).last_name, "")
         with self.assertRaises(ValidationError):
             TeacherProvisionRequest.model_validate({**payload, "password": "weak"})
         self.assertEqual(TeacherUpdate(fullName=" Ada ", lastName="Cruz", employeeId=" E ", sectionId=2).first_name, "Ada")
@@ -203,9 +205,9 @@ class Batch1BackendTests(unittest.TestCase):
         self.assertEqual(result.status_code, 201, result.text)
         self.assertEqual(set(result.json()), {"message", "section_id", "section_name", "adviser_teacher_id", "created_at"})
 
-    def test_teacher_provisioning_requires_names_and_assigns_long_class(self):
+    def test_teacher_provisioning_requires_first_name_and_assigns_long_class(self):
         payload = {"email": " newteacher@example.com ", "initial_password": test_phase2.PASSWORD, "fullName": " Ada ", "lastName": " Cruz ", "employeeId": " EMP-1 ", "class_name": "Section " + "A" * 92}
-        for field in ("email", "fullName", "lastName", "class_name"):
+        for field in ("email", "fullName", "class_name"):
             rejected = self.call("POST", "/api/chairman/teachers", json={key: value for key, value in payload.items() if key != field})
             self.assertEqual(rejected.status_code, 422, rejected.text)
         with self.fixture.test_engine.begin() as connection:
@@ -270,7 +272,17 @@ class Batch1BackendTests(unittest.TestCase):
             db.get(Teacher, 1).allow_parent_view_eccd_pre = True
             db.commit()
         parent = self.call("GET", "/api/eccd/parent/domains-progress/1", 5).json()
+        self.assertEqual(next(row for row in parent if row["domain_id"] == 8)["pre_progress"], 0)
+        with self.sessions() as db:
+            db.get(Teacher, 1).allow_parent_view_eccd_marks = True
+            db.commit()
+        parent = self.call("GET", "/api/eccd/parent/domains-progress/1", 5).json()
         self.assertEqual(next(row for row in parent if row["domain_id"] == 8)["pre_progress"], 13)
+        with self.sessions() as db:
+            db.get(Teacher, 1).allow_parent_view_eccd_pre = False
+            db.commit()
+        parent = self.call("GET", "/api/eccd/parent/domains-progress/1", 5).json()
+        self.assertIsNone(next(row for row in parent if row["domain_id"] == 8)["pre_progress"])
 
     def test_super_admin_role_declarations_preserve_profile_ownership(self):
         self.assertEqual(self.call("GET", "/api/eccd/students").json(), [])
@@ -300,7 +312,8 @@ class Batch1BackendTests(unittest.TestCase):
             self.assertEqual([log.action_type for log in logs], ["Updated Student Info", "Updated Student Info", "Archived Student", "Student Restored", "Deleted Student"])
             self.assertIn("First Name: 'Test' -> 'Changed'", logs[0].details)
             self.assertIn("Guardian's Name: '' -> 'New Guardian'", logs[0].details)
-            self.assertIn("User ID: 2", logs[0].details)
+            self.assertIn("Test Adviser", logs[0].details)
+            self.assertNotIn("User ID:", logs[0].details)
             self.assertIn("no data was changed", logs[1].details)
             self.assertTrue(all(test_phase2.LRN not in log.details for log in logs))
 

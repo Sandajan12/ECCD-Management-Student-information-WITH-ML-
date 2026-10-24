@@ -100,6 +100,10 @@ class AuditLogItem(ApiModel):
     action: str
     performed_by: str
     teacher_name: str
+    actor_name: str
+    actor_email: str | None = None
+    role: str
+    metadata: dict[str, str | int | None] | None = None
     details: str | None = None
     timestamp: datetime | None = None
 

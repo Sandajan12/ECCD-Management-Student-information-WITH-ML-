@@ -87,7 +87,9 @@ def create_student(payload: EnrollmentRequest, db: Session = Depends(get_db), us
     db.add(student)
     try:
         db.flush()
-        db.add(SystemLog(user_id=user.user_id, action_type="Added New Student", details=f"Added {student.first_name} {student.last_name} (LRN: {student.masked_lrn})."))
+        from backend.utils.audit import person_name, record_audit
+        record_audit(db, user, "Added New Student", f'Added Student "{person_name(student)}" (LRN: {student.masked_lrn}).',
+                     studentId=student.student_id, studentName=person_name(student))
         db.commit()
     except IntegrityError:
         db.rollback()
@@ -145,7 +147,8 @@ def archive(identifier: str, db: Session = Depends(get_db), user: User = Depends
     student = resolve_student(db, identifier)
     authorize_student(db, user, student)
     student.is_active = False
-    db.add(SystemLog(user_id=user.user_id, action_type="Archived Student", details=f"Archived student ID {student.student_id} (LRN: {student.masked_lrn})."))
+    from backend.utils.audit import person_name, record_audit
+    record_audit(db, user, "Archived Student", f'Archived Student "{person_name(student)}".', studentId=student.student_id, studentName=person_name(student))
     db.commit()
     return {"message": "Student successfully archived!"}
 
@@ -156,7 +159,8 @@ def unarchive(identifier: str, db: Session = Depends(get_db), user: User = Depen
     student = resolve_student(db, identifier)
     authorize_student(db, user, student)
     student.is_active = True
-    db.add(SystemLog(user_id=user.user_id, action_type="Student Restored", details=f"Restored student ID {student.student_id} (LRN: {student.masked_lrn})."))
+    from backend.utils.audit import person_name, record_audit
+    record_audit(db, user, "Student Restored", f'Restored Student "{person_name(student)}".', studentId=student.student_id, studentName=person_name(student))
     db.commit()
     return {"message": "Student successfully unarchived!"}
 
@@ -166,7 +170,8 @@ def unarchive(identifier: str, db: Session = Depends(get_db), user: User = Depen
 def delete(identifier: str, db: Session = Depends(get_db), user: User = Depends(verify_role(["admin", "super-admin"]))):
     student = resolve_student(db, identifier)
     authorize_student(db, user, student)
-    db.add(SystemLog(user_id=user.user_id, action_type="Deleted Student", details=f"Permanently deleted student ID {student.student_id} (LRN: {student.masked_lrn})."))
+    from backend.utils.audit import person_name, record_audit
+    record_audit(db, user, "Deleted Student", f'Permanently deleted Student "{person_name(student)}".', studentId=student.student_id, studentName=person_name(student))
     db.delete(student)
     db.commit()
     return {"message": "Student account permanently deleted."}
@@ -211,10 +216,11 @@ def update(identifier: str, payload: StudentUpdate, db: Session = Depends(get_db
         changes = [f"{field}: '{before[field]}' -> '{value}'" for field, value in after.items() if before[field] != value]
         if old_lrn_hash != student.lrn_search_hash and before["LRN"] == after["LRN"]:
             changes.append("LRN: corrected protected identifier (last four digits unchanged).")
-        actor = f"{user.role.value} {user.username} (User ID: {user.user_id})"
-        target = f"student ID {student.student_id} ({student.masked_lrn})"
+        from backend.utils.audit import actor_name, person_name, record_audit
+        actor = f'"{actor_name(db, user)}"'
+        target = f'Student "{person_name(student)}"'
         details = f"{actor} updated records for {target}.\nSpecific changes:\n- " + "\n- ".join(changes) if changes else f"{actor} saved {target} but no data was changed."
-        db.add(SystemLog(user_id=user.user_id, action_type="Updated Student Info", details=details))
+        record_audit(db, user, "Updated Student Info", details, studentId=student.student_id, studentName=person_name(student))
         db.commit()
     except IntegrityError:
         db.rollback()

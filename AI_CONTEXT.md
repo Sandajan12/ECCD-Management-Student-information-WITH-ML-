@@ -1,6 +1,6 @@
 # AMES System: Current Codebase Context
 
-Updated: **2026-10-20**. This document describes the active working tree in
+Updated: **2026-10-24**. This document describes the active working tree in
 `backend/` and `frontend/`, including existing uncommitted changes. Local
 configuration observations are a snapshot, not deployment defaults or a claim
 that every workflow has passed testing. Update this context when code changes.
@@ -46,7 +46,7 @@ and instructional planning; official ECCD scores remain deterministic (section 1
 | Workspace | `pnpm-workspace.yaml` includes only frontend, retains separate lockfiles, disables automatic dependency verification before script execution |
 | Spreadsheets | openpyxl handles active workbook import/export; pandas is installed |
 | ML | V1 fitted scikit-learn Random Forest pipeline, joblib artifact, 18 PRE/demographic inputs, three supported POST outcomes; shared teacher/parent inference |
-| Migrations | Explicit Python migrations 001–010, including Phase 1/2 and subsequent feature upgrades; no active Alembic setup, pyproject.toml, or uv.lock |
+| Migrations | Explicit Python migrations 001–011, including Phase 1/2 and subsequent feature upgrades; no active Alembic setup, pyproject.toml, or uv.lock |
 
 Observed on this Windows checkout:
 
@@ -183,6 +183,73 @@ Old workspace/shim page directories are absent.
 
 ### Current teacher and parent presentation
 
+- Teacher `StudentManagement.tsx` resolves the signed-in teacher's First Last
+  display name from `/api/teachers/active` by `user_id`, with an owner-scoped
+  identity cache for offline reloads and email/username fallbacks. Add and Edit
+  Student show this name in a disabled Teacher field. The Edit Student photo
+  uploader and local photo-preview state are removed; Personal Information and
+  Family Background & Details use matching headers. Paired inputs and actions
+  stack on small screens, with responsive card padding. Student saves remain JSON,
+  enrollment retains `section_id`, and form drafts retain existing durability.
+  Verified 2026-10-24: app/root TypeScript, focused ESLint/Prettier, and six
+  real-API browser checks at 320/768/1280px pass, including HTTP 201 enrollment,
+  HTTP 200 edits, header alignment, no modal overflow, failed-save draft recovery
+  and cached-name reloads. Browser verification files are local under
+  `frontend/test-results/student-modal-verification*`; APIs use disposable schemas.
+- Chairman `SystemAuditLog.tsx` shows Timestamp, Actor, Action, Summary and Details,
+  with friendly action badges, inline actor name/role pills and muted emails,
+  wider two-line summaries and secondary View buttons. Name/email/summary search
+  combines with actor roles and action categories (section reassignments, teacher
+  management, student records, system settings). Pagination shows ten matching
+  logs per page and resets on filter changes. CSV exports all matching rows across
+  pages with full summaries, quoted UTF-8 fields and spreadsheet formula escaping.
+  Its responsive details dialog repeats the badge and safely emphasizes participant
+  names. Existing sidebar, font and outer card styles stay.
+- `utils/audit.py` snapshots readable entity names plus ID/name metadata as a
+  validated JSON envelope in the existing `system_logs.details` TEXT column.
+  Handover, transfer, teacher creation/archive/restore, student lifecycle/profile,
+  parent linking, assessment windows and teacher/parent assessment saves use named
+  messages. Logs commit in the same transaction as their corresponding changes.
+  Audit GET aliases preserve existing fields and readable string `details`, adding
+  `actor_name`, `actor_email`, `role` and `metadata`; historical plain text remains
+  readable. Internal rollover snapshots/chunks remain stored for undo and are
+  excluded from audit listings, matching the read-only legacy controller.
+- Chairman `TeacherManagement.tsx` owns both Add/Edit Teacher forms. They have
+  no separate username input: first/optional last name share the first row,
+  email/optional employee ID share the second, and section spans the third.
+  Existing controls, typography, colors and table/sidebar styling are retained.
+  Both client payloads and backend saves derive username from email. The existing
+  username VARCHAR(50) constraint limits teacher email inputs to 50 characters;
+  no schema migration is introduced. Optional creation last names supersede the
+  required-last-name behavior recorded in the historical teacher-creation entry.
+- Teacher directories use one LEFT JOIN query over active adviser assignments.
+  They retain unassigned teachers and ignore stale cached labels. Chairman and
+  teacher directory aliases share this query. Teacher moves now vacate every
+  previous section pointer and deactivate the incoming teacher's old assignment
+  rows within the same transaction; an advisory transaction lock serializes moves
+  and handovers across sections. Migration 011 explicitly cleans existing duplicate
+  ownership, preferring the displayed class when backed by an active assignment,
+  otherwise the latest assignment date/ID. It retains historical rows and verifies
+  school records, permissions and accounts unchanged. Applied and checked on local
+  ames_parity_dev on 2026-10-24. The actual local browser save assigned a teacher
+  to a vacated section with HTTP 200 and no handover; the other adviser retained
+  their active assignment. Staff identities and section names are omitted from
+  this verification record. Student/evaluation/family-link fingerprints were unchanged.
+  Verified: 27 focused backend regressions plus six audit regressions pass; all
+  18 desktop/mobile teacher-management browser cases pass across the initial run
+  and a focused rerun after fixing a reload-data wait in an existing test.
+  TypeScript, focused ESLint, Python compilation and whitespace checks pass.
+  Older teacher lifecycle assertions have since been reconciled with the
+  email-derived username and optional-last-name contracts during pre-push cleanup.
+  Creation, edits and section handovers explicitly roll back all writes on errors.
+  Existing takeover policy remains: displaced teachers with no other active
+  section are archived, while teachers with another active section stay active.
+- Teacher Management refreshes active teachers, archived teachers and sections
+  together after saves and sync events, ignoring superseded refresh responses.
+  Handover confirmation tolerates absent section/name properties. Archive/Restore
+  Account confirmations have explicit release/manual-assignment notices, guarded
+  submissions and loading spinners; restoration refreshes the active table even
+  while View Archive remains open. Failed forms retain scoped drafts/credentials.
 - Teacher `pages/teacher/MlInsights.tsx` mounts at `/teacher/ml-insights`. Its
   Student Evaluation tab has a responsive three-column table: **STUDENT NAME**,
   **PRE ASSESSMENT STATUS**, **PREDICTION RESULT**. **Predict All Students** runs
@@ -266,6 +333,7 @@ add the newer feature columns. The explicit migration inventory is:
 | 008 | adviser_takeover | Adviser-only assignments and one active adviser per section |
 | 009 | parent_eccd_marks | Independent default-off checklist marks visibility |
 | 010 | parent_predictions | Default-off parent prediction permission |
+| 011 | section_ownership | Retire orphaned section ownership and synchronize adviser pointers |
 
 ```powershell
 # Fresh database only, in order:
@@ -282,6 +350,7 @@ uv run --no-project --python .venv312 python -m backend.migrations.eccd_evaluato
 uv run --no-project --python .venv312 python -m backend.migrations.adviser_takeover --apply
 uv run --no-project --python .venv312 python -m backend.migrations.parent_eccd_marks --apply
 uv run --no-project --python .venv312 python -m backend.migrations.parent_predictions --apply
+uv run --no-project --python .venv312 python -m backend.migrations.section_ownership --apply
 
 # Final checks after the feature upgrades; each module also supports --check.
 uv run --no-project --python .venv312 python -m backend.migrations.phase2 --check
@@ -292,6 +361,7 @@ uv run --no-project --python .venv312 python -m backend.migrations.eccd_evaluato
 uv run --no-project --python .venv312 python -m backend.migrations.adviser_takeover --check
 uv run --no-project --python .venv312 python -m backend.migrations.parent_eccd_marks --check
 uv run --no-project --python .venv312 python -m backend.migrations.parent_predictions --check
+uv run --no-project --python .venv312 python -m backend.migrations.section_ownership --check
 ```
 
 Phase 2 records `002_student_identity_api` in ames_schema_migrations and checks
@@ -370,6 +440,8 @@ incorrect-current-password responses.
   hashes with 30-day expiry, not renewed by login. Ordinary logout preserves them;
   explicit forget-device revokes them.
 - Teacher ownership uses active Primary Adviser SectionTeacher assignments.
+  Each teacher holds at most one active section after migration 011; moving them
+  clears old section adviser pointers and retires their previous active rows.
   Replacement deactivates the previous adviser atomically; Substitute is a retired
   historical role and grants no access. Displaced teachers with no other active
   assignments are deactivated. Handovers/transfers preserve student records,
@@ -587,8 +659,9 @@ research inference path. `backend/ml/common.py` defines the feature order and
 artifact directory; `backend/schemas/ml.py::MLFeatures` validates inputs.
 `backend/ml/inference.py` loads the fitted preprocessing/Random Forest pipeline
 from **`backend/ml/artifacts/rf_post_test_model.joblib`** and caches it with
-`lru_cache`. Numeric missing values use the saved median imputers; categorical
-values use saved mode imputation and encoding. The same cached service supplies
+`lru_cache`. After the 2026-10-24 baseline restoration, numeric missing values use
+training-median imputation and the existing StandardScaler; categorical values use
+training-mode imputation and unknown-safe one-hot encoding. The same cached service supplies
 both portals. Inference does not train/refit or write official assessments.
 
 | Feature group | Count | Exact inputs |
@@ -678,13 +751,87 @@ numbers are positions within each domain. These locally authored suggestions
 support teacher/parent planning; they are not clinical diagnoses or evidence of
 treatment effectiveness.
 
-Both portals display the V1 research limits: the report's mixed-holdout accuracy
-is 88.9%, versus 25% on eight real holdout learners. All 29 observed real POST
-outcomes are Average and all contributed generator anchors, so there is no
-independent real-world validation. Probabilities are not calibrated clinical
-confidence. The separate V2 report does not replace these V1 runtime limits.
+The previous V1 baseline was restored on 2026-10-24 at the user's request, without
+retraining or changing branches. The exact 18 features, unchanged 1,529-row dataset
+and 70/30 stratified seed-42 split remain. The active forest uses 400 trees, gini,
+max_depth=None, max_features='sqrt', min_samples_split=6, min_samples_leaf=2,
+random_state=42 and class_weight='balanced', with median/mode preprocessing and
+no extra source-based sample weights. Its original matching metrics, report,
+real comparison CSV and all five plots were restored from the baseline archive;
+the original trainer and teacher/parent notices were restored as well.
+
+Active mixed-holdout accuracy is **88.89% (408/459)**, Macro F1 **88.98%**,
+synthetic accuracy **90.02% (406/451)** and real holdout accuracy **25% (2/8)**.
+Five-fold training CV accuracy is **88.41%**. The strict >90% acceptance target
+remains unmet. Both portals disclose the baseline scores and research limitations.
+All 29 real POST outcomes are Average and contributed generator anchors, so neither
+this baseline nor the 8/8 experiment establishes independent real-world validity
+or real delay detection. Probabilities are not calibrated clinical confidence.
+
+The archived 8/8 experiment used constant missing-value markers, real-row weight
+15 and a 600-tree forest. It measured 89.98% mixed-holdout accuracy, 90.09% Macro
+F1 and 90.47% training CV accuracy. Read-only sandbox probes showed an all-1 domain
+profile predicting Average with missing household values and Significant Delay
+with household values populated, supporting concern about a source shortcut.
+That extreme profile also lies below the training total-score range. Its artifacts,
+reports, tuning code, preprocessing tests and source snapshots are preserved under
+`backend/ml/artifacts/baseline_pre_missingness_weighting/tuned_8_of_8_20261024/`.
+The original baseline archive is retained. Experiment-specific sentinel tests and
+screening cache are archived; the strict >90% metric gate and generic None/NaN
+runtime parity checks remain active. No dependencies, scoring rules, API contracts,
+school records or unrelated working-tree changes are changed by restoration.
+Restart running backend processes after replacing the cached artifact.
+
+Restoration verification (2026-10-24): all nine restored artifact hashes match
+the original archive, the comparison CSV again reports 2/8 real holdout matches,
+and dataset/train/test hashes are unchanged. A fresh-process all-1 domain probe
+with blank household fields predicts Significant Delay. Of 23 focused ML artifact,
+teacher API and parent API checks, 22 pass; only the retained >90% accuracy gate
+fails at 88.89%. None/NaN parity, sandbox inference, permissions, shared caching
+and unchanged assessments pass. App TypeScript, focused TSX ESLint and whitespace
+checks pass. The current Git branch remains `unsure-check-first`.
 
 ### Verification commands and isolation
+
+Audit-log verification (2026-10-23): all six new PostgreSQL audit tests, 13
+parent-linking regressions, the student lifecycle audit regression and audit
+alias/history regression pass (21 total). The 17 teacher-creation/takeover tests
+also pass. Six browser checks in `frontend/playwright.audit.config.ts` verify real
+Teacher Accounts handovers, names, badges, search/role intersections and safe
+modal highlighting at 320px/768px/1280px, using disposable schemas on API port
+8773 and Vite port 5185. Screenshots are under `frontend/test-results/audit-logs/`.
+App/root TypeScript, focused ESLint/Prettier, Python compilation and the production
+build pass; the existing bundle-size advisory remains. The broader Batch 1 run
+still fails three unrelated methods: older username/required-field expectations,
+a long-section fixture without the widening migration, and obsolete parent
+progress expectations. Those contracts are outside this audit change. No schema
+migration, historical-log rewrite, dependency change or application school-record
+mutation was performed.
+
+Audit table polish (2026-10-24): all nine checks in
+`frontend/playwright.audit.config.ts` pass at 320px/768px/1280px. The added cases
+verify two-line summaries with at least 320px of readable width, inline actor
+roles, all action categories combined with search/role filters, first/last/empty
+pagination states and filter resets. Download checks verify exports include all
+matching pages and complete multiline summaries, escape commas/quotes and guard
+spreadsheet formulas. Desktop verification also checks that table headers do not
+overlap and the table fits its content area. App/root TypeScript, focused
+ESLint/Prettier, production build and Git whitespace checks pass; the existing
+bundle-size advisory remains. Screenshots remain under
+`frontend/test-results/audit-logs/`. This follow-up changes only the audit page,
+its browser tests and this context document.
+
+Teacher-management verification (2026-10-23): all 17 focused tests in
+`backend.tests.test_teacher_creation` and `backend.tests.test_adviser_takeover`
+pass. All eight real-API browser cases in
+`frontend/playwright.teacher-management.config.ts` pass at 1280px and 320px,
+covering Add/Edit field alignment, handovers, class-name refresh, archive/restore,
+loading/error recovery, absent names and failed-save reload retention. That
+configuration starts disposable PostgreSQL test schemas on API port 8772 and
+Vite port 5184. Root/app/tooling TypeScript checks, changed-source ESLint,
+focused Prettier, Python compilation and Git whitespace checks pass. Modal
+screenshots are under `frontend/test-results/teacher-management/`. No schema
+migration, legacy-source edits or application school-record changes were made.
 
 Use checks appropriate to the change, from root:
 
@@ -715,7 +862,33 @@ with disposable schemas. Some visual tests need reference assets. Never deploy
 the test API or direct reset operations at school data. SMTP diagnostics can
 send real email and are not ordinary read-only checks.
 
-### Latest pre-push audit evidence (2026-10-20)
+### Pre-push cleanup and verification (2026-10-24)
+
+Removed real staff identities and section names from the local browser-verification
+description above. Restored the branch's previous login budget of 15 attempts per
+15 minutes; the uncommitted increase to 25 was reverted. Batch 1 regressions now
+check email-derived usernames and optional last names. The long-class-name test
+again reaches its existing widening migration before a valid account is created.
+Parent-progress coverage checks score release and checklist-marks visibility
+independently, including re-closing PRE results after enabling marks. Batch 2
+coverage pins the 15-attempt limit, expiry and production counters shared across workers.
+
+Fresh verification: all **81** tests across `test_batch1`, `test_batch2`,
+`test_audit_logs`, `test_section_ownership`, `test_teacher_creation`,
+`test_adviser_takeover` and `test_parent_linking` pass in disposable PostgreSQL
+schemas. The immediately preceding review also passed the frontend production
+build, changed-file ESLint and Git whitespace checks; frontend source was not
+changed by this cleanup. A repeat redacted scan of 254 commit-eligible text files
+found no exact matches for local live secrets or credential-token patterns, and
+the previously identified staff details no longer appear. Environment files,
+learner datasets, detailed benchmarks and the 8/8 experiment backup remain ignored.
+This local review does not establish that historical commits or GitHub are clean;
+the security plugin could not start its Python helper, so no formal plugin report
+was produced. The restored 2/8 model and metrics are unchanged; its separate >90%
+ML accuracy gate remains unmet and was not part of this 81-test run. No school
+records, dependencies, Git staging, commits, pushes or branch switches were changed.
+
+### Earlier pre-push audit evidence (2026-10-20)
 
 The audit immediately preceding this synchronization verified the current working
 tree with `pnpm.cmd --filter frontend build` (TypeScript build and Vite), explicit
