@@ -16,9 +16,9 @@ untracked `backend/.env` (never pass a password as a command argument):
 | --- | --- |
 | `INITIAL_CHAIRMAN_EMAIL` | Login email, at most 100 characters |
 | `INITIAL_CHAIRMAN_PASSWORD` | At least 8 characters, uppercase, lowercase and a digit; at most 72 UTF-8 bytes |
-| `INITIAL_CHAIRMAN_NAME` | Display name stored in `users.username`, 1–50 characters, using the normal person-name rules |
+| `INITIAL_CHAIRMAN_NAME` | Display name stored in `system_settings.chairman_name`, 1–255 characters, using the normal person-name rules |
 
-The current account schema has no separate Chairman full-name field. The role
+The Chairman display name is separate from email-only account identity. The role
 is stored as `super-admin`, the application's Chairman role. New Chairmen are
 active, not registration-pending, and authenticate through the normal OTP flow.
 No default password is supplied and no local account/hash is exported.
@@ -34,7 +34,7 @@ On this Windows checkout, use `--python .venv312` to select the installed Python
 `--schema bootstrap_test_...` is available for isolated verification. The command
 does not create databases or change the application's connection settings.
 
-All pending migrations run in order, **001–012**. Migration 012 from Batch 2 is
+All pending migrations run in order, **001–013**. Migrations 012 and 013 are
 required by the current API. Applied migrations are skipped, then the final
 schema is checked; historical Phase 1 checks cannot validate a Phase 2 schema.
 The runner uses the existing migration functions and their preservation checks.
@@ -62,7 +62,7 @@ uv run --no-project --python 3.12 python -m backend.scripts.seed_supabase --appl
 
 With one Chairman, this may update its email, display name, password and active
 flags. With multiple Chairmen, the email must select the account to update.
-The command never promotes a Parent or Teacher because of an email/name collision.
+The command never promotes a Parent or Teacher because of an email collision.
 A changed account revokes previous JWTs, OTP challenges and remembered devices;
 identical credentials cause no writes or password rehash. An archived account is
 reactivated only by this explicit update option.

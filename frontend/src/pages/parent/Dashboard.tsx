@@ -32,6 +32,7 @@ import { useChildren } from "../../hooks/useChildren";
 import { useAssessment } from "../../hooks/useAssessment";
 import { PERIODS, PERIOD_LABELS } from "../../types";
 import { useAuth } from "../../context/AuthContext";
+import { userDisplayName } from "../../utils/displayName";
 import {
   confirmDraft,
   readDraft,
@@ -53,14 +54,8 @@ interface HomeDraftValues {
   answers: Record<string, Answer>;
 }
 
-interface ParentGreetingUser extends SessionUser {
-  first_name?: string | null;
-  name?: string | null;
-  full_name?: string | null;
-}
-
 function parentGreeting(
-  user: ParentGreetingUser | null,
+  user: SessionUser | null,
   child: Student | undefined,
 ): string {
   // Match the synced account holder, excluding family-only records.
@@ -70,17 +65,8 @@ function parentGreeting(
   );
   const parentName =
     accountName && matches?.length === 1 ? matches[0].fullname?.trim() : "";
-  const fullName =
-    user?.name?.trim() || user?.full_name?.trim() || parentName || "";
-  const givenName =
-    user?.first_name?.trim() ||
-    (fullName.includes(",") ? fullName.split(",")[1].trim() : fullName);
-  const firstName = givenName.split(/\s+/)[0];
-  if (!firstName) return "Welcome back!";
-  const displayName =
-    firstName.charAt(0).toLocaleUpperCase() +
-    firstName.slice(1).toLocaleLowerCase();
-  return `Welcome back, ${displayName}!`;
+  const displayName = userDisplayName(user, parentName || "");
+  return displayName ? `Welcome back, ${displayName}!` : "Welcome back!";
 }
 
 const primaryColor = "var(--primary-color)";

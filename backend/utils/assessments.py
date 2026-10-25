@@ -99,7 +99,8 @@ def save_home_evaluation(db: Session, user: User, payload: ParentEvaluationBatch
         if record.teacher_evaluation_date is None:
             record.evaluation_date = compatibility_date
         # Parent observations never replace teacher_id or teacher_evaluation_date.
-    name = current_parent.fullname or user.email or user.username
+    from backend.utils.account_identity import account_display_name
+    name = account_display_name(user)
     record_audit(db, user, "PARENT_ASSESSMENT_SUBMITTED",
                  f'Parent "{name}" submitted {payload.testing_period.value} home-based assessment for Student "{person_name(student)}".',
                  parentId=current_parent.parent_id, parentName=name, studentId=student.student_id,

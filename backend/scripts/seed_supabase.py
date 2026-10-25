@@ -10,7 +10,7 @@ from pathlib import Path
 
 from pydantic import EmailStr, Field, SecretStr, ValidationError, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from sqlalchemy import inspect, or_, select, text
+from sqlalchemy import func, inspect, select, text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.engine import Connection
 from sqlalchemy.orm import Session
@@ -21,9 +21,9 @@ from backend.migrations import (
     adviser_takeover, auth_security_version, eccd_evaluator_tracking,
     parent_assessment_access, parent_eccd_marks, parent_linking,
     parent_predictions, parity_batch1, parity_batch2, phase1, phase2,
-    section_ownership,
+    section_ownership, email_only_identity,
 )
-from backend.models import EccdDomain, EccdQuestion, User
+from backend.models import EccdDomain, EccdQuestion, User, SystemSettings
 from backend.models.user import UserRole
 from backend.schemas.common import validate_password, validate_person_name
 from backend.utils.authentication import revoke_credentials
@@ -44,6 +44,7 @@ MIGRATIONS = (
     (parent_predictions.VERSION, parent_predictions.apply_parent_predictions),
     (section_ownership.VERSION, section_ownership.apply_section_ownership),
     (auth_security_version.VERSION, auth_security_version.apply_auth_security_version),
+    (email_only_identity.VERSION, email_only_identity.apply_email_only_identity),
 )
 
 
@@ -57,8 +58,7 @@ class ChairmanSettings(BaseSettings):
     )
     INITIAL_CHAIRMAN_EMAIL: EmailStr | None = Field(default=None, max_length=100)
     INITIAL_CHAIRMAN_PASSWORD: SecretStr | None = None
-    # users has no full-name column; username is the Chairman's display name.
-    INITIAL_CHAIRMAN_NAME: str | None = Field(default=None, min_length=1, max_length=50)
+    INITIAL_CHAIRMAN_NAME: str | None = Field(default=None, min_length=1, max_length=255)
 
     @field_validator("INITIAL_CHAIRMAN_PASSWORD")
     @classmethod
@@ -143,7 +143,7 @@ def seed_eccd(connection: Connection, schema: str) -> dict[str, int]:
 
 def seed_chairman(connection: Connection, credentials: ChairmanSettings, schema: str,
                   update: bool = False) -> str:
-    connection.execute(text("LOCK TABLE users IN SHARE ROW EXCLUSIVE MODE"))
+    connection.execute(text("LOCK TABLE users, system_settings IN SHARE ROW EXCLUSIVE MODE"))
     with Session(bind=connection) as db:
         chairmen = db.scalars(select(User).where(User.role == UserRole.SUPER_ADMIN)
                              .order_by(User.user_id).with_for_update()).all()
@@ -151,34 +151,39 @@ def seed_chairman(connection: Connection, credentials: ChairmanSettings, schema:
             return "preserved"
         if credentials.INITIAL_CHAIRMAN_EMAIL is None:
             raise BootstrapError("No Chairman credentials supplied; set all three INITIAL_CHAIRMAN_* variables")
-        email = str(credentials.INITIAL_CHAIRMAN_EMAIL)
+        email = str(credentials.INITIAL_CHAIRMAN_EMAIL).strip().lower()
         name = credentials.INITIAL_CHAIRMAN_NAME
         password = credentials.INITIAL_CHAIRMAN_PASSWORD.get_secret_value()
-        user = next((row for row in chairmen if row.email == email), None)
+        user = next((row for row in chairmen if (row.email or "").lower() == email), None)
         if user is None and len(chairmen) == 1:
             user = chairmen[0]
         if user is None and chairmen:
             raise BootstrapError("Multiple Chairmen exist; select one by its current email for an explicit update")
-        conflicts = db.scalars(select(User).where(or_(User.email == email, User.username == name))).all()
+        conflicts = db.scalars(select(User).where(func.lower(User.email) == email)).all()
         if any(row.user_id != (user.user_id if user else None) for row in conflicts):
-            raise BootstrapError("Chairman email/name conflicts with an existing account; no role changed")
+            raise BootstrapError("Chairman email conflicts with an existing account; no role changed")
+        settings = db.get(SystemSettings, 1)
+        if settings is None:
+            settings = SystemSettings(id=1)
+            db.add(settings)
         if user is None:
             repair_sequence(connection, "users", "user_id", schema)
-            db.add(User(username=name, email=email, password_hash=get_password_hash(password),
+            db.add(User(email=email, password_hash=get_password_hash(password),
                         role=UserRole.SUPER_ADMIN, is_active=True, is_first_login=False,
                         is_registration_pending=False))
             status = "created"
-        elif (user.email == email and user.username == name and user.is_active
+        elif (user.email == email and settings.chairman_name == name and user.is_active
               and not user.is_first_login and not user.is_registration_pending
               and verify_password(password, user.password_hash)):
             return "preserved"
         else:
             revoke_credentials(db, user)
-            user.username, user.email = name, email
+            user.email = email
             if not verify_password(password, user.password_hash):
                 user.password_hash = get_password_hash(password)
             user.is_active, user.is_first_login, user.is_registration_pending = True, False, False
             status = "updated"
+        settings.chairman_name = name
         db.flush()
         return status
 
@@ -207,6 +212,7 @@ def bootstrap(connection: Connection, credentials: ChairmanSettings, schema: str
         adviser_takeover.check_adviser_takeover, parent_eccd_marks.check_parent_eccd_marks,
         parent_predictions.check_parent_predictions, section_ownership.check_section_ownership,
         auth_security_version.check_auth_security_version,
+        email_only_identity.check_email_only_identity,
     ):
         check(connection, schema)
     counts = seed_eccd(connection, schema)

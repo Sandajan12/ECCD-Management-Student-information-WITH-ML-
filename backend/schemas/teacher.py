@@ -45,11 +45,16 @@ class TeacherUpdate(ApiModel):
     employee_id: str | None = Field(default=None, max_length=50, validation_alias=AliasChoices("employee_id", "employeeId"))
     class_name: str | None = Field(default=None, max_length=100)
     section_id: PositiveId | None = Field(default=None, validation_alias=AliasChoices("section_id", "sectionId"))
-    # Retain the compatibility field, but always derive it from email on save.
-    username: str | None = None
-    email: LoginEmail | None = Field(default=None, max_length=50)
+    email: LoginEmail | None = None
 
-    @field_validator("class_name", "username", "email", mode="before")
+    @field_validator("first_name", "last_name")
+    @classmethod
+    def require_nonblank_name(cls, value: str | None) -> str:
+        if not value:
+            raise ValueError("First and last names are required")
+        return value
+
+    @field_validator("class_name", "email", mode="before")
     @classmethod
     def normalize_text(cls, value: object) -> object:
         return value.strip() if isinstance(value, str) else value
@@ -100,21 +105,18 @@ class AssignTeacherSectionRequest(BaseModel):
 
 
 class TeacherProvisionRequest(TeacherUpdate):
-    # users.username remains VARCHAR(50); the email is also the username.
-    email: EmailStr = Field(max_length=50)
+    email: LoginEmail
     password: TemporaryPassword = Field(validation_alias=AliasChoices("initial_password", "password"))
-    username: str | None = None
     first_name: Name = Field(min_length=1, validation_alias=AliasChoices("first_name", "firstName", "fullName"))
-    last_name: Name = Field(default="", validation_alias=AliasChoices("last_name", "lastName"))
+    last_name: Name = Field(min_length=1, validation_alias=AliasChoices("last_name", "lastName"))
     employee_id: str | None = Field(default=None, max_length=50, validation_alias=AliasChoices("employee_id", "employeeId"))
     section_id: PositiveId | None = Field(default=None, validation_alias=AliasChoices("section_id", "sectionId"))
     class_name: str | None = Field(default=None, max_length=100)
 
     @model_validator(mode="after")
-    def derive_username(self) -> "TeacherProvisionRequest":
+    def require_section(self) -> "TeacherProvisionRequest":
         if self.section_id is None and not self.class_name:
             raise ValueError("A section or class is required")
-        self.username = str(self.email)
         return self
 
 

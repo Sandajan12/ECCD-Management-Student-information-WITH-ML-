@@ -184,14 +184,15 @@ export default function LoginPage() {
         }}
       >
         <AuthField
-          label="Email or username"
+          label="Email"
           icon="EmailOutlined"
           name="email"
-          placeholder="Enter your email or username"
+          placeholder="Enter your email"
+          type="email"
           className="mb-4"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          autoComplete="username"
+          autoComplete="email"
           disabled={busy || Boolean(challenge)}
           required
         />

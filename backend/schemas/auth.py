@@ -20,7 +20,7 @@ class ConsentRequest(ApiModel):
 
 
 class LoginRequest(ConsentRequest):
-    email: str = Field(min_length=1, max_length=100, validation_alias=AliasChoices("email", "username"))
+    email: LoginEmail
     password: str = Field(min_length=1)
     rememberDevice: bool = Field(default=False, validation_alias=AliasChoices("rememberDevice", "remember_device"))
     rememberMe: bool = False
@@ -39,7 +39,9 @@ class SessionUser(ApiModel):
     id: PositiveId
     userId: PositiveId | None = None
     sub: str | None = None
-    username: str = Field(max_length=50)
+    first_name: str = ""
+    last_name: str = ""
+    full_name: str = ""
     email: LoginEmail | None = None
     role: UserRole
     is_first_login: int = Field(default=0, ge=0, le=1)
@@ -72,7 +74,6 @@ class OtpChallengeResponse(ApiModel):
 
 
 class RegisterParentRequest(ConsentRequest):
-    username: str | None = Field(default=None, min_length=1, max_length=50)
     email: LoginEmail
     password: StrongPassword
     firstName: Name = Field(min_length=1, validation_alias=AliasChoices("firstName", "first_name"))

@@ -1,8 +1,8 @@
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
-from sqlalchemy import or_
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError, MultipleResultsFound
 from sqlalchemy.orm import Session
 from backend.config.database import get_db
 from backend.config.settings import settings
@@ -22,10 +22,13 @@ router = APIRouter(prefix="/api/auth", tags=["Auth"])
 @router.post("/login", response_model=LoginResponse | OtpChallengeResponse, response_model_exclude_none=True)
 @router.post("/login-step1", response_model=LoginResponse | OtpChallengeResponse, response_model_exclude_none=True)
 async def login(data: LoginRequest, request: Request, response: Response, db: Session = Depends(get_db)):
-    identifier = data.email.strip()
-    user = db.query(User).filter(or_(User.email == identifier, User.username == identifier)).first()
+    identifier = str(data.email).strip().lower()
+    try:
+        user = db.query(User).filter(func.lower(User.email) == identifier).one_or_none()
+    except MultipleResultsFound:
+        raise HTTPException(401, "Invalid email or password.") from None
     if user is None or not verify_password(data.password, user.password_hash):
-        raise HTTPException(401, "Invalid email/username or password.")
+        raise HTTPException(401, "Invalid email or password.")
     require_active(db, user)
     if data.otp is not None:
         user, decoded, row = consume_challenge(db, data.challengeToken or "", data.otp, (OtpPurpose.LOGIN,), user.user_id)
@@ -65,24 +68,26 @@ def verify_otp(data: VerifyOtpRequest, request: Request, response: Response, db:
 
 @router.post("/register-parent", response_model=LoginResponse | OtpChallengeResponse, status_code=201, response_model_exclude_none=True)
 async def register_parent(data: RegisterParentRequest, request: Request, response: Response, db: Session = Depends(get_db)):
-    username = data.username or data.email.split("@")[0]
-    if len(username) > 50 or len(f"{data.firstName.strip()} {data.lastName.strip()}") > 100 or not data.firstName.strip() or not data.lastName.strip():
-        raise HTTPException(400, "Valid names and username within account field limits are required.")
-    existing = db.query(User).filter(or_(User.email == data.email, User.username == username)).with_for_update().all()
+    email = str(data.email).strip().lower()
+    full_name = f"{data.firstName.strip()} {data.lastName.strip()}"
+    if len(full_name) > 100 or not data.firstName.strip() or not data.lastName.strip():
+        raise HTTPException(400, "Valid names within account field limits are required.")
+    existing = db.query(User).filter(func.lower(User.email) == email).with_for_update().all()
     if existing:
         user = existing[0]
-        if len(existing) != 1 or user.email != data.email or user.role != UserRole.USER or user.is_active or not user.is_registration_pending or not verify_password(data.password, user.password_hash):
-            raise HTTPException(400, "This email or username is already registered.")
+        if len(existing) != 1 or user.role != UserRole.USER or user.is_active or not user.is_registration_pending or not verify_password(data.password, user.password_hash):
+            raise HTTPException(400, "This email is already registered.")
         response.status_code = 200
     else:
-        user = User(username=username, email=data.email, password_hash=get_password_hash(data.password), role=UserRole.USER, is_active=not settings.otp_enabled, is_registration_pending=settings.otp_enabled, is_first_login=False)
+        user = User(email=email, password_hash=get_password_hash(data.password), role=UserRole.USER, is_active=not settings.otp_enabled, is_registration_pending=settings.otp_enabled, is_first_login=False)
         db.add(user)
         try:
             db.flush()
         except IntegrityError:
             db.rollback()
-            raise HTTPException(400, "This email or username is already registered.") from None
-        db.add(Parent(user_id=user.user_id, fullname=f"{data.firstName.strip()} {data.lastName.strip()}", relationship_type=data.relationship))
+            raise HTTPException(400, "This email is already registered.") from None
+        db.add(Parent(user_id=user.user_id, fullname=full_name, relationship_type=data.relationship))
+        db.flush()
     if not settings.otp_enabled:
         user.is_active, user.is_registration_pending = True, False
         result = complete_login(db, user, data.rememberDevice, request, response)
@@ -90,9 +95,9 @@ async def register_parent(data: RegisterParentRequest, request: Request, respons
         return {**result, "message": "Account created. Logging you in..."}
     token, otp = issue_challenge(db, user, OtpPurpose.REGISTRATION, remember=data.rememberDevice)
     db.commit()
-    result = {"success": True, "requireOtp": True, "challengeToken": token, "email": data.email, "emailSent": True}
+    result = {"success": True, "requireOtp": True, "challengeToken": token, "email": user.email, "emailSent": True}
     try:
-        await send_otp_email(data.email, otp)
+        await send_otp_email(user.email, otp)
     except Exception:
         discard_failed_challenge(db, token)
         result.update(emailSent=False, code="REGISTRATION_EMAIL_FAILED", message="Your account is awaiting verification. Submit registration again with the same email and password to retry delivery.")
@@ -119,14 +124,15 @@ def update_password(data: UpdatePasswordRequest, response: Response, db: Session
 async def send_otp(data: SendOtpRequest, db: Session = Depends(get_db), user: User = Depends(verify_role(["super-admin"]))):
     if not verify_password(data.currentPassword or "", user.password_hash):
         raise HTTPException(401, "Incorrect current password.")
-    if db.query(User).filter(User.email == data.email).first():
+    email = str(data.email).strip().lower()
+    if db.query(User).filter(func.lower(User.email) == email).first():
         raise HTTPException(400, "Email is already registered.")
     if not settings.otp_enabled:
         return {"message": "Email verification is disabled for local development."}
-    token, otp = issue_challenge(db, user, OtpPurpose.EMAIL_CHANGE, str(data.email))
+    token, otp = issue_challenge(db, user, OtpPurpose.EMAIL_CHANGE, email)
     db.commit()
     try:
-        await send_otp_email(data.email, otp)
+        await send_otp_email(email, otp)
     except Exception:
         discard_failed_challenge(db, token)
         raise HTTPException(502, "Unable to deliver the verification email.") from None

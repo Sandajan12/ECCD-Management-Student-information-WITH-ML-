@@ -1,6 +1,6 @@
 import enum
 
-from sqlalchemy import Boolean, Column, DateTime, Enum, Integer, String, func
+from sqlalchemy import Boolean, Column, DateTime, Enum, Index, Integer, String, func
 from sqlalchemy.orm import relationship
 
 from .base import Base
@@ -16,7 +16,6 @@ class User(Base):
     __tablename__ = "users"
 
     user_id = Column(Integer, primary_key=True, autoincrement=True)
-    username = Column(String(50), nullable=False, unique=True)
     password_hash = Column(String(255), nullable=False)
     email = Column(String(100), nullable=True, unique=True, comment="Login Email")
     role = Column(
@@ -31,6 +30,7 @@ class User(Base):
     security_version = Column(Integer, default=0, server_default="0", nullable=False)
     otp_code = Column(String(10), nullable=True)
     otp_expires_at = Column(DateTime, nullable=True)
+    __table_args__ = (Index("ux_users_email_lower", func.lower(email), unique=True),)
 
     teacher = relationship(
         "Teacher", back_populates="user", uselist=False, cascade="all, delete-orphan"

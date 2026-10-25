@@ -26,8 +26,10 @@ class BackupRow(ApiModel):
 
 
 class UserBackupRow(BackupRow):
+    # Account snapshots are never restored. Ignore retired account-only fields
+    # so older encrypted backups remain usable without reviving their schema.
+    model_config = ConfigDict(extra="ignore")
     user_id: PositiveId
-    username: str = Field(min_length=1, max_length=50)
     password_hash: str = Field(min_length=1, max_length=255)
     email: LoginEmail | None
     role: UserRole | None
@@ -196,6 +198,7 @@ class SettingsBackupRow(BackupRow):
     system_title: str | None = Field(max_length=255)
     school_name: str = Field(max_length=255)
     principal_name: str | None = Field(max_length=255)
+    chairman_name: str | None = Field(default=None, max_length=255)
     school_year_start_month: int = Field(ge=1, le=12)
     primary_color: str | None = Field(max_length=10)
     secondary_color: str | None = Field(max_length=10)

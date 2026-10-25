@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from backend.models import FamilyAccess, Parent, Student, User
 from backend.schemas.student import StudentRecordResponse
 from backend.utils.access import authorize_student, get_active_adviser_for_student, permissions_for_student, student_age
+from backend.utils.account_identity import account_display_name
 
 
 def public_student(db: Session, student: Student) -> dict:
@@ -10,7 +11,7 @@ def public_student(db: Session, student: Student) -> dict:
     result.update(lrn_number=student.masked_lrn, lrn=student.masked_lrn, decimal_age=student_age(db, student), section_name=student.section.section_name if student.section else student.section_name)
     fields = (student.lrn_last4, student.first_name, student.last_name, student.date_of_birth, student.gender, student.section_id, student.address, student.handedness, student.num_of_siblings, student.birth_order, student.emergency_contact)
     result["profile_completeness"] = math.floor(sum(value is not None and value != "" for value in fields) * 100 / 11 + 0.5)
-    result["parent_names"] = ", ".join(link.parent.fullname or link.parent.user.username for link in student.parents if link.status == "SYNCED" and link.parent and link.parent.user_id) or None
+    result["parent_names"] = ", ".join(account_display_name(link.parent.user) for link in student.parents if link.status == "SYNCED" and link.parent and link.parent.user_id) or None
     middle = f" {student.middle_name[:1]}." if student.middle_name else ""
     result["full_name"] = f"{student.last_name or ''}, {student.first_name or ''}{middle}".strip()
     result["class_name"] = result["section_name"]

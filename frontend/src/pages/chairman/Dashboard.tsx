@@ -9,6 +9,7 @@ import {
   Tooltip,
 } from "recharts";
 import { useSettings } from "../../context/SettingsContext";
+import { chairmanDisplayName } from "../../utils/displayName";
 import API, { errorMessage } from "../../services/api";
 import { Notice, Select } from "../../components/chairman/ui";
 import Icon from "../../components/chairman/Icon";
@@ -43,6 +44,7 @@ interface RequestState {
 }
 export default function Dashboard() {
   const { settings } = useSettings();
+  const displayName = chairmanDisplayName(settings);
   const [filters, setFilters] = useState<Filters>({
     sections: [],
     domains: [],
@@ -218,6 +220,9 @@ export default function Dashboard() {
           <h1 className="text-xl font-bold leading-[1.6] text-[#1f2937]">
             Educational Overview
           </h1>
+          <p className="mt-1 break-words text-sm text-[#6b7280] [overflow-wrap:anywhere]">
+            Welcome, {displayName}
+          </p>
           <div className="mt-2 flex gap-4">
             <span className="inline-block rounded-lg bg-[#ecfdf5] px-4 py-1 text-base font-bold leading-[1.75] text-[#10b981]">
               SY {settings.current_school_year || "Loading..."}

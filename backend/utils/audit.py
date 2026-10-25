@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from backend.models import Parent, SystemLog, Teacher, User
 from backend.schemas.log import AuditDetails
+from backend.utils.account_identity import account_display_name, email_display_name
 
 
 def person_name(person: object, fallback: str = "Unknown person") -> str:
@@ -12,14 +13,12 @@ def person_name(person: object, fallback: str = "Unknown person") -> str:
 
 
 def teacher_name(teacher: Teacher) -> str:
-    fallback = (teacher.user.email or teacher.user.username) if teacher.user else "Unnamed teacher"
+    fallback = email_display_name(teacher.user.email) if teacher.user else "Unnamed teacher"
     return person_name(teacher, fallback)
 
 
 def actor_name(db: Session, user: User) -> str:
-    teacher = db.query(Teacher).filter_by(user_id=user.user_id).first()
-    parent = db.query(Parent).filter_by(user_id=user.user_id).first()
-    return teacher_name(teacher) if teacher else (parent.fullname if parent and parent.fullname else user.email or user.username)
+    return account_display_name(user, db)
 
 
 def record_audit(db: Session, user: User, action: str, summary: str, **metadata: str | int | None) -> None:

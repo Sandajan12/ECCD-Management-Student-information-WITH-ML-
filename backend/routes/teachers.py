@@ -18,6 +18,8 @@ from fastapi.concurrency import run_in_threadpool
 from backend.schemas.operations import ImportResult, TeacherListItem
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy import func
+from backend.utils.account_identity import account_display_name
 
 
 router = APIRouter(prefix="/api/teachers", tags=["Teachers"])
@@ -79,7 +81,7 @@ def change_parent_link(db: Session, user: User, student_id: int, payload: Parent
     else:
         db.delete(link)
         event, preposition, message = ("Unlinked Parent", "from", "Parent account successfully unlinked.") if action == "unlink" else ("Rejected Parent Link", "for", "Parent link request declined.")
-    parent_name = parent.fullname or account.username
+    parent_name = account_display_name(account)
     student_name = " ".join(value for value in (student.first_name, student.middle_name, student.last_name) if value)
     from backend.utils.audit import record_audit
     record_audit(db, user, event, f'{event}: Parent "{parent_name}" {preposition} Student "{student_name}".',
@@ -163,7 +165,6 @@ def get_teachers(
             {
                 "teacher_id": teacher.teacher_id,
                 "user_id": user.user_id,
-                "username": user.username,
                 "email": user.email,
                 "first_name": teacher.first_name,
                 "last_name": teacher.last_name,
@@ -289,16 +290,18 @@ def _update_teacher(user_id: int, payload: TeacherUpdate, db: Session, current_u
     if teacher is None:
         raise HTTPException(404, "Teacher not found.")
     data = payload.model_dump(exclude_unset=True)
-    data["username"] = str(data.get("email") or teacher.user.email)
-    for key in ("username", "email"):
-        if key in data and data[key] is not None:
-            duplicate = db.query(User).filter(getattr(User, key) == data[key], User.user_id != user_id).first()
-            if duplicate:
-                raise HTTPException(400, "Email is already in use.")
-            if getattr(teacher.user, key) != data[key]:
-                from backend.utils.authentication import revoke_credentials
-                revoke_credentials(db, teacher.user)
-                setattr(teacher.user, key, data[key])
+    if data.get("employee_id") and db.query(Teacher).filter(
+        Teacher.employee_id == data["employee_id"], Teacher.teacher_id != teacher.teacher_id,
+    ).first():
+        raise HTTPException(400, "Employee ID is already assigned to another teacher.")
+    if data.get("email") is not None:
+        email = str(data["email"]).strip().lower()
+        if db.query(User).filter(func.lower(User.email) == email, User.user_id != user_id).first():
+            raise HTTPException(400, "Email is already in use.")
+        if teacher.user.email != email:
+            from backend.utils.authentication import revoke_credentials
+            revoke_credentials(db, teacher.user)
+            teacher.user.email = email
     for key in ("first_name", "last_name", "employee_id"):
         if key in data:
             setattr(teacher, key, data[key])
@@ -339,7 +342,7 @@ def archive_teacher(user_id: int, db: Session = Depends(get_db), current_user=De
     from backend.utils.authentication import revoke_credentials
     revoke_credentials(db, user)
     from backend.utils.audit import record_audit, teacher_name
-    name = teacher_name(teacher) if teacher else user.email or user.username
+    name = teacher_name(teacher) if teacher else account_display_name(user)
     record_audit(db, current_user, "TEACHER_ARCHIVED", f'Archived Teacher account for "{name}"; released active section assignments.',
                  teacherId=teacher.teacher_id if teacher else None, teacherName=name)
     db.commit()
@@ -359,7 +362,7 @@ def unarchive_teacher(user_id: int, db: Session = Depends(get_db), current_user=
     revoke_credentials(db, user)
     from backend.utils.audit import record_audit, teacher_name
     teacher = db.query(Teacher).filter_by(user_id=user_id).first()
-    name = teacher_name(teacher) if teacher else user.email or user.username
+    name = teacher_name(teacher) if teacher else account_display_name(user)
     record_audit(db, current_user, "TEACHER_RESTORED", f'Restored Teacher account for "{name}"; section assignment requires manual selection.',
                  teacherId=teacher.teacher_id if teacher else None, teacherName=name)
     db.commit()

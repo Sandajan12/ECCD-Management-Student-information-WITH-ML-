@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { useDurableForm } from "../../utils/drafts";
 import { errorMessage } from "../../services/api";
 import { useAuth } from "../../context/AuthContext";
+import { userDisplayName } from "../../utils/displayName";
 import { useSettings } from "../../context/SettingsContext";
 import { calculateRosterAge } from "../../utils/dateUtils";
 import type { Section, Student } from "../../types";
@@ -189,8 +190,7 @@ export default function TeacherStudentForm({
                     [student.teacher_fname, student.teacher_lname]
                       .filter(Boolean)
                       .join(" ") ||
-                    user?.username ||
-                    ""
+                    userDisplayName(user)
                   }
                   readOnly
                 />

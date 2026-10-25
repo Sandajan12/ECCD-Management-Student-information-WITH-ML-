@@ -12,6 +12,7 @@ async function chooseSection(page: Page, name: string) {
 async function fillNew(page: Page) {
   await page.getByRole("button", { name: "Add New Teacher" }).click();
   await page.getByLabel("First Name", { exact: true }).fill("Incoming");
+  await page.getByLabel("Last Name", { exact: true }).fill("Teacher");
   await page.getByLabel("Email", { exact: true }).fill("incoming@example.com");
   await page.getByLabel("Password", { exact: true }).fill("temporary");
   await chooseSection(page, "Test A");
@@ -34,7 +35,7 @@ test.beforeEach(async ({ page, request }) => {
   page.on("pageerror", (error) => errors.push(error.message));
   expect((await request.post(`${backend}/__test/reset`)).ok()).toBeTruthy();
   const response = await request.post(`${backend}/api/auth/login`, {
-    data: { username: "chairman", password: "Example123" },
+    data: { email: "chairman@example.com", password: "Example123" },
   });
   expect(response.ok()).toBeTruthy();
   const session = (await response.json()) as SessionResponse;
@@ -57,16 +58,11 @@ test("balanced forms, real creation handover and archive restore refresh both ta
 }, info) => {
   await fillNew(page);
   await expect(page.getByLabel("Username", { exact: true })).toHaveCount(0);
-  await expect(page.getByLabel("Last Name (optional)")).not.toHaveAttribute(
-    "required",
-  );
+  await expect(page.getByLabel("Last Name")).toHaveAttribute("required");
   const positions = await Promise.all(
-    [
-      "First Name",
-      "Last Name (optional)",
-      "Email",
-      "Employee ID (optional)",
-    ].map((name) => page.getByLabel(name, { exact: true }).boundingBox()),
+    ["First Name", "Last Name", "Email", "Employee ID (optional)"].map((name) =>
+      page.getByLabel(name, { exact: true }).boundingBox(),
+    ),
   );
   if (info.project.name === "desktop") {
     expect(positions[0]!.y).toBe(positions[1]!.y);
@@ -147,7 +143,7 @@ test("balanced forms, real creation handover and archive restore refresh both ta
   });
 });
 
-test("edit transfer derives username and archive failures remain retryable", async ({
+test("edit transfer uses email and archive failures remain retryable", async ({
   page,
   request,
 }) => {
@@ -157,7 +153,8 @@ test("edit transfer derives username and archive failures remain retryable", asy
     .click();
   const form = page.getByRole("dialog", { name: "Edit Teacher", exact: true });
   await expect(form.getByLabel("Username", { exact: true })).toHaveCount(0);
-  await form.getByLabel("Last Name (optional)").fill("");
+  await expect(form.getByLabel("Last Name")).toHaveAttribute("required");
+  await form.getByLabel("Last Name").fill("Updated");
   await form.getByLabel("Email", { exact: true }).fill("edited@example.com");
   await chooseSection(page, "Test B");
   await form.getByRole("button", { name: "Save Changes" }).click();
@@ -179,10 +176,10 @@ test("edit transfer derives username and archive failures remain retryable", asy
     await request.get(`${backend}/api/teachers/active`, {
       headers: { Authorization: `Bearer ${token}` },
     })
-  ).json()) as { user_id: number; username: string }[];
-  expect(teachers.find((row) => row.user_id === 2)?.username).toBe(
-    "edited@example.com",
-  );
+  ).json()) as { user_id: number; email: string }[];
+  const teacher = teachers.find((row) => row.user_id === 2);
+  expect(teacher?.email).toBe("edited@example.com");
+  expect(teacher).not.toHaveProperty("username");
   await expect(
     page.getByRole("cell", { name: "Other Teacher", exact: true }),
   ).toHaveCount(0);

@@ -58,9 +58,9 @@ class Batch1ValidationTests(unittest.TestCase):
         self.assertEqual(ParentChildUpdateRequest(handedness="right").handedness, "Right")
 
     def test_teacher_required_fields_aliases_and_normalization(self):
-        payload = {"email": " teacher@example.com ", "password": test_phase2.PASSWORD, "firstName": " Ada ", "lastName": " Cruz ", "employeeId": " EMP-1 ", "sectionId": 1, "username": " teacher "}
+        payload = {"email": " teacher@example.com ", "password": test_phase2.PASSWORD, "firstName": " Ada ", "lastName": " Cruz ", "employeeId": " EMP-1 ", "sectionId": 1}
         teacher = TeacherProvisionRequest.model_validate(payload)
-        self.assertEqual((teacher.first_name, teacher.last_name, teacher.employee_id, teacher.username), ("Ada", "Cruz", "EMP-1", "teacher@example.com"))
+        self.assertEqual((teacher.first_name, teacher.last_name, teacher.employee_id, teacher.email), ("Ada", "Cruz", "EMP-1", "teacher@example.com"))
         for key in ("email", "firstName", "sectionId"):
             with self.subTest(key=key), self.assertRaises(ValidationError):
                 TeacherProvisionRequest.model_validate({field: value for field, value in payload.items() if field != key})
@@ -80,7 +80,7 @@ class Batch1ValidationTests(unittest.TestCase):
             SectionCreate(section_name=long_name + "A")
 
     def test_auth_aliases_and_multiple_device_transports(self):
-        request = LoginRequest(email="teacher", password="anything", rememberDevice=False, rememberMe="true", trusted_device_token="legacy")
+        request = LoginRequest(email="teacher@example.com", password="anything", rememberDevice=False, rememberMe="true", trusted_device_token="legacy")
         self.assertTrue(request.rememberDevice)
         self.assertEqual(request.trusted_device_token, "legacy")
         self.assertEqual(LogoutRequest(forgetDevice=True, trusted_device_token="legacy").trusted_device_token, "legacy")

@@ -6,7 +6,7 @@ from sqlalchemy import inspect
 
 from backend.models import Section, SectionTeacher, Teacher, User
 from backend.schemas.auth import RegisterParentRequest, UpdatePasswordRequest
-from backend.schemas.teacher import TeacherProvisionRequest
+from backend.schemas.teacher import TeacherProvisionRequest, TeacherUpdate
 from backend.tests import test_phase2
 from backend.utils.security import verify_password
 
@@ -33,7 +33,7 @@ class TeacherCreationSchemaTests(unittest.TestCase):
         self.assertEqual((teacher.first_name, teacher.last_name, teacher.employee_id, teacher.section_id),
                          ("Ana-María", "O'Neill", None, 1))
 
-    def test_first_name_required_optional_last_name_and_payload_types_stay_validated(self):
+    def test_first_and_last_name_required_and_payload_types_stay_validated(self):
         for field in ("first_name", "last_name"):
             for invalid in ("Ana1", "Ana١", "Ana１", None, 123):
                 with self.subTest(field=field, invalid=invalid), self.assertRaises(ValidationError):
@@ -43,9 +43,14 @@ class TeacherCreationSchemaTests(unittest.TestCase):
                 TeacherProvisionRequest.model_validate(payload(first_name=invalid))
         with self.assertRaises(ValidationError):
             TeacherProvisionRequest.model_validate({k: v for k, v in payload().items() if k != "first_name"})
-        for optional in ({"last_name": ""}, {"last_name": " "}):
-            self.assertEqual(TeacherProvisionRequest.model_validate(payload(**optional)).last_name, "")
-        self.assertEqual(TeacherProvisionRequest.model_validate({k: v for k, v in payload().items() if k != "last_name"}).last_name, "")
+        for field in ("first_name", "last_name"):
+            for invalid in ("", " ", None):
+                with self.subTest(field=field, invalid=invalid), self.assertRaises(ValidationError):
+                    TeacherProvisionRequest.model_validate(payload(**{field: invalid}))
+                with self.assertRaises(ValidationError):
+                    TeacherUpdate.model_validate({field: invalid})
+            with self.assertRaises(ValidationError):
+                TeacherProvisionRequest.model_validate({k: v for k, v in payload().items() if k != field})
         for changes in ({"section_id": True}, {"section_id": 0}, {"employee_id": 123},
                         {"employee_id": "x" * 51}, {"email": "invalid"}):
             with self.subTest(changes=changes), self.assertRaises(ValidationError):
@@ -115,13 +120,29 @@ class TeacherCreationApiTests(unittest.TestCase):
         with self.fixture.sessions() as db:
             self.assertIsNone(db.query(User).filter_by(email="duplicate@example.com").first())
 
-    def test_email_is_username_and_takeover_archive_restore_release_sections(self):
+    def test_edit_names_and_employee_id_ownership_including_archived_teachers(self):
+        for invalid in ("", "   ", None):
+            response = self.fixture.call("PUT", "/api/teachers/2", json={"last_name": invalid})
+            self.assertEqual(response.status_code, 422, response.text)
+        response = self.fixture.call("PUT", "/api/teachers/3", json={"employee_id": " EMP-OWNED ", "last_name": "Updated"})
+        self.assertEqual(response.status_code, 200, response.text)
+        response = self.fixture.call("PUT", "/api/teachers/3", json={"employee_id": "EMP-OWNED"})
+        self.assertEqual(response.status_code, 200, response.text)
+        response = self.fixture.call("PUT", "/api/teachers/3/archive")
+        self.assertEqual(response.status_code, 200, response.text)
+        response = self.fixture.call("PUT", "/api/teachers/4", json={"employee_id": " EMP-OWNED "})
+        self.assertEqual(response.status_code, 400, response.text)
+        self.assertIn("Employee ID", response.json()["detail"])
+        response = self.fixture.call("POST", "/api/chairman/teachers", json=payload(employee_id="EMP-OWNED"))
+        self.assertEqual(response.status_code, 400, response.text)
+
+    def test_email_only_account_and_takeover_archive_restore_release_sections(self):
         self.assertEqual(self.fixture.evaluate().status_code, 200)
-        created = self.fixture.call("POST", "/api/teachers/", json=payload(last_name="", username="ignored"))
+        created = self.fixture.call("POST", "/api/teachers/", json=payload())
         self.assertEqual(created.status_code, 201, created.text)
         incoming = created.json()
         with self.fixture.sessions() as db:
-            self.assertEqual(db.get(User, incoming["user_id"]).username, "newteacher@example.com")
+            self.assertEqual(db.get(User, incoming["user_id"]).teacher.first_name, payload()["first_name"].strip())
             self.assertFalse(db.get(User, 2).is_active)
             self.assertIsNone(db.get(Teacher, 1).class_name)
             self.assertEqual(db.get(Section, 1).adviser_teacher_id, incoming["teacher_id"])
@@ -132,10 +153,10 @@ class TeacherCreationApiTests(unittest.TestCase):
             self.assertIsNone(next(row for row in rows if row["teacher_id"] == 3)["section_id"])
         archived = self.fixture.call("GET", "/api/teachers/archived").json()
         self.assertIsNone(next(row for row in archived if row["teacher_id"] == 1)["class_name"])
-        changed = self.fixture.call("PUT", f'/api/teachers/{incoming["user_id"]}', json={"email": "changed@example.com", "username": ""})
+        changed = self.fixture.call("PUT", f'/api/teachers/{incoming["user_id"]}', json={"email": "changed@example.com"})
         self.assertEqual(changed.status_code, 200, changed.text)
         with self.fixture.sessions() as db:
-            self.assertEqual(db.get(User, incoming["user_id"]).username, "changed@example.com")
+            self.assertEqual(db.get(User, incoming["user_id"]).email, "changed@example.com")
         for action in ("archive", "unarchive"):
             result = self.fixture.call("PUT", f'/api/teachers/{incoming["user_id"]}/{action}')
             self.assertEqual(result.status_code, 200, result.text)

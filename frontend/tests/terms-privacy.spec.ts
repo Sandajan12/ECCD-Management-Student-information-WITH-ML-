@@ -24,7 +24,7 @@ async function fillRegistration(page: Page) {
 }
 
 async function fillLogin(page: Page, name = "adviser") {
-  await page.getByLabel("Email or username").fill(name);
+  await page.getByLabel("Email", { exact: true }).fill(`${name}@example.com`);
   await page.getByLabel("Password", { exact: true }).fill("Example123");
 }
 
@@ -247,7 +247,7 @@ for (const registration of [false, true]) {
     const session = (await (
       await request.post(`${backend}/api/auth/login`, {
         data: {
-          username: registration ? "parent" : "adviser",
+          email: registration ? "parent@example.com" : "adviser@example.com",
           password: "Example123",
         },
       })

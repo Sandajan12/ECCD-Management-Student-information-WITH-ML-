@@ -3,6 +3,7 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from backend.models import FamilyAccess, Parent, User
+from backend.utils.account_identity import account_display_name
 
 
 def account_links(db: Session, student_ids: list[int]) -> dict[int, list[tuple]]:
@@ -22,7 +23,7 @@ def link_details(rows: list[tuple]) -> dict:
     # silently removed by an action targeting a different account.
     link, parent, user = rows[0]
     return {"parent_link_status": link.status, "parent_info": {
-        "parent_id": parent.parent_id, "full_name": parent.fullname or user.username,
+        "parent_id": parent.parent_id, "full_name": account_display_name(user),
         "email": user.email, "relationship": link.relationship_type or "Guardian",
         "linked_at": link.date_linked if link.status == "SYNCED" else None,
         "requested_at": link.requested_at,

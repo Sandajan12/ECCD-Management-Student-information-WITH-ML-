@@ -1,5 +1,5 @@
 from fastapi import HTTPException
-from sqlalchemy import text
+from sqlalchemy import func, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from backend.models import Section, SectionTeacher, Teacher, User
@@ -85,8 +85,14 @@ def provision_teacher(db: Session, user: User, payload: TeacherProvisionRequest)
 
 
 def _provision_teacher(db: Session, user: User, payload: TeacherProvisionRequest) -> dict:
+    lock_teacher_assignments(db)
     if not payload.first_name.strip():
         raise HTTPException(400, "A teacher name is required.")
+    email = str(payload.email).strip().lower()
+    if db.query(User).filter(func.lower(User.email) == email).first():
+        raise HTTPException(400, "Email is already in use.")
+    if payload.employee_id and db.query(Teacher).filter_by(employee_id=payload.employee_id).first():
+        raise HTTPException(400, "Employee ID is already assigned to another teacher.")
     section_id = payload.section_id
     if section_id is not None and db.get(Section, section_id) is None:
         raise HTTPException(404, "Section not found.")
@@ -97,7 +103,7 @@ def _provision_teacher(db: Session, user: User, payload: TeacherProvisionRequest
             db.add(section)
             db.flush()
         section_id = section.section_id
-    account = User(username=str(payload.email), email=payload.email, password_hash=get_password_hash(payload.password), role=UserRole.ADMIN, is_active=True, is_first_login=True, is_registration_pending=False)
+    account = User(email=email, password_hash=get_password_hash(payload.password), role=UserRole.ADMIN, is_active=True, is_first_login=True, is_registration_pending=False)
     db.add(account)
     db.flush()
     teacher = Teacher(user_id=account.user_id, first_name=payload.first_name.strip(), last_name=payload.last_name.strip(), employee_id=payload.employee_id, allow_eccd_question_management=False)

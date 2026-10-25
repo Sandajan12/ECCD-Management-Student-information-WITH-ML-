@@ -15,7 +15,13 @@ VERSION = "002_student_identity_api"
 def digest_table(connection: Connection, name: str) -> str:
     table = Base.metadata.tables[name]
     digest = hashlib.sha256()
-    for row in connection.execute(table.select().order_by(*table.primary_key.columns)):
+    # Digest the actual intermediate schema, independent of later ORM changes.
+    columns = [item["name"] for item in inspect(connection).get_columns(name)
+               if item["name"] not in ("lrn_number", "student_lrn")]
+    q = connection.dialect.identifier_preparer.quote
+    projection = ", ".join(q(column) for column in columns)
+    ordering = ", ".join(q(column.name) for column in table.primary_key.columns)
+    for row in connection.execute(text(f"SELECT {projection} FROM {q(name)} ORDER BY {ordering}")):
         digest.update(serialize_row(row))
     return digest.hexdigest()
 
@@ -23,9 +29,18 @@ def digest_table(connection: Connection, name: str) -> str:
 def check_phase2(connection: Connection, schema: str = "public") -> None:
     select_schema(connection, schema)
     inspector = inspect(connection)
+    # Unversioned ORM-created test schemas already describe the current model.
+    historical_identity = inspector.has_table(LEDGER, schema=schema) and not connection.execute(text(
+        f"SELECT EXISTS (SELECT 1 FROM {LEDGER} WHERE version='013_email_only_identity')"
+    )).scalar_one()
     for name, table in Base.metadata.tables.items():
         actual = {column["name"] for column in inspector.get_columns(name, schema=schema)}
-        if actual != set(table.columns.keys()):
+        expected = set(table.columns.keys())
+        if historical_identity and name == "users":
+            expected.add("username")
+        if historical_identity and name == "system_settings":
+            expected.discard("chairman_name")
+        if actual != expected:
             raise MigrationError(f"Phase 2 columns mismatch: {name}")
         if inspector.get_pk_constraint(name, schema=schema)["constrained_columns"] != list(table.primary_key.columns.keys()):
             raise MigrationError(f"Phase 2 primary key mismatch: {name}")

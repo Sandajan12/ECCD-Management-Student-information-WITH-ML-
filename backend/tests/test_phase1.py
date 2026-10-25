@@ -263,6 +263,11 @@ class MigrationTests(unittest.TestCase):
     def test_typed_backup_rejects_invalid_rows_before_restore(self) -> None:
         self.baseline()
         self.apply()
+        # Current backup exports use current identity columns, even when this
+        # fixture starts from the historical Phase 1 baseline.
+        from backend.migrations.email_only_identity import apply_email_only_identity
+        with engine.begin() as connection:
+            apply_email_only_identity(connection, self.schema)
         with engine.begin() as connection:
             select_schema(connection, self.schema)
             document = {name: [dict(row) for row in connection.execute(table.select()).mappings()] for name, table in Base.metadata.tables.items()}

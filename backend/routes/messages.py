@@ -8,6 +8,7 @@ from backend.schemas.message import ContactsResponse, ConversationRequest, Messa
 from backend.utils.access import authorize_student, current_teacher, resolve_student, teacher_sections
 from backend.utils.deps import verify_role
 from backend.utils.messaging import authorize_conversation, conversation_relationship
+from backend.utils.account_identity import account_display_name
 
 router = APIRouter(prefix="/api/messages", tags=["Messages"])
 
@@ -21,7 +22,7 @@ def contacts(db: Session = Depends(get_db), user: User = Depends(verify_role(["a
         for parent in parents:
             children = db.query(Student).join(FamilyAccess).filter(FamilyAccess.status == "SYNCED", FamilyAccess.parent_id == parent.parent_id, Student.section_id.in_(teacher_sections(db, teacher)), Student.is_active.is_(True)).distinct().all()
             names = " & ".join(sorted({child.first_name for child in children if child.first_name}))
-            name = parent.fullname or parent.user.username
+            name = account_display_name(parent.user)
             latest = db.query(func.max(Message.created_at)).filter_by(parent_id=parent.parent_id, teacher_id=teacher.teacher_id, is_archived=False).scalar()
             result.append({"id": parent.parent_id, "name": f"{name} ({names}'s Parent)" if names else name, "latest_message_time": latest})
         own_id = teacher.teacher_id
@@ -34,7 +35,7 @@ def contacts(db: Session = Depends(get_db), user: User = Depends(verify_role(["a
             try:
                 authorize_conversation(db, user, teacher.teacher_id, parent.parent_id)
                 latest = db.query(func.max(Message.created_at)).filter_by(parent_id=parent.parent_id, teacher_id=teacher.teacher_id, is_archived=False).scalar()
-                result.append({"id": teacher.teacher_id, "name": f"Teacher {teacher.first_name or ''} {teacher.last_name or ''}".strip(), "latest_message_time": latest})
+                result.append({"id": teacher.teacher_id, "name": f"Teacher {account_display_name(teacher.user)}", "latest_message_time": latest})
             except HTTPException:
                 continue
     result.sort(key=lambda item: (-(item["latest_message_time"].timestamp()) if item["latest_message_time"] else float('inf'), item["name"]))

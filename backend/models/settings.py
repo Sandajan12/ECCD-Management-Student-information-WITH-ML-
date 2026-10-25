@@ -10,6 +10,7 @@ class SystemSettings(Base):
     system_title = Column(String(255), default="School Management System")
     school_name = Column(String(255), default="APOLINARIO MABINI ELEMENTARY SCHOOL", server_default="APOLINARIO MABINI ELEMENTARY SCHOOL", nullable=False)
     principal_name = Column(String(255), nullable=True)
+    chairman_name = Column(String(255), nullable=True)
     school_year_start_month = Column(Integer, default=8, server_default="8", nullable=False)
     primary_color = Column(String(10), default="#2D6A4F")
     secondary_color = Column(String(10), default="#FFFFFF")

@@ -253,3 +253,40 @@ teacher permissions, students, evaluations, family links and section settings.
 No teacher is archived during cleanup. Startup does not apply this data migration.
 Future moves vacate old section pointers and deactivate old assignments in the
 same transaction as the new assignment, with concurrent moves serialized.
+# Migration 013: email-only identity
+
+Stop API writers and take a database backup before upgrading. Deploy matching
+models/routes with this schema change. Startup only checks the schema; it never
+applies this migration. Run explicitly from the repository root:
+
+```sh
+uv run --no-project --python 3.12 python -m backend.migrations.email_only_identity --apply
+uv run --no-project --python 3.12 python -m backend.migrations.email_only_identity --check
+```
+
+On this checkout use `--python .venv312` for the installed Python 3.12 environment.
+The migration uses the current configured database and schema. Do not run it
+against a live database until the coordinated application release is ready.
+
+Version `013_email_only_identity` adds nullable `system_settings.chairman_name`
+VARCHAR(255). It fills an unset singleton name from the oldest existing Chairman's
+username, creating settings with application defaults only when a Chairman exists.
+An existing configured name and all other existing settings are preserved. With
+multiple Chairmen, accounts remain separate; the singleton display name comes
+from the lowest user ID. Preserve the pre-upgrade backup for historical usernames.
+
+Before changing data it refuses any non-null email collisions under
+`lower(btrim(email))`, with a sanitized diagnostic. Resolve these explicitly;
+the migration never merges or deletes accounts. It trims and lowercases emails,
+adds unique expression index `ux_users_email_lower` on `lower(email)`, then drops
+`users.username`. Null emails remain null. IDs, password hashes, role/status flags,
+and all other account fields are verified unchanged. Related school records are
+untouched. The ledger entry, DDL and updates share one transaction; failure rolls
+everything back. Repeated applies validate the schema and return without writes.
+`--check` validates without applying upgrades. Rollback requires the retained
+backup and matching older application release; dropped usernames are not rebuilt.
+
+Fresh bootstrap runs migrations 001–013 before seeding. Historical Phase 1 keeps
+username and excludes the new expression index and Chairman name. Phase 2 uses
+the migration ledger to distinguish its historical and post-013 column contracts,
+and fingerprints actual intermediate columns rather than the evolving ORM.

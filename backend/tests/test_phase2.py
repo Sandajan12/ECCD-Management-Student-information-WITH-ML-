@@ -22,6 +22,7 @@ from backend.main import api, app
 from backend.migrations.phase1 import apply_phase1, select_schema
 from backend.migrations.phase2 import apply_phase2, check_phase2
 from backend.migrations.adviser_takeover import apply_adviser_takeover
+from backend.migrations.email_only_identity import apply_email_only_identity
 from backend.models import Base, EccdQuestion, EmailVerification, FamilyAccess, Message, Parent, Section, SectionTeacher, Student, StudentEccdEvaluation, SystemLog, SystemSettings, Teacher, User, UserTrustedDevice
 from backend.models.eccd import EccdAnswer, TestingPeriod
 from backend.models.user import UserRole
@@ -48,12 +49,13 @@ class BackendTests(unittest.TestCase):
             apply_phase1(connection, self.schema)
             apply_phase2(connection, self.schema)
             apply_adviser_takeover(connection, self.schema)
+            apply_email_only_identity(connection, self.schema)
         self.test_engine = create_engine(engine.url, connect_args={'options': f'-csearch_path={self.schema},public'})
         self.sessions = sessionmaker(bind=self.test_engine, autoflush=False)
         with self.sessions() as db:
             seed_reference_data(db)
             accounts = [(1, 'chairman', UserRole.SUPER_ADMIN), (2, 'adviser', UserRole.ADMIN), (3, 'other', UserRole.ADMIN), (4, 'substitute', UserRole.ADMIN), (5, 'parent', UserRole.USER), (6, 'stranger', UserRole.USER)]
-            db.add_all(User(user_id=i, username=name, email=f'{name}@example.com', password_hash=self.password_hash, role=role, is_active=True, is_first_login=False, is_registration_pending=False) for i, name, role in accounts)
+            db.add_all(User(user_id=i, email=f'{name}@example.com', password_hash=self.password_hash, role=role, is_active=True, is_first_login=False, is_registration_pending=False) for i, name, role in accounts)
             db.flush()
             db.add_all([Teacher(teacher_id=1, user_id=2, first_name='Test', last_name='Adviser'), Teacher(teacher_id=2, user_id=3, first_name='Other', last_name='Teacher'), Teacher(teacher_id=3, user_id=4, first_name='Test', last_name='Substitute', allow_parent_view_eccd_post=True, allow_parent_edit_home_based_eccd=True)])
             db.add_all([Parent(parent_id=1, user_id=5, fullname='Test Parent'), Parent(parent_id=2, user_id=6, fullname='Stranger')])
@@ -138,13 +140,115 @@ class BackendTests(unittest.TestCase):
     def test_local_login_and_registration_skip_email(self):
         with patch('backend.routes.auth.send_otp_email',new_callable=AsyncMock) as email:
             for path in ['/api/auth/login','/api/auth/login-step1']:
-                response=self.client.post(path,json={'username':'adviser','password':PASSWORD})
+                response=self.client.post(path,json={'email':'adviser@example.com','password':PASSWORD})
                 self.assertEqual(response.status_code,200)
                 self.assertFalse(response.json()['requireOtp'])
             registration=self.client.post('/api/auth/register-parent',json={'email':'new@example.com','firstName':'New','lastName':'Parent','password':PASSWORD})
             self.assertEqual(registration.status_code,201)
             self.assertIn('token',registration.json())
             email.assert_not_awaited()
+
+    def test_email_only_login_and_real_profile_sessions(self):
+        from jose import jwt
+        with self.sessions() as db:
+            db.get(SystemSettings, 1).chairman_name = 'School Chairman'
+            db.get(User, 2).email = 'Adviser@EXAMPLE.COM'
+            db.commit()
+        for email, first, last in [(' ADVISER@example.com ', 'Test', 'Adviser'),
+                                   ('parent@example.com', 'Test', 'Parent'),
+                                   ('chairman@example.com', 'School', 'Chairman')]:
+            for path in ['/api/auth/login', '/api/auth/login-step1']:
+                with self.subTest(email=email, path=path):
+                    response = self.client.post(path, json={'email': email, 'password': PASSWORD})
+                    self.assertEqual(response.status_code, 200, response.text)
+                    session = response.json()
+                    self.assertEqual(session['user']['first_name'], first)
+                    self.assertEqual(session['user']['last_name'], last)
+                    self.assertEqual(session['user']['full_name'], f'{first} {last}')
+                    self.assertNotIn('username', session['user'])
+                    claims = jwt.get_unverified_claims(session['token'])
+                    self.assertNotIn('username', claims)
+                    self.assertEqual(claims['sub'], str(session['user']['id']))
+        self.assertEqual(self.client.post('/api/auth/login', json={'username': 'adviser', 'password': PASSWORD}).status_code, 422)
+        self.assertEqual(self.client.post('/api/auth/login', json={'email': 'adviser', 'password': PASSWORD}).status_code, 422)
+        rejected = self.client.post('/api/auth/login', json={'email': 'alias@example.com', 'password': PASSWORD})
+        self.assertEqual(rejected.status_code, 401)
+        self.assertEqual(rejected.json()['detail'], 'Invalid email or password.')
+
+    def test_parent_registration_namesakes_long_names_and_email_conflicts(self):
+        for address in ['shared@one.example.com', 'shared@two.example.com']:
+            response = self.client.post('/api/auth/register-parent', json={
+                'email': address, 'firstName': 'Test', 'lastName': 'Parent', 'password': PASSWORD,
+            })
+            self.assertEqual(response.status_code, 201, response.text)
+            self.assertEqual(response.json()['user']['full_name'], 'Test Parent')
+            self.assertNotIn('username', response.json()['user'])
+        first, last = 'A' * 60, 'B' * 20
+        response = self.client.post('/api/auth/register-parent', json={
+            'email': 'long@example.com', 'firstName': first, 'lastName': last, 'password': PASSWORD,
+        })
+        self.assertEqual(response.status_code, 201, response.text)
+        self.assertEqual(response.json()['user']['first_name'], first)
+        self.assertEqual(response.json()['user']['last_name'], last)
+        duplicate = self.client.post('/api/auth/register-parent', json={
+            'email': 'PARENT@EXAMPLE.COM', 'firstName': 'Other', 'lastName': 'Parent', 'password': PASSWORD,
+        })
+        self.assertEqual(duplicate.status_code, 400)
+        with self.sessions() as db:
+            values = [row.email for row in db.query(User).filter(User.email.in_(
+                ['shared@one.example.com', 'shared@two.example.com', 'long@example.com']))]
+            self.assertEqual(len(values), 3)
+            self.assertEqual(len(set(values)), 3)
+            self.assertNotIn('username', User.__table__.columns)
+
+    def test_profile_displays_use_settings_and_profile_names(self):
+        with self.sessions() as db:
+            db.get(SystemSettings, 1).chairman_name = 'School Chairman'
+            db.get(Teacher, 1).first_name = None
+            db.get(Teacher, 1).last_name = None
+            db.get(Parent, 1).fullname = None
+            db.add_all(SystemLog(user_id=actor, action_type='IDENTITY', details='Display check') for actor in (1, 2, 5))
+            db.commit()
+        teacher_contacts = self.call('GET', '/api/messages/contacts', 2).json()['contacts']
+        self.assertEqual(teacher_contacts[0]['name'], "parent (Test's Parent)")
+        parent_contacts = self.call('GET', '/api/messages/contacts', 5).json()['contacts']
+        self.assertEqual(parent_contacts[0]['name'], 'Teacher adviser')
+        logs = self.call('GET', '/api/analytics/logs').json()
+        self.assertEqual({log['actor_name'] for log in logs}, {'School Chairman', 'adviser', 'parent'})
+        self.assertTrue(all(log['performed_by'] == log['actor_name'] for log in logs))
+        with self.sessions() as db:
+            db.get(Parent, 1).fullname = 'Dela Cruz, Ana Maria'
+            db.commit()
+        profile = self.login('parent').json()['user']
+        self.assertEqual((profile['first_name'], profile['last_name'], profile['full_name']),
+                         ('Ana Maria', 'Dela Cruz', 'Ana Maria Dela Cruz'))
+
+    def test_teacher_accounts_use_names_and_full_length_emails(self):
+        address = 'longteacher' * 5 + '@example.com'
+        response = self.call('POST', '/api/teachers/', json={
+            'first_name': 'Test', 'last_name': 'Adviser', 'email': address,
+            'password': PASSWORD, 'section_id': 2,
+        })
+        self.assertEqual(response.status_code, 201, response.text)
+        created = response.json()
+        login = self.client.post('/api/auth/login', json={'email': address.upper(), 'password': PASSWORD})
+        self.assertEqual(login.status_code, 200, login.text)
+        self.assertEqual(login.json()['user']['full_name'], 'Test Adviser')
+        updated_address = 'updatedteacher' * 4 + '@example.com'
+        updated = self.call('PUT', f"/api/teachers/{created['user_id']}", json={
+            'email': updated_address, 'first_name': 'Updated', 'last_name': 'Teacher',
+        })
+        self.assertEqual(updated.status_code, 200, updated.text)
+        self.assertEqual(self.client.post('/api/auth/login', json={'email': address, 'password': PASSWORD}).status_code, 401)
+        login = self.client.post('/api/auth/login', json={'email': updated_address, 'password': PASSWORD})
+        self.assertEqual(login.json()['user']['full_name'], 'Updated Teacher')
+        for path in ['/api/teachers/active', '/api/chairman/teachers']:
+            rows = self.call('GET', path).json()
+            self.assertTrue(all('username' not in row for row in rows))
+        duplicate = self.call('PUT', f"/api/teachers/{created['user_id']}", json={'email': 'ADVISER@EXAMPLE.COM'})
+        self.assertEqual(duplicate.status_code, 400)
+        with self.sessions() as db:
+            self.assertEqual(db.get(User, created['user_id']).teacher.first_name, 'Updated')
 
     def test_first_login_enforced_and_old_session_revoked(self):
         provision=self.call('POST','/api/chairman/teachers',json={'email':'newteacher@example.com','password':PASSWORD,'first_name':'New','last_name':'Teacher','employee_id':'NEW-001','section_id':1})
@@ -603,11 +707,11 @@ class BackendTests(unittest.TestCase):
 
     def test_teacher_account_edit_archive_and_delete_preserve_scores(self):
         self.evaluate()
-        result=self.call('PUT','/api/teachers/update/2',json={'username':'renamed','email':'renamed@example.com','first_name':'Edited'})
+        result=self.call('PUT','/api/teachers/update/2',json={'email':'renamed@example.com','first_name':'Edited'})
         self.assertEqual(result.status_code,200)
         self.assertEqual(self.call('GET','/api/students/all',2).status_code,401)
         with self.sessions() as db:
-            self.assertEqual(db.get(User,2).username,'renamed@example.com')
+            self.assertEqual(db.get(User,2).email,'renamed@example.com')
             self.assertEqual(db.get(Teacher,1).first_name,'Edited')
             self.tokens[2]=build_session(db,db.get(User,2))['token']
         self.assertEqual(self.call('PUT','/api/teachers/update/2',json={'email':'other@example.com','first_name':'Rejected'}).status_code,400)

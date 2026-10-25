@@ -48,4 +48,14 @@ def phase1_metadata() -> MetaData:
         for index in list(table.indexes):
             if index.name in ("idx_messages_thread", "idx_logs_timestamp"):
                 table.indexes.remove(index)
+    users = metadata.tables["users"]
+    if "username" not in users.c:
+        users.append_column(Column("username", String(50), nullable=False))
+        users.append_constraint(UniqueConstraint("username"))
+    for index in list(users.indexes):
+        if index.name == "ux_users_email_lower":
+            users.indexes.remove(index)
+    settings = metadata.tables["system_settings"]
+    if "chairman_name" in settings.c:
+        settings._columns.remove(settings.c.chairman_name)
     return metadata

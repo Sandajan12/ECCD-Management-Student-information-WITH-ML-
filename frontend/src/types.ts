@@ -9,7 +9,9 @@ export const PERIOD_LABELS: Record<Period, string> = {
 };
 export interface SessionUser {
   id: number;
-  username: string;
+  first_name: string;
+  last_name: string;
+  full_name: string;
   email: string | null;
   role: Role;
   is_first_login: number;
@@ -116,7 +118,6 @@ export interface ParentLinkActionResponse {
 export interface Teacher {
   teacher_id: number;
   user_id: number;
-  username: string;
   email: string;
   first_name: string;
   last_name: string;
@@ -147,7 +148,6 @@ export interface TeacherFormValues {
 export interface TeacherUpdatePayload {
   first_name: string;
   last_name: string;
-  username: string;
   email: string;
   employee_id: string | null;
   class_name: string;

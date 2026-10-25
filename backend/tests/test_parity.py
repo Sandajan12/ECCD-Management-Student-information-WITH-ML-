@@ -255,7 +255,7 @@ class ParityTests(unittest.TestCase):
         self.assertEqual(teacher["id"], teacher["log_id"])
         self.assertEqual(teacher["action"], teacher["action_type"])
         self.assertEqual(teacher["teacher_name"], "Test Adviser")
-        self.assertEqual(teacher["performed_by"], "adviser")
+        self.assertEqual(teacher["performed_by"], "Test Adviser")
 
     def test_unread_one_count_handles_siblings_accounts_and_transfers(self):
         with self.sessions() as db:

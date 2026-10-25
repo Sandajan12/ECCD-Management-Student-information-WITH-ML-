@@ -41,8 +41,8 @@ async def save_settings(data, form, db: Session, user: User):
         raise HTTPException(422, "Invalid school settings, colour or opening month.") from None
     setting = settings_record(db)
     for key, value in payload.model_dump(exclude_unset=True).items():
-        if value is not None:
-            setattr(setting, key, value)
+        if value is not None or key == "chairman_name":
+            setattr(setting, key, value.strip() if key == "chairman_name" and isinstance(value, str) else value)
     for field, existing, upload in (("logo_url", "existing_logo_url", "systemLogo"), ("profile_pic_url", "existing_profile_pic_url", "profilePic")):
         if form and form.get(upload) and hasattr(form[upload], "read"):
             file = form[upload]

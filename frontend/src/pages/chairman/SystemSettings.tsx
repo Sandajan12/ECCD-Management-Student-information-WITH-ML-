@@ -299,6 +299,7 @@ function AccountSettings() {
 interface BrandingFields {
   school_name: string;
   principal_name: string;
+  chairman_name: string;
   system_title: string;
   primary_color: string;
   secondary_color: string;
@@ -323,6 +324,7 @@ function SchoolBranding({
     {
       school_name: initial.school_name,
       principal_name: initial.principal_name || "",
+      chairman_name: initial.chairman_name || "",
       system_title: initial.system_title,
       primary_color: initial.primary_color,
       secondary_color: initial.secondary_color,
@@ -334,22 +336,15 @@ function SchoolBranding({
   const saving = useRef(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
-  const {
-    file: background,
-    choose: setBackground,
-    upload: uploadBackground,
-  } = useDurableFile("login_background");
-  const chooseImage = (
-    file: File | undefined,
-    key: "existing_logo_url" | "existing_profile_pic_url",
-  ) => {
+  const chooseLogo = (file: File | undefined) => {
     if (!file) return;
     if (!file.type.startsWith("image/")) {
       setError("Choose an image file.");
       return;
     }
     const reader = new FileReader();
-    reader.onload = () => change({ ...values, [key]: String(reader.result) });
+    reader.onload = () =>
+      change({ ...values, existing_logo_url: String(reader.result) });
     reader.readAsDataURL(file);
   };
   return (
@@ -369,6 +364,8 @@ function SchoolBranding({
               readDraft<OpeningMonthFields>(openingDraftKey)?.revision;
             const result = await save("/api/settings/update", "put", {
               ...values,
+              chairman_name:
+                values.chairman_name ?? initial.chairman_name ?? "",
               school_year_start_month: openingMonth,
             });
             setMessage(
@@ -390,38 +387,52 @@ function SchoolBranding({
         }}
       >
         <fieldset disabled={busy} className="min-w-0 border-0 p-0">
-          <div className="grid grid-cols-1 gap-8 legacy-md:grid-cols-2">
-            <div className="flex flex-col legacy-lg:border-r legacy-lg:border-[#e5e7eb] legacy-lg:pr-8">
-              <p className="mb-6 text-sm font-bold leading-[1.57] tracking-[1px] text-[#9ca3af]">
-                IDENTITY
-              </p>
-              <Field
-                label="School Name:"
-                placeholder="e.g. APOLINARIO MABINI ELEMENTARY SCHOOL"
-                containerClassName="mb-6 [&_label]:text-sm [&_label]:leading-[1.43] [&_label]:text-[#111827]"
-                className="rounded-lg"
-                maxLength={255}
-                value={values.school_name}
-                required
-                onChange={(e) =>
-                  change({ ...values, school_name: e.target.value })
-                }
-              />
-              <Field
-                label="Principal / School Head Name:"
-                placeholder="e.g. REXIE M. CASTRO"
-                containerClassName="mb-6 [&_label]:text-sm [&_label]:leading-[1.43] [&_label]:text-[#111827]"
-                className="rounded-lg"
-                maxLength={255}
-                value={values.principal_name}
-                onChange={(e) =>
-                  change({ ...values, principal_name: e.target.value })
-                }
-              />
-              <p className="mb-2 text-sm font-bold leading-[1.43] text-[#111827]">
+          <p className="mb-6 text-sm font-bold leading-[1.57] tracking-[1px] text-[#9ca3af]">
+            IDENTITY
+          </p>
+          <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+            <Field
+              label="School Name:"
+              placeholder="e.g. APOLINARIO MABINI ELEMENTARY SCHOOL"
+              containerClassName="md:col-span-2 [&_label]:text-sm [&_label]:leading-[1.43] [&_label]:text-[#111827]"
+              className="w-full rounded-lg"
+              maxLength={255}
+              value={values.school_name}
+              required
+              onChange={(e) =>
+                change({ ...values, school_name: e.target.value })
+              }
+            />
+            <Field
+              label="Principal / School Head Name:"
+              placeholder="e.g. REXIE M. CASTRO"
+              containerClassName="[&_label]:text-sm [&_label]:leading-[1.43] [&_label]:text-[#111827]"
+              className="w-full rounded-lg"
+              maxLength={255}
+              value={values.principal_name}
+              onChange={(e) =>
+                change({ ...values, principal_name: e.target.value })
+              }
+            />
+            <Field
+              label="Chairman Name:"
+              name="chairman_name"
+              placeholder="Enter chairman name"
+              containerClassName="[&_label]:text-sm [&_label]:leading-[1.43] [&_label]:text-[#111827]"
+              className="w-full rounded-lg"
+              maxLength={255}
+              value={values.chairman_name ?? initial.chairman_name ?? ""}
+              onChange={(e) =>
+                change({ ...values, chairman_name: e.target.value })
+              }
+            />
+          </div>
+          <div className="mt-6 grid grid-cols-1 items-start gap-6 border-t border-gray-100 pt-6 md:grid-cols-2">
+            <div className="min-w-0">
+              <p className="mb-4 text-sm font-bold leading-[1.43] text-[#111827]">
                 Portal Logo:
               </p>
-              <div className="mb-auto flex items-center gap-4">
+              <div className="flex items-center gap-4">
                 <div className="flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-full border border-[#e5e7eb] bg-[#f3f4f6]">
                   {values.existing_logo_url ? (
                     <img
@@ -447,28 +458,19 @@ function SchoolBranding({
                     type="file"
                     accept="image/*"
                     className="sr-only"
-                    onChange={(e) =>
-                      chooseImage(e.target.files?.[0], "existing_logo_url")
-                    }
+                    onChange={(e) => chooseLogo(e.target.files?.[0])}
                   />
                 </label>
               </div>
-              <Button
-                type="submit"
-                className="mt-12 w-fit bg-brand px-10 font-bold shadow-none"
-                disabled={busy}
-              >
-                {busy ? "Saving..." : "Save"}
-              </Button>
             </div>
-            <div className="legacy-lg:pl-8">
-              <p className="mb-6 text-sm font-bold leading-[1.57] tracking-[1px] text-[#9ca3af]">
+            <div className="min-w-0">
+              <p className="mb-4 text-sm font-bold leading-[1.57] tracking-[1px] text-[#9ca3af]">
                 COLOR THEME
               </p>
               <p className="mb-4 text-sm leading-[1.43] text-[#111827]">
                 Select the color for the system
               </p>
-              <div className="flex flex-wrap items-center gap-4">
+              <div className="flex flex-wrap items-center gap-3">
                 {["#2563EB", "#059669", "#E11D48", "#EA580C"].map((color) => (
                   <button
                     key={color}
@@ -477,7 +479,7 @@ function SchoolBranding({
                     aria-pressed={
                       values.primary_color.toLowerCase() === color.toLowerCase()
                     }
-                    className="flex size-12 items-center justify-center rounded-full text-white transition-transform duration-200 hover:scale-110"
+                    className="flex size-10 shrink-0 items-center justify-center rounded-full text-white transition-transform duration-200 hover:scale-110"
                     style={{ backgroundColor: color }}
                     onClick={() => change({ ...values, primary_color: color })}
                   >
@@ -485,11 +487,11 @@ function SchoolBranding({
                       color.toLowerCase() && <Icon name="Check" />}
                   </button>
                 ))}
-                <div className="mt-4 flex items-center gap-3 legacy-sm:mt-0 legacy-sm:ml-4 legacy-sm:border-l legacy-sm:border-[#e5e7eb] legacy-sm:pl-6">
+                <div className="flex items-center gap-2">
                   <span className="text-sm font-bold text-[#6b7280]">
                     Custom:
                   </span>
-                  <div className="relative flex size-12 overflow-hidden rounded-full border border-[#e5e7eb]">
+                  <div className="relative flex size-10 shrink-0 overflow-hidden rounded-full border border-[#e5e7eb]">
                     <input
                       aria-label="Primary color"
                       type="color"
@@ -508,111 +510,17 @@ function SchoolBranding({
               </div>
             </div>
           </div>
+          <div className="mt-6 flex justify-start border-t border-gray-100 pt-4">
+            <Button
+              type="submit"
+              className="bg-brand px-10 font-bold shadow-none"
+              disabled={busy}
+            >
+              {busy ? "Saving..." : "Save"}
+            </Button>
+          </div>
         </fieldset>
       </form>
-      <details className="mt-6 text-sm text-[#777]">
-        <summary className="cursor-pointer">
-          Additional appearance settings
-        </summary>
-        <fieldset
-          disabled={busy}
-          className="mt-4 min-w-0 space-y-4 border-0 p-0"
-        >
-          <Field
-            label="System title"
-            value={values.system_title}
-            onChange={(e) =>
-              change({ ...values, system_title: e.target.value })
-            }
-          />
-          <Field
-            label="Secondary color"
-            type="color"
-            value={values.secondary_color}
-            onChange={(e) =>
-              change({ ...values, secondary_color: e.target.value })
-            }
-          />
-          <Field
-            label="Profile image"
-            type="file"
-            accept="image/*"
-            onChange={(e) =>
-              chooseImage(e.target.files?.[0], "existing_profile_pic_url")
-            }
-          />
-          <Button
-            disabled={busy}
-            onClick={async () => {
-              if (saving.current) return;
-              saving.current = true;
-              setBusy(true);
-              setMessage("");
-              try {
-                setError("");
-                const monthRevision =
-                  readDraft<OpeningMonthFields>(openingDraftKey)?.revision;
-                const result = await save("/api/settings/update", "put", {
-                  ...values,
-                  school_year_start_month: openingMonth,
-                });
-                if (result === "saved") {
-                  if (monthRevision) onOpeningMonthSaved(monthRevision);
-                  await fetchGlobalSettings();
-                }
-                setMessage(
-                  result === "saved"
-                    ? "School settings saved."
-                    : "Saved for reconnection.",
-                );
-              } catch (err) {
-                setError(errorMessage(err));
-              } finally {
-                saving.current = false;
-                setBusy(false);
-              }
-            }}
-          >
-            Save school settings
-          </Button>
-          <Field
-            label="Login background image"
-            type="file"
-            accept="image/*"
-            onChange={(e) => setBackground(e.target.files?.[0] || null)}
-          />
-          {background && <p>Selected image: {background.name}</p>}
-          <Button
-            variant="secondary"
-            disabled={!background || busy}
-            onClick={async () => {
-              if (!background || saving.current) return;
-              saving.current = true;
-              setBusy(true);
-              setError("");
-              setMessage("");
-              try {
-                const result = await uploadBackground<{ message: string }>(
-                  "/api/settings/upload-background",
-                );
-                if (result) await fetchGlobalSettings();
-                setMessage(
-                  result
-                    ? "Login background updated."
-                    : "Image saved on this device and queued for reconnection.",
-                );
-              } catch (err) {
-                setError(errorMessage(err));
-              } finally {
-                saving.current = false;
-                setBusy(false);
-              }
-            }}
-          >
-            Upload background
-          </Button>
-        </fieldset>
-      </details>
     </div>
   );
 }

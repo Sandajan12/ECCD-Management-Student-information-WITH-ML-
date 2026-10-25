@@ -1,12 +1,11 @@
 from datetime import datetime
 
 from backend.models.user import UserRole
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr
 from .common import StrongPassword
 
 
 class UserBase(BaseModel):
-    username: str = Field(min_length=1, max_length=50)
     email: EmailStr
     role: UserRole | None = None
     is_active: bool | None = True
@@ -16,7 +15,6 @@ class UserCreate(UserBase):
     password: StrongPassword
 
 class UserUpdate(BaseModel):
-    username: str | None = None
     email: EmailStr | None = None
     role: UserRole | None = None
     is_active: bool | None = None

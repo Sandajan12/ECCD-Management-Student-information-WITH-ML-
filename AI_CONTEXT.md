@@ -1,6 +1,6 @@
 # AMES System: Current Codebase Context
 
-Updated: **2026-10-25**. This document describes the active working tree in
+Updated: **2026-10-26**. This document describes the active working tree in
 `backend/` and `frontend/`, including existing uncommitted changes. Local
 configuration observations are a snapshot, not deployment defaults or a claim
 that every workflow has passed testing. Current-state descriptions were checked
@@ -60,7 +60,7 @@ and instructional planning; official ECCD scores remain deterministic (section 1
 | Workspace | Root `pnpm-workspace.yaml` includes frontend and retains separate lockfiles; frontend has matching pnpm 12 YAML overrides and its own package-manager pin for isolated installs; automatic dependency verification before scripts is disabled |
 | Spreadsheets | openpyxl handles active workbook import/export; pandas is installed |
 | ML | V1 fitted scikit-learn Random Forest pipeline, joblib artifact, 18 PRE/demographic inputs, three supported POST outcomes; shared teacher/parent inference |
-| Migrations | Explicit Python migrations 001–012, including Phase 1/2 and credential revocation versioning; no active Alembic setup, pyproject.toml, or uv.lock |
+| Migrations | Explicit Python migrations 001–013, including email-only identity and credential revocation versioning; no active Alembic setup, pyproject.toml, or uv.lock |
 
 Observed on this Windows checkout on **2026-10-25**:
 
@@ -164,7 +164,7 @@ missing keys and refuses unsafe replacement scenarios.
 Lifespan in `backend/main.py` checks evaluator provenance (007), adviser takeover
 (008), section parent editing windows (006), independent marks visibility (009),
 parent predictions (010), parent linking (005), credential revocation version
-(012), Phase 2 (002), and deployment
+(012), email-only identity (013), Phase 2 (002), and deployment
 hardening (004, which also checks 003) in the connection's current schema.
 Migration 011 is an explicit ownership-data cleanup; lifespan does not call its
 checker or apply it. Missing or incompatible schema stops startup; it never
@@ -177,10 +177,10 @@ call create_all or provision users.
 
 For a fresh PostgreSQL/Supabase database, explicitly run
 `backend.scripts.seed_supabase --apply` as a module before API startup. It applies
-pending migrations 001–012 in order and seeds the tracked 7-domain/109-question
+pending migrations 001–013 in order and seeds the tracked 7-domain/109-question
 ECCD fixture plus an environment-configured Chairman (`INITIAL_CHAIRMAN_EMAIL`,
-`INITIAL_CHAIRMAN_PASSWORD`, `INITIAL_CHAIRMAN_NAME`). The name uses the existing
-`users.username` column. Repeated runs preserve existing accounts/reference rows;
+`INITIAL_CHAIRMAN_PASSWORD`, `INITIAL_CHAIRMAN_NAME`). The name is stored in
+`system_settings.chairman_name`. Repeated runs preserve existing accounts/reference rows;
 conflicting ECCD data aborts. An explicit `--update-chairman` can update the
 selected Chairman and revoke old credentials. All operations share a transaction;
 no local account hashes or school records are exported. See
@@ -226,9 +226,20 @@ Old workspace/shim page directories are absent.
 
 ### Current teacher and parent presentation
 
+- Chairman `SystemSettings.tsx` personalization places School Name across the
+  full identity grid, with Principal and Chairman names paired below. Portal
+  Logo and Color Theme share the next row above a separate Save action; both
+  grids stack on mobile. Additional appearance settings and its background-upload
+  handlers are removed. Existing branding payload fields and confirmation-safe
+  drafts remain intact. Verified 2026-10-26: root/app TypeScript and full frontend
+  lint pass; browser checks at 320/390/768/900/1024/1280/1440px confirm alignment,
+  no card overflow and disclosure removal. Mocked API checks confirm preserved
+  Save fields, reload/failed-save draft retention and confirmed-save cleanup;
+  these checks do not establish real database persistence. Local screenshots and
+  verification script are under `frontend/test-results/settings-personalization*`.
 - Teacher `StudentManagement.tsx` resolves the signed-in teacher's First Last
   display name from `/api/teachers/active` by `user_id`, with an owner-scoped
-  identity cache for offline reloads and email/username fallbacks. Add and Edit
+  identity cache for offline reloads and profile-name/email-prefix fallbacks. Add and Edit
   Student show this name in a disabled Teacher field. The Edit Student photo
   uploader and local photo-preview state are removed; Personal Information and
   Family Background & Details use matching headers. Paired inputs and actions
@@ -258,13 +269,30 @@ Old workspace/shim page directories are absent.
   readable. Internal rollover snapshots/chunks remain stored for undo and are
   excluded from audit listings by the current audit-listing implementation.
 - Chairman `TeacherManagement.tsx` owns both Add/Edit Teacher forms. They have
-  no separate username input: first/optional last name share the first row,
+  no separate username input: required first and last names share the first row,
   email/optional employee ID share the second, and section spans the third.
   Existing controls, typography, colors and table/sidebar styling are retained.
-  Both client payloads and backend saves derive username from email. The existing
-  username VARCHAR(50) constraint limits teacher email inputs to 50 characters;
-  no schema migration is introduced. Optional creation last names supersede the
-  required-last-name behavior recorded in the historical teacher-creation entry.
+  Account requests, responses and inserts have no username field. Migration 013
+  removes the old column, retains the Chairman name in school settings, normalizes
+  existing emails and adds a case-insensitive unique email index. Namesakes are
+  allowed independently of email identity. Creation requires nonblank first and
+  last names; partial updates may omit names but cannot clear either name.
+  Nonblank employee IDs belong to one teacher, including archived accounts;
+  create/update checks provide clear errors and database uniqueness prevents races.
+  IDs remain optional: whitespace is trimmed and blank IDs become null, allowing
+  multiple teachers without IDs. Editing a teacher may retain their own ID but
+  cannot take another teacher's ID. Duplicate checks include archived teachers
+  and return HTTP 400 before account/profile/section changes are committed.
+  Missing creation names or explicitly blank/null names on edits return HTTP 422.
+  The Add/Edit forms require Last Name just like First Name, while failed saves
+  preserve existing scoped drafts. Name requirements are request validation;
+  existing nullable profile columns and historical records are preserved.
+  Verification (2026-10-26): all 10 tests in
+  `backend/tests/test_teacher_creation.py`, app TypeScript and full frontend lint
+  pass. Tests cover required names, optional IDs, duplicate IDs, retaining an ID
+  on edit, archived ownership and transaction rollback. Teacher-management
+  browser expectations were updated for required last names but were not rerun
+  for this follow-up; earlier browser results below describe their dated runs.
 - Teacher directories use one LEFT JOIN query over active adviser assignments.
   They retain unassigned teachers and ignore stale cached labels. Chairman and
   teacher directory aliases share this query. Teacher moves now vacate every
@@ -282,8 +310,8 @@ Old workspace/shim page directories are absent.
   18 desktop/mobile teacher-management browser cases pass across the initial run
   and a focused rerun after fixing a reload-data wait in an existing test.
   TypeScript, focused ESLint, Python compilation and whitespace checks pass.
-  Older teacher lifecycle assertions have since been reconciled with the
-  email-derived username and optional-last-name contracts during pre-push cleanup.
+  Current teacher lifecycle assertions use email-only accounts and profile names,
+  with required first/last creation names as described above.
   Creation, edits and section handovers explicitly roll back all writes on errors.
   Existing takeover policy remains: displaced teachers with no other active
   section are archived, while teachers with another active section stay active.
@@ -329,7 +357,7 @@ Old workspace/shim page directories are absent.
 
 | Table / model file | Identity and important fields |
 | --- | --- |
-| users / `models/user.py` | user_id, unique username/email, password hash, role, active/pending/first-login flags; compatibility OTP columns remain |
+| users / `models/user.py` | user_id, case-insensitively unique email, password hash, role, active/pending/first-login flags; compatibility OTP columns remain; no username column |
 | teachers / `models/teacher.py` | teacher_id, unique nullable user_id, optional unique employee ID, names/class label, eight granular parent flags, separate question-management permission |
 | parents / `models/parent.py` | parent_id, unique nullable user_id, guardian name/age/education/occupation; guardian-only records can lack login accounts |
 | sections / `models/section.py` | section_id, unique name, adviser compatibility pointer; non-null pre_test_parent_editable=true, mid_test_parent_editable=false, post_test_parent_editable=false |
@@ -340,7 +368,7 @@ Old workspace/shim page directories are absent.
 | student_eccd_evaluations / `models/eccd.py` | Evaluation/student/question IDs, nullable teacher_id/parent_id, evaluator_role=teacher/parent, PRE/MID/POST, KAYA/DI-KAYA, compatibility evaluation_date, official teacher_evaluation_date, timezone-aware parent_submitted_at; unique (student_id, question_id, testing_period) |
 | messages / `models/message.py` | Teacher/parent FKs, sender role, subject/body, read/archive flags, creation time |
 | system_logs / `models/log.py` | User-linked actions, TEXT details including rollover snapshots/chunks, timestamp |
-| system_settings / `models/settings.py` | Singleton ID 1; branding/images, school/principal, opening month 1-12, current/previous year, rollover timestamp |
+| system_settings / `models/settings.py` | Singleton ID 1; branding/images, school/principal/chairman names, opening month 1-12, current/previous year, rollover timestamp |
 | email_verifications / `models/email_verification.py` | Account/email/purpose-bound hashed challenge/OTP, expiry, attempts; login/registration/password-change/email-change purposes |
 | user_trusted_devices / `models/trusted_device.py` | Account FK, hashed token, user agent, UTC expiry/creation |
 
@@ -377,6 +405,18 @@ add the newer feature columns. The explicit migration inventory is:
 | 009 | parent_eccd_marks | Independent default-off checklist marks visibility |
 | 010 | parent_predictions | Default-off parent prediction permission |
 | 011 | section_ownership | Retire orphaned section ownership and synchronize adviser pointers |
+| 012 | auth_security_version | Persistent credential revocation version |
+| 013 | email_only_identity | Move Chairman name to settings, remove username, normalize emails and enforce case-insensitive uniqueness |
+
+Migration 013 was applied and checked on the configured local `ames_parity_dev`
+database on 2026-10-25. Uvicorn startup, `/ready` and `/api/settings` pass with
+the new schema. Chairman Name is editable below Principal Name, using the
+existing durable settings draft/save flow. Seed, sessions, audit actors and
+encrypted backups use settings/profile names without an account-name column.
+Verification ran all 321 backend tests: 319 passed in the full run; the historical
+backup fixture was upgraded to the current identity schema and the unchanged
+scoring asset's CRLF/LF mismatch was normalized, after which both corrected tests
+passed targeted reruns. Root/app TypeScript and full frontend lint pass.
 
 ```powershell
 # Fresh database only, in order:
@@ -468,6 +508,29 @@ incorrect-current-password responses.
 
 ## 6. Authentication and access invariants
 
+- Login and its aliases require email/password and look up `users.email`
+  case-insensitively; username is neither accepted as a login alias nor returned
+  in sessions, JWT claims, or teacher directories. Sessions include `first_name`,
+  `last_name`, and `full_name` from teacher/parent profiles or the Chairman's
+  configured real name; JWT `sub` is the user ID string. Greetings use First Last,
+  then full name or email prefix. Chairman presentation uses the editable
+  `system_settings.chairman_name`, falling back to `Chairman`. Migration 013
+  removes `users.username` after preserving the existing Chairman name and
+  rejects duplicate normalized email addresses before changing data. Routes
+  normalize email inputs with strip/lower; the database enforces a unique
+  lower(email) index. Encrypted backups export no retired account fields;
+  older account snapshots are accepted but never restored over live accounts.
+  Account creation and updates never generate or insert usernames. Login uses
+  `one_or_none()` and rejects ambiguous matches instead of selecting an arbitrary
+  account. `utils/account_identity.py` resolves profile/settings names;
+  `frontend/src/utils/displayName.ts` uses settings for Chairman presentation.
+  Audit actor queries resolve the Chairman from settings, teachers from their
+  first/last names and parents from their profile full name, preserving search
+  by readable names without using raw database IDs as display-name fallbacks.
+  Backup schemas/export/restore do not require `users.username`; settings backups
+  include `chairman_name`. Historical migrations and old-backup compatibility
+  may still mention username. URL-parser `.username` checks refer to embedded
+  URL credentials and must remain independent of the removed account column.
 - `components/common/TermsAndPrivacyModal.tsx` provides the shared AMES Terms and
   Conditions and Data Privacy Notice, including the actual learner/family/ECCD
   data categories, advisory Random Forest limits, encrypted LRNs/backups,

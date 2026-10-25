@@ -7,7 +7,6 @@ from .common import ApiModel, PositiveId
 class TeacherListItem(ApiModel):
     teacher_id: PositiveId
     user_id: PositiveId | None = None
-    username: str | None = None
     email: str | None = None
     first_name: str | None = None
     last_name: str | None = None

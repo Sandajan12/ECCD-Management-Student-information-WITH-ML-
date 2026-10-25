@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 
 from backend.config.database import get_db
 from backend.config.settings import settings
@@ -68,7 +69,11 @@ def verify_current_password(
 def update_account(request: AccountUpdateRequest, response: Response, db: Session = Depends(get_db), current_user=Depends(verify_role(["super-admin"]))):
     from backend.utils.account_changes import update_chairman
     from backend.utils.authentication import clear_device_cookies
-    result = update_chairman(db, current_user, request)
+    try:
+        result = update_chairman(db, current_user, request)
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(400, "Email is already registered.") from None
     clear_device_cookies(response)
     return result
 

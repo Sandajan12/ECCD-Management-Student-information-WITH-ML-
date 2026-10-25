@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 
 from backend.config.database import engine
 from backend.migrations import phase1
-from backend.models import Base, EccdDomain, EccdQuestion, EmailVerification, User, UserTrustedDevice
+from backend.models import Base, EccdDomain, EccdQuestion, EmailVerification, User, UserTrustedDevice, SystemSettings
 from backend.models.email_verification import OtpPurpose
 from backend.models.user import UserRole
 from backend.scripts.seed_supabase import (
@@ -80,7 +80,7 @@ class SupabaseSeedTests(unittest.TestCase):
                 self.assertTrue(user.is_active)
                 self.assertFalse(user.is_registration_pending)
                 self.assertFalse(user.is_first_login)
-                self.assertEqual(user.username, "Test Chairman")
+                self.assertEqual(db.get(SystemSettings, 1).chairman_name, "Test Chairman")
                 self.assertNotEqual(user.password_hash, "Bootstrap123!")
                 self.assertTrue(verify_password("Bootstrap123!", user.password_hash))
                 token = build_session(db, user)["token"]
@@ -137,7 +137,7 @@ class SupabaseSeedTests(unittest.TestCase):
         self.assertEqual(sorted(row["chairman"] for row in results), ["created", "preserved"])
         self.assertEqual(sum(row["domains_inserted"] for row in results), 7)
         self.assertEqual(sum(row["questions_inserted"] for row in results), 109)
-        self.assertEqual(sum(len(row["migrations_applied"]) for row in results), 12)
+        self.assertEqual(sum(len(row["migrations_applied"]) for row in results), len(MIGRATIONS))
         with engine.begin() as connection:
             phase1.select_schema(connection, self.schema)
             self.assertEqual(connection.execute(text("SELECT count(*) FROM users")).scalar_one(), 1)
@@ -202,7 +202,7 @@ class SupabaseSeedTests(unittest.TestCase):
             phase1.select_schema(connection, self.schema)
             connection.execute(text("DELETE FROM users"))
             with Session(bind=connection) as db:
-                db.add(User(username="Parent", email="bootstrap@example.com", role=UserRole.USER,
+                db.add(User(email="bootstrap@example.com", role=UserRole.USER,
                             password_hash=get_password_hash("Unrelated123!"), is_active=True))
                 db.flush()
         before = self.snapshot()
@@ -223,11 +223,19 @@ class SupabaseSeedTests(unittest.TestCase):
             self.assertNotIn("Bootstrap123!", output.getvalue())
 
     def test_invalid_or_partial_credentials_and_schema_are_rejected(self):
+        long_name = ChairmanSettings(
+            _env_file=None, INITIAL_CHAIRMAN_EMAIL="long@example.com",
+            INITIAL_CHAIRMAN_PASSWORD="Bootstrap123!", INITIAL_CHAIRMAN_NAME="A" * 255,
+        )
+        self.assertEqual(self.run_seed(long_name)["chairman"], "created")
+        with engine.begin() as connection:
+            phase1.select_schema(connection, self.schema)
+            self.assertEqual(connection.execute(text("SELECT chairman_name FROM system_settings WHERE id=1")).scalar_one(), "A" * 255)
         for fields in (
             {"INITIAL_CHAIRMAN_EMAIL": "broken"},
             {"INITIAL_CHAIRMAN_PASSWORD": "weak"},
             {"INITIAL_CHAIRMAN_NAME": " "},
-            {"INITIAL_CHAIRMAN_NAME": "A" * 51},
+            {"INITIAL_CHAIRMAN_NAME": "A" * 256},
         ):
             with self.subTest(fields=list(fields)), self.assertRaises(ValidationError):
                 ChairmanSettings(_env_file=None, **fields)

@@ -261,7 +261,7 @@ class AuthenticationSecurityTests(unittest.TestCase):
         self.assertEqual(self.client.post("/api/auth/verify-otp", json={"challengeToken": challenge, "otp": code}).status_code, 400)
         self.client.cookies.clear()
         with patch.object(settings, "ENABLE_OTP", True), patch("backend.routes.auth.send_otp_email", new_callable=AsyncMock):
-            response = self.client.post("/api/auth/login", json={"email": "adviser", "password": "Changed456", "deviceToken": device})
+            response = self.client.post("/api/auth/login", json={"email": "adviser@example.com", "password": "Changed456", "deviceToken": device})
             self.assertTrue(response.json()["requireOtp"])
 
     def test_otp_remember_choice_is_bound_to_hashed_single_use_challenge(self):
@@ -286,7 +286,7 @@ class AuthenticationSecurityTests(unittest.TestCase):
     def test_otp_resend_cooldown_and_aliases_preserve_existing_challenge(self):
         with patch.object(settings, "ENABLE_OTP", True), patch("backend.routes.auth.send_otp_email", new_callable=AsyncMock) as mail:
             first = self.fixture.login().json()["challengeToken"]
-            blocked = self.client.post("/api/auth/login-step1", json={"email": "adviser", "password": test_phase2.PASSWORD})
+            blocked = self.client.post("/api/auth/login-step1", json={"email": "adviser@example.com", "password": test_phase2.PASSWORD})
             self.assertEqual(blocked.status_code, 429)
             self.assertGreater(int(blocked.headers["Retry-After"]), 0)
             mail.assert_awaited_once()
@@ -371,7 +371,7 @@ class AuthenticationSecurityTests(unittest.TestCase):
     def test_explicit_consent_refusal_rejected_and_legacy_helpers_compatible(self):
         registration = {"email": "new@example.com", "firstName": "New", "lastName": "Parent", "password": test_phase2.PASSWORD}
         for refused in (False, None, "false", "true", 1):
-            for path, payload in (("/api/auth/login", {"email": "adviser", "password": test_phase2.PASSWORD}), ("/api/auth/register-parent", registration), ("/api/auth/verify-otp", {"challengeToken": "unused", "otp": "123456"})):
+            for path, payload in (("/api/auth/login", {"email": "adviser@example.com", "password": test_phase2.PASSWORD}), ("/api/auth/register-parent", registration), ("/api/auth/verify-otp", {"challengeToken": "unused", "otp": "123456"})):
                 with self.subTest(path=path, refused=refused):
                     self.assertEqual(self.client.post(path, json={**payload, "terms_accepted": refused}).status_code, 422)
         self.assertEqual(self.fixture.login(terms_accepted=True).status_code, 200)

@@ -1,4 +1,5 @@
 from fastapi import HTTPException
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from backend.config.settings import settings
 from backend.models import User
@@ -28,12 +29,13 @@ def update_chairman(db: Session, user: User, payload: AccountUpdateRequest) -> d
         raise HTTPException(401, "Incorrect current password.")
     if not payload.newEmail and not payload.newPassword:
         raise HTTPException(400, "Enter a new email or password.")
-    if payload.newEmail and payload.newEmail != user.email:
-        if db.query(User).filter(User.email == payload.newEmail, User.user_id != user.user_id).first():
+    email = str(payload.newEmail).strip().lower() if payload.newEmail else None
+    if email and email != user.email:
+        if db.query(User).filter(func.lower(User.email) == email, User.user_id != user.user_id).first():
             raise HTTPException(400, "Email is already registered.")
         if settings.otp_enabled:
-            consume_challenge(db, payload.challengeToken or "", payload.otp or "", (OtpPurpose.EMAIL_CHANGE,), user.user_id, str(payload.newEmail))
-        user.email = str(payload.newEmail)
+            consume_challenge(db, payload.challengeToken or "", payload.otp or "", (OtpPurpose.EMAIL_CHANGE,), user.user_id, email)
+        user.email = email
     if payload.newPassword:
         if verify_password(payload.newPassword, user.password_hash):
             raise HTTPException(400, "Choose a different password.")

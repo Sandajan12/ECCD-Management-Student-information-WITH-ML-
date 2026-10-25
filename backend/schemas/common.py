@@ -53,7 +53,7 @@ PositiveId = Annotated[int, BeforeValidator(reject_boolean), Field(gt=0, le=2147
 Lrn = Annotated[str, Field(strict=True, pattern=r"^[0-9]{12}$")]
 Name = Annotated[str, BeforeValidator(trim_text), Field(strict=True, max_length=100), AfterValidator(validate_person_name)]
 EmergencyContact = Annotated[str, Field(strict=True, max_length=20), AfterValidator(validate_contact)]
-LoginEmail = Annotated[EmailStr, Field(max_length=100)]
+LoginEmail = Annotated[EmailStr, BeforeValidator(lambda value: value.strip().lower() if isinstance(value, str) else value), Field(max_length=100)]
 StrongPassword = Annotated[str, AfterValidator(validate_password)]
 SchoolYear = Annotated[str, Field(pattern=r"^[0-9]{4}-[0-9]{4}$"), AfterValidator(validate_school_year)]
 OpeningMonth = Annotated[int, BeforeValidator(reject_boolean), Field(ge=1, le=12)]

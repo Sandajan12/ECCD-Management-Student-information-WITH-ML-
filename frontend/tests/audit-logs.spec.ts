@@ -18,7 +18,7 @@ test.beforeEach(async ({ page, request }) => {
   page.on("pageerror", (error) => errors.push(error.message));
   expect((await request.post(`${backend}/__test/reset`)).ok()).toBeTruthy();
   const login = await request.post(`${backend}/api/auth/login`, {
-    data: { username: "chairman", password: "Example123" },
+    data: { email: "chairman@example.com", password: "Example123" },
   });
   expect(login.ok()).toBeTruthy();
   const session = (await login.json()) as SessionResponse;
@@ -34,12 +34,12 @@ test("real Teacher Accounts handover resolves names and supports combined actor 
   page,
   request,
 }, info) => {
-  for (const [username, address] of [
+  for (const [account, address] of [
     ["adviser", "Teacher audit update"],
     ["parent", "Parent audit update"],
   ]) {
     const login = await request.post(`${backend}/api/auth/login`, {
-      data: { username, password: "Example123" },
+      data: { email: `${account}@example.com`, password: "Example123" },
     });
     const session = (await login.json()) as SessionResponse;
     const saved = await request.put(`${backend}/api/students/1`, {

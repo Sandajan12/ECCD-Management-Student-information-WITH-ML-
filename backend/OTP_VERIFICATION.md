@@ -21,8 +21,8 @@ when OTP is enabled. Remembered devices still skip OTP for their existing
    `MAIL_*` settings; an HTTP API key is not used by this SMTP implementation.
    Existing process environment values take precedence over `.env`.
 2. Use an existing active Chairman (`super-admin`) account whose stored email
-   address is a mailbox you can open. A username login sends to the account's
-   stored email. The local development seed account's `example.com` address
+   address is a mailbox you can open. Sign in with that email address; verification
+   sends to the same stored email. The local development seed account's `example.com` address
    cannot receive real email; use an account with a real address instead.
 3. Restart the backend. For this workspace, the installed Python 3.12 dependencies
    are in `.venv312`. From the repository root:

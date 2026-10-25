@@ -402,20 +402,25 @@ def get_system_logs(
     current_user=Depends(verify_role(["super-admin", "chairman"])),
 ):
     from backend.utils.audit import read_details
-    logs = (db.query(SystemLog, User.username, User.email, User.role, Teacher.first_name, Teacher.last_name, Parent.fullname)
+    from backend.utils.account_identity import chairman_name, email_display_name
+    chairman = chairman_name(db)
+    logs = (db.query(SystemLog, User.email, User.role, Teacher.first_name, Teacher.last_name, Parent.fullname)
             .outerjoin(User, SystemLog.user_id == User.user_id)
             .outerjoin(Teacher, Teacher.user_id == User.user_id)
             .outerjoin(Parent, Parent.user_id == User.user_id)
             .filter(SystemLog.action_type.notin_(("ROLLOVER_SNAPSHOT", "ROLLOVER_RECORDS")))
             .order_by(SystemLog.timestamp.desc(), SystemLog.log_id.desc()).all())
     results = []
-    for log, username, email, role, first_name, last_name, parent_name in logs:
-        name = " ".join(name for name in (first_name, last_name) if name) or parent_name or username or email or "System"
+    for log, email, role, first_name, last_name, parent_name in logs:
+        name = (" ".join(name.strip() for name in (first_name, last_name) if name and name.strip())
+                or (parent_name or "").strip()
+                or (chairman if role == "super-admin" else None)
+                or (email_display_name(email) if email else "System"))
         details, metadata = read_details(log.details)
         results.append({
             "id": log.log_id,
             "action": log.action_type,
-            "performed_by": username or "System",
+            "performed_by": name,
             "teacher_name": name,
             "actor_name": name,
             "actor_email": email,

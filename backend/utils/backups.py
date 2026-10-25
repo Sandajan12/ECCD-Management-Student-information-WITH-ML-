@@ -20,6 +20,7 @@ def cipher() -> Fernet:
 def export_backup(db: Session) -> bytes:
     # ORM metadata includes all evaluator provenance columns; retain default/null
     # fields in the encrypted document as well as explicitly populated values.
+    # Current account metadata is email-only; settings carries the Chairman name.
     document = {name: [dict(row) for row in db.execute(table.select()).mappings()] for name, table in Base.metadata.tables.items()}
     payload = cipher().encrypt(BackupDocument.model_validate(document).model_dump_json(exclude_unset=False).encode())
     if len(payload) > BACKUP_LIMIT:
@@ -34,6 +35,8 @@ def restore_backup(db: Session, payload: bytes, audit_user_id: int | None = None
         document = BackupDocument.model_validate_json(cipher().decrypt(payload))
     except (InvalidToken, ValidationError, ValueError):
         raise HTTPException(400, "Invalid backup file, incompatible schema or encryption keys.") from None
+    # Historical account-only fields are ignored by UserBackupRow, and account
+    # snapshots never overwrite the live email-based registry.
     preserved = {"users", "email_verifications", "user_trusted_devices"}
     try:
         # No deletion is committed until all replacement data passes FK checks.

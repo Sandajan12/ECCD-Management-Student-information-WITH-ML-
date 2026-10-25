@@ -164,7 +164,12 @@ function TeacherForm({
     const section = sections.find(
       (item) => String(item.section_id) === values.section_id,
     );
-    if (!values.first_name.trim() || !values.email.trim() || !section) {
+    if (
+      !values.first_name.trim() ||
+      !values.last_name.trim() ||
+      !values.email.trim() ||
+      !section
+    ) {
       setError("Please fill in all required fields.");
       return;
     }
@@ -183,7 +188,6 @@ function TeacherForm({
         first_name: values.first_name.trim(),
         last_name: values.last_name.trim(),
         email: values.email.trim(),
-        username: values.email.trim(),
         employee_id: values.employee_id.trim() || null,
         class_name: section.section_name,
       };
@@ -201,7 +205,6 @@ function TeacherForm({
           first_name: data.first_name,
           last_name: data.last_name,
           email: data.email,
-          username: data.username,
           employee_id: data.employee_id,
           section_id: section.section_id,
           password,
@@ -265,18 +268,20 @@ function TeacherForm({
                 label={
                   {
                     first_name: "First Name",
-                    last_name: "Last Name (optional)",
+                    last_name: "Last Name",
                     email: "Email",
                     employee_id: "Employee ID (optional)",
                   }[name]
                 }
                 value={values[name]}
                 type={name === "email" ? "email" : "text"}
-                required={name === "first_name" || name === "email"}
-                disabled={busy}
-                maxLength={
-                  name === "first_name" || name === "last_name" ? 100 : 50
+                required={
+                  name === "first_name" ||
+                  name === "last_name" ||
+                  name === "email"
                 }
+                disabled={busy}
+                maxLength={name === "employee_id" ? 50 : 100}
                 onChange={(e) =>
                   change({
                     ...values,

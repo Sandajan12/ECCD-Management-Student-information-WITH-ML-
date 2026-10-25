@@ -29,8 +29,8 @@ async function completePre(request: APIRequestContext) {
 test.beforeEach(async ({ page, request }, info) => {
   await page.setViewportSize({ width: info.project.name === "mobile" ? 320 : 1280, height: 900 });
   expect((await request.post(`${backend}/__test/reset`)).ok()).toBeTruthy();
-  teacher = await (await request.post(`${backend}/api/auth/login`, { data: { username: "adviser", password: "Example123" } })).json() as SessionResponse;
-  parent = await (await request.post(`${backend}/api/auth/login`, { data: { username: "parent", password: "Example123" } })).json() as SessionResponse;
+  teacher = await (await request.post(`${backend}/api/auth/login`, { data: { email: "adviser@example.com", password: "Example123" } })).json() as SessionResponse;
+  parent = await (await request.post(`${backend}/api/auth/login`, { data: { email: "parent@example.com", password: "Example123" } })).json() as SessionResponse;
 });
 
 test("teacher switch persists, enables real parent prediction, and revocation hides results", async ({ page, context, request }) => {

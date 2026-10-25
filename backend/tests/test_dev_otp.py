@@ -24,7 +24,7 @@ class DevelopmentOtpTests(unittest.TestCase):
         fixture = BackendTests()
         fixture.setUp()
         self.addCleanup(fixture.tearDown)
-        client, username, password = fixture.client, "chairman", PASSWORD
+        client, email, password = fixture.client, "chairman@example.com", PASSWORD
         with (
             fixture.sessions() as db,
             patch.object(settings, "ENABLE_OTP", True),
@@ -32,8 +32,8 @@ class DevelopmentOtpTests(unittest.TestCase):
             patch("backend.utils.email.FastMail") as mail,
         ):
             mail.return_value.send_message = AsyncMock()
-            self.assertEqual(client.post("/api/auth/login", json={"email": username, "password": "wrong"}).status_code, 401)
-            result = client.post("/api/auth/login", json={"email": username, "password": password})
+            self.assertEqual(client.post("/api/auth/login", json={"email": email, "password": "wrong"}).status_code, 401)
+            result = client.post("/api/auth/login", json={"email": email, "password": password})
             self.assertEqual(result.status_code, 200)
             self.assertTrue(result.json()["requireOtp"])
             challenge = result.json()["challengeToken"]
@@ -46,11 +46,11 @@ class DevelopmentOtpTests(unittest.TestCase):
             self.assertEqual(client.post("/api/auth/verify-otp", json={"challengeToken": challenge, "otp": "654321"}).status_code, 400)
             mail.return_value.send_message.assert_awaited_once()
             with patch.object(settings, "ENABLE_OTP", False):
-                bypass = client.post("/api/auth/login-step1", json={"email": username, "password": password})
+                bypass = client.post("/api/auth/login-step1", json={"email": email, "password": password})
                 self.assertEqual(bypass.status_code, 200)
                 self.assertFalse(bypass.json()["requireOtp"])
-                self.assertEqual(client.post("/api/auth/login-step1", json={"email": username, "password": "wrong"}).status_code, 401)
-                account = db.query(User).filter_by(username=username).one()
+                self.assertEqual(client.post("/api/auth/login-step1", json={"email": email, "password": "wrong"}).status_code, 401)
+                account = db.query(User).filter_by(email=email).one()
                 master_challenge, master_code = issue_challenge(db, account, OtpPurpose.LOGIN)
                 db.commit()
                 self.assertEqual(master_code, "123456")
@@ -59,7 +59,7 @@ class DevelopmentOtpTests(unittest.TestCase):
                 mail.return_value.send_message.assert_awaited_once()
 
     def test_master_code_is_generated_only_when_disabled(self):
-        user = User(user_id=1, username="test", email="test@example.com", password_hash="test-hash", role=UserRole.SUPER_ADMIN)
+        user = User(user_id=1, email="test@example.com", password_hash="test-hash", role=UserRole.SUPER_ADMIN)
         for enabled, expected in ((False, "123456"), (True, "100000")):
             value = config(ENABLE_OTP=enabled)
             db = MagicMock()

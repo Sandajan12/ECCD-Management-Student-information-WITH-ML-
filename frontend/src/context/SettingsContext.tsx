@@ -12,6 +12,7 @@ export interface SystemSettings {
   system_title: string;
   school_name: string;
   principal_name: string | null;
+  chairman_name: string | null;
   primary_color: string;
   secondary_color: string;
   logo_url: string | null;
@@ -28,6 +29,7 @@ const defaults: SystemSettings = {
   system_title: "ECCD Management System",
   school_name: "",
   principal_name: "",
+  chairman_name: "",
   primary_color: "#2563eb",
   secondary_color: "#111827",
   logo_url: "",

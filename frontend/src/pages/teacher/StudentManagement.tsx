@@ -40,6 +40,7 @@ import PeopleAltOutlinedIcon from "@mui/icons-material/PeopleAltOutlined";
 import api, { errorMessage, isNetworkError } from "../../services/api";
 import { useSettings } from "../../context/SettingsContext";
 import { useAuth } from "../../context/AuthContext";
+import { userDisplayName } from "../../utils/displayName";
 import { useTeacher } from "../../context/TeacherContext";
 import {
   useDurableForm,
@@ -239,9 +240,7 @@ const StudentManagement: React.FC = () => {
       .filter(Boolean)
       .join(" ")
       .trim() ||
-    user?.email ||
-    user?.username ||
-    "";
+    userDisplayName(user);
   useEffect(() => {
     let current = true;
     const cacheKey = "ames_teacher_identity_" + owner;

@@ -13,6 +13,7 @@ from backend.config.settings import settings
 from backend.models import EmailVerification, Section, SectionTeacher, Teacher, User, UserTrustedDevice
 from backend.models.email_verification import OtpPurpose
 from backend.utils.security import create_access_token
+from backend.utils.account_identity import account_names
 
 
 class AuthError(HTTPException):
@@ -91,7 +92,7 @@ def build_session(db: Session, user: User) -> dict:
     if teacher:
         assignment = db.query(SectionTeacher).filter_by(teacher_id=teacher.teacher_id, role="Primary Adviser", status="Active").order_by(SectionTeacher.id).first()
         section = db.get(Section, assignment.section_id) if assignment else None
-    payload = {"id": user.user_id, "userId": user.user_id, "sub": user.username, "username": user.username,
+    payload = {"id": user.user_id, "userId": user.user_id, "sub": str(user.user_id), **account_names(user, db),
                "email": user.email, "role": user.role.value, "is_first_login": int(user.is_first_login),
                "section_id": section.section_id if section else None, "section_name": section.section_name if section else None,
                "allow_eccd_question_management": bool(teacher and teacher.allow_eccd_question_management)}

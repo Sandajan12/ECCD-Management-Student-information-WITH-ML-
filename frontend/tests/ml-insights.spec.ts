@@ -14,7 +14,7 @@ test.beforeEach(async ({ page, request }, info) => {
   });
   expect((await request.post(`${backend}/__test/reset`)).ok()).toBeTruthy();
   const response = await request.post(`${backend}/api/auth/login`, {
-    data: { username: "adviser", password: "Example123" },
+    data: { email: "adviser@example.com", password: "Example123" },
   });
   expect(response.status()).toBe(200);
   const session = (await response.json()) as SessionResponse;

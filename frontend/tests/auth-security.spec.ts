@@ -5,7 +5,7 @@ import type { AxiosInstance, InternalAxiosRequestConfig } from "axios";
 const backend = "http://127.0.0.1:8775";
 
 async function credentials(page: Page, name = "adviser") {
-  await page.getByLabel("Email or username").fill(name);
+  await page.getByLabel("Email", { exact: true }).fill(`${name}@example.com`);
   await page.getByLabel("Password", { exact: true }).fill("Example123");
   await page.getByRole("checkbox", { name: /I have read and agree/ }).check();
 }
