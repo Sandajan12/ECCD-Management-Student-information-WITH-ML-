@@ -1,0 +1,1760 @@
+[
+  {
+    "growth_factor": 0.4,
+    "noise_std": 0.008,
+    "manifest": {
+      "dataset": "a165244c606aa3802bdf60dc034ddb77aca36b2214162ace71df5e5b590774d2",
+      "training": "e35f7a500ad334835139640ba3fd151243cb0bdb5a3f5796338bd625251fdaae",
+      "trainer": "63e42cfbd6e72b8d2214e17d2062ccf949d453a0508d7faca6cf3e33344282e0",
+      "components": "bb0650128cb317c7a2a5a870001d8f33ab662a4c9bd43d9df60478358de41d74",
+      "sklearn": "1.9.1"
+    },
+    "candidates": [
+      {
+        "name": "rf_depth12_leaf3",
+        "params": {
+          "candidate": "rf_depth12_leaf3",
+          "real_weight": 2.5,
+          "calibration": "sigmoid",
+          "calibration_folds": 3
+        },
+        "mean_accuracy": 0.8953271028037385,
+        "std_accuracy": 0.01373545650158793,
+        "mean_macro_f1": 0.8958121676137765,
+        "std_macro_f1": 0.013672849872233923,
+        "fold_accuracy": [
+          0.8925233644859814,
+          0.8785046728971962,
+          0.9112149532710281,
+          0.883177570093458,
+          0.9112149532710281
+        ],
+        "fold_macro_f1": [
+          0.8923384956819608,
+          0.8788376464050464,
+          0.9117631234419555,
+          0.8844595402308401,
+          0.9116620323090793
+        ],
+        "calibrated_oof": {
+          "log_loss": 0.3270316864873134,
+          "multiclass_brier_sum": 0.16912518486351108,
+          "top_label_ece_10_bins": 0.04392469764496619,
+          "maximum_probability": 0.9562505076711896,
+          "reliability_bins": [
+            {
+              "n": 3,
+              "confidence": 0.38980466543302894,
+              "accuracy": 1.0
+            },
+            {
+              "n": 8,
+              "confidence": 0.48861212727025644,
+              "accuracy": 0.375
+            },
+            {
+              "n": 47,
+              "confidence": 0.5506800316799675,
+              "accuracy": 0.5957446808510638
+            },
+            {
+              "n": 57,
+              "confidence": 0.6617542112481911,
+              "accuracy": 0.7543859649122807
+            },
+            {
+              "n": 60,
+              "confidence": 0.7582723036208286,
+              "accuracy": 0.7166666666666667
+            },
+            {
+              "n": 163,
+              "confidence": 0.866440761048112,
+              "accuracy": 0.803680981595092
+            },
+            {
+              "n": 732,
+              "confidence": 0.9328747093985461,
+              "accuracy": 0.9658469945355191
+            }
+          ]
+        },
+        "uncalibrated_oof": {
+          "log_loss": 0.32771881682682724,
+          "multiclass_brier_sum": 0.1649724108143282,
+          "top_label_ece_10_bins": 0.03383212154044989,
+          "maximum_probability": 1.0,
+          "reliability_bins": [
+            {
+              "n": 20,
+              "confidence": 0.4663690959626326,
+              "accuracy": 0.45
+            },
+            {
+              "n": 65,
+              "confidence": 0.5472378691813392,
+              "accuracy": 0.676923076923077
+            },
+            {
+              "n": 66,
+              "confidence": 0.6464041353555195,
+              "accuracy": 0.7727272727272727
+            },
+            {
+              "n": 71,
+              "confidence": 0.7522011009102342,
+              "accuracy": 0.7605633802816901
+            },
+            {
+              "n": 112,
+              "confidence": 0.8520414046716319,
+              "accuracy": 0.7946428571428571
+            },
+            {
+              "n": 736,
+              "confidence": 0.9851681567944075,
+              "accuracy": 0.96875
+            }
+          ]
+        },
+        "behavior": {
+          "profile": {
+            "domains": 1,
+            "total": 7,
+            "standard_score": 37,
+            "age_months": 66,
+            "gender": "FEMALE",
+            "handedness": "Right"
+          },
+          "blank": {
+            "Average Overall Development": 0.04463211805075224,
+            "Suggests Significant Delay in Overall Development": 0.926140693462821,
+            "Suggests Slight Delay in Overall Development": 0.029227188486426758
+          },
+          "filled": {
+            "Average Overall Development": 0.04463211805075224,
+            "Suggests Significant Delay in Overall Development": 0.926140693462821,
+            "Suggests Slight Delay in Overall Development": 0.029227188486426758
+          },
+          "predicted_class": "Suggests Significant Delay in Overall Development",
+          "household_invariant": true,
+          "confidence": 0.926140693462821,
+          "recovery_probability_average_or_slight": 0.07385930653717898,
+          "passed": false
+        }
+      },
+      {
+        "name": "rf_full_leaf5",
+        "params": {
+          "candidate": "rf_full_leaf5",
+          "real_weight": 2.5,
+          "calibration": "sigmoid",
+          "calibration_folds": 3
+        },
+        "mean_accuracy": 0.8897196261682243,
+        "std_accuracy": 0.016874271107726924,
+        "mean_macro_f1": 0.8905802529789255,
+        "std_macro_f1": 0.016471607091300276,
+        "fold_accuracy": [
+          0.9018691588785047,
+          0.8691588785046729,
+          0.9018691588785047,
+          0.8691588785046729,
+          0.9065420560747663
+        ],
+        "fold_macro_f1": [
+          0.9020689569620287,
+          0.8702133175575698,
+          0.9025966142754464,
+          0.8708390946801542,
+          0.9071832814194285
+        ],
+        "calibrated_oof": {
+          "log_loss": 0.3308812923200827,
+          "multiclass_brier_sum": 0.17265150230846488,
+          "top_label_ece_10_bins": 0.03597492000536373,
+          "maximum_probability": 0.9541772562762157,
+          "reliability_bins": [
+            {
+              "n": 1,
+              "confidence": 0.3781656603161819,
+              "accuracy": 1.0
+            },
+            {
+              "n": 13,
+              "confidence": 0.4589398747909923,
+              "accuracy": 0.38461538461538464
+            },
+            {
+              "n": 43,
+              "confidence": 0.5483786012457593,
+              "accuracy": 0.5581395348837209
+            },
+            {
+              "n": 51,
+              "confidence": 0.6525089558074137,
+              "accuracy": 0.6666666666666666
+            },
+            {
+              "n": 68,
+              "confidence": 0.75420476745284,
+              "accuracy": 0.75
+            },
+            {
+              "n": 173,
+              "confidence": 0.8630343931152963,
+              "accuracy": 0.8034682080924855
+            },
+            {
+              "n": 721,
+              "confidence": 0.9331865823886563,
+              "accuracy": 0.9680998613037448
+            }
+          ]
+        },
+        "uncalibrated_oof": {
+          "log_loss": 0.2957488613257272,
+          "multiclass_brier_sum": 0.1672605685264684,
+          "top_label_ece_10_bins": 0.024334629568664456,
+          "maximum_probability": 1.0,
+          "reliability_bins": [
+            {
+              "n": 3,
+              "confidence": 0.37594247675026565,
+              "accuracy": 0.6666666666666666
+            },
+            {
+              "n": 20,
+              "confidence": 0.46129067446857086,
+              "accuracy": 0.3
+            },
+            {
+              "n": 71,
+              "confidence": 0.5547146555441224,
+              "accuracy": 0.5774647887323944
+            },
+            {
+              "n": 58,
+              "confidence": 0.6499874635137742,
+              "accuracy": 0.7931034482758621
+            },
+            {
+              "n": 90,
+              "confidence": 0.7558302628468735,
+              "accuracy": 0.7444444444444445
+            },
+            {
+              "n": 113,
+              "confidence": 0.8511651389159491,
+              "accuracy": 0.8407079646017699
+            },
+            {
+              "n": 715,
+              "confidence": 0.9843604148993861,
+              "accuracy": 0.9706293706293706
+            }
+          ]
+        },
+        "behavior": {
+          "profile": {
+            "domains": 1,
+            "total": 7,
+            "standard_score": 37,
+            "age_months": 66,
+            "gender": "FEMALE",
+            "handedness": "Right"
+          },
+          "blank": {
+            "Average Overall Development": 0.04184391061208284,
+            "Suggests Significant Delay in Overall Development": 0.9323844612605584,
+            "Suggests Slight Delay in Overall Development": 0.025771628127358694
+          },
+          "filled": {
+            "Average Overall Development": 0.04184391061208284,
+            "Suggests Significant Delay in Overall Development": 0.9323844612605584,
+            "Suggests Slight Delay in Overall Development": 0.025771628127358694
+          },
+          "predicted_class": "Suggests Significant Delay in Overall Development",
+          "household_invariant": true,
+          "confidence": 0.9323844612605584,
+          "recovery_probability_average_or_slight": 0.0676155387394416,
+          "passed": false
+        }
+      },
+      {
+        "name": "histogram_boosting",
+        "params": {
+          "candidate": "histogram_boosting",
+          "real_weight": 2.5,
+          "calibration": "sigmoid",
+          "calibration_folds": 3
+        },
+        "mean_accuracy": 0.8850467289719626,
+        "std_accuracy": 0.010490628187216654,
+        "mean_macro_f1": 0.8852404625640997,
+        "std_macro_f1": 0.0107878179587147,
+        "fold_accuracy": [
+          0.9018691588785047,
+          0.8878504672897196,
+          0.8878504672897196,
+          0.8738317757009346,
+          0.8738317757009346
+        ],
+        "fold_macro_f1": [
+          0.9021964401633721,
+          0.8882365664280557,
+          0.8885468444562138,
+          0.8750242147502422,
+          0.8721982470226148
+        ],
+        "calibrated_oof": {
+          "log_loss": 0.34008894119811495,
+          "multiclass_brier_sum": 0.17330427666241596,
+          "top_label_ece_10_bins": 0.04750765617989883,
+          "maximum_probability": 0.9461342588499387,
+          "reliability_bins": [
+            {
+              "n": 10,
+              "confidence": 0.4718273422426984,
+              "accuracy": 0.2
+            },
+            {
+              "n": 29,
+              "confidence": 0.5511833929450284,
+              "accuracy": 0.3103448275862069
+            },
+            {
+              "n": 32,
+              "confidence": 0.6585595804995917,
+              "accuracy": 0.4375
+            },
+            {
+              "n": 53,
+              "confidence": 0.7551674891504866,
+              "accuracy": 0.7735849056603774
+            },
+            {
+              "n": 271,
+              "confidence": 0.8754883042672397,
+              "accuracy": 0.8560885608856088
+            },
+            {
+              "n": 675,
+              "confidence": 0.9202618663892951,
+              "accuracy": 0.9614814814814815
+            }
+          ]
+        },
+        "uncalibrated_oof": {
+          "log_loss": 0.30590652779994715,
+          "multiclass_brier_sum": 0.16368177797097108,
+          "top_label_ece_10_bins": 0.043073588631568134,
+          "maximum_probability": 0.9998558533190214,
+          "reliability_bins": [
+            {
+              "n": 1,
+              "confidence": 0.399618497197377,
+              "accuracy": 0.0
+            },
+            {
+              "n": 16,
+              "confidence": 0.47109687433620184,
+              "accuracy": 0.125
+            },
+            {
+              "n": 37,
+              "confidence": 0.5539110652784959,
+              "accuracy": 0.4864864864864865
+            },
+            {
+              "n": 37,
+              "confidence": 0.6578482713837804,
+              "accuracy": 0.6756756756756757
+            },
+            {
+              "n": 59,
+              "confidence": 0.7488808995335491,
+              "accuracy": 0.7966101694915254
+            },
+            {
+              "n": 87,
+              "confidence": 0.8537707874281822,
+              "accuracy": 0.7816091954022989
+            },
+            {
+              "n": 833,
+              "confidence": 0.9854779862440869,
+              "accuracy": 0.9519807923169268
+            }
+          ]
+        },
+        "behavior": {
+          "profile": {
+            "domains": 1,
+            "total": 7,
+            "standard_score": 37,
+            "age_months": 66,
+            "gender": "FEMALE",
+            "handedness": "Right"
+          },
+          "blank": {
+            "Average Overall Development": 0.05307803318816752,
+            "Suggests Significant Delay in Overall Development": 0.9100109874075252,
+            "Suggests Slight Delay in Overall Development": 0.036910979404307494
+          },
+          "filled": {
+            "Average Overall Development": 0.05307803318816752,
+            "Suggests Significant Delay in Overall Development": 0.9100109874075252,
+            "Suggests Slight Delay in Overall Development": 0.036910979404307494
+          },
+          "predicted_class": "Suggests Significant Delay in Overall Development",
+          "household_invariant": true,
+          "confidence": 0.9100109874075252,
+          "recovery_probability_average_or_slight": 0.08998901259247483,
+          "passed": false
+        }
+      },
+      {
+        "name": "soft_voting_rf_histogram",
+        "params": {
+          "candidate": "soft_voting_rf_histogram",
+          "real_weight": 2.5,
+          "calibration": "sigmoid",
+          "calibration_folds": 3
+        },
+        "mean_accuracy": 0.894392523364486,
+        "std_accuracy": 0.010065728611466372,
+        "mean_macro_f1": 0.8946853106706115,
+        "std_macro_f1": 0.009666670568859564,
+        "fold_accuracy": [
+          0.9065420560747663,
+          0.8878504672897196,
+          0.897196261682243,
+          0.8785046728971962,
+          0.9018691588785047
+        ],
+        "fold_macro_f1": [
+          0.9069088261634844,
+          0.8882365664280557,
+          0.8977746805142837,
+          0.8795904247959042,
+          0.9009160554513298
+        ],
+        "calibrated_oof": {
+          "log_loss": 0.3252616978815932,
+          "multiclass_brier_sum": 0.16595878860323973,
+          "top_label_ece_10_bins": 0.04786739004456118,
+          "maximum_probability": 0.9537420556983003,
+          "reliability_bins": [
+            {
+              "n": 11,
+              "confidence": 0.46262252089625716,
+              "accuracy": 0.36363636363636365
+            },
+            {
+              "n": 38,
+              "confidence": 0.5556101725632288,
+              "accuracy": 0.42105263157894735
+            },
+            {
+              "n": 37,
+              "confidence": 0.6504484195391298,
+              "accuracy": 0.7297297297297297
+            },
+            {
+              "n": 54,
+              "confidence": 0.7565246483428367,
+              "accuracy": 0.8148148148148148
+            },
+            {
+              "n": 180,
+              "confidence": 0.8644824220643506,
+              "accuracy": 0.7944444444444444
+            },
+            {
+              "n": 750,
+              "confidence": 0.9288957871702709,
+              "accuracy": 0.964
+            }
+          ]
+        },
+        "uncalibrated_oof": {
+          "log_loss": 0.29153582672363454,
+          "multiclass_brier_sum": 0.1596713665540123,
+          "top_label_ece_10_bins": 0.04856493778783147,
+          "maximum_probability": 0.9998818136038303,
+          "reliability_bins": [
+            {
+              "n": 18,
+              "confidence": 0.4581651087594143,
+              "accuracy": 0.2777777777777778
+            },
+            {
+              "n": 52,
+              "confidence": 0.5485167948309457,
+              "accuracy": 0.6923076923076923
+            },
+            {
+              "n": 51,
+              "confidence": 0.6574257888128258,
+              "accuracy": 0.7647058823529411
+            },
+            {
+              "n": 67,
+              "confidence": 0.7524890722683372,
+              "accuracy": 0.8955223880597015
+            },
+            {
+              "n": 114,
+              "confidence": 0.8498621477757866,
+              "accuracy": 0.7456140350877193
+            },
+            {
+              "n": 768,
+              "confidence": 0.9847676862389485,
+              "accuracy": 0.9661458333333334
+            }
+          ]
+        },
+        "behavior": {
+          "profile": {
+            "domains": 1,
+            "total": 7,
+            "standard_score": 37,
+            "age_months": 66,
+            "gender": "FEMALE",
+            "handedness": "Right"
+          },
+          "blank": {
+            "Average Overall Development": 0.04735652981266783,
+            "Suggests Significant Delay in Overall Development": 0.9219411769251776,
+            "Suggests Slight Delay in Overall Development": 0.030702293262154557
+          },
+          "filled": {
+            "Average Overall Development": 0.04735652981266783,
+            "Suggests Significant Delay in Overall Development": 0.9219411769251776,
+            "Suggests Slight Delay in Overall Development": 0.030702293262154557
+          },
+          "predicted_class": "Suggests Significant Delay in Overall Development",
+          "household_invariant": true,
+          "confidence": 0.9219411769251776,
+          "recovery_probability_average_or_slight": 0.07805882307482237,
+          "passed": false
+        }
+      }
+    ]
+  },
+  {
+    "growth_factor": 0.42,
+    "noise_std": 0.008,
+    "household_risk": "individual illustrative draw",
+    "manifest": {
+      "dataset": "ee331a6f24d514b5ccd107912cf095eb1212c4dad234ed4e17826ae3ec874375",
+      "training": "7e4af2d9ae98350e0cb8c0976b3a3d9e23cec78db8adaebde288947b7ca19f21",
+      "trainer": "acbef26ee4590ae9e1a1b1da6c24e390d0d41e32f674813afa201b62ae802106",
+      "components": "dafef050b85934b63a565f179f04e30c8a6286ef835514c6a116ac21d7fd67d4",
+      "sklearn": "1.9.1"
+    },
+    "candidates": [
+      {
+        "name": "rf_depth12_leaf3",
+        "params": {
+          "candidate": "rf_depth12_leaf3",
+          "real_weight": 2.5,
+          "calibration": "sigmoid",
+          "calibration_folds": 3
+        },
+        "mean_accuracy": 0.8906542056074767,
+        "std_accuracy": 0.01906175519100108,
+        "mean_macro_f1": 0.8912092804153648,
+        "std_macro_f1": 0.01954225430517675,
+        "fold_accuracy": [
+          0.9065420560747663,
+          0.9112149532710281,
+          0.8598130841121495,
+          0.8785046728971962,
+          0.897196261682243
+        ],
+        "fold_macro_f1": [
+          0.9081235397398144,
+          0.9108145889807808,
+          0.8586970836430011,
+          0.8798791332124666,
+          0.8985320565007612
+        ],
+        "calibrated_oof": {
+          "log_loss": 0.33544830041280116,
+          "multiclass_brier_sum": 0.17183443215092545,
+          "top_label_ece_10_bins": 0.03179441237077247,
+          "maximum_probability": 0.9458592554353294,
+          "reliability_bins": [
+            {
+              "n": 14,
+              "confidence": 0.4712993482887001,
+              "accuracy": 0.35714285714285715
+            },
+            {
+              "n": 27,
+              "confidence": 0.5512867407428521,
+              "accuracy": 0.4444444444444444
+            },
+            {
+              "n": 44,
+              "confidence": 0.651543737774861,
+              "accuracy": 0.7272727272727273
+            },
+            {
+              "n": 80,
+              "confidence": 0.7546332021810895,
+              "accuracy": 0.7125
+            },
+            {
+              "n": 172,
+              "confidence": 0.861107739103513,
+              "accuracy": 0.8488372093023255
+            },
+            {
+              "n": 733,
+              "confidence": 0.9280711793691266,
+              "accuracy": 0.956343792633015
+            }
+          ]
+        },
+        "uncalibrated_oof": {
+          "log_loss": 0.31047797799355814,
+          "multiclass_brier_sum": 0.16710878882198968,
+          "top_label_ece_10_bins": 0.04080134702554151,
+          "maximum_probability": 1.0,
+          "reliability_bins": [
+            {
+              "n": 20,
+              "confidence": 0.44816088910993745,
+              "accuracy": 0.3
+            },
+            {
+              "n": 41,
+              "confidence": 0.5519778111788809,
+              "accuracy": 0.7804878048780488
+            },
+            {
+              "n": 78,
+              "confidence": 0.650493607139999,
+              "accuracy": 0.7051282051282052
+            },
+            {
+              "n": 84,
+              "confidence": 0.7550228348496775,
+              "accuracy": 0.8095238095238095
+            },
+            {
+              "n": 104,
+              "confidence": 0.8519247896542367,
+              "accuracy": 0.8461538461538461
+            },
+            {
+              "n": 743,
+              "confidence": 0.9863870190494173,
+              "accuracy": 0.9569313593539704
+            }
+          ]
+        },
+        "behavior": {
+          "profile": {
+            "domains": 1,
+            "total": 7,
+            "standard_score": 37,
+            "age_months": 66,
+            "gender": "FEMALE",
+            "handedness": "Right"
+          },
+          "blank": {
+            "Average Overall Development": 0.16418886105663283,
+            "Suggests Significant Delay in Overall Development": 0.6985352263223348,
+            "Suggests Slight Delay in Overall Development": 0.13727591262103236
+          },
+          "filled": {
+            "Average Overall Development": 0.16418886105663283,
+            "Suggests Significant Delay in Overall Development": 0.6985352263223348,
+            "Suggests Slight Delay in Overall Development": 0.13727591262103236
+          },
+          "predicted_class": "Suggests Significant Delay in Overall Development",
+          "household_invariant": true,
+          "confidence": 0.6985352263223348,
+          "recovery_probability_average_or_slight": 0.3014647736776652,
+          "passed": true
+        }
+      },
+      {
+        "name": "rf_full_leaf5",
+        "params": {
+          "candidate": "rf_full_leaf5",
+          "real_weight": 2.5,
+          "calibration": "sigmoid",
+          "calibration_folds": 3
+        },
+        "mean_accuracy": 0.8915887850467289,
+        "std_accuracy": 0.018784814245085768,
+        "mean_macro_f1": 0.8923723899471275,
+        "std_macro_f1": 0.0189016973746507,
+        "fold_accuracy": [
+          0.9018691588785047,
+          0.9112149532710281,
+          0.8644859813084113,
+          0.8738317757009346,
+          0.9065420560747663
+        ],
+        "fold_macro_f1": [
+          0.9034945837234182,
+          0.9109516222113392,
+          0.8643478260869565,
+          0.8752444278730632,
+          0.9078234898408605
+        ],
+        "calibrated_oof": {
+          "log_loss": 0.3298241639673421,
+          "multiclass_brier_sum": 0.1689395853234211,
+          "top_label_ece_10_bins": 0.034537592711631,
+          "maximum_probability": 0.9474412886125944,
+          "reliability_bins": [
+            {
+              "n": 1,
+              "confidence": 0.3915228465486317,
+              "accuracy": 0.0
+            },
+            {
+              "n": 9,
+              "confidence": 0.45307787913440734,
+              "accuracy": 0.2222222222222222
+            },
+            {
+              "n": 33,
+              "confidence": 0.5543982180959879,
+              "accuracy": 0.5151515151515151
+            },
+            {
+              "n": 35,
+              "confidence": 0.6542883591022826,
+              "accuracy": 0.5142857142857142
+            },
+            {
+              "n": 73,
+              "confidence": 0.7508960145125984,
+              "accuracy": 0.7945205479452054
+            },
+            {
+              "n": 184,
+              "confidence": 0.8586832863889116,
+              "accuracy": 0.8369565217391305
+            },
+            {
+              "n": 735,
+              "confidence": 0.9304646924614974,
+              "accuracy": 0.9591836734693877
+            }
+          ]
+        },
+        "uncalibrated_oof": {
+          "log_loss": 0.29531085506616117,
+          "multiclass_brier_sum": 0.16403409977696456,
+          "top_label_ece_10_bins": 0.03583669041720223,
+          "maximum_probability": 1.0,
+          "reliability_bins": [
+            {
+              "n": 5,
+              "confidence": 0.39124394926809725,
+              "accuracy": 0.2
+            },
+            {
+              "n": 15,
+              "confidence": 0.48157992525930887,
+              "accuracy": 0.06666666666666667
+            },
+            {
+              "n": 49,
+              "confidence": 0.5603742014285145,
+              "accuracy": 0.6326530612244898
+            },
+            {
+              "n": 62,
+              "confidence": 0.6479799644769714,
+              "accuracy": 0.7580645161290323
+            },
+            {
+              "n": 98,
+              "confidence": 0.7542753885123091,
+              "accuracy": 0.8061224489795918
+            },
+            {
+              "n": 125,
+              "confidence": 0.8504379412192324,
+              "accuracy": 0.856
+            },
+            {
+              "n": 716,
+              "confidence": 0.9832711794907207,
+              "accuracy": 0.9622905027932961
+            }
+          ]
+        },
+        "behavior": {
+          "profile": {
+            "domains": 1,
+            "total": 7,
+            "standard_score": 37,
+            "age_months": 66,
+            "gender": "FEMALE",
+            "handedness": "Right"
+          },
+          "blank": {
+            "Average Overall Development": 0.1621155412465478,
+            "Suggests Significant Delay in Overall Development": 0.7018339525263434,
+            "Suggests Slight Delay in Overall Development": 0.13605050622710874
+          },
+          "filled": {
+            "Average Overall Development": 0.1621155412465478,
+            "Suggests Significant Delay in Overall Development": 0.7018339525263434,
+            "Suggests Slight Delay in Overall Development": 0.13605050622710874
+          },
+          "predicted_class": "Suggests Significant Delay in Overall Development",
+          "household_invariant": true,
+          "confidence": 0.7018339525263434,
+          "recovery_probability_average_or_slight": 0.2981660474736566,
+          "passed": true
+        }
+      },
+      {
+        "name": "histogram_boosting",
+        "params": {
+          "candidate": "histogram_boosting",
+          "real_weight": 2.5,
+          "calibration": "sigmoid",
+          "calibration_folds": 3
+        },
+        "mean_accuracy": 0.8822429906542057,
+        "std_accuracy": 0.012327949493713028,
+        "mean_macro_f1": 0.882799995146127,
+        "std_macro_f1": 0.011603480364774156,
+        "fold_accuracy": [
+          0.8785046728971962,
+          0.8925233644859814,
+          0.8878504672897196,
+          0.8598130841121495,
+          0.8925233644859814
+        ],
+        "fold_macro_f1": [
+          0.8795192251074604,
+          0.8917838331052218,
+          0.887683103756688,
+          0.8616662523821361,
+          0.8933475613791279
+        ],
+        "calibrated_oof": {
+          "log_loss": 0.3644080826518597,
+          "multiclass_brier_sum": 0.18495195704991066,
+          "top_label_ece_10_bins": 0.034902004613676325,
+          "maximum_probability": 0.9311007839155595,
+          "reliability_bins": [
+            {
+              "n": 6,
+              "confidence": 0.47087022718410837,
+              "accuracy": 0.3333333333333333
+            },
+            {
+              "n": 14,
+              "confidence": 0.5407725981291877,
+              "accuracy": 0.35714285714285715
+            },
+            {
+              "n": 31,
+              "confidence": 0.6522113158300009,
+              "accuracy": 0.41935483870967744
+            },
+            {
+              "n": 57,
+              "confidence": 0.7563227789223069,
+              "accuracy": 0.6491228070175439
+            },
+            {
+              "n": 396,
+              "confidence": 0.8803554252265462,
+              "accuracy": 0.8838383838383839
+            },
+            {
+              "n": 566,
+              "confidence": 0.9147687166075421,
+              "accuracy": 0.9487632508833922
+            }
+          ]
+        },
+        "uncalibrated_oof": {
+          "log_loss": 0.33766525418079074,
+          "multiclass_brier_sum": 0.17711431721556742,
+          "top_label_ece_10_bins": 0.0561667371919284,
+          "maximum_probability": 0.9996862409383717,
+          "reliability_bins": [
+            {
+              "n": 1,
+              "confidence": 0.3538188942683145,
+              "accuracy": 0.0
+            },
+            {
+              "n": 5,
+              "confidence": 0.48516951574792133,
+              "accuracy": 0.2
+            },
+            {
+              "n": 27,
+              "confidence": 0.55346249059837,
+              "accuracy": 0.4074074074074074
+            },
+            {
+              "n": 37,
+              "confidence": 0.6525527080085488,
+              "accuracy": 0.4864864864864865
+            },
+            {
+              "n": 56,
+              "confidence": 0.7549156984906416,
+              "accuracy": 0.6607142857142857
+            },
+            {
+              "n": 75,
+              "confidence": 0.8546247414472468,
+              "accuracy": 0.76
+            },
+            {
+              "n": 869,
+              "confidence": 0.9860283891321792,
+              "accuracy": 0.9447640966628308
+            }
+          ]
+        },
+        "behavior": {
+          "profile": {
+            "domains": 1,
+            "total": 7,
+            "standard_score": 37,
+            "age_months": 66,
+            "gender": "FEMALE",
+            "handedness": "Right"
+          },
+          "blank": {
+            "Average Overall Development": 0.1727689115468541,
+            "Suggests Significant Delay in Overall Development": 0.679689069542054,
+            "Suggests Slight Delay in Overall Development": 0.14754201891109198
+          },
+          "filled": {
+            "Average Overall Development": 0.1727689115468541,
+            "Suggests Significant Delay in Overall Development": 0.679689069542054,
+            "Suggests Slight Delay in Overall Development": 0.14754201891109198
+          },
+          "predicted_class": "Suggests Significant Delay in Overall Development",
+          "household_invariant": true,
+          "confidence": 0.679689069542054,
+          "recovery_probability_average_or_slight": 0.320310930457946,
+          "passed": true
+        }
+      },
+      {
+        "name": "soft_voting_rf_histogram",
+        "params": {
+          "candidate": "soft_voting_rf_histogram",
+          "real_weight": 2.5,
+          "calibration": "sigmoid",
+          "calibration_folds": 3
+        },
+        "mean_accuracy": 0.8897196261682243,
+        "std_accuracy": 0.014049809699413917,
+        "mean_macro_f1": 0.8903810054645268,
+        "std_macro_f1": 0.013488858659238278,
+        "fold_accuracy": [
+          0.897196261682243,
+          0.9065420560747663,
+          0.8878504672897196,
+          0.8644859813084113,
+          0.8925233644859814
+        ],
+        "fold_macro_f1": [
+          0.898513449876284,
+          0.9059081854525664,
+          0.8880049938955835,
+          0.866130836719072,
+          0.8933475613791279
+        ],
+        "calibrated_oof": {
+          "log_loss": 0.34203829165571226,
+          "multiclass_brier_sum": 0.1743573651790947,
+          "top_label_ece_10_bins": 0.04210275060104148,
+          "maximum_probability": 0.9422137931695904,
+          "reliability_bins": [
+            {
+              "n": 7,
+              "confidence": 0.4675969353878219,
+              "accuracy": 0.42857142857142855
+            },
+            {
+              "n": 30,
+              "confidence": 0.5564954391353767,
+              "accuracy": 0.5
+            },
+            {
+              "n": 29,
+              "confidence": 0.6485548267066025,
+              "accuracy": 0.5862068965517241
+            },
+            {
+              "n": 68,
+              "confidence": 0.75699778730243,
+              "accuracy": 0.6323529411764706
+            },
+            {
+              "n": 180,
+              "confidence": 0.8652985345169238,
+              "accuracy": 0.8333333333333334
+            },
+            {
+              "n": 756,
+              "confidence": 0.9218991723581543,
+              "accuracy": 0.9576719576719577
+            }
+          ]
+        },
+        "uncalibrated_oof": {
+          "log_loss": 0.3082298425535001,
+          "multiclass_brier_sum": 0.1670087648559414,
+          "top_label_ece_10_bins": 0.04605300574422881,
+          "maximum_probability": 0.9998084646755887,
+          "reliability_bins": [
+            {
+              "n": 1,
+              "confidence": 0.38863027144873163,
+              "accuracy": 0.0
+            },
+            {
+              "n": 10,
+              "confidence": 0.4733364489075168,
+              "accuracy": 0.5
+            },
+            {
+              "n": 45,
+              "confidence": 0.5523811207438861,
+              "accuracy": 0.6222222222222222
+            },
+            {
+              "n": 45,
+              "confidence": 0.6521265841439218,
+              "accuracy": 0.4222222222222222
+            },
+            {
+              "n": 66,
+              "confidence": 0.7546421989118001,
+              "accuracy": 0.8636363636363636
+            },
+            {
+              "n": 119,
+              "confidence": 0.8517964944849962,
+              "accuracy": 0.7983193277310925
+            },
+            {
+              "n": 784,
+              "confidence": 0.9854279423410892,
+              "accuracy": 0.9579081632653061
+            }
+          ]
+        },
+        "behavior": {
+          "profile": {
+            "domains": 1,
+            "total": 7,
+            "standard_score": 37,
+            "age_months": 66,
+            "gender": "FEMALE",
+            "handedness": "Right"
+          },
+          "blank": {
+            "Average Overall Development": 0.16749664916643675,
+            "Suggests Significant Delay in Overall Development": 0.6915734247039502,
+            "Suggests Slight Delay in Overall Development": 0.140929926129613
+          },
+          "filled": {
+            "Average Overall Development": 0.16749664916643675,
+            "Suggests Significant Delay in Overall Development": 0.6915734247039502,
+            "Suggests Slight Delay in Overall Development": 0.140929926129613
+          },
+          "predicted_class": "Suggests Significant Delay in Overall Development",
+          "household_invariant": true,
+          "confidence": 0.6915734247039502,
+          "recovery_probability_average_or_slight": 0.3084265752960498,
+          "passed": true
+        }
+      }
+    ]
+  },
+  {
+    "growth_factor": 0.42,
+    "noise_std": 0.008,
+    "household_risk": "prior marginalized",
+    "manifest": {
+      "dataset": "5dd27031e44468ba74504b30c6540b0d04ce4a053899a12f597634f62753ab13",
+      "training": "10e36cdedf8f64ef8d47a2360ed879dd62a7a6571daa1d835eb3561338fd526d",
+      "trainer": "0a64d04c3b114501495f2a924ff03317d95f23bdc7de50cbebbdc8763db7c0f2",
+      "components": "dafef050b85934b63a565f179f04e30c8a6286ef835514c6a116ac21d7fd67d4",
+      "sklearn": "1.9.1"
+    },
+    "candidates": [
+      {
+        "name": "rf_depth12_leaf3",
+        "params": {
+          "candidate": "rf_depth12_leaf3",
+          "real_weight": 2.5,
+          "calibration": "sigmoid",
+          "calibration_folds": 3,
+          "estimator_parameters": {
+            "bootstrap": true,
+            "ccp_alpha": 0.0,
+            "class_weight": "balanced",
+            "criterion": "gini",
+            "max_depth": 12,
+            "max_features": 1.0,
+            "max_leaf_nodes": null,
+            "max_samples": null,
+            "min_impurity_decrease": 0.0,
+            "min_samples_leaf": 3,
+            "min_samples_split": 2,
+            "min_weight_fraction_leaf": 0.0,
+            "monotonic_cst": null,
+            "n_estimators": 400,
+            "n_jobs": 1,
+            "oob_score": false,
+            "random_state": 42,
+            "verbose": 0,
+            "warm_start": false
+          }
+        },
+        "mean_accuracy": 0.8915887850467291,
+        "std_accuracy": 0.013017185305779562,
+        "mean_macro_f1": 0.8922944236008921,
+        "std_macro_f1": 0.012094597828423693,
+        "fold_accuracy": [
+          0.8878504672897196,
+          0.9065420560747663,
+          0.9018691588785047,
+          0.8925233644859814,
+          0.8691588785046729
+        ],
+        "fold_macro_f1": [
+          0.8875224292615597,
+          0.9059643749699924,
+          0.902260546194714,
+          0.8939192059630017,
+          0.8718055616151922
+        ],
+        "calibrated_oof": {
+          "log_loss": 0.3287064949496245,
+          "multiclass_brier_sum": 0.17417863470999032,
+          "top_label_ece_10_bins": 0.05804974692812707,
+          "maximum_probability": 0.9524383610533909,
+          "reliability_bins": [
+            {
+              "n": 1,
+              "confidence": 0.3730246637749528,
+              "accuracy": 1.0
+            },
+            {
+              "n": 15,
+              "confidence": 0.47759050700427774,
+              "accuracy": 0.5333333333333333
+            },
+            {
+              "n": 43,
+              "confidence": 0.5541286434655603,
+              "accuracy": 0.6511627906976745
+            },
+            {
+              "n": 42,
+              "confidence": 0.6479567393255884,
+              "accuracy": 0.5952380952380952
+            },
+            {
+              "n": 61,
+              "confidence": 0.7557910181563151,
+              "accuracy": 0.7868852459016393
+            },
+            {
+              "n": 175,
+              "confidence": 0.8576286183862427,
+              "accuracy": 0.7428571428571429
+            },
+            {
+              "n": 733,
+              "confidence": 0.9300386030160679,
+              "accuracy": 0.9740791268758526
+            }
+          ]
+        },
+        "uncalibrated_oof": {
+          "log_loss": 0.31984546197616875,
+          "multiclass_brier_sum": 0.16687819696254208,
+          "top_label_ece_10_bins": 0.027879634677232434,
+          "maximum_probability": 1.0,
+          "reliability_bins": [
+            {
+              "n": 5,
+              "confidence": 0.39005053002553,
+              "accuracy": 0.4
+            },
+            {
+              "n": 19,
+              "confidence": 0.4678672963112069,
+              "accuracy": 0.5263157894736842
+            },
+            {
+              "n": 55,
+              "confidence": 0.5474863230318807,
+              "accuracy": 0.6727272727272727
+            },
+            {
+              "n": 54,
+              "confidence": 0.6482988549685343,
+              "accuracy": 0.6666666666666666
+            },
+            {
+              "n": 103,
+              "confidence": 0.75124838022296,
+              "accuracy": 0.7766990291262136
+            },
+            {
+              "n": 103,
+              "confidence": 0.8500268375202547,
+              "accuracy": 0.7766990291262136
+            },
+            {
+              "n": 731,
+              "confidence": 0.9857956842929032,
+              "accuracy": 0.9712722298221614
+            }
+          ]
+        },
+        "behavior": {
+          "profile": {
+            "domains": 1,
+            "total": 7,
+            "standard_score": 37,
+            "age_months": 66,
+            "gender": "FEMALE",
+            "handedness": "Right"
+          },
+          "blank": {
+            "Average Overall Development": 0.164938600166743,
+            "Suggests Significant Delay in Overall Development": 0.6951300786123065,
+            "Suggests Slight Delay in Overall Development": 0.13993132122095056
+          },
+          "filled": {
+            "Average Overall Development": 0.164938600166743,
+            "Suggests Significant Delay in Overall Development": 0.6951300786123065,
+            "Suggests Slight Delay in Overall Development": 0.13993132122095056
+          },
+          "predicted_class": "Suggests Significant Delay in Overall Development",
+          "household_invariant": true,
+          "confidence": 0.6951300786123065,
+          "recovery_probability_average_or_slight": 0.30486992138769353,
+          "passed": true
+        }
+      },
+      {
+        "name": "rf_full_leaf5",
+        "params": {
+          "candidate": "rf_full_leaf5",
+          "real_weight": 2.5,
+          "calibration": "sigmoid",
+          "calibration_folds": 3,
+          "estimator_parameters": {
+            "bootstrap": true,
+            "ccp_alpha": 0.0,
+            "class_weight": "balanced",
+            "criterion": "gini",
+            "max_depth": null,
+            "max_features": 0.8,
+            "max_leaf_nodes": null,
+            "max_samples": null,
+            "min_impurity_decrease": 0.0,
+            "min_samples_leaf": 5,
+            "min_samples_split": 2,
+            "min_weight_fraction_leaf": 0.0,
+            "monotonic_cst": null,
+            "n_estimators": 400,
+            "n_jobs": 1,
+            "oob_score": false,
+            "random_state": 42,
+            "verbose": 0,
+            "warm_start": false
+          }
+        },
+        "mean_accuracy": 0.8869158878504674,
+        "std_accuracy": 0.018784814245085785,
+        "mean_macro_f1": 0.8877272447044098,
+        "std_macro_f1": 0.017417579708667967,
+        "fold_accuracy": [
+          0.897196261682243,
+          0.897196261682243,
+          0.9018691588785047,
+          0.8878504672897196,
+          0.8504672897196262
+        ],
+        "fold_macro_f1": [
+          0.8969486860195569,
+          0.8965279630276809,
+          0.901987124507869,
+          0.889333951377747,
+          0.8538384985891948
+        ],
+        "calibrated_oof": {
+          "log_loss": 0.3281208507034728,
+          "multiclass_brier_sum": 0.1741318937262965,
+          "top_label_ece_10_bins": 0.051828524057666324,
+          "maximum_probability": 0.952980153356744,
+          "reliability_bins": [
+            {
+              "n": 3,
+              "confidence": 0.3626290304158067,
+              "accuracy": 0.6666666666666666
+            },
+            {
+              "n": 7,
+              "confidence": 0.46132939065778517,
+              "accuracy": 0.2857142857142857
+            },
+            {
+              "n": 34,
+              "confidence": 0.5558966222028807,
+              "accuracy": 0.5294117647058824
+            },
+            {
+              "n": 47,
+              "confidence": 0.6576048908696164,
+              "accuracy": 0.6382978723404256
+            },
+            {
+              "n": 76,
+              "confidence": 0.7532723351705612,
+              "accuracy": 0.6842105263157895
+            },
+            {
+              "n": 188,
+              "confidence": 0.8579325065627267,
+              "accuracy": 0.7819148936170213
+            },
+            {
+              "n": 715,
+              "confidence": 0.931514435851999,
+              "accuracy": 0.9762237762237762
+            }
+          ]
+        },
+        "uncalibrated_oof": {
+          "log_loss": 0.2888905250005515,
+          "multiclass_brier_sum": 0.16573741072595688,
+          "top_label_ece_10_bins": 0.017569895800152842,
+          "maximum_probability": 1.0,
+          "reliability_bins": [
+            {
+              "n": 5,
+              "confidence": 0.3729709038875645,
+              "accuracy": 0.0
+            },
+            {
+              "n": 20,
+              "confidence": 0.4631486047110299,
+              "accuracy": 0.4
+            },
+            {
+              "n": 45,
+              "confidence": 0.5550646448609193,
+              "accuracy": 0.6
+            },
+            {
+              "n": 83,
+              "confidence": 0.6515055673310759,
+              "accuracy": 0.6987951807228916
+            },
+            {
+              "n": 93,
+              "confidence": 0.75335629696733,
+              "accuracy": 0.7311827956989247
+            },
+            {
+              "n": 126,
+              "confidence": 0.8534834269476468,
+              "accuracy": 0.8253968253968254
+            },
+            {
+              "n": 698,
+              "confidence": 0.9844180309260181,
+              "accuracy": 0.9785100286532952
+            }
+          ]
+        },
+        "behavior": {
+          "profile": {
+            "domains": 1,
+            "total": 7,
+            "standard_score": 37,
+            "age_months": 66,
+            "gender": "FEMALE",
+            "handedness": "Right"
+          },
+          "blank": {
+            "Average Overall Development": 0.1626290943289065,
+            "Suggests Significant Delay in Overall Development": 0.6987660333970365,
+            "Suggests Slight Delay in Overall Development": 0.13860487227405693
+          },
+          "filled": {
+            "Average Overall Development": 0.1626290943289065,
+            "Suggests Significant Delay in Overall Development": 0.6987660333970365,
+            "Suggests Slight Delay in Overall Development": 0.13860487227405693
+          },
+          "predicted_class": "Suggests Significant Delay in Overall Development",
+          "household_invariant": true,
+          "confidence": 0.6987660333970365,
+          "recovery_probability_average_or_slight": 0.30123396660296353,
+          "passed": true
+        }
+      },
+      {
+        "name": "histogram_boosting",
+        "params": {
+          "candidate": "histogram_boosting",
+          "real_weight": 2.5,
+          "calibration": "sigmoid",
+          "calibration_folds": 3,
+          "estimator_parameters": {
+            "categorical_features": "from_dtype",
+            "class_weight": null,
+            "early_stopping": false,
+            "interaction_cst": null,
+            "l2_regularization": 5.0,
+            "learning_rate": 0.04,
+            "loss": "log_loss",
+            "max_bins": 255,
+            "max_depth": null,
+            "max_features": 1.0,
+            "max_iter": 300,
+            "max_leaf_nodes": 15,
+            "min_samples_leaf": 10,
+            "monotonic_cst": null,
+            "n_iter_no_change": 10,
+            "random_state": 42,
+            "scoring": "loss",
+            "tol": 1e-07,
+            "validation_fraction": 0.1,
+            "verbose": 0,
+            "warm_start": false
+          }
+        },
+        "mean_accuracy": 0.8850467289719626,
+        "std_accuracy": 0.01787955744832617,
+        "mean_macro_f1": 0.8855557178476747,
+        "std_macro_f1": 0.017485438319733034,
+        "fold_accuracy": [
+          0.9112149532710281,
+          0.8738317757009346,
+          0.897196261682243,
+          0.883177570093458,
+          0.8598130841121495
+        ],
+        "fold_macro_f1": [
+          0.9112113706673591,
+          0.8723751299681135,
+          0.8978164352506489,
+          0.8841538581463707,
+          0.8622217952058815
+        ],
+        "calibrated_oof": {
+          "log_loss": 0.351139555950038,
+          "multiclass_brier_sum": 0.18029446717674716,
+          "top_label_ece_10_bins": 0.03855736271030297,
+          "maximum_probability": 0.9364536007848431,
+          "reliability_bins": [
+            {
+              "n": 5,
+              "confidence": 0.46508914488889735,
+              "accuracy": 0.2
+            },
+            {
+              "n": 23,
+              "confidence": 0.542593143197886,
+              "accuracy": 0.30434782608695654
+            },
+            {
+              "n": 25,
+              "confidence": 0.6488932119122316,
+              "accuracy": 0.64
+            },
+            {
+              "n": 49,
+              "confidence": 0.7598829075726834,
+              "accuracy": 0.7346938775510204
+            },
+            {
+              "n": 372,
+              "confidence": 0.8794037615777346,
+              "accuracy": 0.8521505376344086
+            },
+            {
+              "n": 596,
+              "confidence": 0.918026010056638,
+              "accuracy": 0.9563758389261745
+            }
+          ]
+        },
+        "uncalibrated_oof": {
+          "log_loss": 0.3154047663532104,
+          "multiclass_brier_sum": 0.17188989822381595,
+          "top_label_ece_10_bins": 0.05326504023013139,
+          "maximum_probability": 0.9996553951865721,
+          "reliability_bins": [
+            {
+              "n": 11,
+              "confidence": 0.4637489323620267,
+              "accuracy": 0.7272727272727273
+            },
+            {
+              "n": 27,
+              "confidence": 0.5446718810608346,
+              "accuracy": 0.4444444444444444
+            },
+            {
+              "n": 29,
+              "confidence": 0.6471459440257918,
+              "accuracy": 0.6551724137931034
+            },
+            {
+              "n": 56,
+              "confidence": 0.7563567402797281,
+              "accuracy": 0.8035714285714286
+            },
+            {
+              "n": 100,
+              "confidence": 0.8536048641391237,
+              "accuracy": 0.67
+            },
+            {
+              "n": 847,
+              "confidence": 0.9860111144416538,
+              "accuracy": 0.9504132231404959
+            }
+          ]
+        },
+        "behavior": {
+          "profile": {
+            "domains": 1,
+            "total": 7,
+            "standard_score": 37,
+            "age_months": 66,
+            "gender": "FEMALE",
+            "handedness": "Right"
+          },
+          "blank": {
+            "Average Overall Development": 0.17173152246265166,
+            "Suggests Significant Delay in Overall Development": 0.6841112778108829,
+            "Suggests Slight Delay in Overall Development": 0.14415719972646543
+          },
+          "filled": {
+            "Average Overall Development": 0.17173152246265166,
+            "Suggests Significant Delay in Overall Development": 0.6841112778108829,
+            "Suggests Slight Delay in Overall Development": 0.14415719972646543
+          },
+          "predicted_class": "Suggests Significant Delay in Overall Development",
+          "household_invariant": true,
+          "confidence": 0.6841112778108829,
+          "recovery_probability_average_or_slight": 0.3158887221891171,
+          "passed": true
+        }
+      },
+      {
+        "name": "soft_voting_rf_histogram",
+        "params": {
+          "candidate": "soft_voting_rf_histogram",
+          "real_weight": 2.5,
+          "calibration": "sigmoid",
+          "calibration_folds": 3,
+          "estimator_parameters": {
+            "flatten_transform": true,
+            "n_jobs": 1,
+            "verbose": false,
+            "voting": "soft",
+            "forest__bootstrap": true,
+            "forest__ccp_alpha": 0.0,
+            "forest__class_weight": "balanced",
+            "forest__criterion": "gini",
+            "forest__max_depth": 12,
+            "forest__max_features": 1.0,
+            "forest__max_leaf_nodes": null,
+            "forest__max_samples": null,
+            "forest__min_impurity_decrease": 0.0,
+            "forest__min_samples_leaf": 3,
+            "forest__min_samples_split": 2,
+            "forest__min_weight_fraction_leaf": 0.0,
+            "forest__monotonic_cst": null,
+            "forest__n_estimators": 400,
+            "forest__n_jobs": 1,
+            "forest__oob_score": false,
+            "forest__random_state": 42,
+            "forest__verbose": 0,
+            "forest__warm_start": false,
+            "histogram__categorical_features": "from_dtype",
+            "histogram__class_weight": null,
+            "histogram__early_stopping": false,
+            "histogram__interaction_cst": null,
+            "histogram__l2_regularization": 5.0,
+            "histogram__learning_rate": 0.04,
+            "histogram__loss": "log_loss",
+            "histogram__max_bins": 255,
+            "histogram__max_depth": null,
+            "histogram__max_features": 1.0,
+            "histogram__max_iter": 300,
+            "histogram__max_leaf_nodes": 15,
+            "histogram__min_samples_leaf": 10,
+            "histogram__monotonic_cst": null,
+            "histogram__n_iter_no_change": 10,
+            "histogram__random_state": 42,
+            "histogram__scoring": "loss",
+            "histogram__tol": 1e-07,
+            "histogram__validation_fraction": 0.1,
+            "histogram__verbose": 0,
+            "histogram__warm_start": false
+          }
+        },
+        "mean_accuracy": 0.8906542056074768,
+        "std_accuracy": 0.01524252937411222,
+        "mean_macro_f1": 0.891352123299621,
+        "std_macro_f1": 0.014304605575753988,
+        "fold_accuracy": [
+          0.9065420560747663,
+          0.9018691588785047,
+          0.897196261682243,
+          0.883177570093458,
+          0.8644859813084113
+        ],
+        "fold_macro_f1": [
+          0.9065474751799497,
+          0.9012143370847401,
+          0.8978164352506489,
+          0.8844327061546718,
+          0.8667496628280942
+        ],
+        "calibrated_oof": {
+          "log_loss": 0.3311537907657624,
+          "multiclass_brier_sum": 0.1739984059075974,
+          "top_label_ece_10_bins": 0.05798896914880288,
+          "maximum_probability": 0.948680670277982,
+          "reliability_bins": [
+            {
+              "n": 1,
+              "confidence": 0.3700048355439789,
+              "accuracy": 0.0
+            },
+            {
+              "n": 8,
+              "confidence": 0.46867963836419524,
+              "accuracy": 0.5
+            },
+            {
+              "n": 30,
+              "confidence": 0.5492555359553072,
+              "accuracy": 0.5333333333333333
+            },
+            {
+              "n": 32,
+              "confidence": 0.6437742980583816,
+              "accuracy": 0.6875
+            },
+            {
+              "n": 58,
+              "confidence": 0.7582855197213516,
+              "accuracy": 0.6551724137931034
+            },
+            {
+              "n": 185,
+              "confidence": 0.8624181629392838,
+              "accuracy": 0.7567567567567568
+            },
+            {
+              "n": 756,
+              "confidence": 0.9245729888463071,
+              "accuracy": 0.9695767195767195
+            }
+          ]
+        },
+        "uncalibrated_oof": {
+          "log_loss": 0.2876220027250348,
+          "multiclass_brier_sum": 0.16395953022116144,
+          "top_label_ece_10_bins": 0.026245669068992436,
+          "maximum_probability": 0.999827697593286,
+          "reliability_bins": [
+            {
+              "n": 1,
+              "confidence": 0.39778460822793904,
+              "accuracy": 0.0
+            },
+            {
+              "n": 12,
+              "confidence": 0.4608728204198261,
+              "accuracy": 0.3333333333333333
+            },
+            {
+              "n": 40,
+              "confidence": 0.5460396017653681,
+              "accuracy": 0.575
+            },
+            {
+              "n": 53,
+              "confidence": 0.6498507570586906,
+              "accuracy": 0.660377358490566
+            },
+            {
+              "n": 84,
+              "confidence": 0.7598883803472604,
+              "accuracy": 0.7380952380952381
+            },
+            {
+              "n": 107,
+              "confidence": 0.8564238546551356,
+              "accuracy": 0.7850467289719626
+            },
+            {
+              "n": 773,
+              "confidence": 0.9844376523260181,
+              "accuracy": 0.9650711513583441
+            }
+          ]
+        },
+        "behavior": {
+          "profile": {
+            "domains": 1,
+            "total": 7,
+            "standard_score": 37,
+            "age_months": 66,
+            "gender": "FEMALE",
+            "handedness": "Right"
+          },
+          "blank": {
+            "Average Overall Development": 0.16751964873916464,
+            "Suggests Significant Delay in Overall Development": 0.6918576173764932,
+            "Suggests Slight Delay in Overall Development": 0.14062273388434215
+          },
+          "filled": {
+            "Average Overall Development": 0.16751964873916464,
+            "Suggests Significant Delay in Overall Development": 0.6918576173764932,
+            "Suggests Slight Delay in Overall Development": 0.14062273388434215
+          },
+          "predicted_class": "Suggests Significant Delay in Overall Development",
+          "household_invariant": true,
+          "confidence": 0.6918576173764932,
+          "recovery_probability_average_or_slight": 0.3081423826235068,
+          "passed": true
+        }
+      }
+    ]
+  }
+]

@@ -561,13 +561,12 @@ export default function ParentMlInsights() {
         </summary>
         <Typography variant="body2" sx={{ mt: 1 }}>
           Educational research prototype for instructional planning, not a
-          formal clinical diagnosis. Research evaluation reported 88.9%
-          mixed-holdout accuracy, but only 25% on eight real holdout learners.
-          All 29 observed real POST outcomes were Average and contributed
-          generator anchors; there is no independent real-world validation.
-          Probabilities are not calibrated clinical confidence. Advanced
-          developmental classes are unsupported. Home activities do not
-          establish treatment effectiveness.
+          formal clinical diagnosis. Research evaluation uses a mostly synthetic
+          holdout of 459 records. All 29 observed real POST outcomes were
+          Average and contributed generator anchors; there is no independent
+          real-world validation. Probabilities are not calibrated clinical
+          confidence. Advanced developmental classes are unsupported. Home
+          activities do not establish treatment effectiveness.
         </Typography>
       </details>
       {childrenError && (

@@ -243,12 +243,13 @@ function PredictionView({ prediction, sandbox = false }: PredictionViewProps) {
         </Stack>
         {prediction.imputed_fields.length > 0 && (
           <p className="mt-5 rounded-xl bg-slate-50 p-3 text-xs leading-relaxed text-slate-600">
-            Training median/mode used for missing inputs:{" "}
+            Inputs left blank:{" "}
             {prediction.imputed_fields
               .map((field) => field.replaceAll("_", " "))
               .join(", ")}
-            . These estimates do not describe the learner’s actual family
-            circumstances. Free-text occupations have no reviewed tier mapping.
+            . Household details are excluded from this research prediction.
+            Missing child demographics use training defaults, which do not
+            describe the learner’s actual family circumstances.
           </p>
         )}
       </section>
@@ -926,7 +927,7 @@ function SandboxSimulator() {
         value={values[field]}
         onChange={(event) => update(field, event.target.value)}
       >
-        <option value="">Missing · use training imputer</option>
+        <option value="">Not provided</option>
         {options.map((option) => (
           <option key={option} value={option}>
             {option.replaceAll("_", " ")}
@@ -1126,13 +1127,12 @@ export default function MlInsights() {
             </p>
             <p className="mt-2 font-medium">Understand the evaluation limits</p>
             <p className="mt-2">
-              The evaluation report records 88.9% accuracy on 459 mixed
-              real/synthetic holdout records, but only 25% accuracy on its eight
-              real holdout learners. All 29 real learners had Average Post-Test
-              outcomes, and all contributed to synthetic generation anchors.
-              Household effects reflect simulation assumptions; they are not
-              causal findings. Model probabilities and activity suggestions do
-              not demonstrate diagnostic validity or intervention effectiveness.
+              Evaluation uses a mostly synthetic holdout of 459 records. All 29
+              real learners had Average Post-Test outcomes, and all contributed
+              to synthetic generation anchors. Household effects reflect
+              simulation assumptions; they are not causal findings. Model
+              probabilities and activity suggestions do not demonstrate
+              diagnostic validity or intervention effectiveness.
             </p>
           </details>
           <Stack
@@ -1140,7 +1140,7 @@ export default function MlInsights() {
             sx={{ flexWrap: "wrap", alignItems: "center", gap: 1, ml: "auto" }}
           >
             <span className="rounded border border-slate-200 bg-white/80 px-2 py-0.5 font-medium text-slate-600">
-              Random Forest · 18 inputs
+              Calibrated model · 18 inputs
             </span>
             <span className="rounded border border-slate-200 bg-white/80 px-2 py-0.5 font-medium text-slate-600">
               3 supported classes

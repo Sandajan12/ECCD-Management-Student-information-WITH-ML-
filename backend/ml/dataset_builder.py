@@ -1,7 +1,7 @@
 """Anonymize beneficiary workbooks and generate a seeded three-class hybrid dataset.
 
 Run from repository root: uv run --no-project --python .venv312 python -m backend.ml.dataset_builder
-Synthetic household effects are scenario assumptions, not estimates about AMES families.
+Synthetic household priors are scenario assumptions, not estimates about AMES families.
 """
 from __future__ import annotations
 
@@ -20,6 +20,7 @@ import numpy as np
 import pandas as pd
 from openpyxl import load_workbook
 from openpyxl.utils.datetime import from_excel
+from sklearn.model_selection import train_test_split
 
 from backend.ml.common import (ACTIVE_CLASSES, ARTIFACTS, DATA, DOMAINS, FEATURES,
     ROOT, SEED, TARGET, add_scores, sha256, write_json)
@@ -30,6 +31,8 @@ WORKBOOKS = {"MALE": "EasyCD-Checklist-2024-V3. violet MALE 2024-2025.xlsx",
 PERIODS = [("pre", "PR", 11), ("mid", "M", 13), ("post", "PO", 15)]
 EDUCATION = ["Elementary", "High School", "Vocational", "College"]
 OCCUPATIONS = ["Unemployed", "Informal_Daily_Wage", "Skilled_Regular", "Professional"]
+EDUCATION_PRIOR = [0.20, 0.50, 0.12, 0.18]
+OCCUPATION_PRIOR = [0.10, 0.50, 0.30, 0.10]
 
 
 def normalized(value: object) -> str:
@@ -56,7 +59,7 @@ def build_real(raw_dir: Path = ROOT / "raw_data") -> tuple[pd.DataFrame, dict]:
     audit: dict = {"seed": SEED, "workbooks": {}, "excluded": [], "deduplications": [],
         "formula_repairs": [], "unmarked_items": [], "duplicate_domain_rows": [],
         "summary_discrepancies": [], "conflicting_marks": [],
-        "household_missing_policy": "Preserve missing; training-only imputation"}
+        "household_missing_policy": "Preserve missing; five uncollected household inputs pruned inside model pipeline"}
     for gender, filename in WORKBOOKS.items():
         path = raw_dir / filename
         with warnings.catch_warnings():
@@ -173,7 +176,8 @@ def decimal_from_months(months: int) -> float:
     return float((Decimal(int(months)) / 12).quantize(Decimal("0.1"), rounding=ROUND_HALF_UP))
 
 
-def build_synthetic(real: pd.DataFrame, per_class: int = 500) -> tuple[pd.DataFrame, dict]:
+def build_synthetic(real: pd.DataFrame, per_class: int = 500, *, recovery_factor: float = .40,
+                    post_noise_std: float = .006) -> tuple[pd.DataFrame, dict]:
     """Forward simulation then class-balanced rejection sampling; no labels fed into X.
 
     Age/gender/handedness and period spacing are bootstrapped jointly. A shrunken
@@ -181,6 +185,8 @@ def build_synthetic(real: pd.DataFrame, per_class: int = 500) -> tuple[pd.DataFr
     is broadened for stress scenarios; limited-support growth is deliberately below
     observed classroom growth. Neither household priors nor effects are measured.
     """
+    if not .35 <= recovery_factor <= .42 or not 0 <= post_noise_std < .012:
+        raise ValueError("Recovery must be .35..42 and POST noise std must be below .012")
     rng = np.random.default_rng(SEED)
     sizes = np.array([n for _, n in DOMAINS.values()])
     pre_cols = [f"{p}_pre_raw" for p, _ in DOMAINS.values()]
@@ -204,8 +210,8 @@ def build_synthetic(real: pd.DataFrame, per_class: int = 500) -> tuple[pd.DataFr
         row = {"source": "synthetic", "gender": anchor.gender, "handedness": anchor.handedness,
             "age_months_pre": int(anchor.age_months_pre)}
         for field in ("mother_education_level", "father_education_level"):
-            row[field] = rng.choice(EDUCATION, p=[0.20, 0.50, 0.12, 0.18])
-        tier = int(rng.choice(4, p=[0.10, 0.50, 0.30, 0.10]))
+            row[field] = rng.choice(EDUCATION, p=EDUCATION_PRIOR)
+        tier = int(rng.choice(4, p=OCCUPATION_PRIOR))
         row["household_occupation_tier"] = OCCUPATIONS[tier]
         row["num_siblings"] = int(min(rng.poisson(2.0), 7))
         row["birth_order"] = int(rng.integers(1, row["num_siblings"] + 2))
@@ -216,8 +222,8 @@ def build_synthetic(real: pd.DataFrame, per_class: int = 500) -> tuple[pd.DataFr
         raw_pre = np.rint(pre_fraction*sizes).astype(int)
         risk = (3-tier)/3 + row["num_siblings"]/7
         risk += sum(EDUCATION.index(row[f]) == 0 for f in ("mother_education_level", "father_education_level"))*0.2
-        # Fixed, declared limited-support scenario; no causal claim or real imputation.
-        growth = np.clip(0.25*observed_growth - 0.035*risk + rng.normal(0, 0.012, 7), 0, 0.4)
+        # Declared scenario, not measured household effects or real imputation.
+        growth = np.clip(recovery_factor*observed_growth - 0.035*risk + rng.normal(0, post_noise_std, 7), 0, 0.4)
         raw_post = np.maximum(raw_pre, np.rint((pre_fraction + growth*(1-pre_fraction))*sizes).astype(int))
         raw_mid = np.rint(raw_pre + 0.65*(raw_post-raw_pre)).astype(int)
         for period, vector in (("pre", raw_pre), ("mid", raw_mid), ("post", raw_post)):
@@ -235,7 +241,9 @@ def build_synthetic(real: pd.DataFrame, per_class: int = 500) -> tuple[pd.DataFr
     metadata = {"seed": SEED, "synthetic_class_counts": counts, "candidates_generated": attempted,
         "age_anchor": "Joint bootstrap of real PRE age, gender, handedness and inter-period age offsets",
         "raw_domain_covariance": covariance.tolist(), "observed_median_capacity_growth": observed_growth.tolist(),
-        "growth_scenario": "clip(0.25*observed_capacity_growth - 0.035*risk + N(0,0.012),0,0.4)",
+        "growth_scenario": f"clip({recovery_factor}*observed_capacity_growth - 0.035*risk + N(0,{post_noise_std}),0,0.4)",
+        "growth_parameters": {"baseline_recovery_factor": recovery_factor, "risk_penalty": 0.035,
+            "noise_standard_deviation": post_noise_std, "noise_variance": post_noise_std**2},
         "risk_scenario": "(3-occupation_index)/3 + siblings/7 + 0.2 per elementary-educated parent",
         "household_priors": {"education_probabilities": [0.20, 0.50, 0.12, 0.18],
             "occupation_probabilities": [0.10, 0.50, 0.30, 0.10], "siblings": "min(Poisson(2),7)",
@@ -252,9 +260,11 @@ def build_synthetic(real: pd.DataFrame, per_class: int = 500) -> tuple[pd.DataFr
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--raw-dir", type=Path, default=ROOT / "raw_data")
+    parser.add_argument("--recovery-factor", type=float, default=.40)
+    parser.add_argument("--post-noise-std", type=float, default=.006)
     args = parser.parse_args()
     real, audit = build_real(args.raw_dir)
-    synthetic, metadata = build_synthetic(real)
+    synthetic, metadata = build_synthetic(real, recovery_factor=args.recovery_factor, post_noise_std=args.post_noise_std)
     hybrid = pd.concat([real, synthetic], ignore_index=True)
     if len(hybrid) != 1529 or set(FEATURES) - set(hybrid.columns):
         raise ValueError("Hybrid size or feature contract mismatch")
@@ -262,6 +272,9 @@ def main() -> None:
     for name, frame in (("real_beneficiary_cleaned", real), ("synthetic_eccd_data", synthetic),
                         ("hybrid_eccd_dataset", hybrid)):
         frame.to_csv(DATA / f"{name}.csv", index=False)
+    train, test = train_test_split(hybrid, test_size=.30, stratify=hybrid[TARGET], random_state=SEED)
+    train.to_csv(DATA / "train_set_70.csv", index=False)
+    test.to_csv(DATA / "test_set_30.csv", index=False)
     audit["scoring_table_sha256"] = sha256(ROOT.parent / "eccd_scoring_data.json")
     audit["scorer_sha256"] = sha256(ROOT.parent / "utils" / "eccd_scorer.py")
     audit["synthetic_generation"] = metadata

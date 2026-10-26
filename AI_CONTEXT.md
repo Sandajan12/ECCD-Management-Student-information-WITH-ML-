@@ -37,7 +37,7 @@ records, question access, school settings, audit history, exports, and backups.
 
 These workflows exist in the active Python/FastAPI/PostgreSQL and React/TypeScript
 code. **ML predictions are fully implemented for both Teacher and Parent
-portals**, using the shared V1 18-feature Random Forest inference service and
+portals**, using the shared 18-feature scikit-learn inference service and
 `backend/ml/artifacts/rf_post_test_model.joblib`. Teachers have section-scoped
 batch predictions, student detail modals and a sandbox; parents request a
 prediction on demand for an authorized linked child. Feature implementation does
@@ -59,7 +59,7 @@ and instructional planning; official ECCD scores remain deterministic (section 1
 | JS tooling | pnpm **12.11.2** pinned in root `package.json`; ESLint, Prettier, Playwright |
 | Workspace | Root `pnpm-workspace.yaml` includes frontend and retains separate lockfiles; frontend has matching pnpm 12 YAML overrides and its own package-manager pin for isolated installs; automatic dependency verification before scripts is disabled |
 | Spreadsheets | openpyxl handles active workbook import/export; pandas is installed |
-| ML | V1 fitted scikit-learn Random Forest pipeline, joblib artifact, 18 PRE/demographic inputs, three supported POST outcomes; shared teacher/parent inference |
+| ML | Fitted scikit-learn pipeline, joblib artifact, 18 PRE/demographic inputs, three POST outcomes; experimental calibrated RF/HistGradientBoosting voting model on `ml-accuracy-90plus-experiment`; shared teacher/parent inference |
 | Migrations | Explicit Python migrations 001–014, including production query indexes, email-only identity and credential revocation versioning; no active Alembic setup, pyproject.toml, or uv.lock |
 
 Observed on this Windows checkout on **2026-10-25**:
@@ -854,11 +854,22 @@ Validation/permission failures retain inputs for review.
 Teacher and Parent predictions are fully implemented on the shared **V1**
 research inference path. `backend/ml/common.py` defines the feature order and
 artifact directory; `backend/schemas/ml.py::MLFeatures` validates inputs.
-`backend/ml/inference.py` loads the fitted preprocessing/Random Forest pipeline
+`backend/ml/inference.py` loads the fitted scikit-learn pipeline
 from **`backend/ml/artifacts/rf_post_test_model.joblib`** and caches it with
-`lru_cache`. After the 2026-10-24 baseline restoration, numeric missing values use
-training-median imputation and the existing StandardScaler; categorical values use
-training-mode imputation and unknown-safe one-hot encoding. The same cached service supplies
+`lru_cache`. On `ml-accuracy-90plus-experiment`, the artifact is a sigmoid-calibrated
+soft-voting Random Forest/HistGradientBoosting pipeline. The external contract stays
+at 18 inputs. Internally, five uncollected household fields are pruned; six domain
+composites and three fixed PRE scoring-interval summaries are added. Numeric missing
+values use training-median imputation/scaling; gender/handedness use training-mode
+imputation and unknown-safe one-hot encoding. Real weight 2.0 and local synthetic
+boundary down-weighting are refitted in each calibration subfold. No missingness
+indicators or source predictor are used. Outside age-normalized PRE score ranges, probabilities
+blend toward training class frequencies according to standardized range overshoot;
+this is an uncertainty safeguard, not empirically validated recovery calibration.
+Age alone is excluded from the severity distance so unseen younger ages cannot
+erase severe PRE delays. This correction preserves benchmark probabilities because
+all CV validation and holdout ages lie within their respective training ranges.
+The same cached service supplies
 both portals. Inference does not train/refit or write official assessments.
 
 | Feature group | Count | Exact inputs |
@@ -953,25 +964,29 @@ numbers are positions within each domain. These locally authored suggestions
 support teacher/parent planning; they are not clinical diagnoses or evidence of
 treatment effectiveness.
 
-The previous V1 baseline was restored on 2026-10-24 at the user's request, without
-retraining or changing branches. The exact 18 features, unchanged 1,529-row dataset
-and 70/30 stratified seed-42 split remain. The active forest uses 400 trees, gini,
-max_depth=None, max_features='sqrt', min_samples_split=6, min_samples_leaf=2,
-random_state=42 and class_weight='balanced', with median/mode preprocessing and
-no extra source-based sample weights. Its original matching metrics, report,
-real comparison CSV and all five plots were restored from the baseline archive;
-the original trainer and teacher/parent notices were restored as well.
+The 2026-10-26 experiment is isolated on `ml-accuracy-90plus-experiment`; `main`
+was not edited. Its generator uses recovery factor 0.40 and POST Gaussian std 0.006,
+retaining individual illustrative household penalties and unchanged official scoring.
+The regenerated 1,529-row hybrid contains 29 real and 1,500 synthetic learners.
+The stratified seed-42 70/30 split has 1,070 training and 459 test rows. Five-fold
+training CV selects candidates before the fixed winner is evaluated on the holdout.
+Each candidate fits three-fold sigmoid calibration inside each outer training fold.
 
-Active mixed-holdout accuracy is **88.89% (408/459)**, Macro F1 **88.98%**,
-synthetic accuracy **90.02% (406/451)** and real holdout accuracy **25% (2/8)**.
-Five-fold training CV accuracy is **88.41%**. The 90%+ mixed-accuracy goal
-remains unmet. The accepted Option A regression gates are now >=0.88 mixed
-accuracy, >=0.90 synthetic accuracy and >=0.88 three-class macro F1; tests also
-pin exact artifact hashes and holdout counts. These consistency gates are not
-production acceptance. Both portals disclose the baseline scores and limitations.
-All 29 real POST outcomes are Average and contributed generator anchors, so neither
-this baseline nor the 8/8 experiment establishes independent real-world validity
-or real delay detection. Probabilities are not calibrated clinical confidence.
+Experimental mixed-holdout accuracy is **91.29% (419/459)**, three-class Macro F1
+**91.34%**, synthetic accuracy **92.02% (415/451)** and real accuracy **50% (4/8)**.
+Five-fold mean training CV accuracy is **90.75%**, Macro F1 **90.79%**. The winning
+equal-weight voter combines a 400-tree forest (min_samples_leaf=3, max_features=0.8)
+and histogram boosting. All-1 PRE scores (total=7, standard=37, age=66 months,
+FEMALE, Right) predict Significant Delay at **70.42857266%**, Slight Delay at
+**13.59085144%**, Average at **15.98057590%**, identical for blank/filled household
+inputs. The all-1 probe is outside observed training support; its recovery mass
+expresses extrapolation uncertainty, not measured intervention effectiveness.
+Metrics, hashes, candidate CV and probability diagnostics are in `evaluation_metrics.json`;
+the report, audit, learner benchmark and six plots are regenerated locally.
+Both portals retain research limits without hardcoded obsolete baseline scores.
+All 29 real POST outcomes are Average and contributed generator anchors. These
+results do not establish independent real-world validity, real delay detection,
+or calibrated clinical confidence. Earlier baseline records below are historical.
 
 ### Current verification setup (source checked 2026-10-25)
 

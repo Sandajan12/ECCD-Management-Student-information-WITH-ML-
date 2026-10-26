@@ -1,15 +1,17 @@
 # ECCD model research and teacher insights
 
-The previous 400-tree baseline was restored on 2026-10-24 without retraining:
-88.89% mixed-holdout accuracy, 88.98% Macro F1, 88.41% five-fold CV accuracy and
-2/8 real holdout predictions correct. Numeric inputs use training-median
-imputation; categorical inputs use training-mode imputation. The 8/8 tuning
-experiment and its source snapshots are preserved locally under
-`artifacts/baseline_pre_missingness_weighting/tuned_8_of_8_20261024/`.
-The strict >90% accuracy target remains unmet. Restart the backend after switching
-artifacts because inference caches the fitted model. Reuse the existing dataset
-and split files when reproducing this comparison; the builder command below is
-only for initial dataset preparation.
+This checkout contains the `ml-accuracy-90plus-experiment` research pipeline.
+The 18 external inputs and teacher/parent API contracts are preserved. Internally,
+five uncollected household fields are pruned, six domain composites are computed,
+and three PRE scoring-interval summaries describe capacity without reconstructing
+observed raw scores. Preprocessing, real sample weight 2.0 and synthetic boundary
+down-weighting are fitted within each calibration fold. No missingness indicators
+or source predictor enter the model.
+
+The generator retains illustrative household penalties, increases recovery to
+0.40 of observed capacity growth, and reduces POST Gaussian std to 0.006.
+Earlier training-only comparisons remain in aggregate JSON files under `artifacts/`.
+The baseline artifact on `main` is separate from this experimental branch.
 
 Run from the repository root with Python 3.12 and the project's environment:
 
@@ -17,7 +19,7 @@ Run from the repository root with Python 3.12 and the project's environment:
 uv pip install --python .venv312 -r backend/requirements.txt
 uv run --no-project --python .venv312 python -m backend.ml.dataset_builder
 uv run --no-project --python .venv312 python -m backend.ml.train_random_forest
-uv run --no-project --python .venv312 python -m unittest backend.tests.test_ml_model -v
+uv run --no-project --python .venv312 python -m unittest backend.tests.test_ml_model backend.tests.test_ml_api backend.tests.test_parent_ml backend.tests.test_ml_pipeline -v
 ```
 
 The two named beneficiary workbooks must be present in `raw_data/`. The builder
@@ -34,10 +36,25 @@ priors, household effects and the limited-support growth scenario are explicit
 simulation assumptions. They are not estimates about individual AMES families.
 Real household fields remain missing, and preprocessing is fitted within training.
 
-Both scripts use seed 42. The forest uses exactly 18 PRE/demographic/household
+Both scripts use seed 42. The pipeline accepts exactly 18 PRE/demographic/household
 inputs; all POST/MID scores, source labels and IDs are excluded from predictors.
-The 70/30 split is stratified, with five-fold training-only parameter selection.
-The serialized model remains fitted on the 1,070 training records.
+The 70/30 split is stratified, with five-fold training-only candidate selection.
+Every forest uses min_samples_leaf >=3. Candidates include Random Forest,
+HistGradientBoosting and soft voting, each using three-fold sigmoid calibration
+inside outer CV. The serialized model fits the 1,070 training records only.
+`--cv-only` selects without inspecting holdout predictions; `--finalize` validates
+the source/data hash-bound selection cache before evaluating the fixed winner.
+Default execution performs both. A failed gate leaves the runtime binary unchanged.
+
+Calibration follows the [scikit-learn calibration workflow](https://scikit-learn.org/stable/modules/calibration.html).
+Outside age-normalized PRE score support, probabilities blend toward training class priors
+as standardized range overshoot increases. This general safeguard has no
+profile-specific override or probability cap; it is not an empirically validated
+intervention-recovery estimate. OOF and holdout probability diagnostics include
+log loss, Brier sum and 10-bin reliability/ECE. Restart a running backend after
+changing artifacts because inference caches the model.
+Age alone is excluded from this severity distance; younger sandbox ages must not
+turn severe age-normalized PRE delays into Average predictions.
 
 `artifacts/MODEL_EVALUATION_REPORT.md` documents Option A metrics, exact bundle
 hashes, the confusion matrix, source overlap and limitations. All 18 feature

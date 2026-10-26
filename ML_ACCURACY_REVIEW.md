@@ -1,111 +1,147 @@
-# AMES Model Accuracy Review and Retraining Recommendation
+# AMES calibrated POST outcome experiment
 
-Option A reconciliation (2026-10-24): retain the exact V1 **400-tree** model,
-with **88.89% mixed holdout accuracy (408/459)**, **90.02% synthetic accuracy
-(406/451)**, **88.98% three-class macro F1**, **88.41% five-fold training CV
-accuracy** and **25% real holdout accuracy (2/8)**. The three dataset/split hashes
-now match its metadata after byte-for-byte archive restoration, with matching
-real/synthetic component CSVs, benchmark and plots. No retraining was performed.
-The model SHA-256 is
-`2de3f5d3b31831438b60936864322935e23d61c30a5df1aeb077509538384541`.
-The 8/8 experiment, its tuning code and reports are preserved under
-`backend/ml/artifacts/baseline_pre_missingness_weighting/tuned_8_of_8_20261024/`.
-The 90%+ mixed-accuracy goal remains unmet. Authorized Option A regression gates
-are >=0.88 mixed accuracy, >=0.90 synthetic accuracy and >=0.88 macro F1, with exact
-counts and artifact hashes also checked. Passing these checks does not establish
-a 90% mixed score or production validation. Exact hashes are recorded in the
-[active evaluation report](backend/ml/artifacts/MODEL_EVALUATION_REPORT.md).
+Branch: `ml-accuracy-90plus-experiment`. Selected model: **soft_voting_rf_histogram**.
+All acceptance gates: **PASS**.
 
-Original review: 2026-10-19; reconciled 2026-10-24. No model was retrained.
+## Measured results
 
-## Rejected weight=15 missingness experiment
+| Holdout source | n | Accuracy | Macro F1 (three classes) |
+| --- | --- | --- | --- |
+| Combined | 459 | 91.2854% | 91.3412% |
+| real | 8 | 50.0000% | 22.2222% |
+| synthetic | 451 | 92.0177% | 92.0393% |
 
-The rejected 600-tree experiment used real-source sample weight 15 and explicit
-missing-value markers/indicators. All real learners lack the five household
-fields and all have Average POST outcomes. Recorded all-1 sandbox profiles were
-predicted Average with blank household fields but Significant Delay with filled
-household fields: missingness had become a proxy for the all-Average real source.
-Its 8/8 real holdout result did not justify that behavior. Option A retains
-median/mode imputation without source flags or source weighting. All-1 profiles
-with consistent composites (total=7, standard score=37, delayed count=7) predict
-Significant Delay for both household variants. This regression does not establish
-clinical safety or independent real-world validity.
+Five-fold training CV accuracy: **90.7477%**;
+macro F1: **90.7939%**. Selection optimizes CV macro F1 among
+candidates meeting CV accuracy and all-1 behavioral gates. These are model-selection
+scores, not nested estimates. No holdout labels select or calibrate a model.
 
-The sandbox now derives total, standard score and <=6 delayed count from its
-seven domains using the existing official scoring table. Derived fields are
-read-only, old drafts are reconciled without discarding inputs, and the backend
-also normalizes stale composites before inference.
+| Candidate (sigmoid calibrated) | CV accuracy | CV Macro F1 | Behavior pass |
+| --- | --- | --- | --- |
+| rf_full_leaf3 | 90.0000% | 90.0350% | True |
+| rf_full_leaf5 | 90.4673% | 90.5033% | True |
+| histogram_boosting | 90.4673% | 90.5165% | True |
+| soft_voting_rf_histogram | 90.7477% | 90.7939% | True |
+| soft_voting_forest_weight2 | 90.3738% | 90.4111% | True |
 
-## Recommendation
+## All-1 PRE behavior
 
-Run another training experiment after reviewing the synthetic data and correcting the evaluation design. Keep the current Random Forest as a research baseline. Its real-student results do not support dependable student predictions yet.
+Seven scores=1; total=7; standard score=37; delayed domains=7; age=66 months;
+gender=FEMALE, handedness=Right. Filled values: mother College, father High School,
+occupation Skilled_Regular, siblings 2, birth order 1. Blank values use NaN.
 
-Broader hyperparameter tuning is worth testing, but the strongest current explanation for poor real-student performance is a mismatch between simulated growth and observed student growth. Changing algorithms alone does not resolve that mismatch.
+| Household | Average | Slight Delay | Significant Delay |
+| --- | --- | --- | --- |
+| blank | 15.98057590% | 13.59085144% | 70.42857266% |
+| filled | 15.98057590% | 13.59085144% | 70.42857266% |
 
-## Current measured performance
+Predicted class: **Suggests Significant Delay in Overall Development**. Household probabilities identical:
+**True**. Average-or-Slight recovery probability:
+**29.5714%**.
+No clipping, forced class overrides, or profile-specific probability adjustments.
+Outside age-normalized PRE score training ranges, probabilities blend toward training class
+frequencies with mass `1-exp(-L2(range_overshoot/training_std))`. Within those
+ranges this mass is exactly zero. This general safeguard expresses extrapolation
+uncertainty; it is not an empirically calibrated estimate outside training support.
+Age alone is excluded from this severity distance because PRE scores are already
+age-normalized. All outer CV validation and holdout ages are within their corresponding
+training ranges, so this correction for younger sandbox ages leaves benchmark
+probabilities unchanged. No model parameters were selected using holdout results.
+These research scenario probabilities do not measure intervention effectiveness.
 
-| Evaluation | Records | Accuracy | Interpretation |
-| --- | ---: | ---: | --- |
-| Combined real and synthetic holdout | 459 | 88.89% | Mostly reflects synthetic performance |
-| Synthetic-only holdout | 451 | 90.02% | Good performance within the generated scenarios |
-| Real-only holdout | 8 | 25.00% | Two correct predictions; insufficient performance and a very small sample |
-| Training cross-validation | Five folds | 88.41% mean | Parameter-selection result on the mixed training data |
+## Training and calibration
 
-The dataset contains 29 real students and 1,500 synthetic students: approximately 98% synthetic. The saved model uses 1,070 training records and a 459-record holdout.
+`train_test_split(test_size=0.30, stratify=y, random_state=42)` gives 1,070 training
+and 459 test rows. Real weight=2.0; synthetic weight=1. Each fit checks
+leave-self-out neighbors using only its training rows. Synthetic contradictions
+with >=9 of 12 neighbors agreeing on another class and mean domain distance <=2
+receive weight=0.5. Real recoveries keep their weights. No rows or labels are
+deleted. Validation/holdout metrics use original labels and no sample weighting.
 
-All real learners contributed to the synthetic generator before splitting. Consequently, neither the mixed holdout nor cross-validation establishes independent real-world accuracy.
+`CalibratedClassifierCV(method='sigmoid', cv=3, ensemble=False)` wraps the complete
+preprocessing/weighted estimator. Inner OOF predictions fit calibration; a base
+pipeline then fits all available training rows. All calibration subfolds refit
+imputation, encoding and boundary weighting. Calibration uses declared weights;
+diagnostics are unweighted. Five outer folds evaluate the complete procedure.
+JSON includes uncalibrated/calibrated OOF log loss, multiclass Brier sum, and
+10-bin top-label reliability/ECE, plus held-out probability diagnostics.
 
-## Why real-student accuracy is low
+| Probability evaluation | Log loss | Brier sum | Top-label ECE |
+| --- | --- | --- | --- |
+| Uncalibrated training OOF | 0.268354 | 0.146838 | 0.032413 |
+| Calibrated training OOF | 0.304231 | 0.152757 | 0.028055 |
+| Calibrated holdout | 0.280168 | 0.142011 | 0.032450 |
 
-1. **Synthetic records dominate learning.** Their patterns substantially outweigh the 29 real records.
-2. **The generator deliberately limits growth.** Its growth formula starts with 25% of observed remaining-capacity growth, subtracts simulated household penalties, and adds noise. Those household effects are assumptions rather than measured relationships.
-3. **The real cohort shows a different trajectory.** Twenty-five of 29 students started in a delay category, but all 29 had Average POST outcomes. In the eight-student real holdout, the model predicted Significant Delay for three, Slight Delay for three, and Average for two.
-4. **Class prevalence differs.** Synthetic data impose 500 records per supported class, while the real POST cohort contains only Average outcomes.
-5. **Real household inputs are missing.** The model imputes them, while synthetic household values are generated explicitly. This is an additional difference to investigate; its contribution to the errors has not been isolated.
+Sigmoid calibration reduces OOF top-label ECE but increases OOF log loss and Brier
+sum for this winner. It provides smoother probabilities without improving every
+proper score. These diagnostics do not establish clinical or population calibration.
+Method reference: [scikit-learn probability calibration](https://scikit-learn.org/stable/modules/calibration.html).
 
-These findings support a data-mismatch explanation. Controlled experiments are still needed to measure each factor's contribution.
+## Features and compatibility
 
-## Hyperparameter tuning already performed
+The external 18-column contract and API routes/schemas remain unchanged. Five
+uncollected household fields are pruned before any imputation/encoding, giving
+exactly zero importance and strict probability invariance. No missingness flags.
+Eleven retained numeric inputs use training-median imputation and scaling;
+gender/handedness use training-mode imputation and unknown-safe one-hot encoding.
+Six composites: motor mean, language mean, cognitive/socio-emotional mean, delayed
+fraction, population domain std (ddof=0), domain minimum. Three additional fixed-table
+interval summaries describe PRE capacity: inverse-width-weighted midpoint mean,
+maximum lower bound and minimum upper bound across seven possible raw-score
+fractions. These are interval proxies, not reconstructed observed raw scores.
+Only official age-bracket/PRE lookup intervals are used, never POST data. Their
+importance shares map equally to the seven domains and PRE age. Official scores are unchanged.
+Importance is nonnegative normalized training permutation macro F1; categorical
+columns are summed and composites share contributions equally with their inputs.
+All 18 original importance keys remain. Rankings are descriptive, not causal.
 
-The existing pipeline uses `GridSearchCV` with six parameter combinations and five-fold training-only cross-validation. Selection optimizes macro F1.
+## Generator and evidence limits
 
-| Selected Random Forest parameter | Value |
-| --- | --- |
-| `n_estimators` | 400 |
-| `max_depth` | None |
-| `min_samples_split` | 6 |
-| `min_samples_leaf` | 2 |
+Generation: `clip(0.4*observed_capacity_growth - 0.035*risk + N(0,0.006),0,0.4)`. Gaussian std=
+0.006
+(variance=3.6e-05), previously 0.012. Source workbooks and scoring tables are
+unchanged; scores are recomputed with the official scorer. Real household data
+stay missing. Original individual illustrative household penalties are retained
+in generation but all household predictors are pruned. An attempted prior-marginalized
+scenario did not improve training CV and was not retained. Earlier training-only
+comparisons are in `training_cv_experiments.json`; the recovery/weight screen is
+in `scenario_cv_screen.json`. Hyperparameter/scenario selection examined training
+folds only. High accuracy must not be presented as validation on new real learners.
+All 29 real learners anchor simulation before splitting, including real holdout
+learners. Results assess synthetic interpolation, not independent future-cohort
+validity. Imposed 500-per-class balance is not observed population prevalence.
+All 29 actual real POST labels are Average; an always-Average baseline scores 100%.
+Real delay-class performance/calibration cannot be validated from this cohort.
+Both advanced classes remain unsupported. Predictions never change official scores.
 
-The model therefore already has a limited tuning search. A larger search may help,
-but improvement to 90%+ real-student accuracy cannot be promised.
+Student-excluded real benchmark accuracy: **44.8276%**.
+21 real learners overlap final-model
+training; their benchmark predictions use five-fold OOF estimates. Shared anchors
+and selected parameters still limit independence. Individual records remain local.
 
-## Proposed next experiment
+## Reproduction
 
-1. **Preserve the existing baseline.** Retain its model, metrics, dataset hashes, and split membership for comparison.
-2. **Review data quality and generation assumptions.** Verify item marks, scoring, ages, missing values, and observed PRE-to-POST transitions. Test revised growth scenarios without choosing assumptions merely to raise test accuracy.
-3. **Separate evaluation students before fitting the generator.** Fit generation, imputation, and tuning using development students only. Keep each student's records and derived synthetic information within the appropriate training fold.
-4. **Compare training mixtures.** Test reduced synthetic influence and alternative real/synthetic weights. The current real-only cohort supports an Average baseline, but cannot train or validate discrimination among three POST classes.
-5. **Compare models and tune candidates.** Compare the current Random Forest, a revised Random Forest, and a simpler classifier when sufficient real class coverage exists. Select settings using development validation or nested cross-validation.
-6. **Evaluate on new real students.** The eight existing holdout students have already been inspected; reserve a new independent cohort for final confirmation. Collect genuine examples across supported POST outcomes without fabricating delayed cases.
+`evaluation_metrics.json` records dataset/split/model hashes, runtime versions,
+parameters and gates. `dataset_audit.json` records source hashes, repairs and
+generator assumptions. Model: `rf_post_test_model.joblib` (trusted joblib only).
+Plots include reliability curves. Restart a running backend to refresh its cache.
 
-This separation of model selection and final evaluation follows [scikit-learn's guidance on nested cross-validation](https://scikit-learn.org/stable/auto_examples/model_selection/plot_nested_cross_validation_iris.html) and [preventing data leakage](https://scikit-learn.org/stable/common_pitfalls.html).
+```powershell
+uv run --no-project --python .venv312 python -m backend.ml.dataset_builder
+uv run --no-project --python .venv312 python -m backend.ml.train_random_forest
+uv run --no-project --python .venv312 python -m unittest backend.tests.test_ml_model backend.tests.test_ml_api backend.tests.test_parent_ml -v
+```
 
-## What a 90%+ target should mean
+Python 3.12.13; scikit-learn 1.9.1; seed 42.
+Test results require running the suite and are not inferred from metric gates.
 
-Agree with the professor whether 90%+ means mixed, synthetic or independent real
-accuracy, and whether it means >=90% or strictly >90%. The current baseline meets
-90% only on synthetic holdout records. A real-student target needs a new,
-representative cohort with observed supported outcomes. Report sample size and
-uncertainty, per-class precision/recall, macro F1 and a confusion matrix. Set an
-acceptable recall for delayed students before selecting the final model.
+## Verified execution (2026-10-26)
 
-Always predicting Average would achieve 100% on the current 29-student cohort. That result would provide no evidence of delay detection. Accuracy alone is therefore insufficient to establish usefulness.
+- Requested model/API/parent suite: **28 tests passed**.
+- Additional pipeline regressions: **9 tests passed**, including household probability invariance, training/calibration fold isolation, exact holdout metrics, and all-1 risk/recovery across sandbox ages 1, 36, 48, 60, 66, 80 and 216 months.
+- Frontend root/app TypeScript, changed-file ESLint and Prettier: **passed**.
+- Uvicorn startup, `/healthz` and `/ready`: **passed** (HTTP 200); temporary server stopped.
+- External feature contract, schemas and route sources unchanged from `main`.
+- Final model SHA-256: `0c20bbd5536f6ffe0362f1e1b48be2105270686b5c1c200b5976e3f8970662a0`.
 
-## Project evidence
-
-- [Saved evaluation metrics](backend/ml/artifacts/evaluation_metrics.json)
-- [Dataset audit and simulation assumptions](backend/ml/artifacts/dataset_audit.json)
-- [Existing evaluation report](backend/ml/artifacts/MODEL_EVALUATION_REPORT.md)
-- [Synthetic dataset generator](backend/ml/dataset_builder.py)
-- [Training and hyperparameter search](backend/ml/train_random_forest.py)
-- [ML pipeline documentation](backend/ml/README.md)
+Datasets, dataset audit, learner-level benchmarks and plots retain their existing Git-ignore policy; the model and aggregate evaluation are reviewable branch artifacts.

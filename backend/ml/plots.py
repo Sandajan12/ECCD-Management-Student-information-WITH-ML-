@@ -14,7 +14,7 @@ import pandas as pd
 
 PLOT_NAMES = ["01_confusion_matrix.png", "02_classification_metrics_f1.png",
               "03_feature_importance.png", "04_class_distribution_70_30.png",
-              "05_real_beneficiary_pre_vs_post_comparison.png"]
+              "05_real_beneficiary_pre_vs_post_comparison.png", "06_probability_reliability.png"]
 
 
 def save(fig: plt.Figure, name: str) -> None:
@@ -64,8 +64,8 @@ def make_plots(metrics: dict, train: pd.DataFrame, test: pd.DataFrame,
     colors = ["#4b9c85" if f.endswith("_pre_scaled") else "#3c83b5" if f.startswith("pre_")
               else "#d99b49" if f in ("age_months_pre", "gender", "handedness") else "#9b83b6" for f in ordered]
     ax.barh(ordered, [importance[f] for f in ordered], color=colors)
-    ax.set(xlabel="Summed impurity importance (one-hot columns aggregated to original feature)",
-        title="Random Forest: all 18 input features\nGreen: domains | Blue: baseline totals | Gold: demographics | Purple: household")
+    ax.set(xlabel="Normalized training permutation importance (composites mapped to original inputs)",
+        title="Calibrated POST model: all 18 input features\nGreen: domains | Blue: baseline totals | Gold: demographics | Purple: household (pruned)")
     ax.grid(axis="x", alpha=0.15)
     fig.tight_layout()
     save(fig, PLOT_NAMES[2])
@@ -99,3 +99,22 @@ def make_plots(metrics: dict, train: pd.DataFrame, test: pd.DataFrame,
     ax.grid(axis="y", alpha=0.2)
     fig.tight_layout()
     save(fig, PLOT_NAMES[4])
+
+    fig, ax = plt.subplots(figsize=(9, 7))
+    ax.plot([0, 1], [0, 1], "--", color="#8996a3", label="Perfect reliability")
+    selected = next(row for row in metrics["cross_validation"]["candidates"]
+                    if row["name"] == metrics["selected_candidate"])
+    for values, label, color in (
+        (selected["uncalibrated_oof"], "Uncalibrated training OOF", "#e3a64a"),
+        (selected["calibrated_oof"], "Sigmoid-calibrated training OOF", "#3c83b5"),
+        (metrics["probability_evaluation"], "Calibrated holdout", "#4b9c85"),
+    ):
+        bins = values["reliability_bins"]
+        ax.plot([b["confidence"] for b in bins], [b["accuracy"] for b in bins],
+                "o-", color=color, label=f"{label} (ECE={values['top_label_ece_10_bins']:.3f})")
+    ax.set(xlim=(0, 1), ylim=(0, 1), xlabel="Mean top-class probability (10 bins)",
+           ylabel="Observed accuracy", title="Research-scenario probability reliability\nClass-balanced synthetic mixture; not population calibration")
+    ax.legend(loc="lower right")
+    ax.grid(alpha=0.15)
+    fig.tight_layout()
+    save(fig, PLOT_NAMES[5])
