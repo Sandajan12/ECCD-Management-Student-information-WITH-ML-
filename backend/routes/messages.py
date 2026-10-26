@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy.orm import Session, aliased
+from sqlalchemy.orm import Session, aliased, contains_eager
 from sqlalchemy import func
 from backend.config.database import get_db
-from backend.models import FamilyAccess, Message, Parent, Student, Teacher, User
+from backend.models import FamilyAccess, Message, Parent, SectionTeacher, Student, Teacher, User
 from backend.models.message import SenderRole
 from backend.schemas.message import ContactsResponse, ConversationRequest, MessageCreate, MessageResponse, NotifyStudentRequest, NotifyStudentResponse, PersistedMessageResponse, SuccessResponse, UnreadResponse
 from backend.utils.access import authorize_student, current_teacher, resolve_student, teacher_sections
@@ -18,26 +18,34 @@ def contacts(db: Session = Depends(get_db), user: User = Depends(verify_role(["a
     result = []
     if user.role.value == "admin":
         teacher = current_teacher(db, user)
-        parents = db.query(Parent).join(FamilyAccess).join(Student).join(User, Parent.user_id == User.user_id).filter(FamilyAccess.status == "SYNCED", Student.section_id.in_(teacher_sections(db, teacher)), Student.is_active.is_(True), User.is_active.is_(True), User.role == "user").distinct().all()
-        for parent in parents:
-            children = db.query(Student).join(FamilyAccess).filter(FamilyAccess.status == "SYNCED", FamilyAccess.parent_id == parent.parent_id, Student.section_id.in_(teacher_sections(db, teacher)), Student.is_active.is_(True)).distinct().all()
-            names = " & ".join(sorted({child.first_name for child in children if child.first_name}))
-            name = account_display_name(parent.user)
-            latest = db.query(func.max(Message.created_at)).filter_by(parent_id=parent.parent_id, teacher_id=teacher.teacher_id, is_archived=False).scalar()
-            result.append({"id": parent.parent_id, "name": f"{name} ({names}'s Parent)" if names else name, "latest_message_time": latest})
+        section_ids = teacher_sections(db, teacher)
+        rows = db.query(Parent, User, Student.first_name).join(FamilyAccess, FamilyAccess.parent_id == Parent.parent_id).join(Student, Student.student_id == FamilyAccess.student_id).join(User, Parent.user_id == User.user_id).options(contains_eager(User.parent)).filter(
+            FamilyAccess.status == "SYNCED", Student.section_id.in_(section_ids),
+            Student.is_active.is_(True), User.is_active.is_(True), User.role == "user",
+        ).all()
+        latest = dict(db.query(Message.parent_id, func.max(Message.created_at)).filter_by(teacher_id=teacher.teacher_id, is_archived=False).group_by(Message.parent_id).all())
+        parents = {}
+        for parent, account, first_name in rows:
+            name, children = parents.setdefault(parent.parent_id, (account_display_name(account), set()))
+            if first_name:
+                children.add(first_name)
+        for parent_id, (name, children) in parents.items():
+            names = " & ".join(sorted(children))
+            result.append({"id": parent_id, "name": f"{name} ({names}'s Parent)" if names else name, "latest_message_time": latest.get(parent_id)})
         own_id = teacher.teacher_id
     else:
         parent = db.query(Parent).filter_by(user_id=user.user_id).first()
         if parent is None:
             return {"myId": None, "contacts": []}
         own_id = parent.parent_id
-        for teacher in db.query(Teacher).join(User).filter(User.is_active.is_(True)).all():
-            try:
-                authorize_conversation(db, user, teacher.teacher_id, parent.parent_id)
-                latest = db.query(func.max(Message.created_at)).filter_by(parent_id=parent.parent_id, teacher_id=teacher.teacher_id, is_archived=False).scalar()
-                result.append({"id": teacher.teacher_id, "name": f"Teacher {account_display_name(teacher.user)}", "latest_message_time": latest})
-            except HTTPException:
-                continue
+        teachers = db.query(Teacher, User).join(User, Teacher.user_id == User.user_id).join(SectionTeacher, SectionTeacher.teacher_id == Teacher.teacher_id).join(Student, Student.section_id == SectionTeacher.section_id).join(FamilyAccess, FamilyAccess.student_id == Student.student_id).options(contains_eager(User.teacher)).filter(
+            User.is_active.is_(True), User.role == "admin", SectionTeacher.role == "Primary Adviser",
+            SectionTeacher.status == "Active", Student.is_active.is_(True),
+            FamilyAccess.status == "SYNCED", FamilyAccess.parent_id == parent.parent_id,
+        ).distinct().all()
+        latest = dict(db.query(Message.teacher_id, func.max(Message.created_at)).filter_by(parent_id=parent.parent_id, is_archived=False).group_by(Message.teacher_id).all())
+        for teacher, account in teachers:
+            result.append({"id": teacher.teacher_id, "name": f"Teacher {account_display_name(account)}", "latest_message_time": latest.get(teacher.teacher_id)})
     result.sort(key=lambda item: (-(item["latest_message_time"].timestamp()) if item["latest_message_time"] else float('inf'), item["name"]))
     return {"myId": own_id, "contacts": result}
 

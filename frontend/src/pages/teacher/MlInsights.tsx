@@ -10,6 +10,7 @@ import { useTeacher } from "../../context/TeacherContext";
 import { useAuth } from "../../context/AuthContext";
 import { readDraft, storeDraft, useDurableForm } from "../../utils/drafts";
 import { sandboxStandardScore } from "../../utils/mlScoring";
+import { settleWithConcurrency } from "../../utils/concurrency";
 
 interface MLFeatures {
   pre_standard_score: number;
@@ -447,8 +448,10 @@ function StudentEvaluation({
   useEffect(() => {
     if (batchStudents.length === 0) return;
     const controller = new AbortController();
-    void Promise.allSettled(
-      batchStudents.map(async (student) => {
+    void settleWithConcurrency(
+      batchStudents,
+      3,
+      async (student) => {
         try {
           const { data } = await API.post<Prediction>(
             `/api/ml/predict/student/${student.student_id}`,
@@ -468,7 +471,8 @@ function StudentEvaluation({
             );
           }
         }
-      }),
+      },
+      controller.signal,
     ).then((results) => {
       if (controller.signal.aborted) return;
       setError(

@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, func, true, false
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Index, Integer, String, func, true, false
 from sqlalchemy.orm import relationship
 
 from .base import Base
@@ -6,6 +6,7 @@ from .base import Base
 
 class Section(Base):
     __tablename__ = "sections"
+    __table_args__ = (Index("idx_sections_adviser", "adviser_teacher_id"),)
 
     section_id = Column(Integer, primary_key=True, autoincrement=True)
     section_name = Column(String(100), nullable=False, unique=True)

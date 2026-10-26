@@ -24,7 +24,11 @@ class SenderRole(str, enum.Enum):
 
 class Message(Base):
     __tablename__ = "messages"
-    __table_args__ = (Index("idx_messages_thread", "parent_id", "teacher_id", "is_archived", "created_at"),)
+    __table_args__ = (
+        Index("idx_messages_thread", "parent_id", "teacher_id", "is_archived", "created_at"),
+        Index("idx_messages_teacher_recent", "teacher_id", "is_archived", "created_at"),
+        Index("idx_messages_teacher_unread", "teacher_id", "is_archived", "is_read", "sender_role"),
+    )
 
     message_id = Column(Integer, primary_key=True, autoincrement=True)
     parent_id = Column(

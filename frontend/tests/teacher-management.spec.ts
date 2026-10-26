@@ -49,7 +49,10 @@ test.beforeEach(async ({ page, request }) => {
     page.getByRole("cell", { name: "Test Adviser", exact: true }),
   ).toBeVisible();
 });
-test.afterEach(() => {
+test.afterEach(async ({ page }) => {
+  // Saves trigger a directory refresh. Finish intercepted responses before
+  // Playwright disposes the request context during page teardown.
+  await page.unrouteAll({ behavior: "wait" });
   expect(errors).toEqual([]);
 });
 

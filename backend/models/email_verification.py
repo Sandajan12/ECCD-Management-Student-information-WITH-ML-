@@ -1,6 +1,6 @@
 import enum
 
-from sqlalchemy import CheckConstraint, Column, Integer, String, DateTime, Enum, ForeignKey, UniqueConstraint
+from sqlalchemy import CheckConstraint, Column, Integer, String, DateTime, Enum, ForeignKey, Index, UniqueConstraint
 from .base import Base
 
 class OtpPurpose(str, enum.Enum):
@@ -23,6 +23,8 @@ class EmailVerification(Base):
     otp_hash = Column(String(64), nullable=True)
     attempts = Column(Integer, default=0, server_default="0", nullable=False)
     __table_args__ = (
+        Index("idx_otp_user_purpose", "user_id", "purpose"),
+        Index("idx_otp_expiry", "expires_at"),
         UniqueConstraint("challenge_hash", name="unique_otp_challenge"),
         CheckConstraint("attempts >= 0", name="ck_otp_attempts"),
     )

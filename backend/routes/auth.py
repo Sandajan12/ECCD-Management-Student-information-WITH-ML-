@@ -1,4 +1,5 @@
 import logging
+from anyio.from_thread import run as run_async
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy import func
@@ -21,7 +22,7 @@ router = APIRouter(prefix="/api/auth", tags=["Auth"])
 
 @router.post("/login", response_model=LoginResponse | OtpChallengeResponse, response_model_exclude_none=True)
 @router.post("/login-step1", response_model=LoginResponse | OtpChallengeResponse, response_model_exclude_none=True)
-async def login(data: LoginRequest, request: Request, response: Response, db: Session = Depends(get_db)):
+def login(data: LoginRequest, request: Request, response: Response, db: Session = Depends(get_db)):
     identifier = str(data.email).strip().lower()
     try:
         user = db.query(User).filter(func.lower(User.email) == identifier).one_or_none()
@@ -48,7 +49,7 @@ async def login(data: LoginRequest, request: Request, response: Response, db: Se
     token, otp = issue_challenge(db, user, OtpPurpose.LOGIN, remember=data.rememberDevice)
     db.commit()
     try:
-        await send_otp_email(user.email, otp)
+        run_async(send_otp_email, user.email, otp)
     except Exception:
         discard_failed_challenge(db, token)
         raise HTTPException(502, "Unable to deliver the verification email. Please retry.") from None
@@ -67,7 +68,7 @@ def verify_otp(data: VerifyOtpRequest, request: Request, response: Response, db:
 
 
 @router.post("/register-parent", response_model=LoginResponse | OtpChallengeResponse, status_code=201, response_model_exclude_none=True)
-async def register_parent(data: RegisterParentRequest, request: Request, response: Response, db: Session = Depends(get_db)):
+def register_parent(data: RegisterParentRequest, request: Request, response: Response, db: Session = Depends(get_db)):
     email = str(data.email).strip().lower()
     full_name = f"{data.firstName.strip()} {data.lastName.strip()}"
     if len(full_name) > 100 or not data.firstName.strip() or not data.lastName.strip():
@@ -97,7 +98,7 @@ async def register_parent(data: RegisterParentRequest, request: Request, respons
     db.commit()
     result = {"success": True, "requireOtp": True, "challengeToken": token, "email": user.email, "emailSent": True}
     try:
-        await send_otp_email(user.email, otp)
+        run_async(send_otp_email, user.email, otp)
     except Exception:
         discard_failed_challenge(db, token)
         result.update(emailSent=False, code="REGISTRATION_EMAIL_FAILED", message="Your account is awaiting verification. Submit registration again with the same email and password to retry delivery.")
@@ -121,7 +122,7 @@ def update_password(data: UpdatePasswordRequest, response: Response, db: Session
 
 @router.post("/send-otp", response_model=ChallengeResult, response_model_exclude_none=True)
 @router.post("/request-otp", response_model=ChallengeResult, response_model_exclude_none=True)
-async def send_otp(data: SendOtpRequest, db: Session = Depends(get_db), user: User = Depends(verify_role(["super-admin"]))):
+def send_otp(data: SendOtpRequest, db: Session = Depends(get_db), user: User = Depends(verify_role(["super-admin"]))):
     if not verify_password(data.currentPassword or "", user.password_hash):
         raise HTTPException(401, "Incorrect current password.")
     email = str(data.email).strip().lower()
@@ -132,7 +133,7 @@ async def send_otp(data: SendOtpRequest, db: Session = Depends(get_db), user: Us
     token, otp = issue_challenge(db, user, OtpPurpose.EMAIL_CHANGE, email)
     db.commit()
     try:
-        await send_otp_email(email, otp)
+        run_async(send_otp_email, email, otp)
     except Exception:
         discard_failed_challenge(db, token)
         raise HTTPException(502, "Unable to deliver the verification email.") from None

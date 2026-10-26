@@ -30,7 +30,8 @@ class User(Base):
     security_version = Column(Integer, default=0, server_default="0", nullable=False)
     otp_code = Column(String(10), nullable=True)
     otp_expires_at = Column(DateTime, nullable=True)
-    __table_args__ = (Index("ux_users_email_lower", func.lower(email), unique=True),)
+    __table_args__ = (Index("ux_users_email_lower", func.lower(email), unique=True),
+                      Index("idx_users_role_active", "role", "is_active"))
 
     teacher = relationship(
         "Teacher", back_populates="user", uselist=False, cascade="all, delete-orphan"

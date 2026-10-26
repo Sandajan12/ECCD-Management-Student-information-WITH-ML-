@@ -125,12 +125,22 @@ def update_teacher_permissions(
 
 @router.put("/students/transfer", response_model=TransferResponse)
 def transfer_students(payload: StudentIdTransferRequest | StudentTransferRequest, db: Session = Depends(get_db), current_user=Depends(verify_role(["super-admin"]))):
-    from backend.utils.access import resolve_student
+    from backend.utils.lrn import hash_lrn
     section = db.get(Section, payload.new_section_id)
     if section is None:
         raise HTTPException(404, "Destination section does not exist.")
     identifiers = payload.student_ids if isinstance(payload, StudentIdTransferRequest) else payload.lrn_numbers
-    students = [resolve_student(db, identifier) for identifier in identifiers]
+    if isinstance(payload, StudentIdTransferRequest):
+        rows = db.query(Student).filter(Student.student_id.in_(identifiers)).all()
+        by_identifier = {student.student_id: student for student in rows}
+        keys = identifiers
+    else:
+        keys = [hash_lrn(identifier) for identifier in identifiers]
+        rows = db.query(Student).filter(Student.lrn_search_hash.in_(keys)).all()
+        by_identifier = {student.lrn_search_hash: student for student in rows}
+    if any(key not in by_identifier for key in keys):
+        raise HTTPException(404, "Student not found.")
+    students = [by_identifier[key] for key in keys]
     for student in students:
         student.section_id, student.section_name = section.section_id, section.section_name
     from backend.utils.audit import person_name, record_audit
@@ -161,30 +171,17 @@ def get_chairman_sections(
     current_user=Depends(verify_role(["super-admin", "chairman"])),
 ):
     sections = db.query(Section).order_by(Section.section_name.asc()).all()
+    advisers = {}
+    for assignment, teacher in db.query(SectionTeacher, Teacher).join(Teacher, SectionTeacher.teacher_id == Teacher.teacher_id).join(User, Teacher.user_id == User.user_id).filter(
+        SectionTeacher.status == "Active", SectionTeacher.role == "Primary Adviser", User.is_active.is_(True),
+    ).order_by(SectionTeacher.id.desc()).all():
+        advisers.setdefault(assignment.section_id, (assignment, teacher))
     results = []
     for sec in sections:
-        active_assignment = (
-            db.query(SectionTeacher)
-            .join(Teacher, SectionTeacher.teacher_id == Teacher.teacher_id)
-            .join(User, Teacher.user_id == User.user_id)
-            .filter(
-                SectionTeacher.section_id == sec.section_id,
-                SectionTeacher.status == "Active",
-                SectionTeacher.role == "Primary Adviser",
-                User.is_active.is_(True),
-            )
-            .order_by(SectionTeacher.id.desc())
-            .first()
-        )
         teacher_info = None
-        if active_assignment:
-            t = (
-                db.query(Teacher)
-                .filter(Teacher.teacher_id == active_assignment.teacher_id)
-                .first()
-            )
-            if t:
-                teacher_info = {
+        if sec.section_id in advisers:
+            active_assignment, t = advisers[sec.section_id]
+            teacher_info = {
                     "teacher_id": t.teacher_id,
                     "first_name": t.first_name,
                     "last_name": t.last_name,

@@ -15,4 +15,6 @@ class UserTrustedDevice(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     user = relationship("User", back_populates="trusted_devices")
-    __table_args__ = (Index("idx_user_device", "user_id", "device_token_hash"),)
+    __table_args__ = (Index("idx_user_device", "user_id", "device_token_hash"),
+                      Index("idx_device_token", "device_token_hash"),
+                      Index("idx_device_user_expiry", "user_id", "expires_at"))

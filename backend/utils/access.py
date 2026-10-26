@@ -55,6 +55,10 @@ def get_active_adviser_for_student(student: Student, db: Session) -> Teacher | N
 
 def permissions_for_student(db: Session, student: Student) -> ParentPermissions:
     teacher = get_active_adviser_for_student(student, db)
+    return permissions_for_adviser(teacher)
+
+
+def permissions_for_adviser(teacher: Teacher | None) -> ParentPermissions:
     if teacher is None:
         return ParentPermissions(allow_parent_view_student_info=False, allow_parent_edit_student_info=False)
     return ParentPermissions(**{key: bool(getattr(teacher, key, False)) for key in ParentPermissions.model_fields})
@@ -63,6 +67,10 @@ def permissions_for_student(db: Session, student: Student) -> ParentPermissions:
 def student_age(db: Session, student: Student) -> float | None:
     from backend.models import SystemSettings
     setting = db.get(SystemSettings, 1)
+    return age_at_school_year(student, setting)
+
+
+def age_at_school_year(student: Student, setting) -> float | None:
     year = student.school_year or (setting.current_school_year if setting else None)
     baseline = date(int(year[:4]), setting.school_year_start_month if setting else 8, 1) if year and re.fullmatch(r"[0-9]{4}-[0-9]{4}", year) else date.today()
     return calculate_decimal_age(student.date_of_birth, baseline) if student.date_of_birth else None

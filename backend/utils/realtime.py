@@ -68,6 +68,35 @@ def parse_room(room: object) -> tuple[int, int]:
     return int(match[1]), int(match[2])
 
 
+def authenticate_socket(token: str) -> None:
+    # Each worker owns its session, and only plain data returns to the loop.
+    with SessionLocal() as db:
+        user = session_user(db, token)
+        if user.role.value not in ("admin", "user"):
+            raise HTTPException(403, "No authorized messaging relationship.")
+
+
+def authorize_socket(token: str, teacher_id: int, parent_id: int, recipient: int | None = None) -> bool:
+    with SessionLocal() as db:
+        user = session_user(db, token)
+        if recipient is not None and user.user_id != recipient:
+            return False
+        authorize_conversation(db, user, teacher_id, parent_id)
+        return True
+
+
+def saved_socket_message(token: str, teacher_id: int, parent_id: int, message_id: int) -> tuple[dict, int]:
+    with SessionLocal() as db:
+        user = session_user(db, token)
+        teacher, parent = authorize_conversation(db, user, teacher_id, parent_id)
+        role = SenderRole.TEACHER if user.role.value == "admin" else SenderRole.PARENT
+        message = db.query(Message).filter_by(message_id=message_id, teacher_id=teacher_id, parent_id=parent_id, sender_role=role, is_archived=False).first()
+        if message is None:
+            raise HTTPException(403, "Message is not authorized for this conversation.")
+        return (MessageResponse.model_validate(message).model_dump(mode="json"),
+                parent.user_id if role == SenderRole.TEACHER else teacher.user_id)
+
+
 @sio.event
 async def connect(sid, environ, auth):
     scope = environ.get("asgi.scope", {})
@@ -82,10 +111,7 @@ async def connect(sid, environ, auth):
     if not isinstance(token, str):
         return False
     try:
-        with SessionLocal() as db:
-            user = session_user(db, token)
-            if user.role.value not in ("admin", "user"):
-                return False
+        await run_in_threadpool(authenticate_socket, token)
         connections[sid] = token
         socket_clients[sid] = key
         return True
@@ -114,9 +140,9 @@ async def join_room(sid, room):
     generation = generations[sid] = generations.get(sid, 0) + 1
     try:
         teacher_id, parent_id = parse_room(room)
-        with SessionLocal() as db:
-            user = session_user(db, connections.get(sid, ""))
-            authorize_conversation(db, user, teacher_id, parent_id)
+        await run_in_threadpool(authorize_socket, connections.get(sid, ""), teacher_id, parent_id)
+        if generation != generations.get(sid) or sid not in connections:
+            raise HTTPException(409, "Conversation selection changed.")
         for previous in list(sio.rooms(sid)):
             if previous != sid:
                 await sio.leave_room(sid, previous)
@@ -134,9 +160,10 @@ async def leave_room(sid, room):
         return result
     try:
         parse_room(room)
-        with SessionLocal() as db:
-            session_user(db, connections.get(sid, ""))
-        generations[sid] = generations.get(sid, 0) + 1
+        generation = generations[sid] = generations.get(sid, 0) + 1
+        await run_in_threadpool(authenticate_socket, connections.get(sid, ""))
+        if generation != generations.get(sid) or sid not in connections:
+            raise HTTPException(409, "Conversation selection changed.")
         await sio.leave_room(sid, room)
         return {"success": True}
     except HTTPException as error:
@@ -152,24 +179,15 @@ async def send_message(sid, data):
         teacher_id, parent_id = parse_room(payload.room)
         if payload.room not in sio.rooms(sid):
             raise HTTPException(403, "Join the conversation before sending.")
-        with SessionLocal() as db:
-            user = session_user(db, connections.get(sid, ""))
-            teacher, parent = authorize_conversation(db, user, teacher_id, parent_id)
-            role = SenderRole.TEACHER if user.role.value == "admin" else SenderRole.PARENT
-            message = db.query(Message).filter_by(message_id=payload.message_id, teacher_id=teacher_id, parent_id=parent_id, sender_role=role, is_archived=False).first()
-            if message is None:
-                raise HTTPException(403, "Message is not authorized for this conversation.")
-            record = MessageResponse.model_validate(message).model_dump(mode="json")
-            recipient = parent.user_id if role == SenderRole.TEACHER else teacher.user_id
+        record, recipient = await run_in_threadpool(saved_socket_message, connections.get(sid, ""), teacher_id, parent_id, payload.message_id)
         for target, token in list(connections.items()):
             if target == sid or payload.room not in sio.rooms(target):
                 continue
             try:
-                with SessionLocal() as db:
-                    current = session_user(db, token)
-                    if current.user_id != recipient:
-                        continue
-                    authorize_conversation(db, current, teacher_id, parent_id)
+                if not await run_in_threadpool(authorize_socket, token, teacher_id, parent_id, recipient):
+                    continue
+                if connections.get(target) != token or payload.room not in sio.rooms(target):
+                    continue
                 await sio.emit("receive_message", record, to=target)
             except HTTPException:
                 await sio.disconnect(target)

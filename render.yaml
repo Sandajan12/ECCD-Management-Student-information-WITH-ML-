@@ -15,6 +15,14 @@ services:
         value: production
       - key: ENABLE_OTP
         value: "true"
+      - key: DATABASE_POOL_SIZE
+        value: "5"
+      - key: DATABASE_MAX_OVERFLOW
+        value: "5"
+      - key: DATABASE_POOL_TIMEOUT
+        value: "15"
+      - key: DATABASE_POOL_RECYCLE
+        value: "300"
       - key: ALGORITHM
         value: HS256
       - key: EMAIL_TRANSPORT

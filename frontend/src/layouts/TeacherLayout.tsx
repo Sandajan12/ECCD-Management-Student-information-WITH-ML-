@@ -1,4 +1,4 @@
-import { Outlet } from "react-router-dom";
+import RouteContent from "../components/RouteContent";
 import { ThemeProvider } from "@mui/material/styles";
 import CssBaseline from "@mui/material/CssBaseline";
 import MainLayout from "./MainLayout";
@@ -32,7 +32,7 @@ function TeacherContent() {
         </label>
       )}
       <Notice tone="error">{error || settingsError}</Notice>
-      <Outlet />
+      <RouteContent />
     </div>
   );
 }

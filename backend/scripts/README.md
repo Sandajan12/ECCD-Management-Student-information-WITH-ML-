@@ -34,7 +34,7 @@ On this Windows checkout, use `--python .venv312` to select the installed Python
 `--schema bootstrap_test_...` is available for isolated verification. The command
 does not create databases or change the application's connection settings.
 
-All pending migrations run in order, **001–013**. Migrations 012 and 013 are
+All pending migrations run in order, **001–014**. Migrations 012 and 013 are
 required by the current API. Applied migrations are skipped, then the final
 schema is checked; historical Phase 1 checks cannot validate a Phase 2 schema.
 The runner uses the existing migration functions and their preservation checks.

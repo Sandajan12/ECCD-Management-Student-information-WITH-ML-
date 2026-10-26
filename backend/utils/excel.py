@@ -1,5 +1,6 @@
 """DepEd workbook import/export translated from the legacy functional flows."""
 from collections import defaultdict
+from dataclasses import dataclass
 from datetime import date, datetime
 from io import BytesIO
 from pathlib import Path
@@ -14,9 +15,9 @@ from openpyxl.utils.datetime import from_excel
 from openpyxl.utils.cell import range_boundaries
 from fastapi import HTTPException
 from fastapi.responses import StreamingResponse
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
-from backend.models import EccdQuestion, FamilyAccess, Parent, Section, SectionTeacher, Student, StudentEccdEvaluation, Teacher, User
+from backend.models import EccdQuestion, FamilyAccess, Parent, Section, SectionTeacher, Student, StudentEccdEvaluation, SystemSettings, Teacher, User
 from backend.models.eccd import EccdAnswer, TestingPeriod
 from backend.models.student import Gender, Handedness
 from backend.schemas.student import StudentCreate
@@ -162,20 +163,47 @@ def workbook_bytes(workbook) -> bytes:
     return output.getvalue()
 
 
-def student_workbook(db: Session, student: Student):
+@dataclass
+class ChecklistData:
+    advisers: dict[int, Teacher]
+    parents: dict[int, list[tuple[Parent, str | None]]]
+    evaluations: dict[int, list[StudentEccdEvaluation]]
+    questions: list[EccdQuestion]
+    setting: SystemSettings
+
+
+def checklist_data(db: Session, students: list[Student]) -> ChecklistData:
+    ids = [student.student_id for student in students]
+    sections = {student.section_id for student in students if student.section_id is not None}
+    advisers = {}
+    for section_id, teacher in db.query(SectionTeacher.section_id, Teacher).join(Teacher).join(User, Teacher.user_id == User.user_id).filter(
+        SectionTeacher.section_id.in_(sections), SectionTeacher.status == "Active",
+        SectionTeacher.role == "Primary Adviser", User.is_active.is_(True),
+    ).order_by(SectionTeacher.id.desc()):
+        advisers.setdefault(section_id, teacher)
+    parents = defaultdict(list)
+    for student_id, parent, relationship in db.query(FamilyAccess.student_id, Parent, FamilyAccess.relationship_type).join(Parent, Parent.parent_id == FamilyAccess.parent_id).filter(
+        FamilyAccess.student_id.in_(ids), FamilyAccess.status == "SYNCED",
+    ):
+        parents[student_id].append((parent, relationship))
+    evaluations = defaultdict(list)
+    for record in db.query(StudentEccdEvaluation).options(joinedload(StudentEccdEvaluation.question)).filter(StudentEccdEvaluation.student_id.in_(ids)):
+        evaluations[record.student_id].append(record)
+    return ChecklistData(advisers, parents, evaluations, db.query(EccdQuestion).all(), settings_record(db))
+
+
+def student_workbook(db: Session, student: Student, *, batch: ChecklistData | None = None):
     from backend.utils.checklist_workbook import generate_student_workbook
-    teacher = get_active_adviser_for_student(student, db)
+    batch = batch if batch is not None else checklist_data(db, [student])
+    teacher = batch.advisers.get(student.section_id)
     if teacher is None:
         teacher = Teacher(first_name="", last_name="")
     parents = []
-    for parent, relationship in db.query(Parent, FamilyAccess.relationship_type).join(FamilyAccess).filter(FamilyAccess.status == "SYNCED", FamilyAccess.student_id == student.student_id):
+    for parent, relationship in batch.parents.get(student.student_id, []):
         # Do not mutate a linked parent's relationship while exporting.
         proxy = Parent(fullname=parent.fullname, age=parent.age, occupation=parent.occupation, educational_attainment=parent.educational_attainment, relationship_type=relationship if relationship is not None else parent.relationship_type)
         parents.append(proxy)
-    evaluations = db.query(StudentEccdEvaluation).filter_by(student_id=student.student_id).all()
-    questions = db.query(EccdQuestion).all()
-    setting = settings_record(db)
-    return generate_student_workbook(student, teacher, parents, evaluations, questions, setting)
+    return generate_student_workbook(student, teacher, parents, batch.evaluations.get(student.student_id, []), batch.questions, batch.setting)
 
 
 def checklist_response(db: Session, user: User, identifier: str) -> StreamingResponse:
@@ -190,18 +218,19 @@ def bulk_checklist_response(db: Session, user: User) -> StreamingResponse:
     teacher = current_teacher(db, user) if user.role.value == "admin" else None
     if teacher:
         query = query.filter(Student.section_id.in_(teacher_sections(db, teacher)))
-    students = query.order_by(Student.last_name, Student.student_id).all()
+    students = query.options(joinedload(Student.section)).order_by(Student.last_name, Student.student_id).all()
     if not students:
         raise HTTPException(404, "No students found for export.")
     output = BytesIO()
     used = set()
+    batch = checklist_data(db, students)
     with ZipFile(output, "w") as archive:
         for student in students:
             name = f"{safe_filename(student.last_name or 'STUDENT').upper()}_{safe_filename(student.school_year or 'RECORD')}"
             if name in used:
                 name += f"_{student.student_id}"
             used.add(name)
-            archive.writestr(name + ".xlsx", workbook_bytes(student_workbook(db, student)))
+            archive.writestr(name + ".xlsx", workbook_bytes(student_workbook(db, student, batch=batch)))
     sections = {student.section.section_name if student.section else "UNASSIGNED" for student in students}
     years = {student.school_year or 'RECORD' for student in students}
     section = next(iter(sections)) if len(sections) == 1 else "ALL_SECTIONS"
@@ -215,6 +244,11 @@ def summary_workbook(db: Session, section: Section, students: list[Student]):
     setting = settings_record(db)
     adviser = get_active_adviser_for_student(students[0], db) if students else None
     teacher_name = f"{adviser.first_name or ''} {adviser.last_name or ''}".strip().upper() if adviser else ""
+    by_student_period = defaultdict(list)
+    for record in db.query(StudentEccdEvaluation).options(joinedload(StudentEccdEvaluation.question)).filter(
+        StudentEccdEvaluation.student_id.in_([student.student_id for student in students[:30]])
+    ).all():
+        by_student_period[(record.student_id, record.testing_period)].append(record)
     for period, sheet_name in ((TestingPeriod.PRE, "PR"), (TestingPeriod.MID, "M"), (TestingPeriod.POST, "PO")):
         sheet = wb[sheet_name]
         for row in range(14, 44):
@@ -229,7 +263,7 @@ def summary_workbook(db: Session, section: Section, students: list[Student]):
             row = 14 + index
             middle = f" {student.middle_name[:1].upper()}." if student.middle_name else ""
             name = f"{student.last_name or ''}, {student.first_name or ''}{middle}".upper()
-            records = db.query(StudentEccdEvaluation).filter_by(student_id=student.student_id, testing_period=period).all()
+            records = by_student_period[(student.student_id, period)]
             values = [index + 1, decrypt_lrn(student.lrn_encrypted), name, None, None, student.gender.value.upper() if student.gender else "", student.date_of_birth]
             for column, value in enumerate(values, 2):
                 if value is not None:

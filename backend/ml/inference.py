@@ -44,7 +44,9 @@ def predict_student(student: dict, model_path: Path = ARTIFACTS / "rf_post_test_
         frame[key] = frame[key].astype(object).where(frame[key].notna(), np.nan)
     pipeline = bundle["pipeline"]
     probabilities = pipeline.predict_proba(frame)[0]
-    return {"predicted_post_interpretation": pipeline.predict(frame)[0],
+    # Classifier.predict selects the maximum probability too. Reuse this pass
+    # instead of preprocessing the frame and walking the forest a second time.
+    return {"predicted_post_interpretation": pipeline.classes_[int(np.argmax(probabilities))],
         "class_probabilities": dict(zip(pipeline.classes_.tolist(), map(float, probabilities))),
         "unsupported_classes": bundle["metadata"]["unsupported_classes"],
         "interventions": recommend(student, load_guides()),

@@ -9,7 +9,7 @@ from backend.utils.access import authorize_student, current_teacher, resolve_stu
 from backend.utils.deps import verify_role
 from backend.utils.lrn import hash_lrn
 from backend.utils.rollover import settings_record
-from backend.utils.students import child_profile, public_student, upsert_guardian
+from backend.utils.students import child_profile, child_profiles, public_student, public_students, student_profile_options, upsert_guardian
 
 router = APIRouter(prefix="/api/students", tags=["Students"])
 message_router = APIRouter(prefix="/api/messages", tags=["Student links"])
@@ -17,7 +17,7 @@ chairman_router = APIRouter(prefix="/api/chairman", tags=["Student records"])
 
 
 def roster(db: Session, user: User, active: bool | None) -> list[dict]:
-    query = db.query(Student)
+    query = db.query(Student).options(*student_profile_options())
     if active is not None:
         query = query.filter_by(is_active=active)
     if user.role.value == "admin":
@@ -40,7 +40,8 @@ def roster(db: Session, user: User, active: bool | None) -> list[dict]:
         }
     from backend.utils.parent_links import account_links, link_details
     links = account_links(db, [student.student_id for student in students])
-    return [{**public_student(db, student), "adviser_name": adviser_names.get(student.section_id), **link_details(links.get(student.student_id, []))} for student in students]
+    profiles = public_students(db, students)
+    return [{**profile, "adviser_name": adviser_names.get(student.section_id), **link_details(links.get(student.student_id, []))} for student, profile in zip(students, profiles)]
 
 
 @router.get("/", response_model=list[TeacherStudentResponse])
@@ -63,7 +64,8 @@ def archived(db: Session = Depends(get_db), user: User = Depends(verify_role(["a
 def by_section(section_id: int, db: Session = Depends(get_db), user: User = Depends(verify_role(["admin", "super-admin"]))):
     if user.role.value == "admin" and section_id not in teacher_sections(db, current_teacher(db, user)):
         raise HTTPException(403, "Section is not assigned to you.")
-    return [public_student(db, student) for student in db.query(Student).filter_by(section_id=section_id, is_active=True)]
+    students = db.query(Student).options(*student_profile_options()).filter_by(section_id=section_id, is_active=True).all()
+    return public_students(db, students)
 
 
 @router.post("/", response_model=EnrollmentResponse, status_code=201)
@@ -114,8 +116,8 @@ def linked_children(db: Session = Depends(get_db), user: User = Depends(verify_r
     parent = db.query(Parent).filter_by(user_id=user.user_id).first()
     if parent is None:
         return []
-    students = db.query(Student).join(FamilyAccess).filter(FamilyAccess.status == "SYNCED", FamilyAccess.parent_id == parent.parent_id, Student.is_active.is_(True)).distinct().all()
-    return [child_profile(db, student) for student in students]
+    students = db.query(Student).options(*student_profile_options()).join(FamilyAccess).filter(FamilyAccess.status == "SYNCED", FamilyAccess.parent_id == parent.parent_id, Student.is_active.is_(True)).distinct().all()
+    return child_profiles(db, students)
 
 
 @router.post("/link", response_model=EnrollmentResponse)

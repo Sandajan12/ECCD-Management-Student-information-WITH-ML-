@@ -31,6 +31,10 @@ class Settings(BaseSettings):
     MAIL_STARTTLS: bool = True
     MAIL_SSL_TLS: bool = False
     DATABASE_SSL_ROOT_CERT: str | None = None
+    DATABASE_POOL_SIZE: int = Field(default=5, ge=1, le=50)
+    DATABASE_MAX_OVERFLOW: int = Field(default=5, ge=0, le=50)
+    DATABASE_POOL_TIMEOUT: int = Field(default=15, ge=1, le=120)
+    DATABASE_POOL_RECYCLE: int = Field(default=300, ge=30, le=3600)
     BACKUP_ENCRYPTION_KEY: str
     BACKUP_IV: str
     LRN_ENCRYPTION_KEY: SecretStr | None = None

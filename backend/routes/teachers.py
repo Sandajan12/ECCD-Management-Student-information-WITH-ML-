@@ -13,6 +13,7 @@ from backend.schemas.teacher import TeacherUpdate
 from backend.utils.deps import verify_role
 from backend.utils.security import verify_password
 from backend.utils.email import send_otp_email
+from anyio.from_thread import run as run_async
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from backend.schemas.operations import ImportResult, TeacherListItem
@@ -193,7 +194,7 @@ def create_teacher(payload: TeacherProvisionRequest, db: Session = Depends(get_d
 
 
 @router.post("/change-password-request", response_model=ChallengeResult, response_model_exclude_none=True)
-async def request_password_change(payload: PasswordChangeRequest, db: Session = Depends(get_db), current_user: User = Depends(verify_role(["admin"]))):
+def request_password_change(payload: PasswordChangeRequest, db: Session = Depends(get_db), current_user: User = Depends(verify_role(["admin"]))):
     from backend.utils.authentication import discard_failed_challenge, issue_challenge
     from backend.models.email_verification import OtpPurpose
     if not verify_password(payload.oldPassword, current_user.password_hash):
@@ -203,7 +204,7 @@ async def request_password_change(payload: PasswordChangeRequest, db: Session = 
     token, otp = issue_challenge(db, current_user, OtpPurpose.PASSWORD_CHANGE)
     db.commit()
     try:
-        await send_otp_email(current_user.email, otp)
+        run_async(send_otp_email, current_user.email, otp)
     except Exception:
         discard_failed_challenge(db, token)
         raise HTTPException(502, "Unable to deliver the verification email.") from None

@@ -21,6 +21,7 @@ class FamilyAccess(Base):
 
     __table_args__ = (
         Index("idx_family_student", "student_id"),
+        Index("idx_family_parent_status_student", "parent_id", "status", "student_id"),
         CheckConstraint("status IN ('PENDING', 'SYNCED')", name="ck_family_link_status"),
     )
 

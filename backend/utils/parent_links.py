@@ -1,6 +1,6 @@
 """Account link details; guardian-only records never represent account access."""
 from fastapi import HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, contains_eager
 
 from backend.models import FamilyAccess, Parent, User
 from backend.utils.account_identity import account_display_name
@@ -10,7 +10,7 @@ def account_links(db: Session, student_ids: list[int]) -> dict[int, list[tuple]]
     result: dict[int, list[tuple]] = {}
     if not student_ids:
         return result
-    rows = db.query(FamilyAccess, Parent, User).join(Parent, FamilyAccess.parent_id == Parent.parent_id).join(User, Parent.user_id == User.user_id).filter(FamilyAccess.student_id.in_(student_ids)).order_by(FamilyAccess.date_linked, FamilyAccess.id).all()
+    rows = db.query(FamilyAccess, Parent, User).join(Parent, FamilyAccess.parent_id == Parent.parent_id).join(User, Parent.user_id == User.user_id).options(contains_eager(User.parent)).filter(FamilyAccess.student_id.in_(student_ids)).order_by(FamilyAccess.date_linked, FamilyAccess.id).all()
     for link, parent, user in rows:
         result.setdefault(link.student_id, []).append((link, parent, user))
     return result

@@ -1,4 +1,4 @@
-import { Outlet } from "react-router-dom";
+import RouteContent from "../components/RouteContent";
 import { ThemeProvider, CssBaseline } from "@mui/material";
 import MainLayout from "./MainLayout";
 import { teacherTheme } from "../components/teacher/theme";
@@ -10,7 +10,7 @@ export default function ParentLayout() {
       <CssBaseline />
       <MainLayout>
         <div className="parent-portal">
-          <Outlet />
+          <RouteContent />
         </div>
       </MainLayout>
     </ThemeProvider>

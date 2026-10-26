@@ -34,6 +34,7 @@ class SectionTeacher(Base):
     section = relationship("Section", back_populates="teacher_assignments")
     teacher = relationship("Teacher", back_populates="section_assignments")
     __table_args__ = (
+        Index("idx_assignments_teacher_status", "teacher_id", "status", "role", "section_id"),
         CheckConstraint("role = 'Primary Adviser'", name="ck_section_teacher_role"),
         CheckConstraint("status IN ('Active', 'Inactive')", name="ck_section_teacher_status"),
         Index("uq_section_active_adviser", "section_id", unique=True,

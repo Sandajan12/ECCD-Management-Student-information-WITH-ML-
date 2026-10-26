@@ -5,6 +5,7 @@ import socketio
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from starlette.concurrency import run_in_threadpool
 from starlette.exceptions import HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
@@ -59,8 +60,7 @@ def check_evaluator_tracking_readiness(connection, schema):
         raise MigrationError(diagnostic) from None
 
 
-@asynccontextmanager
-async def lifespan(api):
+def initialize_runtime():
     # Upgrades are explicit, transactional commands; startup never changes an
     # existing table layout or provisions accounts.
     with engine.connect() as connection:
@@ -81,6 +81,11 @@ async def lifespan(api):
         warm_inference()
     except (OSError, ValueError, KeyError, TypeError):
         logging.getLogger("uvicorn.error").error("ML research artifacts unavailable; prediction endpoints will return 503.")
+
+
+@asynccontextmanager
+async def lifespan(api):
+    await run_in_threadpool(initialize_runtime)
     if runtime_settings.otp_enabled:
         logging.getLogger("uvicorn.error").info("[AUTH] Email OTP enabled; %s delivery active.", runtime_settings.EMAIL_TRANSPORT)
     else:

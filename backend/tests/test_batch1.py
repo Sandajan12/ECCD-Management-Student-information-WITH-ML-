@@ -61,14 +61,13 @@ class Batch1ValidationTests(unittest.TestCase):
         payload = {"email": " teacher@example.com ", "password": test_phase2.PASSWORD, "firstName": " Ada ", "lastName": " Cruz ", "employeeId": " EMP-1 ", "sectionId": 1}
         teacher = TeacherProvisionRequest.model_validate(payload)
         self.assertEqual((teacher.first_name, teacher.last_name, teacher.employee_id, teacher.email), ("Ada", "Cruz", "EMP-1", "teacher@example.com"))
-        for key in ("email", "firstName", "sectionId"):
+        for key in ("email", "firstName", "lastName", "sectionId"):
             with self.subTest(key=key), self.assertRaises(ValidationError):
                 TeacherProvisionRequest.model_validate({field: value for field, value in payload.items() if field != key})
         with self.assertRaises(ValidationError):
             TeacherProvisionRequest.model_validate({**payload, "firstName": " "})
-        for optional in ({key: value for key, value in payload.items() if key != "lastName"},
-                         {**payload, "lastName": " "}):
-            self.assertEqual(TeacherProvisionRequest.model_validate(optional).last_name, "")
+        with self.assertRaises(ValidationError):
+            TeacherProvisionRequest.model_validate({**payload, "lastName": " "})
         with self.assertRaises(ValidationError):
             TeacherProvisionRequest.model_validate({**payload, "password": "weak"})
         self.assertEqual(TeacherUpdate(fullName=" Ada ", lastName="Cruz", employeeId=" E ", sectionId=2).first_name, "Ada")

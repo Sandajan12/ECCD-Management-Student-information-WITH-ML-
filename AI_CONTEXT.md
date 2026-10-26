@@ -60,7 +60,7 @@ and instructional planning; official ECCD scores remain deterministic (section 1
 | Workspace | Root `pnpm-workspace.yaml` includes frontend and retains separate lockfiles; frontend has matching pnpm 12 YAML overrides and its own package-manager pin for isolated installs; automatic dependency verification before scripts is disabled |
 | Spreadsheets | openpyxl handles active workbook import/export; pandas is installed |
 | ML | V1 fitted scikit-learn Random Forest pipeline, joblib artifact, 18 PRE/demographic inputs, three supported POST outcomes; shared teacher/parent inference |
-| Migrations | Explicit Python migrations 001–013, including email-only identity and credential revocation versioning; no active Alembic setup, pyproject.toml, or uv.lock |
+| Migrations | Explicit Python migrations 001–014, including production query indexes, email-only identity and credential revocation versioning; no active Alembic setup, pyproject.toml, or uv.lock |
 
 Observed on this Windows checkout on **2026-10-25**:
 
@@ -177,7 +177,7 @@ call create_all or provision users.
 
 For a fresh PostgreSQL/Supabase database, explicitly run
 `backend.scripts.seed_supabase --apply` as a module before API startup. It applies
-pending migrations 001–013 in order and seeds the tracked 7-domain/109-question
+pending migrations 001–014 in order and seeds the tracked 7-domain/109-question
 ECCD fixture plus an environment-configured Chairman (`INITIAL_CHAIRMAN_EMAIL`,
 `INITIAL_CHAIRMAN_PASSWORD`, `INITIAL_CHAIRMAN_NAME`). The name is stored in
 `system_settings.chairman_name`. Repeated runs preserve existing accounts/reference rows;
@@ -353,6 +353,33 @@ Old workspace/shim page directories are absent.
   ML cards, probabilities, selectors and dialogs adapt to small screens with
   wrapping text, responsive grids, rounded controls and soft shadows.
 
+### Production performance implementation (2026-10-26)
+
+Portal layouts and pages use React.lazy with loading/error boundaries; the login
+page remains eager. Predict All queues at most three requests concurrently,
+preserves per-student failures and cancels queued work when its scope unmounts.
+Twelve proven dead components/assets were removed; the active teacher password
+validator, offline sync shim and licenses remain. See PRODUCTION_PERFORMANCE_AUDIT.md
+for measured build sizes, fresh verification results and remaining limits.
+
+Auth/password handlers run in FastAPI worker threads and use AnyIO's from_thread
+bridge for async email. Async upload/settings/restore handlers offload DB work;
+Socket.IO DB helpers own worker-local sessions, while emissions remain async.
+Startup schema/model initialization also runs in a worker. Roster/children,
+contacts, section advisers, transfers and workbook exports batch related data;
+ML reuses its probability pass for the predicted class. Existing response and
+permission contracts remain. The DB pool defaults to size 5, overflow 5, timeout
+15s and recycle 300s with pre-ping; all four settings are configurable per process.
+Migration 014 adds indexes explicitly and is checked by bootstrap, but is not
+required or applied automatically by startup. It was tested in disposable schemas;
+this audit did not upgrade the configured school database or a hosted deployment.
+Fresh verification: all 329 backend unittest cases pass in one complete run;
+TypeScript, full frontend lint and production build pass. Sixty-six browser cases
+were verified across successful desktop/mobile runs and the documented OTP rerun.
+Entry JS is 318.79 kB (102.13 kB gzip); including shared modulepreloads, initial JS
+is 504.85 kB. The largest deferred chunk is 329.13 kB. See the audit for scope and
+the two initial browser harness failures, their correction/rerun and local logs.
+
 ## 4. Current relational model
 
 | Table / model file | Identity and important fields |
@@ -407,6 +434,7 @@ add the newer feature columns. The explicit migration inventory is:
 | 011 | section_ownership | Retire orphaned section ownership and synchronize adviser pointers |
 | 012 | auth_security_version | Persistent credential revocation version |
 | 013 | email_only_identity | Move Chairman name to settings, remove username, normalize emails and enforce case-insensitive uniqueness |
+| 014 | production_performance | Add 18 supporting B-tree indexes; explicit transactional maintenance-window upgrade, included in fresh bootstrap |
 
 Migration 013 was applied and checked on the configured local `ames_parity_dev`
 database on 2026-10-25. Uvicorn startup, `/ready` and `/api/settings` pass with

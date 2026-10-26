@@ -34,12 +34,12 @@ router = APIRouter(prefix="/api/eccd", tags=["ECCD"])
 @router.get("/students", response_model=list[StudentPublicResponse])
 def get_teacher_students(db: Session = Depends(get_db), current_user=Depends(verify_role(["admin", "super-admin"]))):
     from backend.utils.access import teacher_sections
-    from backend.utils.students import public_student
+    from backend.utils.students import public_students, student_profile_options
     teacher = db.query(Teacher).filter_by(user_id=current_user.user_id).first()
     if teacher is None:
         return []
-    students = db.query(Student).filter(Student.section_id.in_(teacher_sections(db, teacher)), Student.is_active.is_(True)).order_by(Student.last_name, Student.first_name, Student.student_id)
-    return [public_student(db, student) for student in students]
+    students = db.query(Student).options(*student_profile_options()).filter(Student.section_id.in_(teacher_sections(db, teacher)), Student.is_active.is_(True)).order_by(Student.last_name, Student.first_name, Student.student_id).all()
+    return public_students(db, students)
 
 
 @router.get("/domains-progress", response_model=list[DomainProgressResult])

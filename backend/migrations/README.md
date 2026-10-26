@@ -286,7 +286,32 @@ everything back. Repeated applies validate the schema and return without writes.
 `--check` validates without applying upgrades. Rollback requires the retained
 backup and matching older application release; dropped usernames are not rebuilt.
 
-Fresh bootstrap runs migrations 001–013 before seeding. Historical Phase 1 keeps
+Fresh bootstrap runs migrations 001–014 before seeding. Historical Phase 1 keeps
 username and excludes the new expression index and Chairman name. Phase 2 uses
 the migration ledger to distinguish its historical and post-013 column contracts,
 and fingerprints actual intermediate columns rather than the evolving ORM.
+
+## 014: production performance indexes
+
+`production_performance` adds 18 non-unique B-tree indexes aligned with current
+roster, ownership, conversation, foreign-key, audit and authentication queries.
+It changes no rows, columns, foreign keys, unique constraints or sequences. Existing
+lowercase email uniqueness, LRN hash uniqueness, student-period, message-thread and
+audit timestamp indexes remain. Metadata and explicit upgrades share definitions.
+
+Stop writers and run after migration 013, before deployment:
+
+```sh
+uv run --no-project --python 3.12 python -m backend.migrations.production_performance --apply
+uv run --no-project --python 3.12 python -m backend.migrations.production_performance --check
+```
+
+Use `.venv312` instead of `3.12` on the Windows checkout. This is transactional
+`CREATE INDEX`, not `CONCURRENTLY`; builds block writers and require a maintenance
+window. A five-second lock timeout prevents an indefinite wait behind writers.
+The ledger serializes repeat applies; incompatible definitions or invalid/not-ready
+indexes abort and roll back. Repeated applies validate without rewriting data.
+Fresh `seed_supabase --apply` includes 014 and validates these indexes on repeat.
+Startup does not require this optional performance migration or silently apply it.
+For a large live database, schedule a separately reviewed concurrent index rollout
+instead of running this transactional bootstrap while serving traffic.

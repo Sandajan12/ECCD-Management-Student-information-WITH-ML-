@@ -21,7 +21,7 @@ from backend.migrations import (
     adviser_takeover, auth_security_version, eccd_evaluator_tracking,
     parent_assessment_access, parent_eccd_marks, parent_linking,
     parent_predictions, parity_batch1, parity_batch2, phase1, phase2,
-    section_ownership, email_only_identity,
+    section_ownership, email_only_identity, production_performance,
 )
 from backend.models import EccdDomain, EccdQuestion, User, SystemSettings
 from backend.models.user import UserRole
@@ -45,6 +45,7 @@ MIGRATIONS = (
     (section_ownership.VERSION, section_ownership.apply_section_ownership),
     (auth_security_version.VERSION, auth_security_version.apply_auth_security_version),
     (email_only_identity.VERSION, email_only_identity.apply_email_only_identity),
+    (production_performance.VERSION, production_performance.apply_production_performance),
 )
 
 
@@ -213,6 +214,7 @@ def bootstrap(connection: Connection, credentials: ChairmanSettings, schema: str
         parent_predictions.check_parent_predictions, section_ownership.check_section_ownership,
         auth_security_version.check_auth_security_version,
         email_only_identity.check_email_only_identity,
+        production_performance.check_production_performance,
     ):
         check(connection, schema)
     counts = seed_eccd(connection, schema)

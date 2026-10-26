@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 from io import BytesIO
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
+from starlette.concurrency import run_in_threadpool
 from sqlalchemy.orm import Session
 from backend.config.database import get_db
 from backend.models import SystemLog, User
@@ -30,7 +31,8 @@ async def upload_backup(file: UploadFile | None = File(None), backupFile: Upload
     source = file or backupFile
     if source is None:
         raise HTTPException(400, "Upload an encrypted backup file.")
-    restore_backup(db, await read_upload(source, BACKUP_LIMIT), audit_user_id=user.user_id)
+    content = await read_upload(source, BACKUP_LIMIT)
+    await run_in_threadpool(restore_backup, db, content, audit_user_id=user.user_id)
     from backend.utils.realtime import disconnect_all
     await disconnect_all()
     return {"message": "System data restored successfully. Current user accounts were preserved; verification codes and trusted devices were cleared."}

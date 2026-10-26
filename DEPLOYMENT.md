@@ -12,7 +12,7 @@ files. Keep all real credentials in provider environment settings.
    uv run --no-project --python 3.12 python -m backend.scripts.seed_supabase --apply
    ```
 
-   This applies migrations 001–012 and seeds the exact tracked 7 domains and
+   This applies migrations 001–014 and seeds the exact tracked 7 domains and
    109 questions plus an initial Chairman. Repeated runs preserve existing
    Chairmen and matching data; no default password or local account export is
    included. Remove the three initial credentials after provisioning. See the
@@ -25,6 +25,10 @@ files. Keep all real credentials in provider environment settings.
    ```sh
    uv run --no-project --python 3.12 python -m backend.migrations.auth_security_version --apply
    uv run --no-project --python 3.12 python -m backend.migrations.auth_security_version --check
+   uv run --no-project --python 3.12 python -m backend.migrations.email_only_identity --apply
+   uv run --no-project --python 3.12 python -m backend.migrations.email_only_identity --check
+   uv run --no-project --python 3.12 python -m backend.migrations.production_performance --apply
+   uv run --no-project --python 3.12 python -m backend.migrations.production_performance --check
    ```
 
    Migration 012 adds `users.security_version` with default zero and verifies
@@ -96,3 +100,17 @@ The browser requires consent on login, registration and OTP verification, and
 sends `terms_accepted=true`. Explicit false/null or malformed consent is rejected
 by the API. Omission remains supported for existing API clients/test helpers;
 this compatibility field is not a persisted legal-consent ledger.
+
+Database pooling is bounded **per API process**: `DATABASE_POOL_SIZE=5`,
+`DATABASE_MAX_OVERFLOW=5`, `DATABASE_POOL_TIMEOUT=15` seconds and
+`DATABASE_POOL_RECYCLE=300` seconds. `pool_pre_ping` verifies checkouts. Budget
+`replicas × workers × (size + overflow)` against the Supabase connection limit,
+leaving capacity for migrations, admin access and other clients. Adjust the four
+settings for the selected plan; templates contain these defaults. Recycling and
+pre-ping replace stale idle connections; they cannot safely retry a transaction
+interrupted mid-query. Use direct/session-pooler URLs as described above.
+
+Migration 014 is additive index DDL; run with writers stopped. Startup never
+applies it automatically. See the migration README for lock behavior and checks.
+Frontend pages and portal layouts load on demand with visible loading/recovery
+states. Keep a failed chunk's recovery manual so offline drafts are preserved.

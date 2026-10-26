@@ -61,6 +61,8 @@ class Student(Base):
         UniqueConstraint("lrn_search_hash", name="uq_students_lrn_search_hash"),
         Index("idx_students_section_active", "section_id", "is_active"),
         Index("idx_lrn_last4", "lrn_last4"),
+        Index("idx_students_school_year", "school_year"),
+        Index("idx_students_active_roster", "is_active", "last_name", "first_name", "student_id"),
     )
 
     @property

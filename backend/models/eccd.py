@@ -45,6 +45,7 @@ class EccdDomain(Base):
 
 class EccdQuestion(Base):
     __tablename__ = "eccd_questions"
+    __table_args__ = (Index("idx_questions_domain_sequence", "domain_id", "sequence_order"),)
 
     question_id = Column(Integer, primary_key=True, autoincrement=True)
     domain_id = Column(
@@ -96,6 +97,9 @@ class StudentEccdEvaluation(Base):
         ),
         CheckConstraint("evaluator_role IN ('teacher', 'parent')", name="ck_eccd_evaluator_role"),
         Index("idx_student_period", "student_id", "testing_period"),
+        Index("idx_evaluations_teacher", "teacher_id"),
+        Index("idx_evaluations_parent", "parent_id"),
+        Index("idx_evaluations_question", "question_id"),
     )
 
     question = relationship("EccdQuestion", back_populates="evaluations")

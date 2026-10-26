@@ -6,7 +6,9 @@ from .base import Base
 
 class SystemLog(Base):
     __tablename__ = "system_logs"
-    __table_args__ = (Index("idx_logs_timestamp", "timestamp"),)
+    __table_args__ = (Index("idx_logs_timestamp", "timestamp"),
+                      Index("idx_logs_user", "user_id"),
+                      Index("idx_logs_action_id", "action_type", "log_id"))
 
     log_id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(
