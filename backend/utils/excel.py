@@ -35,7 +35,11 @@ XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 MAX_XLSX_EXPANDED_BYTES = 50 * 1024 * 1024
 MAX_XLSX_MEMBERS = 128
 MAX_SHEET_ROWS = 2000
-MAX_SHEET_COLUMNS = 256
+# EasyCD templates can style the entire Excel grid width. Keep XML bounds
+# separate from the much smaller row tuples materialized by the importer.
+MAX_SHEET_COLUMNS = 16_384
+MAX_INFO_IMPORT_COLUMNS = 100
+MAX_ASSESSMENT_IMPORT_COLUMNS = 256
 MAX_WORKBOOK_CELLS = 250_000
 MAX_WORKBOOK_SHEETS = 64
 
@@ -377,11 +381,13 @@ def import_students(db: Session, user: User, content: bytes, section_id: int | N
         wb.close()
 
 
-def import_sheet_rows(sheet) -> list[tuple[object, ...]]:
+def import_sheet_rows(sheet, *, max_columns: int) -> list[tuple[object, ...]]:
     # Read-only workbooks defer cell conversion until iteration. Preserve the
     # invalid-workbook HTTP 400 contract for parser errors at this boundary.
     try:
-        return list(sheet.values)
+        return list(sheet.iter_rows(
+            min_col=1, max_col=max_columns, max_row=MAX_SHEET_ROWS, values_only=True,
+        ))
     except Exception:
         raise HTTPException(400, "Invalid Excel file. Upload a valid .xlsx workbook.") from None
 
@@ -393,7 +399,7 @@ def import_workbook(db: Session, user: User, teacher: Teacher, section: Section,
     # metadata cannot hide populated rows or columns from the importer.
     for sheet in wb:
         sheet.reset_dimensions()
-    rows = import_sheet_rows(wb["Info Sheet"])
+    rows = import_sheet_rows(wb["Info Sheet"], max_columns=MAX_INFO_IMPORT_COLUMNS)
     if len(rows) < 3:
         raise HTTPException(400, "No data found in Info Sheet starting at row 3.")
     if not any(isinstance(value, str) and value.strip().casefold() == section.section_name.strip().casefold() for row in rows[:20] for value in row):
@@ -407,7 +413,9 @@ def import_workbook(db: Session, user: User, teacher: Teacher, section: Section,
     for sheet_name in DOMAIN_SHEETS.values():
         if sheet_name in wb.sheetnames:
             index = {}
-            for values in import_sheet_rows(wb[sheet_name]):
+            # SH, C and SE contain answers beyond column 100 (up to 164 in
+            # the reference checklist). Preserve those assessment columns.
+            for values in import_sheet_rows(wb[sheet_name], max_columns=MAX_ASSESSMENT_IMPORT_COLUMNS):
                 if len(values) > 1 and isinstance(values[1], str):
                     index.setdefault(" ".join(values[1].split()).casefold(), values)
             domain_rows[sheet_name] = index

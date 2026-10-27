@@ -786,9 +786,15 @@ also runs in this separate importer.
 Workbook resource validation accepts up to **64 worksheets**, including hidden
 tabs. The worksheet-limit error reports the supported maximum. Other limits
 remain: 20 MiB upload, 50 MiB expanded archive, 128 ZIP members, 2,000 rows and
-256 columns per sheet, and 250,000 workbook cells. XML validation, duplicate
-relationship checks, separate byte streams, read-only loading and worksheet
-dimension resets remain active. This supports extra EasyCD tabs around the
+250,000 explicit workbook cells (including empty styled cells). XML dimensions,
+cell references, merged ranges and column styling may extend through Excel's
+native **XFD / 16,384-column** ceiling. Import iteration is separately bounded
+to **100 columns for Info Sheet and 256 for assessment sheets**; SH, C and SE
+answers extend beyond column 100 (the reference SH checklist requires 164).
+The existing layout retains names in B and LRN in F, date/guardian mappings,
+and dynamically derived age. XML validation, duplicate relationship checks,
+separate byte streams, read-only loading and worksheet dimension resets remain
+active. Blank trailing student rows are skipped. This supports extra EasyCD tabs around the
 Info Sheet/domain import format; it does not add CHECKLIST-export import support
 or establish acceptance of any particular production workbook.
 
@@ -1061,6 +1067,18 @@ modules against disposable PostgreSQL and frontend/browser checks using mocked
 APIs. The workflow has not been executed in this session. Deployment acceptance,
 including the exact production workbook, remains outstanding; see
 `PARENT_SYNC_AND_EXCEL_IMPORT_FIX_PLAN.md`.
+
+EasyCD XFD-formatting follow-up on **2026-10-27**: 11 database-free backend
+tests passed, covering native-grid styling/dimensions, bounded reads including
+assessment column 164, malformed cells, styled-cell budgets, 65-sheet rejection,
+129-member rejection, and a genuinely compressed archive exceeding 50 MiB when
+expanded. The two requested backend modules discover 74 tests; discovery does
+not execute their database integrations. Python compilation, frontend app/tooling
+TypeScript, full lint and production build passed. A multipart integration test
+also covers demographics, both guardians, late assessment marks, blank trailing
+rows and repeat imports; its execution remains scheduled in the existing CI
+workflow. No local servers or database connections were used, and the exact
+production workbook has not been tested.
 
 Use an explicit configuration, for example:
 

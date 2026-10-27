@@ -585,7 +585,7 @@ class BackendTests(unittest.TestCase):
         self.assertEqual(len(messages),1)
         self.assertEqual(messages[0]['body'],'Saved')
 
-    def make_import(self, bad_second=False, existing_other=False, missing_mid=False, mac_epoch=False, sheet_count=2):
+    def make_import(self, bad_second=False, existing_other=False, missing_mid=False, mac_epoch=False, sheet_count=2, full_width=False):
         wb=openpyxl.Workbook(); info=wb.active; info.title='Info Sheet'
         if mac_epoch: wb.epoch=CALENDAR_MAC_1904
         info.append(['Test A']); info.append(['Headers'])
@@ -608,7 +608,49 @@ class BackendTests(unittest.TestCase):
             extra = wb.create_sheet(f'Extra {len(wb.worksheets)}')
             if len(wb.worksheets) % 2:
                 extra.sheet_state = 'hidden'
+        if full_width:
+            for sheet in wb:
+                sheet['A1'].fill = openpyxl.styles.PatternFill('solid', fgColor='EEEEEE')
+                sheet.column_dimensions.group('A', 'XFD', hidden=False)
+                sheet.column_dimensions['A'].fill = openpyxl.styles.PatternFill('solid', fgColor='EEEEEE')
+                sheet['XFD3'].fill = openpyxl.styles.PatternFill('solid', fgColor='EEEEEE')
+                sheet['XFD50'].fill = openpyxl.styles.PatternFill('solid', fgColor='EEEEEE')
+                sheet.merge_cells('A49:XFD49')
         buffer=BytesIO(); wb.save(buffer); return buffer.getvalue()
+
+    def test_import_full_width_styling_preserves_demographics_guardians_and_late_answers(self):
+        wb = openpyxl.load_workbook(BytesIO(self.make_import(sheet_count=8, full_width=True)))
+        info = wb['Info Sheet']
+        info['O3'] = datetime(2027, 5, 10)
+        info['V3'] = 'Test Mother'
+        info['W3'] = 32
+        info['X3'] = 'Nurse'
+        info['Y3'] = 'College'
+        # SH question 27 POST DI-KAYA is column FH (164), beyond a 100-column read.
+        wb['SH']['B3'] = info['B3'].value
+        wb['SH'].cell(3, 164, 1)
+        buffer = BytesIO()
+        wb.save(buffer)
+        wb.close()
+        for _ in range(2):
+            response = self.call('POST', '/api/teachers/import-students', 2,
+                                 data={'section_id': '1'}, files={'file': ('easycd.xlsx', buffer.getvalue(), 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')})
+            self.assertEqual(response.status_code, 200, response.text)
+            self.assertEqual(response.json(), {'successCount': 1, 'failedCount': 0, 'errors': []})
+        with self.sessions() as db:
+            student = db.query(Student).filter_by(lrn_search_hash=hash_lrn('001555555555')).one()
+            self.assertEqual((student.last_name, student.first_name, student.middle_name), ('Imported', 'New', 'Middle'))
+            self.assertEqual(student.lrn_number, '001555555555')
+            self.assertNotIn('001555555555', student.lrn_encrypted)
+            self.assertEqual((student.date_of_birth, student.gender.value, student.section_id), (date(2021, 3, 10), 'Female', 1))
+            self.assertEqual(student.school_year, '2026-2027')
+            guardians = {link.relationship_type: link.parent for link in student.parents}
+            self.assertEqual((guardians['Father'].fullname, guardians['Father'].age), ('Test Father', 35))
+            self.assertEqual((guardians['Mother'].fullname, guardians['Mother'].age, guardians['Mother'].occupation), ('Test Mother', 32, 'Nurse'))
+            self.assertEqual(len(student.evaluations), 2)
+            late = next(record for record in student.evaluations if record.question.domain_id == 3)
+            self.assertEqual((late.question.sequence_order, late.testing_period, late.answer), (27, TestingPeriod.POST, EccdAnswer.DI_KAYA))
+            self.assertEqual(late.teacher_evaluation_date, date(2027, 5, 10))
 
     def test_import_many_sheets_explicit_section_identity_guardian_and_idempotency(self):
         content = self.make_import(bad_second=True, existing_other=True, sheet_count=64)

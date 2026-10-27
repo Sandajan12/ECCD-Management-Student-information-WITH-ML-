@@ -7,7 +7,8 @@ Status (2026-10-27): Application changes and regression coverage are implemented
 - [x] First-account auto-sync with audit-backed re-link approval, guardian-only exclusion, conflict checks and idempotent retries.
 - [x] Transactional claim audits and dedicated typed link responses across all three aliases.
 - [x] Status-aware dashboard feedback for direct submissions and background replay. Existing sync-event key details and revision-safe draft cleanup are preserved; the event additionally carries the server response.
-- [x] Worksheet maximum raised to 64, including hidden sheets; other resource limits retained.
+- [x] Worksheet maximum raised to 64, including hidden sheets; archive, row and cell budgets retained.
+- [x] Follow-up: accept dimensions, cell references, merged ranges and column styling through XFD (16,384). Bound iteration to 100 Info Sheet columns and 256 assessment columns, preserving answers beyond column 100.
 - [x] Parent-link, backup/history, atomicity, concurrent-claim, import/identity/guardian and row-isolation regression coverage added or updated.
 - [x] Current behavior documented in AI_CONTEXT.md.
 - [x] Added `.github/workflows/parent-sync-excel.yml` for the six focused backend modules against disposable PostgreSQL and frontend checks plus mocked-API Playwright coverage.
@@ -17,6 +18,14 @@ Status (2026-10-27): Application changes and regression coverage are implemented
 - [ ] Verify the authorized production workbook and first-link/re-link flows in a deployment test environment.
 
 Local checks used synthetic process-only backend settings, without a school database or a local API/browser server. Missing pinned Python dependencies were installed into the existing `.venv312`; no configuration files or credentials were created or changed. PostgreSQL-dependent tests and browser execution were intentionally left for CI, as required by this plan.
+
+### XFD formatting follow-up verification (2026-10-27)
+
+- [x] 11 database-free backend tests pass: XFD dimensions/full-width styling, bounded reads including assessment column 164, malformed cells, explicit styled-cell budgets, 65-sheet rejection, 129-member rejection and expanded archives exceeding 50 MiB.
+- [x] Both requested backend modules discover successfully (74 tests); Python compilation passes.
+- [x] Frontend app/tooling TypeScript, full lint and production build pass.
+- [x] Added multipart import coverage for full-width styling, names in B/LRN in F, protected identity, birthdate/sex, both guardians, assessment column 164, blank trailing rows and idempotent repeat imports.
+- [ ] Execute database integrations in the existing CI workflow and verify the authorized production workbook. Neither has been executed during this follow-up.
 
 ## Summary
 
@@ -128,7 +137,7 @@ Modify `backend/utils/excel.py`:
 
 - Raise `MAX_WORKBOOK_SHEETS` from **16 to 64**, counting hidden sheets too.
 - Include the supported maximum in the worksheet-limit error.
-- Retain the existing 128-member archive cap, 20 MiB upload cap, 50 MiB expanded cap, cell/row/column budgets, XML checks, and duplicate-relationship protections.
+- Retain the existing 128-member archive cap, 20 MiB upload cap, 50 MiB expanded cap, cell/row budgets, XML checks, and duplicate-relationship protections. The XFD follow-up uses Excel's native 16,384-column validation ceiling with separate bounded import reads (100 demographic / 256 assessment columns).
 - Preserve read-only loading, dimension resets, worksheet-resource validation, and per-student transactions.
 
 No speculative cursor, ownership, encryption, guardian, Axios, or timeout changes are planned.
@@ -163,6 +172,7 @@ Update `backend/tests/test_security_batch1.py` to:
 
 - Accept valid 17-sheet and 64-sheet batch workbooks containing import data plus extra visible/hidden tabs.
 - Reject 65 sheets before openpyxl loading or database writes.
+- Accept A1:XFD50 dimensions, full-width column styling, empty styled XFD cells and XFD-wide merges; reject columns beyond XFD. Verify bounded row widths and retain answers through assessment column 164.
 - Preserve existing archive, XML, sparse-dimension, malformed-cell, worker-thread, and shared-guardian regressions.
 
 ### Teacher import integration
@@ -170,6 +180,7 @@ Update `backend/tests/test_security_batch1.py` to:
 Update `backend/tests/test_phase2.py` to:
 
 - Exercise multipart import with explicit `section_id` and extra EasyCD-style tabs.
+- Exercise full-width styling with blank trailing rows, both guardians, and late assessment columns; preserve the current name-in-B/LRN-in-F layout and derived age.
 - Verify saved encrypted identity, guardian records, and assessment marks.
 - Verify repeat imports avoid duplicates and invalid neighboring rows roll back independently.
 - Retain rejection of imports into a section the teacher does not own.

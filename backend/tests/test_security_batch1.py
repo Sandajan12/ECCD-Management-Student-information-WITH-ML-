@@ -1,10 +1,11 @@
 """Audit M6/L1/L2/L5 regressions using disposable PostgreSQL schemas."""
 import asyncio
 from io import BytesIO
+import re
 import struct
 import unittest
 from unittest.mock import patch
-from zipfile import ZipFile
+from zipfile import ZIP_DEFLATED, ZipFile
 
 import openpyxl
 from fastapi import HTTPException
@@ -12,6 +13,17 @@ from fastapi import HTTPException
 from backend.models import FamilyAccess, Parent, Student, SystemLog, Teacher, User
 from backend.tests import test_phase2
 from backend.utils import excel
+
+
+def rewrite_workbook_xml(content, transform, filename="xl/worksheets/sheet1.xml"):
+    output = BytesIO()
+    with ZipFile(BytesIO(content)) as source, ZipFile(output, "w") as target:
+        for member in source.infolist():
+            data = source.read(member)
+            if member.filename == filename:
+                data = transform(data)
+            target.writestr(member, data)
+    return output.getvalue()
 
 
 class WorkbookTextTests(unittest.TestCase):
@@ -31,6 +43,126 @@ class WorkbookTextTests(unittest.TestCase):
 
 class WorkbookResourceTests(unittest.TestCase):
     """Exercise the archive boundary without a database or API server."""
+
+    def test_accepts_xfd_dimensions_styling_cells_and_merges_with_bounded_reads(self):
+        content = test_phase2.BackendTests().make_import(sheet_count=8, full_width=True)
+        excel.validate_xlsx_resources(content)
+        workbook = openpyxl.load_workbook(BytesIO(content), read_only=True, data_only=True)
+        try:
+            for sheet in workbook:
+                with self.subTest(sheet=sheet.title):
+                    self.assertEqual(sheet.calculate_dimension(), "A1:XFD50")
+                    sheet.reset_dimensions()
+                    limit = excel.MAX_INFO_IMPORT_COLUMNS if sheet.title == 'Info Sheet' else excel.MAX_ASSESSMENT_IMPORT_COLUMNS
+                    rows = excel.import_sheet_rows(sheet, max_columns=limit)
+                    self.assertEqual(len(rows), 50)
+                    self.assertTrue(all(len(row) == limit for row in rows))
+                    self.assertTrue(all(value is None for value in rows[-1]))
+                    if sheet.title == 'Info Sheet':
+                        self.assertEqual((rows[2][1], rows[2][5]), ('Imported, New, Middle', '001555555555'))
+                    elif sheet.title == 'GM':
+                        self.assertEqual(rows[2][2], 1)
+        finally:
+            workbook.close()
+
+    def test_accepts_declared_xfd_dimension_without_far_right_cells(self):
+        content = rewrite_workbook_xml(test_phase2.BackendTests().make_import(),
+                                      lambda xml: re.sub(rb'<dimension ref="[^"]+"', b'<dimension ref="A1:XFD50"', xml))
+        excel.validate_xlsx_resources(content)
+        workbook = openpyxl.load_workbook(BytesIO(content), read_only=True, data_only=True)
+        try:
+            sheet = workbook['Info Sheet']
+            sheet.reset_dimensions()
+            rows = excel.import_sheet_rows(sheet, max_columns=excel.MAX_INFO_IMPORT_COLUMNS)
+            self.assertEqual(len(rows), 3)
+            self.assertEqual(rows[2][5], '001555555555')
+            self.assertTrue(all(len(row) == 100 for row in rows))
+        finally:
+            workbook.close()
+
+    def test_bounded_assessment_read_preserves_column_164(self):
+        workbook = openpyxl.Workbook()
+        sheet = workbook.active
+        sheet.title = 'SH'
+        sheet['B3'] = 'Imported, New, Middle'
+        sheet['FH3'] = 1
+        sheet['XFD50'].fill = openpyxl.styles.PatternFill('solid', fgColor='EEEEEE')
+        content = excel.workbook_bytes(workbook)
+        workbook.close()
+        excel.validate_xlsx_resources(content)
+        workbook = openpyxl.load_workbook(BytesIO(content), read_only=True, data_only=True)
+        try:
+            sheet = workbook['SH']
+            sheet.reset_dimensions()
+            rows = excel.import_sheet_rows(sheet, max_columns=excel.MAX_ASSESSMENT_IMPORT_COLUMNS)
+            self.assertEqual((rows[2][1], rows[2][163]), ('Imported, New, Middle', 1))
+            self.assertTrue(all(len(row) == 256 for row in rows))
+        finally:
+            workbook.close()
+
+    def test_bounded_reader_preserves_invalid_cell_http_400(self):
+        content = rewrite_workbook_xml(test_phase2.BackendTests().make_import(),
+                                      lambda xml: re.sub(rb'(<c r="K3"[^>]*><v>)[^<]+', rb'\g<1>not-a-number', xml))
+        excel.validate_xlsx_resources(content)
+        workbook = openpyxl.load_workbook(BytesIO(content), read_only=True, data_only=True)
+        try:
+            with self.assertRaises(HTTPException) as raised:
+                excel.import_sheet_rows(workbook['Info Sheet'], max_columns=excel.MAX_INFO_IMPORT_COLUMNS)
+            self.assertEqual(raised.exception.status_code, 400)
+            self.assertIn('Invalid Excel file', raised.exception.detail)
+        finally:
+            workbook.close()
+
+    def test_rejects_out_of_grid_columns_and_excessive_rows(self):
+        content = test_phase2.BackendTests().make_import()
+        transforms = (
+            lambda xml: re.sub(rb'<dimension ref="[^"]+"', b'<dimension ref="A1:XFE50"', xml),
+            lambda xml: re.sub(rb'<dimension ref="[^"]+"', b'<dimension ref="A1:XFD2001"', xml),
+            lambda xml: xml.replace(b'r="B3"', b'r="XFE3"'),
+            lambda xml: xml.replace(b'<sheetData>', b'<cols><col min="1" max="16385"/></cols><sheetData>'),
+            lambda xml: xml.replace(b'</sheetData>', b'</sheetData><mergeCells><mergeCell ref="A4:XFE4"/></mergeCells>'),
+            lambda xml: xml.replace(b'<row r="3"', b'<row r="2001"'),
+        )
+        for index, transform in enumerate(transforms):
+            with self.subTest(case=index), self.assertRaises(HTTPException) as raised:
+                excel.validate_xlsx_resources(rewrite_workbook_xml(content, transform))
+            self.assertEqual(raised.exception.status_code, 413)
+
+    def test_empty_styled_cells_still_count_toward_cell_budget(self):
+        workbook = openpyxl.Workbook()
+        workbook.active['A1'] = 'Data'
+        workbook.active['XFD1'].fill = openpyxl.styles.PatternFill('solid', fgColor='EEEEEE')
+        try:
+            content = excel.workbook_bytes(workbook)
+        finally:
+            workbook.close()
+        with patch.object(excel, 'MAX_WORKBOOK_CELLS', 1), self.assertRaises(HTTPException) as raised:
+            excel.validate_xlsx_resources(content)
+        self.assertEqual(raised.exception.status_code, 413)
+        self.assertIn('cell limit', raised.exception.detail)
+
+    def test_rejects_archive_exceeding_50_mib_expanded(self):
+        output = BytesIO()
+        with ZipFile(output, 'w', compression=ZIP_DEFLATED) as archive:
+            with archive.open('padding.bin', 'w') as member:
+                for _ in range(50):
+                    member.write(b'0' * (1024 * 1024))
+                member.write(b'0')
+        self.assertLess(len(output.getvalue()), 20 * 1024 * 1024)
+        with self.assertRaises(HTTPException) as raised:
+            excel.validate_xlsx_resources(output.getvalue())
+        self.assertEqual(raised.exception.status_code, 413)
+        self.assertIn('expanded size', raised.exception.detail)
+
+    def test_rejects_archive_exceeding_128_members(self):
+        output = BytesIO()
+        with ZipFile(output, 'w') as archive:
+            for index in range(129):
+                archive.writestr(f'item{index}.xml', '<empty/>')
+        with self.assertRaises(HTTPException) as raised:
+            excel.validate_xlsx_resources(output.getvalue())
+        self.assertEqual(raised.exception.status_code, 413)
+        self.assertIn('member limit', raised.exception.detail)
 
     def test_accepts_supported_sheet_counts_including_hidden_sheets(self):
         for count in (17, 64):
@@ -231,14 +363,7 @@ class SecurityBatch1Tests(unittest.TestCase):
                 wb.close()
 
     def rewritten_import(self, transform, filename="xl/worksheets/sheet1.xml"):
-        output = BytesIO()
-        with ZipFile(BytesIO(self.fixture.make_import())) as source, ZipFile(output, "w") as target:
-            for member in source.infolist():
-                content = source.read(member)
-                if member.filename == filename:
-                    content = transform(content)
-                target.writestr(member, content)
-        return output.getvalue()
+        return rewrite_workbook_xml(self.fixture.make_import(), transform, filename)
 
     def assert_resource_rejected(self, content):
         with patch.object(excel.openpyxl, "load_workbook") as loader:
@@ -281,9 +406,9 @@ class SecurityBatch1Tests(unittest.TestCase):
         transforms = (
             lambda xml: re.sub(rb'<dimension ref="[^"]+"', b'<dimension ref="A1:XFD1048576"', xml),
             lambda xml: xml.replace(b'<row r="3"', f'<row r="{excel.MAX_SHEET_ROWS + 1}"'.encode()),
-            lambda xml: xml.replace(b'r="B3"', b'r="IW3"'),
-            lambda xml: re.sub(rb'<c r="B3"(.*?)</c>', rb'<unexpected r="IW3"\1</unexpected>', xml),
-            lambda xml: xml.replace(b'<c r="B3"', b'<c xmlns="" r="IW3"'),
+            lambda xml: xml.replace(b'r="B3"', b'r="XFE3"'),
+            lambda xml: re.sub(rb'<c r="B3"(.*?)</c>', rb'<unexpected r="XFE3"\1</unexpected>', xml),
+            lambda xml: xml.replace(b'<c r="B3"', b'<c xmlns="" r="XFE3"'),
         )
         for transform in transforms:
             with self.subTest(transform=transform):
