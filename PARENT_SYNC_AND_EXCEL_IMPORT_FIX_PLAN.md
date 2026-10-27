@@ -9,6 +9,7 @@ Status (2026-10-27): Application changes and regression coverage are implemented
 - [x] Status-aware dashboard feedback for direct submissions and background replay. Existing sync-event key details and revision-safe draft cleanup are preserved; the event additionally carries the server response.
 - [x] Worksheet maximum raised to 64, including hidden sheets; archive, row and cell budgets retained.
 - [x] Follow-up: accept dimensions, cell references, merged ranges and column styling through XFD (16,384). Bound iteration to 100 Info Sheet columns and 256 assessment columns, preserving answers beyond column 100.
+- [x] Follow-up: structured section-mismatch confirmation with an authorized overwrite flag, responsive teacher dialog and durable retry support.
 - [x] Parent-link, backup/history, atomicity, concurrent-claim, import/identity/guardian and row-isolation regression coverage added or updated.
 - [x] Current behavior documented in AI_CONTEXT.md.
 - [x] Added `.github/workflows/parent-sync-excel.yml` for the six focused backend modules against disposable PostgreSQL and frontend checks plus mocked-API Playwright coverage.
@@ -26,6 +27,16 @@ Local checks used synthetic process-only backend settings, without a school data
 - [x] Frontend app/tooling TypeScript, full lint and production build pass.
 - [x] Added multipart import coverage for full-width styling, names in B/LRN in F, protected identity, birthdate/sex, both guardians, assessment column 164, blank trailing rows and idempotent repeat imports.
 - [ ] Execute database integrations in the existing CI workflow and verify the authorized production workbook. Neither has been executed during this follow-up.
+
+### Section mismatch confirmation follow-up (2026-10-27)
+
+- [x] Add multipart `overwrite_section=false` to the existing teacher import endpoint. Return HTTP 409 with top-level `detail`, `code: SECTION_MISMATCH`, `file_section` and `assigned_section` before student writes. Unknown file headers display "Not identified".
+- [x] Confirmation bypasses only the section-name check. Target ownership, existing-student section restrictions, workbook limits, mappings and per-student transactions remain enforced.
+- [x] Add the teacher confirmation dialog, cancellation with file retention, locked loading controls, section-specific success feedback, existing partial-failure summary and roster refresh. Consent is bound to the file revision and target; the durable queue preserves the flag only after explicit confirmation.
+- [x] 15 database-free backend tests pass. Both requested modules discover successfully (82 tests); Python compilation passes.
+- [x] Frontend app/tooling/browser-test TypeScript, full lint and production build pass. The existing CI browser configuration lists 24 cases across desktop/mobile, including 16 new teacher-import cases.
+- [x] Add four database-backed multipart regressions for mismatch/no writes, confirmed idempotent import, unknown/matching headers and section authorization/ownership protection. Extend the existing CI workflow to type-check and execute the new browser cases.
+- [ ] Execute the database-backed and browser regressions in CI and perform deployment acceptance. These were not run locally; no database, API or browser server was started, and no configuration files or credentials were changed.
 
 ## Summary
 

@@ -3,12 +3,15 @@ import asyncio
 from io import BytesIO
 import re
 import struct
+import json
+from types import SimpleNamespace
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 from zipfile import ZIP_DEFLATED, ZipFile
 
 import openpyxl
 from fastapi import HTTPException
+from starlette.datastructures import UploadFile
 
 from backend.models import FamilyAccess, Parent, Student, SystemLog, Teacher, User
 from backend.tests import test_phase2
@@ -39,6 +42,82 @@ class WorkbookTextTests(unittest.TestCase):
         self.assertEqual(saved.active["C1"].data_type, "f")
         saved.close()
         wb.close()
+
+
+class SectionMismatchTests(unittest.TestCase):
+    """Section preflight and route contracts without opening a database."""
+
+    def test_section_header_display_extraction(self):
+        for rows, expected in (
+            ([("Class Name / Section: Violet",)], "Violet"),
+            ([("Section", None, "Violet")], "Violet"),
+            ([("School", "Metadata"), ("Class Name:", "Violet")], "Violet"),
+            ([("Violet", None)], "Violet"),
+            ([("School", "Metadata"), ("Headers",)], "Not identified"),
+            ([("Section: Violet", "Section: Rose")], "Not identified"),
+            ([("Section:",)], "Not identified"),
+            ([("Section:   ",)], "Not identified"),
+            ([("Section:   ", "Violet")], "Violet"),
+            ([], "Not identified"),
+        ):
+            with self.subTest(rows=rows):
+                self.assertEqual(excel.workbook_section_name(rows), expected)
+
+    def test_mismatch_precedes_all_database_writes_and_confirmation_bypasses_only_match(self):
+        for overwrite in (False, True):
+            content = test_phase2.BackendTests().make_import(section_header='Section: Violet')
+            # No PRE date: confirmation must reach the next validation, not import data.
+            wb = openpyxl.load_workbook(BytesIO(content))
+            wb['Info Sheet']['K3'] = None
+            output = BytesIO()
+            wb.save(output)
+            wb.close()
+            workbook = openpyxl.load_workbook(BytesIO(output.getvalue()), read_only=True, data_only=True)
+            db = Mock()
+            try:
+                with self.assertRaises(HTTPException) as caught:
+                    excel.import_workbook(db, Mock(), Mock(), SimpleNamespace(section_name='Test A'), 1, workbook, overwrite_section=overwrite)
+                if overwrite:
+                    self.assertEqual(caught.exception.status_code, 400)
+                    self.assertIn('PRETEST DATE', caught.exception.detail)
+                else:
+                    self.assertIsInstance(caught.exception, excel.SectionMismatchError)
+                    self.assertEqual(caught.exception.status_code, 409)
+                    self.assertEqual(caught.exception.response.model_dump(), {
+                        'detail': 'The file section does not match your assigned section.',
+                        'code': 'SECTION_MISMATCH', 'file_section': 'Violet', 'assigned_section': 'Test A',
+                    })
+                self.assertEqual(db.mock_calls, [])
+            finally:
+                workbook.close()
+
+    def test_overwrite_never_skips_target_section_authorization(self):
+        db = Mock()
+        db.query.return_value.filter_by.return_value.order_by.return_value.all.return_value = [SimpleNamespace(section_id=1)]
+        with patch.object(excel, 'current_teacher', return_value=SimpleNamespace(teacher_id=1)), patch.object(excel, 'validate_xlsx_resources') as validate:
+            with self.assertRaises(HTTPException) as caught:
+                excel.import_students(db, Mock(), b'not a workbook', section_id=2, overwrite_section=True)
+            self.assertEqual(caught.exception.status_code, 403)
+            validate.assert_not_called()
+            db.commit.assert_not_called()
+
+    def test_route_serializes_top_level_mismatch_and_passes_confirmation_flag(self):
+        from backend.routes.teachers import import_student_records
+        for overwrite in (False, True):
+            upload = UploadFile(BytesIO(b'fixture'), filename='students.xlsx')
+            db, user = Mock(), Mock()
+            expected = {'successCount': 1, 'failedCount': 0, 'errors': []}
+            with patch.object(excel, 'import_students', **({'return_value': expected} if overwrite else {'side_effect': excel.SectionMismatchError('Violet', 'Test A')})) as parse:
+                response = asyncio.run(import_student_records(file=upload, section_id=1, overwrite_section=overwrite, db=db, current_user=user))
+                parse.assert_called_once_with(db, user, b'fixture', 1, overwrite)
+                if overwrite:
+                    self.assertEqual(response, expected)
+                else:
+                    self.assertEqual(response.status_code, 409)
+                    self.assertEqual(json.loads(response.body), {
+                        'detail': 'The file section does not match your assigned section.',
+                        'code': 'SECTION_MISMATCH', 'file_section': 'Violet', 'assigned_section': 'Test A',
+                    })
 
 
 class WorkbookResourceTests(unittest.TestCase):

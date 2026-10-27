@@ -274,6 +274,12 @@ export interface ImportResult {
   failedCount: number;
   errors: { row: number; error: string }[];
 }
+export interface SectionMismatchResponse {
+  detail: string;
+  code: "SECTION_MISMATCH";
+  file_section: string;
+  assigned_section: string;
+}
 export const studentName = (s: Student): string =>
   s.full_name ||
   [s.first_name, s.middle_name, s.last_name].filter(Boolean).join(" ") ||

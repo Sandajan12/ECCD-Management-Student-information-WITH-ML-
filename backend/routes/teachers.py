@@ -16,7 +16,8 @@ from backend.utils.email import send_otp_email
 from anyio.from_thread import run as run_async
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile
 from fastapi.concurrency import run_in_threadpool
-from backend.schemas.operations import ImportResult, TeacherListItem
+from backend.schemas.operations import ImportResult, SectionMismatchResponse, TeacherListItem
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import func
@@ -119,14 +120,17 @@ for path, endpoint, model in (("/dashboard-filters", get_dashboard_filters, Dash
                          response_model_exclude_none=True, dependencies=[Depends(verify_role(["admin"]))])
 
 
-@router.post("/import-students", response_model=ImportResult)
-async def import_student_records(file: UploadFile = File(...), section_id: int | None = Form(None), db: Session = Depends(get_db), current_user=Depends(verify_role(["admin"]))):
-    from backend.utils.excel import import_students
+@router.post("/import-students", response_model=ImportResult, responses={409: {"model": SectionMismatchResponse}})
+async def import_student_records(file: UploadFile = File(...), section_id: int | None = Form(None), overwrite_section: bool = Form(False), db: Session = Depends(get_db), current_user=Depends(verify_role(["admin"]))):
+    from backend.utils.excel import import_students, SectionMismatchError
     if not file.filename or not file.filename.lower().endswith(".xlsx"):
         raise HTTPException(400, "Upload an .xlsx workbook containing InfoSheet and ECCD domain sheets.")
     from backend.utils.uploads import EXCEL_LIMIT, read_upload
     content = await read_upload(file, EXCEL_LIMIT)
-    return await run_in_threadpool(import_students, db, current_user, content, section_id)
+    try:
+        return await run_in_threadpool(import_students, db, current_user, content, section_id, overwrite_section)
+    except SectionMismatchError as error:
+        return JSONResponse(status_code=409, content=error.response.model_dump())
 
 
 @router.get("/active", response_model=list[TeacherListItem])

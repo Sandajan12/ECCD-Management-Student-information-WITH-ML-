@@ -585,10 +585,10 @@ class BackendTests(unittest.TestCase):
         self.assertEqual(len(messages),1)
         self.assertEqual(messages[0]['body'],'Saved')
 
-    def make_import(self, bad_second=False, existing_other=False, missing_mid=False, mac_epoch=False, sheet_count=2, full_width=False):
+    def make_import(self, bad_second=False, existing_other=False, missing_mid=False, mac_epoch=False, sheet_count=2, full_width=False, section_header='Test A'):
         wb=openpyxl.Workbook(); info=wb.active; info.title='Info Sheet'
         if mac_epoch: wb.epoch=CALENDAR_MAC_1904
-        info.append(['Test A']); info.append(['Headers'])
+        info.append([section_header]); info.append(['Headers'])
         row=[None]*27
         row[1]='Imported, New, Middle'; row[5]='001555555555'; row[7]='BABAE'; row[8]='KANAN'; row[9]=to_excel(datetime(2021,3,10),wb.epoch); row[10]=to_excel(datetime(2026,8,10),wb.epoch)
         row[17]='Test Father'; row[18]=35; row[19]='Teacher'; row[20]='College'
@@ -673,6 +673,71 @@ class BackendTests(unittest.TestCase):
         response = self.call('POST', '/api/teachers/import-students', 2,
                              data={'section_id': '2'}, files={'file': ('students.xlsx', content, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')})
         self.assertEqual(response.status_code, 403, response.text)
+
+    def test_import_section_mismatch_requires_confirmation_before_writes(self):
+        content = self.make_import(section_header='Section: File Class')
+        for fields in ({}, {'overwrite_section': 'false'}):
+            response = self.call('POST', '/api/teachers/import-students', 2, data=fields,
+                                 files={'file': ('students.xlsx', content, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')})
+            self.assertEqual(response.status_code, 409, response.text)
+            self.assertEqual(response.json(), {
+                'detail': 'The file section does not match your assigned section.',
+                'code': 'SECTION_MISMATCH', 'file_section': 'File Class', 'assigned_section': 'Test A',
+            })
+        with self.sessions() as db:
+            self.assertEqual((db.query(Student).count(), db.query(Parent).count(), db.query(StudentEccdEvaluation).count()), (3, 2, 0))
+        for _ in range(2):
+            response = self.call('POST', '/api/teachers/import-students', 2,
+                                 data={'section_id': '1', 'overwrite_section': 'true'},
+                                 files={'file': ('students.xlsx', content, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')})
+            self.assertEqual(response.status_code, 200, response.text)
+            self.assertEqual(response.json(), {'successCount': 1, 'failedCount': 0, 'errors': []})
+        with self.sessions() as db:
+            student = db.query(Student).filter_by(lrn_search_hash=hash_lrn('001555555555')).one()
+            self.assertEqual((student.section_id, student.section_name), (1, 'Test A'))
+            self.assertEqual((student.first_name, student.middle_name, student.date_of_birth), ('New', 'Middle', date(2021, 3, 10)))
+            self.assertEqual(student.parents[0].parent.fullname, 'Test Father')
+            self.assertEqual(len(student.parents), 1)
+            self.assertEqual(len(student.evaluations), 1)
+            self.assertEqual(student.evaluations[0].answer, EccdAnswer.KAYA)
+
+    def test_import_unknown_section_can_be_confirmed_and_labelled_match_is_accepted(self):
+        for header, expected in ((None, 409), (' Section: tEsT a ', 200)):
+            content = self.make_import(section_header=header)
+            response = self.call('POST', '/api/teachers/import-students', 2,
+                                 files={'file': ('students.xlsx', content, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')})
+            self.assertEqual(response.status_code, expected, response.text)
+            if expected == 409:
+                self.assertEqual(response.json()['file_section'], 'Not identified')
+                response = self.call('POST', '/api/teachers/import-students', 2, data={'overwrite_section': 'true'},
+                                     files={'file': ('students.xlsx', content, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')})
+                self.assertEqual(response.status_code, 200, response.text)
+
+    def test_import_overwrite_does_not_authorize_other_or_inactive_sections(self):
+        content = self.make_import(section_header='Other Class')
+        for actor, fields in ((2, {'section_id': '2'}), (4, {'section_id': '1'})):
+            response = self.call('POST', '/api/teachers/import-students', actor,
+                                 data={**fields, 'overwrite_section': 'true'},
+                                 files={'file': ('students.xlsx', content, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')})
+            self.assertEqual(response.status_code, 403, response.text)
+        with self.sessions() as db:
+            db.query(SectionTeacher).filter_by(teacher_id=1, role='Primary Adviser', status='Active').update({'status': 'Inactive'})
+            db.commit()
+        response = self.call('POST', '/api/teachers/import-students', 2, data={'overwrite_section': 'true'},
+                             files={'file': ('students.xlsx', content, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')})
+        self.assertEqual(response.status_code, 403, response.text)
+        with self.sessions() as db:
+            self.assertEqual(db.query(Student).count(), 3)
+            self.assertEqual(db.query(StudentEccdEvaluation).count(), 0)
+
+    def test_import_overwrite_does_not_transfer_existing_students(self):
+        response = self.call('POST', '/api/teachers/import-students', 2, data={'overwrite_section': 'true'},
+                             files={'file': ('students.xlsx', self.make_import(existing_other=True, section_header='File Class'), 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')})
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual((response.json()['successCount'], response.json()['failedCount']), (1, 1))
+        with self.sessions() as db:
+            self.assertEqual(db.get(Student, 3).section_id, 2)
+            self.assertEqual(len(db.get(Student, 3).evaluations), 0)
 
     def test_import_partial_success_scope_and_atomic_score_rows(self):
         response=self.call('POST','/api/teachers/import-students',2,files={'file':('students.xlsx',self.make_import(bad_second=True,existing_other=True),'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')})

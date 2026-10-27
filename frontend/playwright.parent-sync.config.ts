@@ -3,7 +3,7 @@ import { defineConfig } from "@playwright/test";
 // Run in CI; API calls are mocked and no school database is used.
 export default defineConfig({
   testDir: "./tests",
-  testMatch: "parent-sync.spec.ts",
+  testMatch: ["parent-sync.spec.ts", "teacher-import.spec.ts"],
   outputDir: "./test-results/parent-sync",
   workers: 1,
   timeout: 30000,

@@ -783,6 +783,35 @@ rows remain; return shape is
 Cross-section updates are rejected. Do not assume teacher batch-date validation
 also runs in this separate importer.
 
+`POST /api/teachers/import-students` accepts optional multipart
+`overwrite_section` (Boolean, default false). A section-name mismatch returns
+HTTP 409 with top-level `detail`, `code: "SECTION_MISMATCH"`, `file_section`
+and `assigned_section`, before any student writes. Section/class labels in the
+first two Info Sheet rows and the legacy standalone A1 header supply the file
+name; ambiguous/missing names display `"Not identified"`. Labelled matching
+headers and the existing case-insensitive metadata match are accepted.
+Confirmation bypasses only this name check: active Primary Adviser ownership
+of the target section and rejection of existing students in other sections
+remain enforced. All imported records use the authorized section ID/name.
+
+Teacher Student Management displays a responsive **Section Mismatch Detected**
+confirmation with Cancel and **Overwrite & Import**. Cancel retains the file;
+confirmation is bound to its revision and target section. File replacement or
+section reassignment invalidates it. Re-import uses the existing durable upload
+pipeline, preserving the explicit overwrite flag and target for offline retry.
+Pending uploads lock controls and show progress. Completed requests refresh the
+roster and show the existing row summary; only imports without failed rows show
+the section-specific success toast and clear the confirmed file. Partial failures
+retain the workbook for correction.
+
+Section-confirmation verification (2026-10-27): 15 database-free backend tests,
+Python compilation, app/tooling and browser-test TypeScript checks, full frontend
+lint and production build pass. Requested backend modules discover 82 tests;
+the CI browser configuration lists 24 desktop/mobile cases, including 16 new
+teacher-import cases. Discovery is not execution: the four new database-backed
+multipart regressions and browser cases await the existing CI workflow. No local
+database, API or browser server was started for this change.
+
 Workbook resource validation accepts up to **64 worksheets**, including hidden
 tabs. The worksheet-limit error reports the supported maximum. Other limits
 remain: 20 MiB upload, 50 MiB expanded archive, 128 ZIP members, 2,000 rows and
