@@ -37,7 +37,7 @@ MAX_XLSX_MEMBERS = 128
 MAX_SHEET_ROWS = 2000
 MAX_SHEET_COLUMNS = 256
 MAX_WORKBOOK_CELLS = 250_000
-MAX_WORKBOOK_SHEETS = 16
+MAX_WORKBOOK_SHEETS = 64
 
 
 def validate_xlsx_resources(content: bytes) -> set[str]:
@@ -110,7 +110,7 @@ def validate_xlsx_resources(content: bytes) -> set[str]:
                     elif name == "sheet":
                         sheet_count += 1
                         if sheet_count > MAX_WORKBOOK_SHEETS:
-                            raise HTTPException(413, "Excel workbook exceeds the worksheet limit.")
+                            raise HTTPException(413, f"Excel workbook exceeds the worksheet limit ({MAX_WORKBOOK_SHEETS}).")
                         relationship_id = attributes.get("http://schemas.openxmlformats.org/officeDocument/2006/relationships}id")
                         if not relationship_id or relationship_id in sheet_ids:
                             raise HTTPException(400, "Duplicate or invalid Excel worksheet relationship.")

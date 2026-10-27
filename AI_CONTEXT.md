@@ -1,6 +1,6 @@
 # AMES System: Current Codebase Context
 
-Updated: **2026-10-26**. This document describes the active working tree in
+Updated: **2026-10-27**. This document describes the active working tree in
 `backend/` and `frontend/`, including existing uncommitted changes. Local
 configuration observations are a snapshot, not deployment defaults or a claim
 that every workflow has passed testing. Current-state descriptions were checked
@@ -687,8 +687,28 @@ Score release and checklist marks are independent gates:
   corresponding editing window are enabled. Local unsaved inputs remain durable.
 
 Parents must have a **SYNCED** family link; PENDING requests grant no child-data
-access. Parent-initiated linking creates a PENDING request until an assigned
-teacher approves it. Profile/guardian reads mask locked fields, and updates/home
+access. All three parent link aliases (`/api/students/link`,
+`/api/parents/children/link`, `/api/messages/link-lrn`) immediately create a
+SYNCED link for a student's first account claim when there is no account-link
+history. Teacher-entered guardian-only records do not count as prior account
+access. After an unlink, rejection, or recorded account claim, a new claim is
+PENDING until the assigned teacher approves it. The history lookup uses exact
+audit metadata student IDs and conservatively requires approval for exact
+student-name matches in the known historical plain-text unlink format,
+including namesakes. Deleted logs and old name-only logs for renamed students
+cannot reliably establish prior history; no migration or backfill is applied.
+Student locking protects conflict/history checks and insertion; links and
+ID-bearing claim audits commit together. A current claim blocks other accounts;
+same-parent retries return the existing status without duplicates or promoting
+pending requests. Existing PENDING records retain their status. The dedicated
+ParentLinkResponse adds `status: SYNCED | PENDING` to the existing message,
+student_id and masked_lrn fields, independently of enrollment responses.
+Dashboard feedback follows this status for direct saves and offline replay;
+background sync preserves the existing event's key detail and additionally
+provides its server response for consumers that need it. Roster refresh and
+revision-safe draft cleanup remain in place. Registration still links children
+through the dashboard. Auto-sync does not bypass adviser permissions.
+Profile/guardian reads mask locked fields, and updates/home
 saves enforce their respective global permissions with HTTP 403. Section editing
 windows (`PRE=true`, `MID=false`, `POST=false` defaults) are additional write
 gates, controlled only by the active adviser. A closed period returns HTTP 403
@@ -762,6 +782,15 @@ rows remain; return shape is
 `{ successCount, failedCount, errors: [{ row, error }] }`.
 Cross-section updates are rejected. Do not assume teacher batch-date validation
 also runs in this separate importer.
+
+Workbook resource validation accepts up to **64 worksheets**, including hidden
+tabs. The worksheet-limit error reports the supported maximum. Other limits
+remain: 20 MiB upload, 50 MiB expanded archive, 128 ZIP members, 2,000 rows and
+256 columns per sheet, and 250,000 workbook cells. XML validation, duplicate
+relationship checks, separate byte streams, read-only loading and worksheet
+dimension resets remain active. This supports extra EasyCD tabs around the
+Info Sheet/domain import format; it does not add CHECKLIST-export import support
+or establish acceptance of any particular production workbook.
 
 Exports use supplied blank assets, both present in this checkout:
 
@@ -1006,8 +1035,8 @@ that test server or direct reset operations at school data.
 restricted to the local development database. SMTP diagnostic scripts can send
 real mail and are not ordinary read-only checks.
 
-The following are the **six Playwright configurations currently present** in
-`frontend/`; each selects the correspondingly named spec in `frontend/tests/`:
+The following Playwright configurations in `frontend/` support targeted checks;
+each selects the correspondingly named spec in `frontend/tests/`:
 
 | Configuration | Spec | UI origin | Test API | Server management |
 | --- | --- | --- | --- | --- |
@@ -1017,6 +1046,21 @@ The following are the **six Playwright configurations currently present** in
 | `playwright.ml-sandbox.config.ts` | `ml-sandbox.spec.ts` | http://127.0.0.1:5186 | 8774 | Starts disposable API and Vite; desktop/mobile |
 | `playwright.terms-privacy.config.ts` | `terms-privacy.spec.ts` | http://127.0.0.1:5188 | 8775 | Starts disposable API and Vite; desktop/tablet/mobile |
 | `playwright.ml-insights.config.ts` | `ml-insights.spec.ts` | http://localhost:5173 | 8769, started separately | Starts/reuses Vite only; Desktop Chrome project, spec adjusts viewport |
+| `playwright.parent-sync.config.ts` | `parent-sync.spec.ts` | http://127.0.0.1:5190 | Mocked API | CI starts Vite only; desktop/mobile, no school database |
+
+Parent-sync/Excel verification on **2026-10-27**: 10 database-free backend
+checks passed, including all three link response contracts and acceptance of
+17/64 sheets with hidden tabs versus rejection of 65. Python compilation,
+dependency consistency, frontend app/tooling TypeScript, explicit browser-test
+type checking, full lint, formatting and production build passed. Playwright
+discovery lists eight parent-sync cases; those browser cases have not been
+executed. No local database/API/browser servers were started. These checks used
+synthetic process-only settings; no local backend configuration was created.
+`.github/workflows/parent-sync-excel.yml` prepares the six focused backend
+modules against disposable PostgreSQL and frontend/browser checks using mocked
+APIs. The workflow has not been executed in this session. Deployment acceptance,
+including the exact production workbook, remains outstanding; see
+`PARENT_SYNC_AND_EXCEL_IMPORT_FIX_PLAN.md`.
 
 Use an explicit configuration, for example:
 

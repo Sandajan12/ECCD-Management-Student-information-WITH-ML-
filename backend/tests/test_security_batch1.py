@@ -7,6 +7,7 @@ from unittest.mock import patch
 from zipfile import ZipFile
 
 import openpyxl
+from fastapi import HTTPException
 
 from backend.models import FamilyAccess, Parent, Student, SystemLog, Teacher, User
 from backend.tests import test_phase2
@@ -26,6 +27,30 @@ class WorkbookTextTests(unittest.TestCase):
         self.assertEqual(saved.active["C1"].data_type, "f")
         saved.close()
         wb.close()
+
+
+class WorkbookResourceTests(unittest.TestCase):
+    """Exercise the archive boundary without a database or API server."""
+
+    def test_accepts_supported_sheet_counts_including_hidden_sheets(self):
+        for count in (17, 64):
+            with self.subTest(count=count):
+                content = test_phase2.BackendTests().make_import(sheet_count=count)
+                members = excel.validate_xlsx_resources(content)
+                self.assertIn(f"xl/worksheets/sheet{count}.xml", members)
+                workbook = openpyxl.load_workbook(BytesIO(content), read_only=True)
+                try:
+                    self.assertEqual(len(workbook.worksheets), count)
+                    self.assertTrue(any(sheet.sheet_state == "hidden" for sheet in workbook))
+                finally:
+                    workbook.close()
+
+    def test_rejects_65_sheets_including_hidden_sheets(self):
+        content = test_phase2.BackendTests().make_import(sheet_count=65)
+        with self.assertRaises(HTTPException) as raised:
+            excel.validate_xlsx_resources(content)
+        self.assertEqual(raised.exception.status_code, 413)
+        self.assertIn("worksheet limit (64)", raised.exception.detail)
 
 
 class SecurityBatch1Tests(unittest.TestCase):
@@ -233,6 +258,23 @@ class SecurityBatch1Tests(unittest.TestCase):
             for index in range(excel.MAX_XLSX_MEMBERS + 1):
                 archive.writestr(f"item{index}.xml", "<empty/>")
         self.assert_resource_rejected(output.getvalue())
+
+    def test_import_accepts_17_and_64_visible_and_hidden_sheets(self):
+        for count in (17, 64):
+            with self.subTest(count=count):
+                response = self.upload(self.fixture.make_import(sheet_count=count))
+                self.assertEqual(response.status_code, 200, response.text)
+                self.assertEqual((response.json()["successCount"], response.json()["failedCount"]), (1, 0))
+
+    def test_import_rejects_65_sheets_before_loading_or_writing(self):
+        content = self.fixture.make_import(sheet_count=65)
+        with patch.object(excel.openpyxl, "load_workbook") as loader:
+            response = self.upload(content)
+        self.assertEqual(response.status_code, 413, response.text)
+        self.assertIn("worksheet limit (64)", response.json()["detail"])
+        loader.assert_not_called()
+        with self.sessions() as db:
+            self.assertEqual(db.query(Student).count(), 3)
 
     def test_import_rejects_sparse_dimensions_and_understated_row_column_metadata(self):
         import re

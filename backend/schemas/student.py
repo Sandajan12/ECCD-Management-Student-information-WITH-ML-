@@ -200,6 +200,10 @@ class EnrollmentResponse(ApiModel):
     masked_lrn: str
 
 
+class ParentLinkResponse(EnrollmentResponse):
+    status: Literal["PENDING", "SYNCED"]
+
+
 class ChildPublicResponse(StudentPublicResponse):
     age: float | None = None
     teacher_fname: str | None = None

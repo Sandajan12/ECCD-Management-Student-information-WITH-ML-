@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from backend.config.database import get_db
 from backend.models import FamilyAccess, Parent, Section, SectionTeacher, Student, SystemLog, Teacher, User
 from backend.schemas.common import MessageResult
-from backend.schemas.student import ChildPublicResponse, EnrollmentRequest, EnrollmentResponse, FamilyAccessCreate, StudentPublicResponse, StudentUpdate, TeacherStudentResponse
+from backend.schemas.student import ChildPublicResponse, EnrollmentRequest, EnrollmentResponse, FamilyAccessCreate, ParentLinkResponse, StudentPublicResponse, StudentUpdate, TeacherStudentResponse
 from backend.utils.access import authorize_student, current_teacher, resolve_student, teacher_sections
 from backend.utils.deps import verify_role
 from backend.utils.lrn import hash_lrn
@@ -120,8 +120,8 @@ def linked_children(db: Session = Depends(get_db), user: User = Depends(verify_r
     return child_profiles(db, students)
 
 
-@router.post("/link", response_model=EnrollmentResponse)
-@message_router.post("/link-lrn", response_model=EnrollmentResponse)
+@router.post("/link", response_model=ParentLinkResponse)
+@message_router.post("/link-lrn", response_model=ParentLinkResponse)
 def link_child(payload: FamilyAccessCreate, db: Session = Depends(get_db), user: User = Depends(verify_role(["user"]))):
     if not payload.target_lrn:
         raise HTTPException(400, "A valid 12-digit LRN is required.")
@@ -132,15 +132,28 @@ def link_child(payload: FamilyAccessCreate, db: Session = Depends(get_db), user:
     parent = db.query(Parent).filter_by(user_id=user.user_id).first()
     if parent is None:
         raise HTTPException(404, "Parent profile not found.")
-    existing = db.query(FamilyAccess).join(Parent).filter(FamilyAccess.student_id == student.student_id, Parent.user_id.isnot(None)).first()
-    if existing:
-        if existing.status == "PENDING" and existing.parent_id == parent.parent_id:
-            return {"message": "Parent link request is awaiting teacher approval.", "student_id": student.student_id, "masked_lrn": student.masked_lrn}
+    existing = db.query(FamilyAccess).join(Parent).filter(FamilyAccess.student_id == student.student_id, Parent.user_id.isnot(None)).all()
+    if any(link.parent_id != parent.parent_id for link in existing):
         raise HTTPException(400, "This student has already been synced to an account.")
-    relationship = payload.relationship_type if "relationship_type" in payload.model_fields_set else parent.relationship_type
-    db.add(FamilyAccess(student_id=student.student_id, parent_id=parent.parent_id, relationship_type=relationship or "Guardian", status="PENDING"))
-    db.commit()
-    return {"message": "Parent link request is awaiting teacher approval.", "student_id": student.student_id, "masked_lrn": student.masked_lrn}
+    if existing:
+        status = existing[0].status
+    else:
+        from backend.utils.audit import actor_name, person_name, record_audit
+        from backend.utils.parent_links import has_account_link_history
+        status = "PENDING" if has_account_link_history(db, student) else "SYNCED"
+        relationship = payload.relationship_type if "relationship_type" in payload.model_fields_set else parent.relationship_type
+        try:
+            db.add(FamilyAccess(student_id=student.student_id, parent_id=parent.parent_id, relationship_type=relationship or "Guardian", status=status))
+            event = "Linked Parent" if status == "SYNCED" else "Requested Parent Link"
+            record_audit(db, user, event, f'{event}: Parent "{actor_name(db, user)}" for Student "{person_name(student)}".',
+                         studentId=student.student_id, studentName=person_name(student), parentId=parent.parent_id,
+                         parentName=actor_name(db, user), status=status)
+            db.commit()
+        except Exception:
+            db.rollback()
+            raise
+    message = "Child successfully synced to your account." if status == "SYNCED" else "Parent link request is awaiting teacher approval."
+    return {"message": message, "student_id": student.student_id, "masked_lrn": student.masked_lrn, "status": status}
 
 
 @router.put("/{identifier}/archive", response_model=MessageResult)

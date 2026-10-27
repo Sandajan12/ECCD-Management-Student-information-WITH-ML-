@@ -585,7 +585,7 @@ class BackendTests(unittest.TestCase):
         self.assertEqual(len(messages),1)
         self.assertEqual(messages[0]['body'],'Saved')
 
-    def make_import(self, bad_second=False, existing_other=False, missing_mid=False, mac_epoch=False):
+    def make_import(self, bad_second=False, existing_other=False, missing_mid=False, mac_epoch=False, sheet_count=2):
         wb=openpyxl.Workbook(); info=wb.active; info.title='Info Sheet'
         if mac_epoch: wb.epoch=CALENDAR_MAC_1904
         info.append(['Test A']); info.append(['Headers'])
@@ -601,7 +601,36 @@ class BackendTests(unittest.TestCase):
         values=[None]*8; values[1]=row[1]; values[2]=1
         if missing_mid: values[4]=1
         gm.append(values)
+        for name in ('FM', 'SH', 'RL', 'EL', 'C', 'SE'):
+            if len(wb.worksheets) < sheet_count:
+                wb.create_sheet(name)
+        while len(wb.worksheets) < sheet_count:
+            extra = wb.create_sheet(f'Extra {len(wb.worksheets)}')
+            if len(wb.worksheets) % 2:
+                extra.sheet_state = 'hidden'
         buffer=BytesIO(); wb.save(buffer); return buffer.getvalue()
+
+    def test_import_many_sheets_explicit_section_identity_guardian_and_idempotency(self):
+        content = self.make_import(bad_second=True, existing_other=True, sheet_count=64)
+        for _ in range(2):
+            response = self.call('POST', '/api/teachers/import-students', 2,
+                                 data={'section_id': '1'}, files={'file': ('students.xlsx', content, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')})
+            self.assertEqual(response.status_code, 200, response.text)
+            self.assertEqual((response.json()['successCount'], response.json()['failedCount']), (1, 2))
+        with self.sessions() as db:
+            student = db.query(Student).filter_by(lrn_search_hash=hash_lrn('001555555555')).one()
+            self.assertEqual(student.lrn_number, '001555555555')
+            self.assertNotIn('001555555555', student.lrn_encrypted)
+            self.assertEqual((student.section_id, student.middle_name, student.date_of_birth), (1, 'Middle', date(2021, 3, 10)))
+            self.assertEqual(len(student.parents), 1)
+            self.assertEqual(student.parents[0].parent.fullname, 'Test Father')
+            self.assertEqual(len(student.evaluations), 1)
+            self.assertEqual(student.evaluations[0].answer, EccdAnswer.KAYA)
+            self.assertFalse(db.query(Student).filter_by(lrn_search_hash=hash_lrn('001666666666')).first())
+            self.assertEqual(db.get(Student, 3).section_id, 2)
+        response = self.call('POST', '/api/teachers/import-students', 2,
+                             data={'section_id': '2'}, files={'file': ('students.xlsx', content, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')})
+        self.assertEqual(response.status_code, 403, response.text)
 
     def test_import_partial_success_scope_and_atomic_score_rows(self):
         response=self.call('POST','/api/teachers/import-students',2,files={'file':('students.xlsx',self.make_import(bad_second=True,existing_other=True),'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')})

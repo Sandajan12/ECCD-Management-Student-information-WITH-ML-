@@ -8,11 +8,25 @@ from sqlalchemy import text
 
 from backend.migrations.parent_linking import apply_parent_linking, check_parent_linking
 from backend.models import FamilyAccess, Parent, SectionTeacher, Student, StudentEccdEvaluation, SystemLog
-from backend.utils.audit import read_details
+from backend.utils.audit import read_details, record_audit
 from backend.tests import test_phase2
 from backend.utils.backups import export_backup, restore_backup
 from backend.routes.teachers import change_parent_link
-from backend.schemas.student import ParentLinkActionRequest
+from backend.schemas.student import FamilyAccessCreate, ParentLinkActionRequest
+from backend.routes.students import link_child
+
+
+class ParentLinkContractTests(unittest.TestCase):
+    def test_link_aliases_share_the_dedicated_response_contract(self):
+        from backend.main import api
+        document = api.openapi()
+        for path in ("/api/students/link", "/api/parents/children/link", "/api/messages/link-lrn"):
+            response = document["paths"][path]["post"]["responses"]["200"]
+            self.assertEqual(response["content"]["application/json"]["schema"]["$ref"],
+                             "#/components/schemas/ParentLinkResponse")
+        schemas = document["components"]["schemas"]
+        self.assertEqual(set(schemas["ParentLinkResponse"]["properties"]["status"]["enum"]), {"PENDING", "SYNCED"})
+        self.assertNotIn("status", schemas["EnrollmentResponse"]["properties"])
 
 
 class ParentLinkingTests(unittest.TestCase):
@@ -33,7 +47,54 @@ class ParentLinkingTests(unittest.TestCase):
     def action(self, action, student=1, teacher=2, parent=1):
         return self.call("POST", f"/api/teachers/students/{student}/{action}", teacher, json={"parent_id": parent})
 
+    def prior_unlink(self):
+        self.assertEqual(self.request_link().json()["status"], "SYNCED")
+        self.assertEqual(self.action("unlink-parent", student=3, teacher=3, parent=2).status_code, 200)
+
+    def assert_first_link(self, path):
+        response = self.request_link(path=path)
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["status"], "SYNCED")
+        self.assertNotIn("001111111111", response.text)
+        self.assertEqual(self.call("GET", "/api/students/3", 6).status_code, 200)
+        children = self.call("GET", "/api/parents/children", 6).json()
+        self.assertIn(3, [child["student_id"] for child in children])
+        with self.sessions() as db:
+            self.assertEqual(db.query(FamilyAccess).join(Parent).filter(
+                FamilyAccess.student_id == 3, FamilyAccess.status == "SYNCED", Parent.user_id.isnot(None)
+            ).count(), 1)
+            _, metadata = read_details(db.query(SystemLog).filter_by(action_type="Linked Parent").one().details)
+            self.assertEqual((metadata["studentId"], metadata["parentId"]), (3, 2))
+
+    def test_first_link_students_alias_auto_syncs(self):
+        self.assert_first_link("/api/students/link")
+
+    def test_first_link_parents_alias_auto_syncs(self):
+        self.assert_first_link("/api/parents/children/link")
+
+    def test_first_link_messages_alias_auto_syncs(self):
+        self.assert_first_link("/api/messages/link-lrn")
+
+    def test_guardian_only_rows_do_not_prevent_first_account_sync(self):
+        with self.sessions() as db:
+            guardian = Parent(fullname="School Guardian")
+            db.add(guardian)
+            db.flush()
+            db.add(FamilyAccess(parent_id=guardian.parent_id, student_id=3, relationship_type="Guardian"))
+            db.commit()
+        self.assert_first_link("/api/parents/children/link")
+        with self.sessions() as db:
+            self.assertEqual(db.query(FamilyAccess).filter_by(student_id=3).count(), 2)
+
+    def test_synced_retries_across_aliases_are_idempotent(self):
+        for path in ("/api/students/link", "/api/parents/children/link", "/api/messages/link-lrn"):
+            self.assertEqual(self.request_link(path=path).json()["status"], "SYNCED")
+        with self.sessions() as db:
+            self.assertEqual(db.query(FamilyAccess).filter_by(student_id=3).count(), 1)
+            self.assertEqual(db.query(SystemLog).filter_by(action_type="Linked Parent").count(), 1)
+
     def test_roster_aliases_report_all_states_without_parent_phone_or_raw_lrn(self):
+        self.prior_unlink()
         self.assertEqual(self.request_link().status_code, 200)
         for route, teacher, student, expected in (("/api/teacher/students", 2, 1, "SYNCED"), ("/api/teachers/students", 3, 3, "PENDING"), ("/api/students/", 2, 1, "SYNCED")):
             response = self.call("GET", route, teacher)
@@ -102,10 +163,12 @@ class ParentLinkingTests(unittest.TestCase):
         self.assertNotIn(student, [row["student_id"] for row in children.json()])
 
     def test_pending_request_grants_no_access_and_retries_do_not_duplicate(self):
+        self.prior_unlink()
         for path in ("/api/students/link", "/api/parents/children/link", "/api/messages/link-lrn"):
             response = self.request_link(path=path)
             self.assertEqual(response.status_code, 200, response.text)
             self.assertIn("awaiting teacher approval", response.json()["message"])
+            self.assertEqual(response.json()["status"], "PENDING")
         self.assert_parent_denied(6, 3)
         self.assertEqual(self.call("GET", "/api/messages/history", 6, params={"teacher_id": 2, "parent_id": 2}).status_code, 403)
         self.assertEqual(self.call("GET", "/api/messages/contacts", 6).json()["contacts"], [])
@@ -115,6 +178,7 @@ class ParentLinkingTests(unittest.TestCase):
             self.assertEqual(db.query(FamilyAccess).filter_by(student_id=3).one().status, "PENDING")
 
     def test_approve_grants_access_and_logs_name(self):
+        self.prior_unlink()
         self.assertEqual(self.request_link().status_code, 200)
         result = self.action("approve-parent-link", student=3, teacher=3, parent=2)
         self.assertEqual(result.json(), {"success": True, "message": "Parent link approved successfully."})
@@ -132,6 +196,7 @@ class ParentLinkingTests(unittest.TestCase):
             self.assertEqual(metadata["parentName"], "Stranger")
 
     def test_rejection_clears_request_and_relink_requires_new_approval(self):
+        self.prior_unlink()
         self.assertEqual(self.request_link().status_code, 200)
         result = self.action("reject-parent-link", student=3, teacher=3, parent=2)
         self.assertEqual(result.json(), {"success": True, "message": "Parent link request declined."})
@@ -146,16 +211,55 @@ class ParentLinkingTests(unittest.TestCase):
 
     def test_unlinked_child_relink_is_pending_even_for_original_parent(self):
         self.assertEqual(self.action("unlink-parent").status_code, 200)
-        self.assertEqual(self.request_link(user=5, lrn=test_phase2.LRN).status_code, 200)
+        self.assertEqual(self.request_link(user=5, lrn=test_phase2.LRN).json()["status"], "PENDING")
         self.assert_parent_denied(5, 1)
         self.assertEqual(self.action("approve-parent-link").status_code, 200)
         self.assertEqual(self.call("GET", "/api/students/1", 5).status_code, 200)
+
+    def test_unlinked_child_different_parent_requires_approval(self):
+        self.assertEqual(self.action("unlink-parent").status_code, 200)
+        self.assertEqual(self.request_link(user=6, lrn=test_phase2.LRN).json()["status"], "PENDING")
+        self.assert_parent_denied(6, 1)
+
+    def test_structured_history_matches_exact_student_id_not_name(self):
+        with self.sessions() as db:
+            record_audit(db, db.get(test_phase2.User, 2), "Unlinked Parent", "Other student's unlink",
+                         studentId=30, studentName="Other Class")
+            db.commit()
+        self.assertEqual(self.request_link().json()["status"], "SYNCED")
+
+    def test_legacy_exact_name_history_requires_approval_for_namesakes(self):
+        with self.sessions() as db:
+            db.add(Student(lrn_number="001111111112", first_name="Other", last_name="Class", is_active=True))
+            db.add(SystemLog(action_type="Unlinked Parent", details="Unlinked Parent: Prior Parent from student Other Class"))
+            db.commit()
+        self.assertEqual(self.request_link().json()["status"], "PENDING")
+
+    def test_legacy_name_substrings_do_not_match(self):
+        with self.sessions() as db:
+            db.add(SystemLog(action_type="Unlinked Parent", details="Unlinked Parent: Prior Parent from student Another Other Class"))
+            db.commit()
+        self.assertEqual(self.request_link().json()["status"], "SYNCED")
+
+    def test_claim_audit_preserves_history_if_link_disappears(self):
+        self.assertEqual(self.request_link().json()["status"], "SYNCED")
+        with self.sessions() as db:
+            db.query(FamilyAccess).filter_by(student_id=3).delete()
+            db.commit()
+        self.assertEqual(self.request_link(user=5).json()["status"], "PENDING")
+
+    def test_backup_restore_retains_unlink_history(self):
+        self.assertEqual(self.action("unlink-parent").status_code, 200)
+        with self.sessions() as db:
+            restore_backup(db, export_backup(db))
+        self.assertEqual(self.request_link(user=5, lrn=test_phase2.LRN).json()["status"], "PENDING")
 
     def test_wrong_state_stale_target_and_archived_student_rejected(self):
         for action in ("approve-parent-link", "reject-parent-link"):
             self.assertEqual(self.action(action).status_code, 409)
         self.assertEqual(self.action("unlink-parent", parent=2).status_code, 409)
         self.assertEqual(self.action("unlink-parent", student=999).status_code, 404)
+        self.prior_unlink()
         self.assertEqual(self.request_link().status_code, 200)
         self.assertEqual(self.action("unlink-parent", student=3, teacher=3, parent=2).status_code, 409)
         with self.sessions() as db:
@@ -168,6 +272,7 @@ class ParentLinkingTests(unittest.TestCase):
         with ThreadPoolExecutor(max_workers=2) as pool:
             responses = list(pool.map(lambda actor: self.request_link(user=actor), (5, 6)))
         self.assertEqual(sorted(response.status_code for response in responses), [200, 400])
+        self.assertEqual(next(response for response in responses if response.status_code == 200).json()["status"], "SYNCED")
         with self.sessions() as db:
             self.assertEqual(db.query(FamilyAccess).filter_by(student_id=3).count(), 1)
 
@@ -179,6 +284,29 @@ class ParentLinkingTests(unittest.TestCase):
                     change_parent_link(db, user, 1, ParentLinkActionRequest(parent_id=1), "unlink")
             self.assertEqual(db.query(FamilyAccess).filter_by(student_id=1, status="SYNCED").count(), 1)
             self.assertEqual(db.query(SystemLog).filter_by(action_type="Unlinked Parent").count(), 0)
+
+    def test_failed_commit_rolls_back_claim_and_audit(self):
+        with self.sessions() as db:
+            user = db.get(test_phase2.User, 6)
+            with patch.object(db, "commit", side_effect=RuntimeError("Synthetic commit failure")):
+                with self.assertRaises(RuntimeError):
+                    link_child(FamilyAccessCreate(lrn_number="001111111111"), db, user)
+            self.assertEqual(db.query(FamilyAccess).filter_by(student_id=3).count(), 0)
+            self.assertEqual(db.query(SystemLog).filter_by(action_type="Linked Parent").count(), 0)
+
+    def test_audit_failure_rolls_back_flushed_claim(self):
+        with self.sessions() as db:
+            user = db.get(test_phase2.User, 6)
+
+            def fail_audit(*args, **kwargs):
+                db.flush()
+                raise RuntimeError("Synthetic audit failure")
+
+            with patch("backend.utils.audit.record_audit", side_effect=fail_audit):
+                with self.assertRaises(RuntimeError):
+                    link_child(FamilyAccessCreate(lrn_number="001111111111"), db, user)
+            self.assertEqual(db.query(FamilyAccess).filter_by(student_id=3).count(), 0)
+            self.assertEqual(db.query(SystemLog).filter_by(action_type="Linked Parent").count(), 0)
 
     def test_migration_preserves_old_links_and_is_idempotent(self):
         with self.fixture.test_engine.begin() as connection:
@@ -193,6 +321,7 @@ class ParentLinkingTests(unittest.TestCase):
             self.assertEqual(row.requested_at, row.date_linked)
 
     def test_backup_restore_retains_pending_status_without_granting_access(self):
+        self.prior_unlink()
         self.assertEqual(self.request_link().status_code, 200)
         with self.sessions() as db:
             payload = export_backup(db)

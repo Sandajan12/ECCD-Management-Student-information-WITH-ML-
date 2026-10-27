@@ -28,6 +28,8 @@ import EmojiEventsIcon from "@mui/icons-material/EmojiEvents";
 import TimelineIcon from "@mui/icons-material/Timeline";
 import { useNavigate } from "react-router-dom";
 import api, { errorMessage, isNetworkError } from "../../services/api";
+import type { ParentLinkResponse } from "../../types";
+import type { RecordSyncedEvent } from "../../utils/drafts";
 import { useChildren } from "../../hooks/useChildren";
 import { useAssessment } from "../../hooks/useAssessment";
 import { PERIODS, PERIOD_LABELS } from "../../types";
@@ -113,6 +115,13 @@ const actionSx = {
 };
 const titleSx = { fontSize: "1.125rem", fontWeight: 600, color: "#0f172a" };
 
+const linkFeedback = (status?: ParentLinkResponse["status"]): string =>
+  status === "SYNCED"
+    ? "Your child is now connected to your account."
+    : status === "PENDING"
+      ? "Link request submitted. Your child's teacher must approve it before records become available."
+      : "Link request saved. Your child's connection has been refreshed.";
+
 interface RecentMessage {
   message_id: number;
   senderName: string;
@@ -164,16 +173,12 @@ const Dashboard: React.FC = () => {
   useEffect(() => {
     setLrnValue(readDraft<string>(linkKey)?.values ?? "");
     const synced = (event: Event) => {
-      if (
-        (event as CustomEvent<string>).detail === linkKey &&
-        !readDraft<string>(linkKey)
-      ) {
+      const confirmation = event as RecordSyncedEvent<ParentLinkResponse>;
+      if (confirmation.detail === linkKey && !readDraft<string>(linkKey)) {
         setLrnValue("");
         setLrnModalOpen(false);
         setError("");
-        setLinkNotice(
-          "Link request submitted. Your child's teacher must approve it before records become available.",
-        );
+        setLinkNotice(linkFeedback(confirmation.response?.status));
       }
     };
     window.addEventListener("ames-record-synced", synced);
@@ -289,13 +294,14 @@ const Dashboard: React.FC = () => {
         );
         return;
       }
-      const response = await api.post(draft.request!.path, draft.request!.data);
+      const response = await api.post<ParentLinkResponse>(
+        draft.request!.path,
+        draft.request!.data,
+      );
       if (response.status !== 200 && response.status !== 201)
         throw new Error("The server did not confirm this link.");
       confirmDraft(linkKey, draft.revision);
-      setLinkNotice(
-        "Link request submitted. Your child's teacher must approve it before records become available.",
-      );
+      setLinkNotice(linkFeedback(response.data.status));
       if (
         !readDraft<string>(linkKey) &&
         linkRevision.current === draft.revision

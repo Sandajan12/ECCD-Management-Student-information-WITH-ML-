@@ -111,6 +111,12 @@ export interface ParentLinkInfo {
   linked_at: string | null;
   requested_at: string;
 }
+export interface ParentLinkResponse {
+  message: string;
+  student_id: number;
+  masked_lrn: string;
+  status: "SYNCED" | "PENDING";
+}
 export interface ParentLinkActionResponse {
   success: boolean;
   message: string;

@@ -50,6 +50,9 @@ export interface Draft<T> {
   request?: DraftRequest;
   error?: string;
 }
+export interface RecordSyncedEvent<T = unknown> extends CustomEvent<string> {
+  response?: T;
+}
 export function readDraft<T>(key: string): Draft<T> | null {
   try {
     return JSON.parse(localStorage.getItem(key) || "null") as Draft<T> | null;
@@ -120,7 +123,7 @@ export async function syncDrafts(owner: number): Promise<void> {
         continue;
       }
       try {
-        const res = await API.request({
+        const res = await API.request<unknown>({
           url: draft.request!.path,
           method: draft.request!.method,
           data: draft.request!.data,
@@ -128,7 +131,12 @@ export async function syncDrafts(owner: number): Promise<void> {
         if (res.status === 200 || res.status === 201) {
           confirmDraft(key, draft.revision);
           window.dispatchEvent(
-            new CustomEvent("ames-record-synced", { detail: key }),
+            Object.assign(
+              new CustomEvent("ames-record-synced", { detail: key }),
+              {
+                response: res.data,
+              },
+            ),
           );
         }
       } catch (error) {
