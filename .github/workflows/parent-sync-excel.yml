@@ -45,6 +45,7 @@ jobs:
           uv run --no-project --python .venv312 python -m unittest
           backend.tests.test_parent_linking backend.tests.test_parity
           backend.tests.test_security_batch1 backend.tests.test_phase2
+          backend.tests.test_parent_student_updates
           backend.tests.test_batch1 backend.tests.test_eccd_phase2_lifecycle -v
 
   frontend:
@@ -64,7 +65,7 @@ jobs:
           pnpm --dir frontend exec tsc --ignoreConfig --noEmit --target es2023
           --lib es2023,dom --module esnext --moduleResolution bundler
           --types node --skipLibCheck
-          tests/parent-sync.spec.ts tests/teacher-import.spec.ts playwright.parent-sync.config.ts
+          tests/parent-sync.spec.ts tests/parent-profile.spec.ts tests/teacher-import.spec.ts playwright.parent-sync.config.ts
       - run: pnpm --dir frontend run lint
       - run: pnpm --dir frontend run build
       - run: pnpm --dir frontend exec playwright install --with-deps chromium

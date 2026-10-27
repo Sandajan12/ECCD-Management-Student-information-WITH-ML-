@@ -208,24 +208,26 @@ def student_change_snapshot(db: Session, student: Student) -> dict[str, str]:
 @router.put("/update/{identifier}", response_model=MessageResult)
 @router.put("/{identifier}", response_model=MessageResult)
 def update(identifier: str, payload: StudentUpdate, db: Session = Depends(get_db), user: User = Depends(verify_role(["admin", "super-admin", "user"]))):
-    student = resolve_student(db, identifier)
-    authorize_student(db, user, student, parent_edit=user.role.value == "user")
-    before = student_change_snapshot(db, student)
-    old_lrn_hash = student.lrn_search_hash
-    if payload.lrn_number is not None:
-        if user.role.value == "user":
-            raise HTTPException(403, "Only school staff can correct a student's LRN.")
-        duplicate = db.query(Student).filter(Student.lrn_search_hash == hash_lrn(payload.lrn_number), Student.student_id != student.student_id).first()
-        if duplicate:
-            raise HTTPException(400, "Another student is already using this LRN.")
-        student.lrn_number = payload.lrn_number
-    parent_fields = {"emergency_contact", "address", "handedness", "num_of_siblings", "birth_order"}
-    for key, value in payload.model_dump(exclude_unset=True).items():
-        if key in Student.__table__.columns and key not in ("section_id", "section_name", "school_year", "is_active") and (user.role.value != "user" or key in parent_fields):
-            setattr(student, key, value)
-    for relationship, prefix in (("Father", "father"), ("Mother", "mother"), ("Guardian", "legal_guardian")):
-        upsert_guardian(db, student, relationship, getattr(payload, f"{prefix}_name"), getattr(payload, f"{prefix}_age"), getattr(payload, f"{prefix}_occ"), getattr(payload, f"{prefix}_educ"), user=user)
     try:
+        student = resolve_student(db, identifier)
+        authorize_student(db, user, student, parent_edit=user.role.value == "user")
+        before = student_change_snapshot(db, student)
+        old_lrn_hash = student.lrn_search_hash
+        if payload.lrn_number is not None:
+            if user.role.value == "user":
+                raise HTTPException(403, "Only school staff can correct a student's LRN.")
+            duplicate = db.query(Student).filter(Student.lrn_search_hash == hash_lrn(payload.lrn_number), Student.student_id != student.student_id).first()
+            if duplicate:
+                raise HTTPException(400, "Another student is already using this LRN.")
+            student.lrn_number = payload.lrn_number
+        parent_fields = {"emergency_contact", "address", "handedness", "num_of_siblings", "birth_order"}
+        for key, value in payload.model_dump(exclude_unset=True).items():
+            if key in Student.__table__.columns and key not in ("section_id", "section_name", "school_year", "is_active") and (user.role.value != "user" or key in parent_fields):
+                setattr(student, key, value)
+        for relationship, prefix in (("Father", "father"), ("Mother", "mother"), ("Guardian", "legal_guardian")):
+            supplied = {field for field in ("name", "age", "occ", "educ") if f"{prefix}_{field}" in payload.model_fields_set}
+            if supplied:
+                upsert_guardian(db, student, relationship, getattr(payload, f"{prefix}_name"), getattr(payload, f"{prefix}_age"), getattr(payload, f"{prefix}_occ"), getattr(payload, f"{prefix}_educ"), user=user, supplied_fields=supplied)
         db.flush()
         after = student_change_snapshot(db, student)
         changes = [f"{field}: '{before[field]}' -> '{value}'" for field, value in after.items() if before[field] != value]
@@ -240,6 +242,9 @@ def update(identifier: str, payload: StudentUpdate, db: Session = Depends(get_db
     except IntegrityError:
         db.rollback()
         raise HTTPException(400, "Another student is already using this LRN.") from None
+    except Exception:
+        db.rollback()
+        raise
     return {"message": "Student details successfully updated!"}
 
 

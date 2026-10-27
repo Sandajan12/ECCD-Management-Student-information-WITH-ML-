@@ -344,7 +344,11 @@ test("confirmed offline retry retains its exact section and flag through reload 
     .getByRole("button", { name: "Overwrite & Import" })
     .click();
   await expect(
-    page.getByText("Workbook saved locally and queued for reconnection."),
+    page
+      .getByRole("alert")
+      .filter({
+        hasText: "Workbook saved locally and queued for reconnection.",
+      }),
   ).toBeVisible();
   expect(await storedWorkbook(page)).toMatchObject({
     name: "students.xlsx",

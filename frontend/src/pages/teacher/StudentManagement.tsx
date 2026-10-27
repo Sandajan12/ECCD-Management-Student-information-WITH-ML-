@@ -225,9 +225,12 @@ const StudentManagement: React.FC = () => {
   const [editingLrn, setEditingLrn] = useState(0);
   const editingId = useRef(0);
   const editVersion = useRef(0);
+  const rosterVersion = useRef(0);
   const submissionLock = useRef(false);
   const [submitting, setSubmitting] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [editHasDraft, setEditHasDraft] = useState(false);
+  const editDirty = useRef(false);
   const [importOpen, setImportOpen] = useState(false);
   const workbook = useDurableFile("teacher_import");
   const importFile = workbook.file;
@@ -306,9 +309,12 @@ const StudentManagement: React.FC = () => {
     };
   }, [owner]);
   const fetchActiveStudents = useCallback(async () => {
+    const version = ++rosterVersion.current;
     try {
       const response = await api.get<Student[]>("/api/students/");
+      if (version !== rosterVersion.current) return;
       setStudents(response.data);
+      setError("");
       try {
         localStorage.setItem(
           "ames_teacher_roster_" + owner,
@@ -318,6 +324,7 @@ const StudentManagement: React.FC = () => {
         /* Server data remains usable when device storage is full. */
       }
     } catch (err) {
+      if (version !== rosterVersion.current) return;
       if (isNetworkError(err)) {
         try {
           setStudents(
@@ -350,6 +357,7 @@ const StudentManagement: React.FC = () => {
     window.addEventListener("focus", reload);
     window.addEventListener("ames-record-synced", reload);
     return () => {
+      ++rosterVersion.current;
       window.removeEventListener("online", reload);
       window.removeEventListener("focus", reload);
       window.removeEventListener("ames-record-synced", reload);
@@ -391,6 +399,8 @@ const StudentManagement: React.FC = () => {
       is_pending_sync: false,
     });
     setEditFormData(next);
+    editDirty.current = true;
+    setEditHasDraft(true);
   };
   const handleSaveStudent = async () => {
     if (submissionLock.current) return;
@@ -439,51 +449,86 @@ const StudentManagement: React.FC = () => {
       setSubmitting(false);
     }
   };
-  const handleEditClick = async (student: Student) => {
-    const id = student.student_id;
-    const version = ++editVersion.current;
-    editingId.current = id;
-    setEditingLrn(id);
-    setEditError("");
-    setEditFormData(
-      readDraft<StudentFormValues>(editKey(id))?.values || emptyForm,
-    );
-    setEditOpen(true);
-    setDetailLoading(true);
-    try {
-      const cacheKey = "ames_teacher_student_cache_" + owner + "_" + id;
-      let data: Student;
-      try {
-        const response = await api.get<Student>("/api/students/" + id);
-        data = response.data;
-        try {
-          localStorage.setItem(cacheKey, JSON.stringify(data));
-        } catch {
-          /* Server data remains usable when device storage is full. */
-        }
-      } catch (err) {
-        if (!isNetworkError(err)) throw err;
-        const cached = JSON.parse(
-          localStorage.getItem(cacheKey) || "null",
-        ) as Student | null;
-        if (!cached) throw err;
-        data = cached;
-      }
-      if (version !== editVersion.current) return;
-      const hydrated = { ...emptyForm };
-      for (const field of Object.keys(emptyForm) as (keyof StudentFormValues)[])
-        hydrated[field] = String(data[field as keyof Student] ?? "");
-      hydrated.lrn_number = data.masked_lrn;
-      hydrated.date_of_birth = data.date_of_birth?.split("T")[0] || "";
+  const loadEditDetails = useCallback(
+    async (id: number) => {
+      const version = ++editVersion.current;
+      editingId.current = id;
+      setEditingLrn(id);
+      setEditError("");
+      editDirty.current = Boolean(readDraft(editKey(id)));
+      setEditHasDraft(Boolean(readDraft(editKey(id))));
       setEditFormData(
-        readDraft<StudentFormValues>(editKey(id))?.values || hydrated,
+        readDraft<StudentFormValues>(editKey(id))?.values || emptyForm,
       );
-    } catch (err) {
-      if (version === editVersion.current) setEditError(errorMessage(err));
-    } finally {
-      if (version === editVersion.current) setDetailLoading(false);
-    }
-  };
+      setEditOpen(true);
+      setDetailLoading(true);
+      try {
+        const cacheKey = "ames_teacher_student_cache_" + owner + "_" + id;
+        let data: Student;
+        try {
+          const response = await api.get<Student>("/api/students/" + id);
+          if (version !== editVersion.current) return;
+          data = response.data;
+          try {
+            localStorage.setItem(cacheKey, JSON.stringify(data));
+          } catch {
+            /* Server data remains usable when device storage is full. */
+          }
+        } catch (err) {
+          if (!isNetworkError(err)) throw err;
+          const cached = JSON.parse(
+            localStorage.getItem(cacheKey) || "null",
+          ) as Student | null;
+          if (!cached) throw err;
+          data = cached;
+          if (version === editVersion.current)
+            setEditError(
+              "Showing the last saved copy on this device. Reconnect to refresh.",
+            );
+        }
+        if (version !== editVersion.current) return;
+        const hydrated = { ...emptyForm };
+        for (const field of Object.keys(
+          emptyForm,
+        ) as (keyof StudentFormValues)[])
+          hydrated[field] = String(data[field as keyof Student] ?? "");
+        hydrated.lrn_number = data.masked_lrn;
+        hydrated.date_of_birth = data.date_of_birth?.split("T")[0] || "";
+        setEditFormData(
+          readDraft<StudentFormValues>(editKey(id))?.values || hydrated,
+        );
+        setEditHasDraft(Boolean(readDraft(editKey(id))));
+      } catch (err) {
+        if (version === editVersion.current) setEditError(errorMessage(err));
+      } finally {
+        if (version === editVersion.current) setDetailLoading(false);
+      }
+    },
+    [owner],
+  );
+  const handleEditClick = (student: Student) =>
+    loadEditDetails(student.student_id);
+  useEffect(() => {
+    if (!editOpen) return;
+    const refreshDetails = () => {
+      const id = editingId.current;
+      if (
+        !id ||
+        submissionLock.current ||
+        editDirty.current ||
+        readDraft(editKey(id))
+      )
+        return;
+      void loadEditDetails(id);
+    };
+    window.addEventListener("focus", refreshDetails);
+    window.addEventListener("online", refreshDetails);
+    return () => {
+      ++editVersion.current;
+      window.removeEventListener("focus", refreshDetails);
+      window.removeEventListener("online", refreshDetails);
+    };
+  }, [editOpen, loadEditDetails, owner]);
   const handleUpdateStudent = async () => {
     if (submissionLock.current || detailLoading) return;
     const validation = validateStudent(editFormData);
@@ -1099,6 +1144,12 @@ const StudentManagement: React.FC = () => {
         }}
       >
         <DialogContent sx={{ p: 0, overflowY: "visible" }}>
+          {editHasDraft && (
+            <Alert severity="info" sx={{ mb: 2, borderRadius: 3 }}>
+              Showing your unsaved edits on this device. Save them to update the
+              student record.
+            </Alert>
+          )}
           {editError && (
             <Alert severity="error" sx={{ mb: 2, borderRadius: 2 }}>
               {editError}

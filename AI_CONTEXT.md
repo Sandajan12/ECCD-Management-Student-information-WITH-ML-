@@ -715,6 +715,27 @@ gates, controlled only by the active adviser. A closed period returns HTTP 403
 with `Editing for [Pre-Test/Mid-Test/Post-Test] is currently closed by the teacher.`
 Frontend locked states and disabled controls supplement backend enforcement.
 
+Parent profile saves use changed fields compared with a baseline persisted in
+the owner/student-scoped draft. Omitted guardian fields are preserved; explicit
+nulls clear optional details. Existing guardian names cannot be cleared, and new
+guardian details require a name (HTTP 422). An absent blank guardian is a no-op.
+M6 checks every linked sibling, including pending/archived links, only when the
+merged guardian record changes; rejected requests roll back student, guardian
+and audit writes together. Shared records are never forked. Workbook callers
+retain complete-record semantics. Parent feedback distinguishes confirmed HTTP
+200/201 saves, pending device-only saves and persisted rejection details. Legacy
+drafts remain readable and queued requests are replayed without rewriting them.
+Teacher rosters ignore superseded responses; clean open details refresh on
+focus/reconnection, while unsaved teacher drafts are preserved and labelled.
+Regressions are in `backend/tests/test_parent_student_updates.py` and
+`frontend/tests/parent-profile.spec.ts`, included in parent-sync CI.
+Verified locally on 2026-10-27: 70 focused backend tests and full discovery of
+369 tests pass against disposable PostgreSQL schemas; all 48 desktop/mobile
+parent-sync browser cases pass (46 initially, two after correcting an existing
+import-alert locator). Both TypeScript projects, browser-test type checks, full
+frontend lint and production build pass. Application/deployment environment
+files and production data were not changed.
+
 ## 7. Assessments, age, and analytics
 
 - Periods are PRE/MID/POST; answers are KAYA/DI-KAYA; question order follows
