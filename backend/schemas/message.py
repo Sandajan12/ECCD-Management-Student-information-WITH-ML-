@@ -94,6 +94,11 @@ class ConversationRequest(ApiModel):
     parent_id: PositiveId
 
 
+class MessagesReadEvent(ConversationRequest):
+    reader_role: SenderRole
+    message_ids: list[PositiveId]
+
+
 class PersistedMessageResponse(MessageResponse):
     message: str = "Message sent!"
 

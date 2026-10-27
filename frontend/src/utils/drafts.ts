@@ -53,6 +53,9 @@ export interface Draft<T> {
 export interface RecordSyncedEvent<T = unknown> extends CustomEvent<string> {
   response?: T;
 }
+export interface RecordSyncFailedEvent extends CustomEvent<string> {
+  error: unknown;
+}
 export function readDraft<T>(key: string): Draft<T> | null {
   try {
     return JSON.parse(localStorage.getItem(key) || "null") as Draft<T> | null;
@@ -140,8 +143,23 @@ export async function syncDrafts(owner: number): Promise<void> {
           );
         }
       } catch (error) {
+        const rejectedMessage =
+          /^\/api\/messages\/(send)?$/.test(draft.request!.path) &&
+          !isNetworkError(error);
         if (readDraft<unknown>(key)?.revision === draft.revision)
-          storeDraft(key, { ...draft, error: errorMessage(error) });
+          storeDraft(key, {
+            ...draft,
+            is_pending_sync: rejectedMessage ? false : draft.is_pending_sync,
+            error: errorMessage(error),
+          });
+        window.dispatchEvent(
+          Object.assign(
+            new CustomEvent("ames-record-sync-failed", { detail: key }),
+            {
+              error,
+            },
+          ),
+        );
         if (isNetworkError(error)) break;
       }
     }

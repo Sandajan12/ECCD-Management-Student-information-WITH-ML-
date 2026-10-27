@@ -638,7 +638,12 @@ incorrect-current-password responses.
   permits Chairman writes and teachers with allow_eccd_question_management.
 - `utils/rate_limits.py` defines fixed-window HTTP and Socket.IO budgets. The
   login budget is **15 requests per 15 minutes**, shared across login aliases;
-  general API traffic is 120 requests per minute. Production counters use the
+  general API traffic is 120 requests per minute. Exact messaging GETs
+  (contacts/history/unread aliases), read-receipt PUTs, and send/notify POSTs
+  instead use independent shared-IP budgets of 240, 120, and 60 per minute.
+  Aliases share their operation's bucket; malformed/unauthenticated requests
+  count. `/api/messages/link-lrn` retains the general and student-link policies.
+  Production counters use the
   PostgreSQL `api_rate_limits` table, except per-socket packet counters; development
   uses process-local counters. Exhaustion returns HTTP 429 with Retry-After;
   unavailable shared storage returns sanitized HTTP 503.
@@ -874,11 +879,53 @@ aliases; saved responses include IDs and body/content. notify-student persists
 notices for active linked parents.
 
 Socket.IO uses `auth: { token }`, authorized rooms `teacher-N-parent-M`, and
-room acknowledgement. **HTTP persistence is authoritative**: save first, then
-emit send_message with `{ room, message_id }`. Server reloads the sender-owned
-saved message and rechecks recipient access; client bodies cannot override it.
-Chat deduplicates IDs, recovers HTTP history on reconnect, and polls open threads.
-Restore disconnects active chat sessions.
+room acknowledgement for existing clients. **HTTP persistence is authoritative**:
+committed REST sends (including offline replay) and profile notifications push
+the saved message to every currently authorized participant session, including
+other tabs, without a sender-side socket event. Delivery reloads live credentials,
+relationships and saved records in worker threads; transport failures do not turn
+confirmed saves into HTTP failures. The existing `send_message` interface with
+`{ room, message_id }` remains compatible and still rejects spoofed bodies.
+Committed read receipts push `messages_read` only to the reader's authorized tabs,
+with conversation IDs, reader role and the exact confirmed message IDs. An older
+receipt cannot mark a newer arrival read. Restore disconnects active chat sessions.
+
+`context/MessagingContext.tsx` and `services/messaging.ts` own one connection per
+authenticated portal tab, inside the lazy portal bundle. The layout's 3-second
+unread timer and chat's 15-second history timer are removed. Healthy connections
+hydrate unread count/contacts/selected history once, then merge/deduplicate push
+messages locally and order contacts without refetching. Read requests coalesce
+over 250ms for incoming unread messages in the visible selected thread; unread
+refreshes coalesce across delivery/read events. Reconnect recovers the current
+thread, contacts and badge; requests deduplicate in flight and account cleanup
+aborts outstanding reads. Focus/visibility and unrelated draft-sync events cause
+no healthy-socket refreshes.
+
+When push is unavailable, one coordinator runs HTTP fallback after 30 seconds,
+backs failed cycles off to 60/120 seconds, and pauses while hidden/offline.
+Socket cooldown reconnects take precedence over fallback to prevent overlapping
+recovery cycles. HTTP `Retry-After`, handshake 429s and socket `retryAfter` share
+cooldown controls; allowed origins can read the retry header. Rejected direct or
+queued message sends retain their scoped draft and require explicit submission;
+network failures remain queued. Other forms retain their existing replay rules.
+Composer cleanup remains revision-safe and HTTP-confirmation-bound.
+Push delivery remains process-local, matching the current single-process
+deployment assumption. Multiple API processes would require a shared event
+transport; the PostgreSQL rate counters are already shared independently.
+
+Messaging verification (2026-10-27): **37 focused backend regressions** and the
+complete **22 desktop/mobile browser cases** pass against disposable PostgreSQL
+schemas. At 1280px and 375px, separate Teacher/Parent contexts each make one
+initial contacts/history/unread GET, retain one messaging socket, and make
+**zero additional messaging REST requests over two real idle minutes**. Live
+sends/notifications, multi-tab reads, delayed history, drafts/replay/revisions,
+account cleanup, fallback/backoff and HTTP/handshake/socket cooldowns pass.
+Browser rate responses are controlled injections; backend regressions separately
+enforce actual quotas, alias sharing and production PostgreSQL counters. Both
+TypeScript projects, browser-test typing, full frontend lint, production build,
+formatting and Python compilation pass. See `MESSAGES_REQUEST_LOOP_FIX_PLAN.md`,
+`backend/tests/test_messaging_push.py`, and `frontend/tests/messaging.spec.ts`.
+No database migration or application school-data change was required.
 
 Settings include school/principal names, branding, current year, and opening
 month (default August). Public settings GET creates singleton defaults if absent;
