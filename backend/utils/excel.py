@@ -21,6 +21,7 @@ from backend.models import EccdQuestion, FamilyAccess, Parent, Section, SectionT
 from backend.models.eccd import EccdAnswer, TestingPeriod
 from backend.models.student import Gender, Handedness
 from backend.schemas.student import StudentCreate
+from backend.schemas.operations import SectionMismatchResponse
 from backend.schemas.common import validate_person_name
 from backend.utils.access import authorize_student, current_teacher, get_active_adviser_for_student, resolve_student, teacher_sections
 from backend.utils.eccd_scorer import calculate_decimal_age, calculate_scores
@@ -35,9 +36,13 @@ XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 MAX_XLSX_EXPANDED_BYTES = 50 * 1024 * 1024
 MAX_XLSX_MEMBERS = 128
 MAX_SHEET_ROWS = 2000
-MAX_SHEET_COLUMNS = 256
+# EasyCD templates can style the entire Excel grid width. Keep XML bounds
+# separate from the much smaller row tuples materialized by the importer.
+MAX_SHEET_COLUMNS = 16_384
+MAX_INFO_IMPORT_COLUMNS = 100
+MAX_ASSESSMENT_IMPORT_COLUMNS = 256
 MAX_WORKBOOK_CELLS = 250_000
-MAX_WORKBOOK_SHEETS = 16
+MAX_WORKBOOK_SHEETS = 64
 
 
 def validate_xlsx_resources(content: bytes) -> set[str]:
@@ -110,7 +115,7 @@ def validate_xlsx_resources(content: bytes) -> set[str]:
                     elif name == "sheet":
                         sheet_count += 1
                         if sheet_count > MAX_WORKBOOK_SHEETS:
-                            raise HTTPException(413, "Excel workbook exceeds the worksheet limit.")
+                            raise HTTPException(413, f"Excel workbook exceeds the worksheet limit ({MAX_WORKBOOK_SHEETS}).")
                         relationship_id = attributes.get("http://schemas.openxmlformats.org/officeDocument/2006/relationships}id")
                         if not relationship_id or relationship_id in sheet_ids:
                             raise HTTPException(400, "Duplicate or invalid Excel worksheet relationship.")
@@ -354,7 +359,37 @@ def marked(value: object) -> bool:
     return value == 1 or (isinstance(value, str) and value.strip().lower() in ("1", "kaya", "di-kaya", "x", "ü", "v", "✓"))
 
 
-def import_students(db: Session, user: User, content: bytes, section_id: int | None = None) -> dict:
+class SectionMismatchError(HTTPException):
+    def __init__(self, file_section: str, assigned_section: str):
+        self.response = SectionMismatchResponse(file_section=file_section, assigned_section=assigned_section)
+        super().__init__(409, self.response.detail)
+
+
+def workbook_section_name(rows: list[tuple[object, ...]]) -> str:
+    """Read display metadata only; authorization never depends on file labels."""
+    labels = r"(?:section(?:\s+name)?|class(?:\s+name)?)(?:\s*/\s*section)?"
+    candidates: set[str] = set()
+    for row in rows[:2]:
+        for index, value in enumerate(row):
+            if not isinstance(value, str):
+                continue
+            match = re.fullmatch(rf"\s*{labels}\s*:\s*(.+?)\s*", value, re.IGNORECASE)
+            if match and match.group(1).strip():
+                candidates.add(match.group(1).strip())
+            elif re.fullmatch(rf"\s*{labels}\s*:?\s*", value, re.IGNORECASE):
+                adjacent = next((cell.strip() for cell in row[index + 1:] if isinstance(cell, str) and cell.strip()), None)
+                if adjacent:
+                    candidates.add(adjacent)
+    if len(candidates) == 1:
+        return next(iter(candidates))
+    if not candidates and rows and rows[0] and isinstance(rows[0][0], str):
+        first = rows[0][0].strip()
+        if first and not any(cell is not None and str(cell).strip() for cell in rows[0][1:]) and not re.fullmatch(rf"{labels}\s*:?", first, re.IGNORECASE):
+            return first
+    return "Not identified"
+
+
+def import_students(db: Session, user: User, content: bytes, section_id: int | None = None, overwrite_section: bool = False) -> dict:
     teacher = current_teacher(db, user)
     assignments = db.query(SectionTeacher).filter_by(teacher_id=teacher.teacher_id, role="Primary Adviser", status="Active").order_by(SectionTeacher.id).all()
     allowed = [assignment.section_id for assignment in assignments]
@@ -372,32 +407,39 @@ def import_students(db: Session, user: User, content: bytes, section_id: int | N
     try:
         if any(sheet._worksheet_path not in validated_members for sheet in wb):
             raise HTTPException(400, "Invalid Excel worksheet resource.")
-        return import_workbook(db, user, teacher, section, section_id, wb)
+        return import_workbook(db, user, teacher, section, section_id, wb, overwrite_section=overwrite_section)
     finally:
         wb.close()
 
 
-def import_sheet_rows(sheet) -> list[tuple[object, ...]]:
+def import_sheet_rows(sheet, *, max_columns: int) -> list[tuple[object, ...]]:
     # Read-only workbooks defer cell conversion until iteration. Preserve the
     # invalid-workbook HTTP 400 contract for parser errors at this boundary.
     try:
-        return list(sheet.values)
+        return list(sheet.iter_rows(
+            min_col=1, max_col=max_columns, max_row=MAX_SHEET_ROWS, values_only=True,
+        ))
     except Exception:
         raise HTTPException(400, "Invalid Excel file. Upload a valid .xlsx workbook.") from None
 
 
-def import_workbook(db: Session, user: User, teacher: Teacher, section: Section, section_id: int, wb) -> dict:
+def import_workbook(db: Session, user: User, teacher: Teacher, section: Section, section_id: int, wb, *, overwrite_section: bool = False) -> dict:
     if "Info Sheet" not in wb.sheetnames:
         raise HTTPException(400, 'Invalid Excel format. "Info Sheet" tab is missing.')
     # XML has already been bounded. Ignore declared dimensions so understated
     # metadata cannot hide populated rows or columns from the importer.
     for sheet in wb:
         sheet.reset_dimensions()
-    rows = import_sheet_rows(wb["Info Sheet"])
+    rows = import_sheet_rows(wb["Info Sheet"], max_columns=MAX_INFO_IMPORT_COLUMNS)
     if len(rows) < 3:
         raise HTTPException(400, "No data found in Info Sheet starting at row 3.")
-    if not any(isinstance(value, str) and value.strip().casefold() == section.section_name.strip().casefold() for row in rows[:20] for value in row):
-        raise HTTPException(400, "The file section does not match your assigned section.")
+    file_section = workbook_section_name(rows)
+    assigned_name = section.section_name.strip().casefold()
+    if not overwrite_section and not (
+        (file_section != "Not identified" and file_section.casefold() == assigned_name)
+        or any(isinstance(value, str) and value.strip().casefold() == assigned_name for row in rows[:20] for value in row)
+    ):
+        raise SectionMismatchError(file_section, section.section_name)
     first_pre = next((parsed for row in rows[2:] if len(row) > 10 for parsed in [parse_date(row[10], wb.epoch)] if parsed and parsed.year > 1900), None)
     if first_pre is None:
         raise HTTPException(400, "Missing or invalid PRETEST DATE; school year cannot be calculated.")
@@ -407,7 +449,9 @@ def import_workbook(db: Session, user: User, teacher: Teacher, section: Section,
     for sheet_name in DOMAIN_SHEETS.values():
         if sheet_name in wb.sheetnames:
             index = {}
-            for values in import_sheet_rows(wb[sheet_name]):
+            # SH, C and SE contain answers beyond column 100 (up to 164 in
+            # the reference checklist). Preserve those assessment columns.
+            for values in import_sheet_rows(wb[sheet_name], max_columns=MAX_ASSESSMENT_IMPORT_COLUMNS):
                 if len(values) > 1 and isinstance(values[1], str):
                     index.setdefault(" ".join(values[1].split()).casefold(), values)
             domain_rows[sheet_name] = index

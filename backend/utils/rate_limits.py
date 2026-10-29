@@ -24,6 +24,9 @@ class Policy:
 
 POLICIES = {
     "api": Policy(60, 120, "Too many requests. Please try again in a minute."),
+    "messages-read": Policy(60, 240, "Too many messaging requests. Please try again in a minute."),
+    "messages-receipts": Policy(60, 120, "Too many read receipts. Please try again in a minute."),
+    "messages-send": Policy(60, 60, "Too many messages. Please try again in a minute."),
     "login": Policy(900, 15, "Too many login attempts. Please try again in 15 minutes."),
     "otp-send": Policy(900, 5, "Too many verification email requests. Please try again in 15 minutes."),
     "otp-verify": Policy(900, 10, "Too many verification attempts. Please try again in 15 minutes."),
@@ -121,6 +124,15 @@ def request_policies(method: str, path: str) -> list[str]:
     path = path.rstrip("/")
     if method == "OPTIONS":
         return []
+    messaging = {
+        "GET": ("messages-read", ("contacts", "history", "unread-count", "unread")),
+        "PUT": ("messages-receipts", ("read", "mark-read")),
+        "POST": ("messages-send", ("", "send", "notify-student")),
+    }
+    if method in messaging:
+        namespace, operations = messaging[method]
+        if path in (f"/api/messages/{operation}".rstrip("/") for operation in operations):
+            return [namespace]
     result = ["api"] if path == "/api" or path.startswith("/api/") else []
     if path == "/ready":
         result.append("probe")

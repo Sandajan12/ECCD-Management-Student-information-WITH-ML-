@@ -2,8 +2,38 @@
 from fastapi import HTTPException
 from sqlalchemy.orm import Session, contains_eager
 
-from backend.models import FamilyAccess, Parent, User
+from backend.models import FamilyAccess, Parent, Student, SystemLog, User
 from backend.utils.account_identity import account_display_name
+from backend.utils.audit import person_name, read_details
+
+
+ACCOUNT_LINK_EVENTS = ("Linked Parent", "Requested Parent Link", "Approved Parent Link", "Unlinked Parent", "Rejected Parent Link")
+
+
+def has_account_link_history(db: Session, student: Student) -> bool:
+    """Check student-wide account history; school-entered guardians do not count.
+
+    Call while holding the student row lock. Current unlink/reject actions delete
+    the link but retain ID-bearing audit events in the same transaction.
+    """
+    if db.query(FamilyAccess.id).join(Parent).filter(
+        FamilyAccess.student_id == student.student_id, Parent.user_id.isnot(None)
+    ).first() is not None:
+        return True
+    name = person_name(student)
+    events = db.query(SystemLog.details).filter(SystemLog.action_type.in_(ACCOUNT_LINK_EVENTS)).yield_per(200)
+    for (raw,) in events:
+        summary, metadata = read_details(raw)
+        if metadata is not None:
+            # Never fall back to a name when a structured event identifies a
+            # different student, including students with identical names.
+            if str(metadata.get("studentId")) == str(student.student_id):
+                return True
+        elif summary and summary.startswith("Unlinked Parent: ") and summary.endswith(f" from student {name}"):
+            # Old logs did not store IDs. Exact name matches conservatively
+            # require approval for every namesake; substrings never match.
+            return True
+    return False
 
 
 def account_links(db: Session, student_ids: list[int]) -> dict[int, list[tuple]]:

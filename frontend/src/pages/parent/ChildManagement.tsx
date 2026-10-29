@@ -26,7 +26,6 @@ import { useChildren } from "../../hooks/useChildren";
 import { useParentProfile } from "../../hooks/useParentProfile";
 import {
   PROFILE_FIELDS,
-  profilePayload,
   validateProfile,
   type ProfileField,
 } from "../../utils/parentProfile";
@@ -51,7 +50,7 @@ const ChildManagement: React.FC = () => {
   const [snackbar, setSnackbar] = useState<{
     open: boolean;
     message: string;
-    severity: "success" | "error";
+    severity: "success" | "error" | "info";
   }>({ open: false, message: "", severity: "success" });
   useEffect(() => {
     const error = roster.error || profile.error;
@@ -68,7 +67,7 @@ const ChildManagement: React.FC = () => {
   };
   const handleSave = async () => {
     if (!childData || !canEdit || savingLock.current) return;
-    const error = validateProfile(formData);
+    const error = validateProfile(formData, profile.form.baseline);
     if (error) {
       setSnackbar({ open: true, message: error, severity: "error" });
       return;
@@ -76,18 +75,16 @@ const ChildManagement: React.FC = () => {
     savingLock.current = true;
     setIsSaving(true);
     try {
-      const result = await profile.form.save(
-        `/api/parents/children/${childData.student_id}`,
-        "put",
-        profilePayload(formData),
-      );
+      const result = await profile.form.save();
       setSnackbar({
         open: true,
         message:
           result === "saved"
             ? "Child details successfully updated!"
-            : "Saved on this device. Changes will sync when your connection returns.",
-        severity: "success",
+            : result === "unchanged"
+              ? "No changes to save."
+              : "Saved on this device. Changes are awaiting server confirmation.",
+        severity: result === "saved" ? "success" : "info",
       });
       if (result === "saved") {
         void profile.refresh();
@@ -142,6 +139,16 @@ const ChildManagement: React.FC = () => {
         position: "relative",
       }}
     >
+      {profile.form.error && (
+        <Alert severity="error" sx={{ mb: 2, borderRadius: 3 }}>
+          {profile.form.error} Your changes are kept on this device.
+        </Alert>
+      )}
+      {profile.form.pending && (
+        <Alert severity="info" sx={{ mb: 2, borderRadius: 3 }}>
+          Changes are saved on this device and awaiting server confirmation.
+        </Alert>
+      )}
       {/* Top Header & Persistent Child Selector Bar */}
       <Box
         sx={{

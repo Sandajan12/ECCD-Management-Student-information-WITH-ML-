@@ -1,6 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from sqlalchemy.orm import Session, aliased, contains_eager
-from sqlalchemy import func
+from sqlalchemy import func, update
 from backend.config.database import get_db
 from backend.models import FamilyAccess, Message, Parent, SectionTeacher, Student, Teacher, User
 from backend.models.message import SenderRole
@@ -9,6 +9,7 @@ from backend.utils.access import authorize_student, current_teacher, resolve_stu
 from backend.utils.deps import verify_role
 from backend.utils.messaging import authorize_conversation, conversation_relationship
 from backend.utils.account_identity import account_display_name
+from backend.utils.realtime import publish_message, publish_read
 
 router = APIRouter(prefix="/api/messages", tags=["Messages"])
 
@@ -58,7 +59,7 @@ def history(teacher_id: int = Query(..., gt=0), parent_id: int = Query(..., gt=0
 
 @router.post("/", response_model=PersistedMessageResponse, status_code=201)
 @router.post("/send", response_model=PersistedMessageResponse, status_code=201)
-def send(payload: MessageCreate, db: Session = Depends(get_db), user: User = Depends(verify_role(["admin", "user"]))):
+def send(payload: MessageCreate, background: BackgroundTasks, db: Session = Depends(get_db), user: User = Depends(verify_role(["admin", "user"]))):
     authorize_conversation(db, user, payload.teacher_id, payload.parent_id)
     role = SenderRole.TEACHER if user.role.value == "admin" else SenderRole.PARENT
     if payload.sender_role is not None and payload.sender_role != role:
@@ -69,11 +70,12 @@ def send(payload: MessageCreate, db: Session = Depends(get_db), user: User = Dep
     db.add(record)
     db.commit()
     db.refresh(record)
+    background.add_task(publish_message, record.message_id, record.teacher_id, record.parent_id)
     return PersistedMessageResponse.model_validate(record)
 
 
 @router.post("/notify-student", response_model=NotifyStudentResponse, status_code=201)
-def notify(payload: NotifyStudentRequest, db: Session = Depends(get_db), user: User = Depends(verify_role(["admin"]))):
+def notify(payload: NotifyStudentRequest, background: BackgroundTasks, db: Session = Depends(get_db), user: User = Depends(verify_role(["admin"]))):
     student = resolve_student(db, payload.student_id)
     authorize_student(db, user, student)
     if not student.is_active:
@@ -82,9 +84,14 @@ def notify(payload: NotifyStudentRequest, db: Session = Depends(get_db), user: U
     parents = db.query(Parent).join(FamilyAccess).join(User, Parent.user_id == User.user_id).filter(FamilyAccess.status == "SYNCED", FamilyAccess.student_id == student.student_id, User.is_active.is_(True), User.role == "user").distinct().all()
     if not parents:
         raise HTTPException(404, "No active parent account is linked to this student.")
+    records = []
     for parent in parents:
-        db.add(Message(teacher_id=teacher.teacher_id, parent_id=parent.parent_id, sender_role=SenderRole.TEACHER, body=f"The official profile for {student.first_name} has been updated. Please review the changes in Child Information."))
+        record = Message(teacher_id=teacher.teacher_id, parent_id=parent.parent_id, sender_role=SenderRole.TEACHER, body=f"The official profile for {student.first_name} has been updated. Please review the changes in Child Information.")
+        records.append(record)
+        db.add(record)
     db.commit()
+    for record in records:
+        background.add_task(publish_message, record.message_id, record.teacher_id, record.parent_id)
     return {"message": "Profile notification sent to linked parents.", "recipients": len(parents)}
 
 
@@ -110,9 +117,14 @@ def unread(db: Session = Depends(get_db), user: User = Depends(verify_role(["adm
 
 @router.put("/read", response_model=SuccessResponse)
 @router.put("/mark-read", response_model=SuccessResponse)
-def mark_read(payload: ConversationRequest, db: Session = Depends(get_db), user: User = Depends(verify_role(["admin", "user"]))):
+def mark_read(payload: ConversationRequest, background: BackgroundTasks, db: Session = Depends(get_db), user: User = Depends(verify_role(["admin", "user"]))):
     authorize_conversation(db, user, payload.teacher_id, payload.parent_id)
     sender = SenderRole.PARENT if user.role.value == "admin" else SenderRole.TEACHER
-    db.query(Message).filter_by(teacher_id=payload.teacher_id, parent_id=payload.parent_id, sender_role=sender, is_archived=False).update({"is_read": True})
+    read_ids = list(db.scalars(update(Message).where(
+        Message.teacher_id == payload.teacher_id, Message.parent_id == payload.parent_id,
+        Message.sender_role == sender, Message.is_archived.is_(False), Message.is_read.is_(False),
+    ).values(is_read=True).returning(Message.message_id)))
     db.commit()
+    if read_ids:
+        background.add_task(publish_read, user.user_id, payload.teacher_id, payload.parent_id, read_ids)
     return {"success": True}

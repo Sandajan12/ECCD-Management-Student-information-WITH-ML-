@@ -5,12 +5,12 @@ import {
   useRef,
   useState,
 } from "react";
-import { io } from "socket.io-client";
-import type { Socket } from "socket.io-client";
+import axios from "axios";
 import { useAuth } from "../context/AuthContext";
+import { useMessaging } from "../context/MessagingContext";
 import API, { errorMessage, isNetworkError } from "../services/api";
 import { confirmDraft, readDraft, storeDraft } from "../utils/drafts";
-import type { Draft } from "../utils/drafts";
+import type { Draft, RecordSyncedEvent } from "../utils/drafts";
 import type { ChatMessage, Contact } from "../types";
 import { Notice } from "./ui";
 import {
@@ -38,16 +38,47 @@ interface ChatInterfaceProps {
   currentUserRole: "teacher" | "parent";
   preferredContactName?: string;
 }
+function compareContacts(left: Contact, right: Contact): number {
+  return (
+    (right.latest_message_time || "").localeCompare(
+      left.latest_message_time || "",
+    ) || left.name.localeCompare(right.name)
+  );
+}
+function mergeMessages(
+  left: ChatMessage[],
+  right: ChatMessage[],
+): ChatMessage[] {
+  const rows = new Map(left.map((row) => [row.message_id, row]));
+  for (const row of right) {
+    const previous = rows.get(row.message_id);
+    rows.set(row.message_id, {
+      ...row,
+      is_read: row.is_read || previous?.is_read || false,
+    });
+  }
+  return [...rows.values()].sort(
+    (a, b) =>
+      a.created_at.localeCompare(b.created_at) || a.message_id - b.message_id,
+  );
+}
 function Composer({ teacherId, parentId, onSaved }: ComposerProps) {
   const { user } = useAuth();
+  const { client } = useMessaging();
   const key = `ames_draft_${user!.id}_message_${teacherId}_${parentId}`;
   const [body, setBody] = useState(
     () => readDraft<MessageDraft>(key)?.values.body || "",
   );
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
+  const [error, setError] = useState(
+    () => readDraft<MessageDraft>(key)?.error || "",
+  );
   const revision = useRef(readDraft<MessageDraft>(key)?.revision || "");
   useEffect(() => {
+    const failed = () => {
+      const draft = readDraft<MessageDraft>(key);
+      if (draft?.error) setError(draft.error);
+    };
     const confirmed = (event: Event) => {
       if (
         (event as CustomEvent<string>).detail === key &&
@@ -56,7 +87,11 @@ function Composer({ teacherId, parentId, onSaved }: ComposerProps) {
         setBody("");
     };
     window.addEventListener("ames-record-synced", confirmed);
-    return () => window.removeEventListener("ames-record-synced", confirmed);
+    window.addEventListener("ames-drafts-changed", failed);
+    return () => {
+      window.removeEventListener("ames-record-synced", confirmed);
+      window.removeEventListener("ames-drafts-changed", failed);
+    };
   }, [key]);
   const change = (value: string) => {
     revision.current = crypto.randomUUID();
@@ -106,6 +141,7 @@ function Composer({ teacherId, parentId, onSaved }: ComposerProps) {
             onSaved(res.data);
           }
         } catch (err) {
+          client.failure(err);
           if (
             !isNetworkError(err) &&
             readDraft<MessageDraft>(key)?.revision === version
@@ -171,16 +207,15 @@ export default function ChatInterface({
   currentUserRole,
   preferredContactName,
 }: ChatInterfaceProps) {
-  const { token } = useAuth();
+  const { user } = useAuth();
+  const { client, ready } = useMessaging();
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [active, setActive] = useState<Contact | null>(null);
   const [ownId, setOwnId] = useState<number | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [error, setError] = useState("");
-  const [, setConnected] = useState(false);
-  const [, setRoomReady] = useState(false);
   const currentRoom = useRef("");
-  const socket = useRef<Socket | null>(null);
+  const alive = useRef(false);
   const bottom = useRef<HTMLDivElement>(null);
   const selectedPreference = useRef("");
   useEffect(() => {
@@ -210,120 +245,197 @@ export default function ChatInterface({
   useLayoutEffect(() => {
     currentRoom.current = room;
   }, [room]);
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
   const refreshContacts = useCallback(async () => {
     try {
-      const res = await API.get<{ myId: number | null; contacts: Contact[] }>(
-        "/api/messages/contacts",
+      const data = await client.request<{
+        myId: number | null;
+        contacts: Contact[];
+      }>("get", "/api/messages/contacts");
+      if (!alive.current) return;
+      setContacts((current) =>
+        data.contacts
+          .map((contact) => {
+            const existing = current.find((row) => row.id === contact.id);
+            return existing?.latest_message_time &&
+              (!contact.latest_message_time ||
+                existing.latest_message_time > contact.latest_message_time)
+              ? {
+                  ...contact,
+                  latest_message_time: existing.latest_message_time,
+                }
+              : contact;
+          })
+          .sort(compareContacts),
       );
-      setContacts(res.data.contacts);
-      setOwnId(res.data.myId);
+      setOwnId(data.myId);
       setActive((current) =>
-        current && res.data.contacts.some((c) => c.id === current.id)
+        current && data.contacts.some((c) => c.id === current.id)
           ? current
           : window.innerWidth >= 900
-            ? res.data.contacts[0] || null
+            ? data.contacts[0] || null
             : null,
       );
+      setError("");
     } catch (err) {
-      setError(errorMessage(err));
+      if (alive.current) setError(errorMessage(err));
+      throw err;
     }
-  }, []);
+  }, [client]);
   useEffect(() => {
-    void refreshContacts();
-  }, [refreshContacts]);
+    if (!ready) return;
+    const timer = setTimeout(() => void refreshContacts().catch(() => {}), 0);
+    return () => clearTimeout(timer);
+  }, [refreshContacts, ready]);
   const refresh = useCallback(async () => {
     if (!teacherId || !parentId) return;
     const selectedRoom = `teacher-${teacherId}-parent-${parentId}`;
     try {
-      const res = await API.get<ChatMessage[]>("/api/messages/history", {
-        params: { teacher_id: teacherId, parent_id: parentId },
-      });
-      if (currentRoom.current !== selectedRoom) return;
-      setMessages(res.data);
-      await API.put("/api/messages/read", {
-        teacher_id: teacherId,
-        parent_id: parentId,
-      });
-      window.dispatchEvent(new Event("ames-messages-read"));
+      const rows = await client.request<ChatMessage[]>(
+        "get",
+        "/api/messages/history",
+        { teacher_id: teacherId, parent_id: parentId },
+      );
+      if (!alive.current || currentRoom.current !== selectedRoom) return;
+      // Keep push messages that arrived while this snapshot was in flight.
+      setMessages((current) => mergeMessages(rows, current));
+      setError("");
     } catch (err) {
-      setError(errorMessage(err));
+      if (alive.current && currentRoom.current === selectedRoom)
+        setError(errorMessage(err));
+      throw err;
     }
-  }, [teacherId, parentId]);
+  }, [teacherId, parentId, client]);
   useEffect(() => {
-    if (!token) return;
-    const connection = io(
-      import.meta.env.VITE_SOCKET_URL ||
-        API.defaults.baseURL ||
-        "http://localhost:8000",
-      { auth: { token }, withCredentials: true },
-    );
-    socket.current = connection;
-    connection.on("connect", () => setConnected(true));
-    connection.on("disconnect", () => {
-      setConnected(false);
-      setRoomReady(false);
+    return client.onRecover(async () => {
+      await Promise.all([refreshContacts(), refresh()]);
     });
-    connection.on("connect_error", () => setConnected(false));
-    connection.on("chat_error", (event: { message: string }) =>
-      setError(event.message),
-    );
-    return () => {
-      connection.disconnect();
-      socket.current = null;
-    };
-  }, [token]);
+  }, [client, refreshContacts, refresh]);
   useEffect(() => {
-    const connection = socket.current;
-    if (!room || !connection) return;
-    let mounted = true;
-    setRoomReady(false);
     setMessages([]);
-    void refresh();
-    const join = () =>
-      connection.emit("join_room", room, (result: { success: boolean }) => {
-        if (mounted && currentRoom.current === room)
-          setRoomReady(result.success);
-      });
-    const recover = () => {
-      join();
-      void refresh();
-      void refreshContacts();
-    };
-    const receive = (message: ChatMessage) => {
+    if (!ready || !room) return;
+    const timer = setTimeout(() => void refresh().catch(() => {}), 0);
+    return () => clearTimeout(timer);
+  }, [room, ready, refresh]);
+  const receive = useCallback(
+    (message: ChatMessage) => {
+      const contactId =
+        currentUserRole === "teacher" ? message.parent_id : message.teacher_id;
+      setContacts((rows) =>
+        rows
+          .map((row) =>
+            row.id === contactId
+              ? {
+                  ...row,
+                  latest_message_time:
+                    !row.latest_message_time ||
+                    message.created_at > row.latest_message_time
+                      ? message.created_at
+                      : row.latest_message_time,
+                }
+              : row,
+          )
+          .sort(compareContacts),
+      );
       if (
-        !mounted ||
-        message.teacher_id !== teacherId ||
-        message.parent_id !== parentId
+        `teacher-${message.teacher_id}-parent-${message.parent_id}` ===
+        currentRoom.current
+      )
+        setMessages((rows) => mergeMessages(rows, [message]));
+    },
+    [currentUserRole],
+  );
+  useEffect(() => client.onMessage(receive), [client, receive]);
+  useEffect(
+    () =>
+      client.onRead((event) => {
+        if (
+          `teacher-${event.teacher_id}-parent-${event.parent_id}` ===
+          currentRoom.current
+        ) {
+          const ids = new Set(event.message_ids);
+          setMessages((rows) =>
+            rows.map((row) =>
+              ids.has(row.message_id) ? { ...row, is_read: true } : row,
+            ),
+          );
+        }
+      }),
+    [client],
+  );
+  useEffect(() => {
+    const synced = (event: Event) => {
+      const { detail, response } = event as RecordSyncedEvent<ChatMessage>;
+      if (
+        detail?.startsWith(`ames_draft_${user?.id}_message_`) &&
+        response?.message_id
+      )
+        client.receive(response);
+    };
+    window.addEventListener("ames-record-synced", synced);
+    return () => window.removeEventListener("ames-record-synced", synced);
+  }, [client, user?.id]);
+  useEffect(() => {
+    if (!teacherId || !parentId) return;
+    const unread = messages.filter(
+      (message) => !message.is_read && message.sender_role !== currentUserRole,
+    );
+    if (!unread.length) return;
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const mark = async () => {
+      if (
+        stopped ||
+        document.visibilityState !== "visible" ||
+        !navigator.onLine
       )
         return;
-      setMessages((rows) =>
-        rows.some((row) => row.message_id === message.message_id)
-          ? rows
-          : [...rows, message],
-      );
-      void API.put("/api/messages/read", {
-        teacher_id: teacherId,
-        parent_id: parentId,
-      })
-        .then(() => window.dispatchEvent(new Event("ames-messages-read")))
-        .catch(() => {});
-      void refreshContacts();
+      try {
+        await client.request("put", "/api/messages/read", {
+          teacher_id: teacherId,
+          parent_id: parentId,
+        });
+        if (stopped || currentRoom.current !== room) return;
+        const ids = new Set(unread.map((message) => message.message_id));
+        setMessages((rows) =>
+          rows.map((row) =>
+            ids.has(row.message_id) ? { ...row, is_read: true } : row,
+          ),
+        );
+        client.invalidateUnread();
+      } catch (err) {
+        const status = axios.isAxiosError(err)
+          ? err.response?.status
+          : undefined;
+        if (
+          !stopped &&
+          (client.isCoolingDown() ||
+            isNetworkError(err) ||
+            status === 429 ||
+            (status && status >= 500))
+        )
+          timer = setTimeout(() => void mark(), client.retryDelay());
+      }
     };
-    connection.on("connect", recover);
-    connection.on("receive_message", receive);
-    if (connection.connected) join();
-    const poll = setInterval(() => void refresh(), 15000);
-    const synced = () => void refresh();
-    window.addEventListener("ames-record-synced", synced);
+    const schedule = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => void mark(), 250);
+    };
+    schedule();
+    document.addEventListener("visibilitychange", schedule);
+    window.addEventListener("online", schedule);
     return () => {
-      mounted = false;
-      clearInterval(poll);
-      connection.off("connect", recover);
-      connection.off("receive_message", receive);
-      connection.emit("leave_room", room);
-      window.removeEventListener("ames-record-synced", synced);
+      stopped = true;
+      clearTimeout(timer);
+      document.removeEventListener("visibilitychange", schedule);
+      window.removeEventListener("online", schedule);
     };
-  }, [room, refresh, refreshContacts, teacherId, parentId, token]);
+  }, [messages, teacherId, parentId, room, currentUserRole, client]);
   useEffect(() => {
     bottom.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }, [messages]);
@@ -599,18 +711,7 @@ export default function ChatInterface({
                   key={room}
                   teacherId={teacherId}
                   parentId={parentId}
-                  onSaved={(m) => {
-                    setMessages((rows) =>
-                      rows.some((row) => row.message_id === m.message_id)
-                        ? rows
-                        : [...rows, m],
-                    );
-                    socket.current?.emit("send_message", {
-                      room,
-                      message_id: m.message_id,
-                    });
-                    void refreshContacts();
-                  }}
+                  onSaved={(message) => client.receive(message)}
                 />
               )}
             </>

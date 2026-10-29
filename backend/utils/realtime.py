@@ -1,15 +1,16 @@
 """Socket.IO transports persisted messages; the database remains authoritative."""
+import logging
 import re
 import socketio
 from starlette.concurrency import run_in_threadpool
-from starlette.datastructures import QueryParams
+from starlette.datastructures import Headers, QueryParams
 from starlette.responses import JSONResponse
 from fastapi import HTTPException
 from pydantic import ValidationError
 from backend.config.database import SessionLocal
 from backend.models import Message
 from backend.models.message import SenderRole
-from backend.schemas.message import MessageResponse, SocketMessageRequest
+from backend.schemas.message import MessageResponse, MessagesReadEvent, SocketMessageRequest
 from backend.utils.authentication import session_user
 from backend.utils.messaging import authorize_conversation
 from backend.config.settings import settings
@@ -20,6 +21,52 @@ sio = socketio.AsyncServer(async_mode="asgi", cors_allowed_origins=settings.allo
 connections: dict[str, str] = {}
 generations: dict[str, int] = {}
 socket_clients: dict[str, str] = {}
+logger = logging.getLogger(__name__)
+
+
+def committed_payload(token: str, teacher_id: int, parent_id: int, message_id: int) -> dict | None:
+    """Reload both identity and relationship for every target, including idle tabs."""
+    with SessionLocal() as db:
+        user = session_user(db, token)
+        authorize_conversation(db, user, teacher_id, parent_id)
+        record = db.query(Message).filter_by(message_id=message_id, teacher_id=teacher_id, parent_id=parent_id, is_archived=False).first()
+        return MessageResponse.model_validate(record).model_dump(mode="json") if record else None
+
+
+async def publish_message(message_id: int, teacher_id: int, parent_id: int) -> None:
+    # REST persistence is authoritative. Push failures must never turn a committed
+    # save into a retryable HTTP failure (and risk duplicate messages).
+    for sid, token in list(connections.items()):
+        try:
+            payload = await run_in_threadpool(committed_payload, token, teacher_id, parent_id, message_id)
+            if payload and connections.get(sid) == token:
+                await sio.emit("receive_message", payload, to=sid)
+        except HTTPException:
+            continue
+        except Exception:
+            logger.warning("Committed message push unavailable", exc_info=False)
+
+
+def read_payload(token: str, reader: int, teacher_id: int, parent_id: int, message_ids: list[int]) -> dict | None:
+    with SessionLocal() as db:
+        user = session_user(db, token)
+        if user.user_id != reader:
+            return None
+        authorize_conversation(db, user, teacher_id, parent_id)
+        role = SenderRole.TEACHER if user.role.value == "admin" else SenderRole.PARENT
+        return MessagesReadEvent(teacher_id=teacher_id, parent_id=parent_id, reader_role=role, message_ids=message_ids).model_dump(mode="json")
+
+
+async def publish_read(reader: int, teacher_id: int, parent_id: int, message_ids: list[int]) -> None:
+    for sid, token in list(connections.items()):
+        try:
+            payload = await run_in_threadpool(read_payload, token, reader, teacher_id, parent_id, message_ids)
+            if payload and connections.get(sid) == token:
+                await sio.emit("messages_read", payload, to=sid)
+        except HTTPException:
+            continue
+        except Exception:
+            logger.warning("Committed read receipt push unavailable", exc_info=False)
 
 
 class SocketHandshakeMiddleware:
@@ -35,7 +82,11 @@ class SocketHandshakeMiddleware:
                 status, message = 503, "Connection service is temporarily unavailable."
             if retry or status == 503:
                 if scope["type"] == "http":
-                    response = JSONResponse({"success": False, "status": status, "message": message}, status_code=status, headers={"Retry-After": str(retry)} if retry else {})
+                    headers = {"Retry-After": str(retry)} if retry else {}
+                    origin = Headers(scope=scope).get("origin")
+                    if origin in settings.allowed_origins:
+                        headers.update({"Access-Control-Allow-Origin": origin, "Access-Control-Allow-Credentials": "true", "Access-Control-Expose-Headers": "Retry-After", "Vary": "Origin"})
+                    response = JSONResponse({"success": False, "status": status, "message": message, "retryAfter": retry}, status_code=status, headers=headers)
                     await response(scope, receive, send)
                 else:
                     await send({"type": "websocket.close", "code": 1008, "reason": message})

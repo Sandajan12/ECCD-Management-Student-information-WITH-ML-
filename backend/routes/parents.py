@@ -1,5 +1,5 @@
 from backend.schemas.student import ChildPublicResponse as ChildProfileResponse
-from backend.schemas.student import EnrollmentResponse
+from backend.schemas.student import ParentLinkResponse
 from backend.schemas.common import MessageResult
 from typing import Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -39,7 +39,7 @@ def get_parent_children(db: Session = Depends(get_db), current_user: User = Depe
     return linked_children(db, current_user)
 
 
-@router.post("/children/link", response_model=EnrollmentResponse)
+@router.post("/children/link", response_model=ParentLinkResponse)
 def link_child_to_parent(payload: ParentLinkChildRequest, db: Session = Depends(get_db), current_user: User = Depends(verify_role(["user"]))):
     from backend.routes.students import link_child
     from backend.schemas.student import FamilyAccessCreate

@@ -1,6 +1,6 @@
 # AMES System: Current Codebase Context
 
-Updated: **2026-10-26**. This document describes the active working tree in
+Updated: **2026-10-27**. This document describes the active working tree in
 `backend/` and `frontend/`, including existing uncommitted changes. Local
 configuration observations are a snapshot, not deployment defaults or a claim
 that every workflow has passed testing. Current-state descriptions were checked
@@ -650,7 +650,12 @@ incorrect-current-password responses.
   permits Chairman writes and teachers with allow_eccd_question_management.
 - `utils/rate_limits.py` defines fixed-window HTTP and Socket.IO budgets. The
   login budget is **15 requests per 15 minutes**, shared across login aliases;
-  general API traffic is 120 requests per minute. Production counters use the
+  general API traffic is 120 requests per minute. Exact messaging GETs
+  (contacts/history/unread aliases), read-receipt PUTs, and send/notify POSTs
+  instead use independent shared-IP budgets of 240, 120, and 60 per minute.
+  Aliases share their operation's bucket; malformed/unauthenticated requests
+  count. `/api/messages/link-lrn` retains the general and student-link policies.
+  Production counters use the
   PostgreSQL `api_rate_limits` table, except per-socket packet counters; development
   uses process-local counters. Exhaustion returns HTTP 429 with Retry-After;
   unavailable shared storage returns sanitized HTTP 503.
@@ -699,13 +704,54 @@ Score release and checklist marks are independent gates:
   corresponding editing window are enabled. Local unsaved inputs remain durable.
 
 Parents must have a **SYNCED** family link; PENDING requests grant no child-data
-access. Parent-initiated linking creates a PENDING request until an assigned
-teacher approves it. Profile/guardian reads mask locked fields, and updates/home
+access. All three parent link aliases (`/api/students/link`,
+`/api/parents/children/link`, `/api/messages/link-lrn`) immediately create a
+SYNCED link for a student's first account claim when there is no account-link
+history. Teacher-entered guardian-only records do not count as prior account
+access. After an unlink, rejection, or recorded account claim, a new claim is
+PENDING until the assigned teacher approves it. The history lookup uses exact
+audit metadata student IDs and conservatively requires approval for exact
+student-name matches in the known historical plain-text unlink format,
+including namesakes. Deleted logs and old name-only logs for renamed students
+cannot reliably establish prior history; no migration or backfill is applied.
+Student locking protects conflict/history checks and insertion; links and
+ID-bearing claim audits commit together. A current claim blocks other accounts;
+same-parent retries return the existing status without duplicates or promoting
+pending requests. Existing PENDING records retain their status. The dedicated
+ParentLinkResponse adds `status: SYNCED | PENDING` to the existing message,
+student_id and masked_lrn fields, independently of enrollment responses.
+Dashboard feedback follows this status for direct saves and offline replay;
+background sync preserves the existing event's key detail and additionally
+provides its server response for consumers that need it. Roster refresh and
+revision-safe draft cleanup remain in place. Registration still links children
+through the dashboard. Auto-sync does not bypass adviser permissions.
+Profile/guardian reads mask locked fields, and updates/home
 saves enforce their respective global permissions with HTTP 403. Section editing
 windows (`PRE=true`, `MID=false`, `POST=false` defaults) are additional write
 gates, controlled only by the active adviser. A closed period returns HTTP 403
 with `Editing for [Pre-Test/Mid-Test/Post-Test] is currently closed by the teacher.`
 Frontend locked states and disabled controls supplement backend enforcement.
+
+Parent profile saves use changed fields compared with a baseline persisted in
+the owner/student-scoped draft. Omitted guardian fields are preserved; explicit
+nulls clear optional details. Existing guardian names cannot be cleared, and new
+guardian details require a name (HTTP 422). An absent blank guardian is a no-op.
+M6 checks every linked sibling, including pending/archived links, only when the
+merged guardian record changes; rejected requests roll back student, guardian
+and audit writes together. Shared records are never forked. Workbook callers
+retain complete-record semantics. Parent feedback distinguishes confirmed HTTP
+200/201 saves, pending device-only saves and persisted rejection details. Legacy
+drafts remain readable and queued requests are replayed without rewriting them.
+Teacher rosters ignore superseded responses; clean open details refresh on
+focus/reconnection, while unsaved teacher drafts are preserved and labelled.
+Regressions are in `backend/tests/test_parent_student_updates.py` and
+`frontend/tests/parent-profile.spec.ts`, included in parent-sync CI.
+Verified locally on 2026-10-27: 70 focused backend tests and full discovery of
+369 tests pass against disposable PostgreSQL schemas; all 48 desktop/mobile
+parent-sync browser cases pass (46 initially, two after correcting an existing
+import-alert locator). Both TypeScript projects, browser-test type checks, full
+frontend lint and production build pass. Application/deployment environment
+files and production data were not changed.
 
 ## 7. Assessments, age, and analytics
 
@@ -775,6 +821,50 @@ rows remain; return shape is
 Cross-section updates are rejected. Do not assume teacher batch-date validation
 also runs in this separate importer.
 
+`POST /api/teachers/import-students` accepts optional multipart
+`overwrite_section` (Boolean, default false). A section-name mismatch returns
+HTTP 409 with top-level `detail`, `code: "SECTION_MISMATCH"`, `file_section`
+and `assigned_section`, before any student writes. Section/class labels in the
+first two Info Sheet rows and the legacy standalone A1 header supply the file
+name; ambiguous/missing names display `"Not identified"`. Labelled matching
+headers and the existing case-insensitive metadata match are accepted.
+Confirmation bypasses only this name check: active Primary Adviser ownership
+of the target section and rejection of existing students in other sections
+remain enforced. All imported records use the authorized section ID/name.
+
+Teacher Student Management displays a responsive **Section Mismatch Detected**
+confirmation with Cancel and **Overwrite & Import**. Cancel retains the file;
+confirmation is bound to its revision and target section. File replacement or
+section reassignment invalidates it. Re-import uses the existing durable upload
+pipeline, preserving the explicit overwrite flag and target for offline retry.
+Pending uploads lock controls and show progress. Completed requests refresh the
+roster and show the existing row summary; only imports without failed rows show
+the section-specific success toast and clear the confirmed file. Partial failures
+retain the workbook for correction.
+
+Section-confirmation verification (2026-10-27): 15 database-free backend tests,
+Python compilation, app/tooling and browser-test TypeScript checks, full frontend
+lint and production build pass. Requested backend modules discover 82 tests;
+the CI browser configuration lists 24 desktop/mobile cases, including 16 new
+teacher-import cases. Discovery is not execution: the four new database-backed
+multipart regressions and browser cases await the existing CI workflow. No local
+database, API or browser server was started for this change.
+
+Workbook resource validation accepts up to **64 worksheets**, including hidden
+tabs. The worksheet-limit error reports the supported maximum. Other limits
+remain: 20 MiB upload, 50 MiB expanded archive, 128 ZIP members, 2,000 rows and
+250,000 explicit workbook cells (including empty styled cells). XML dimensions,
+cell references, merged ranges and column styling may extend through Excel's
+native **XFD / 16,384-column** ceiling. Import iteration is separately bounded
+to **100 columns for Info Sheet and 256 for assessment sheets**; SH, C and SE
+answers extend beyond column 100 (the reference SH checklist requires 164).
+The existing layout retains names in B and LRN in F, date/guardian mappings,
+and dynamically derived age. XML validation, duplicate relationship checks,
+separate byte streams, read-only loading and worksheet dimension resets remain
+active. Blank trailing student rows are skipped. This supports extra EasyCD tabs around the
+Info Sheet/domain import format; it does not add CHECKLIST-export import support
+or establish acceptance of any particular production workbook.
+
 Exports use supplied blank assets, both present in this checkout:
 
 - `backend/assets/templates/ECCD_Checklist_Blank_Template.xlsx`: CHECKLIST,
@@ -801,11 +891,53 @@ aliases; saved responses include IDs and body/content. notify-student persists
 notices for active linked parents.
 
 Socket.IO uses `auth: { token }`, authorized rooms `teacher-N-parent-M`, and
-room acknowledgement. **HTTP persistence is authoritative**: save first, then
-emit send_message with `{ room, message_id }`. Server reloads the sender-owned
-saved message and rechecks recipient access; client bodies cannot override it.
-Chat deduplicates IDs, recovers HTTP history on reconnect, and polls open threads.
-Restore disconnects active chat sessions.
+room acknowledgement for existing clients. **HTTP persistence is authoritative**:
+committed REST sends (including offline replay) and profile notifications push
+the saved message to every currently authorized participant session, including
+other tabs, without a sender-side socket event. Delivery reloads live credentials,
+relationships and saved records in worker threads; transport failures do not turn
+confirmed saves into HTTP failures. The existing `send_message` interface with
+`{ room, message_id }` remains compatible and still rejects spoofed bodies.
+Committed read receipts push `messages_read` only to the reader's authorized tabs,
+with conversation IDs, reader role and the exact confirmed message IDs. An older
+receipt cannot mark a newer arrival read. Restore disconnects active chat sessions.
+
+`context/MessagingContext.tsx` and `services/messaging.ts` own one connection per
+authenticated portal tab, inside the lazy portal bundle. The layout's 3-second
+unread timer and chat's 15-second history timer are removed. Healthy connections
+hydrate unread count/contacts/selected history once, then merge/deduplicate push
+messages locally and order contacts without refetching. Read requests coalesce
+over 250ms for incoming unread messages in the visible selected thread; unread
+refreshes coalesce across delivery/read events. Reconnect recovers the current
+thread, contacts and badge; requests deduplicate in flight and account cleanup
+aborts outstanding reads. Focus/visibility and unrelated draft-sync events cause
+no healthy-socket refreshes.
+
+When push is unavailable, one coordinator runs HTTP fallback after 30 seconds,
+backs failed cycles off to 60/120 seconds, and pauses while hidden/offline.
+Socket cooldown reconnects take precedence over fallback to prevent overlapping
+recovery cycles. HTTP `Retry-After`, handshake 429s and socket `retryAfter` share
+cooldown controls; allowed origins can read the retry header. Rejected direct or
+queued message sends retain their scoped draft and require explicit submission;
+network failures remain queued. Other forms retain their existing replay rules.
+Composer cleanup remains revision-safe and HTTP-confirmation-bound.
+Push delivery remains process-local, matching the current single-process
+deployment assumption. Multiple API processes would require a shared event
+transport; the PostgreSQL rate counters are already shared independently.
+
+Messaging verification (2026-10-27): **37 focused backend regressions** and the
+complete **22 desktop/mobile browser cases** pass against disposable PostgreSQL
+schemas. At 1280px and 375px, separate Teacher/Parent contexts each make one
+initial contacts/history/unread GET, retain one messaging socket, and make
+**zero additional messaging REST requests over two real idle minutes**. Live
+sends/notifications, multi-tab reads, delayed history, drafts/replay/revisions,
+account cleanup, fallback/backoff and HTTP/handshake/socket cooldowns pass.
+Browser rate responses are controlled injections; backend regressions separately
+enforce actual quotas, alias sharing and production PostgreSQL counters. Both
+TypeScript projects, browser-test typing, full frontend lint, production build,
+formatting and Python compilation pass. See `MESSAGES_REQUEST_LOOP_FIX_PLAN.md`,
+`backend/tests/test_messaging_push.py`, and `frontend/tests/messaging.spec.ts`.
+No database migration or application school-data change was required.
 
 Settings include school/principal names, branding, current year, and opening
 month (default August). Public settings GET creates singleton defaults if absent;
@@ -1018,8 +1150,8 @@ that test server or direct reset operations at school data.
 restricted to the local development database. SMTP diagnostic scripts can send
 real mail and are not ordinary read-only checks.
 
-The following are the **six Playwright configurations currently present** in
-`frontend/`; each selects the correspondingly named spec in `frontend/tests/`:
+The following Playwright configurations in `frontend/` support targeted checks;
+each selects the correspondingly named spec in `frontend/tests/`:
 
 | Configuration | Spec | UI origin | Test API | Server management |
 | --- | --- | --- | --- | --- |
@@ -1029,6 +1161,33 @@ The following are the **six Playwright configurations currently present** in
 | `playwright.ml-sandbox.config.ts` | `ml-sandbox.spec.ts` | http://127.0.0.1:5186 | 8774 | Starts disposable API and Vite; desktop/mobile |
 | `playwright.terms-privacy.config.ts` | `terms-privacy.spec.ts` | http://127.0.0.1:5188 | 8775 | Starts disposable API and Vite; desktop/tablet/mobile |
 | `playwright.ml-insights.config.ts` | `ml-insights.spec.ts` | http://localhost:5173 | 8769, started separately | Starts/reuses Vite only; Desktop Chrome project, spec adjusts viewport |
+| `playwright.parent-sync.config.ts` | `parent-sync.spec.ts` | http://127.0.0.1:5190 | Mocked API | CI starts Vite only; desktop/mobile, no school database |
+
+Parent-sync/Excel verification on **2026-10-27**: 10 database-free backend
+checks passed, including all three link response contracts and acceptance of
+17/64 sheets with hidden tabs versus rejection of 65. Python compilation,
+dependency consistency, frontend app/tooling TypeScript, explicit browser-test
+type checking, full lint, formatting and production build passed. Playwright
+discovery lists eight parent-sync cases; those browser cases have not been
+executed. No local database/API/browser servers were started. These checks used
+synthetic process-only settings; no local backend configuration was created.
+`.github/workflows/parent-sync-excel.yml` prepares the six focused backend
+modules against disposable PostgreSQL and frontend/browser checks using mocked
+APIs. The workflow has not been executed in this session. Deployment acceptance,
+including the exact production workbook, remains outstanding; see
+`PARENT_SYNC_AND_EXCEL_IMPORT_FIX_PLAN.md`.
+
+EasyCD XFD-formatting follow-up on **2026-10-27**: 11 database-free backend
+tests passed, covering native-grid styling/dimensions, bounded reads including
+assessment column 164, malformed cells, styled-cell budgets, 65-sheet rejection,
+129-member rejection, and a genuinely compressed archive exceeding 50 MiB when
+expanded. The two requested backend modules discover 74 tests; discovery does
+not execute their database integrations. Python compilation, frontend app/tooling
+TypeScript, full lint and production build passed. A multipart integration test
+also covers demographics, both guardians, late assessment marks, blank trailing
+rows and repeat imports; its execution remains scheduled in the existing CI
+workflow. No local servers or database connections were used, and the exact
+production workbook has not been tested.
 
 Use an explicit configuration, for example:
 

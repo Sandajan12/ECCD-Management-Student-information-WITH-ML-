@@ -170,6 +170,8 @@ class ParityTests(unittest.TestCase):
             db.commit()
         result = self.call("POST", "/api/parents/children/link", 5, json={"lrn_number": "001111111111"})
         self.assertEqual(result.status_code, 200, result.text)
+        self.assertEqual(result.json()["status"], "SYNCED")
+        self.assertEqual(self.call("GET", "/api/students/3", 5).status_code, 200)
         with self.sessions() as db:
             self.assertEqual(db.query(FamilyAccess).filter_by(student_id=3, parent_id=1).one().relationship_type, "Father")
         payload = {"legal_guardian_name": "Test Guardian", "legal_guardian_age": "32", "legal_guardian_occ": "Teacher", "legal_guardian_educ": "College"}

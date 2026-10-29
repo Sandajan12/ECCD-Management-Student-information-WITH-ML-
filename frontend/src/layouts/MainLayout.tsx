@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { NavLink, Outlet } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useSettings } from "../context/SettingsContext";
+import { MessagingProvider, useMessaging } from "../context/MessagingContext";
 import API from "../services/api";
 import SyncStatus from "../components/SyncStatus";
 import LegacyRipple from "../components/LegacyRipple";
@@ -20,6 +21,13 @@ interface MainLayoutProps {
 }
 // Legacy visual source: components/MainLayout.jsx, MUI md = 900px.
 export default function MainLayout({ children }: MainLayoutProps) {
+  return (
+    <MessagingProvider>
+      <MainLayoutContent>{children}</MainLayoutContent>
+    </MessagingProvider>
+  );
+}
+function MainLayoutContent({ children }: MainLayoutProps) {
   const { user, token, login, logout } = useAuth();
   const { settings } = useSettings();
   const [open, setOpen] = useState(false);
@@ -70,7 +78,7 @@ export default function MainLayout({ children }: MainLayoutProps) {
       previous?.focus();
     };
   }, [open, mobile]);
-  const [unread, setUnread] = useState(0);
+  const { unread } = useMessaging();
   const role = user?.role;
   useEffect(() => {
     if (role !== "admin" || !user || !token) return;
@@ -195,25 +203,6 @@ export default function MainLayout({ children }: MainLayoutProps) {
             },
             { title: "Messages", path: "/parent/messages", icon: "Message" },
           ];
-  useEffect(() => {
-    if (role === "super-admin") return;
-    let mounted = true;
-    const refresh = () => {
-      void API.get<{ unreadCount: number }>("/api/messages/unread-count")
-        .then((res) => {
-          if (mounted) setUnread(res.data.unreadCount);
-        })
-        .catch(() => {});
-    };
-    refresh();
-    const timer = setInterval(refresh, 3000);
-    window.addEventListener("ames-messages-read", refresh);
-    return () => {
-      mounted = false;
-      clearInterval(timer);
-      window.removeEventListener("ames-messages-read", refresh);
-    };
-  }, [role]);
   const badge = (item: NavItem, bottom = false) =>
     item.title === "Messages" && unread > 0 ? (
       <span

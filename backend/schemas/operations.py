@@ -1,5 +1,6 @@
 """Typed contracts for administrative lists and spreadsheet operations."""
 from datetime import date, datetime
+from typing import Literal
 from pydantic import Field, computed_field
 from .common import ApiModel, PositiveId
 
@@ -39,6 +40,13 @@ class ImportResult(ApiModel):
     successCount: int = Field(ge=0)
     failedCount: int = Field(ge=0)
     errors: list[ImportErrorItem]
+
+
+class SectionMismatchResponse(ApiModel):
+    detail: str = "The file section does not match your assigned section."
+    code: Literal["SECTION_MISMATCH"] = "SECTION_MISMATCH"
+    file_section: str
+    assigned_section: str
 
 
 class ScoreResult(ApiModel):

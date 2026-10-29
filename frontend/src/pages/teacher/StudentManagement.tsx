@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
+import { isAxiosError } from "axios";
 import {
   Box,
   Typography,
@@ -20,6 +21,7 @@ import {
   Alert,
   Avatar,
   LinearProgress,
+  CircularProgress,
   Select,
   MenuItem,
   Grid,
@@ -51,7 +53,17 @@ import {
 import type { Draft } from "../../utils/drafts";
 import { useDurableFile } from "../../utils/fileDrafts";
 import { calculateRosterAge } from "../../utils/dateUtils";
-import type { ImportResult, Student, Teacher } from "../../types";
+import type {
+  ImportResult,
+  SectionMismatchResponse,
+  Student,
+  Teacher,
+} from "../../types";
+interface ImportSectionMismatch extends SectionMismatchResponse {
+  file: File;
+  revision: string;
+  sectionId: number;
+}
 type TeacherIdentity = Pick<Teacher, "user_id" | "first_name" | "last_name">;
 interface StudentFormValues {
   lrn_number: string;
@@ -213,9 +225,12 @@ const StudentManagement: React.FC = () => {
   const [editingLrn, setEditingLrn] = useState(0);
   const editingId = useRef(0);
   const editVersion = useRef(0);
+  const rosterVersion = useRef(0);
   const submissionLock = useRef(false);
   const [submitting, setSubmitting] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [editHasDraft, setEditHasDraft] = useState(false);
+  const editDirty = useRef(false);
   const [importOpen, setImportOpen] = useState(false);
   const workbook = useDurableFile("teacher_import");
   const importFile = workbook.file;
@@ -223,6 +238,17 @@ const StudentManagement: React.FC = () => {
   const importLock = useRef(false);
   const [importSummary, setImportSummary] = useState<ImportResult | null>(null);
   const [importError, setImportError] = useState("");
+  const [sectionMismatch, setSectionMismatch] =
+    useState<ImportSectionMismatch | null>(null);
+  const [importNotice, setImportNotice] = useState<string>("");
+  useEffect(() => {
+    if (
+      sectionMismatch &&
+      (sectionMismatch.file !== importFile ||
+        sectionMismatch.sectionId !== section?.section_id)
+    )
+      setSectionMismatch(null);
+  }, [importFile, section?.section_id, sectionMismatch]);
   const createForm = useDurableForm(
     "teacher_student_new_" + section?.section_id,
     emptyForm,
@@ -283,9 +309,12 @@ const StudentManagement: React.FC = () => {
     };
   }, [owner]);
   const fetchActiveStudents = useCallback(async () => {
+    const version = ++rosterVersion.current;
     try {
       const response = await api.get<Student[]>("/api/students/");
+      if (version !== rosterVersion.current) return;
       setStudents(response.data);
+      setError("");
       try {
         localStorage.setItem(
           "ames_teacher_roster_" + owner,
@@ -295,6 +324,7 @@ const StudentManagement: React.FC = () => {
         /* Server data remains usable when device storage is full. */
       }
     } catch (err) {
+      if (version !== rosterVersion.current) return;
       if (isNetworkError(err)) {
         try {
           setStudents(
@@ -327,6 +357,7 @@ const StudentManagement: React.FC = () => {
     window.addEventListener("focus", reload);
     window.addEventListener("ames-record-synced", reload);
     return () => {
+      ++rosterVersion.current;
       window.removeEventListener("online", reload);
       window.removeEventListener("focus", reload);
       window.removeEventListener("ames-record-synced", reload);
@@ -368,6 +399,8 @@ const StudentManagement: React.FC = () => {
       is_pending_sync: false,
     });
     setEditFormData(next);
+    editDirty.current = true;
+    setEditHasDraft(true);
   };
   const handleSaveStudent = async () => {
     if (submissionLock.current) return;
@@ -416,51 +449,86 @@ const StudentManagement: React.FC = () => {
       setSubmitting(false);
     }
   };
-  const handleEditClick = async (student: Student) => {
-    const id = student.student_id;
-    const version = ++editVersion.current;
-    editingId.current = id;
-    setEditingLrn(id);
-    setEditError("");
-    setEditFormData(
-      readDraft<StudentFormValues>(editKey(id))?.values || emptyForm,
-    );
-    setEditOpen(true);
-    setDetailLoading(true);
-    try {
-      const cacheKey = "ames_teacher_student_cache_" + owner + "_" + id;
-      let data: Student;
-      try {
-        const response = await api.get<Student>("/api/students/" + id);
-        data = response.data;
-        try {
-          localStorage.setItem(cacheKey, JSON.stringify(data));
-        } catch {
-          /* Server data remains usable when device storage is full. */
-        }
-      } catch (err) {
-        if (!isNetworkError(err)) throw err;
-        const cached = JSON.parse(
-          localStorage.getItem(cacheKey) || "null",
-        ) as Student | null;
-        if (!cached) throw err;
-        data = cached;
-      }
-      if (version !== editVersion.current) return;
-      const hydrated = { ...emptyForm };
-      for (const field of Object.keys(emptyForm) as (keyof StudentFormValues)[])
-        hydrated[field] = String(data[field as keyof Student] ?? "");
-      hydrated.lrn_number = data.masked_lrn;
-      hydrated.date_of_birth = data.date_of_birth?.split("T")[0] || "";
+  const loadEditDetails = useCallback(
+    async (id: number) => {
+      const version = ++editVersion.current;
+      editingId.current = id;
+      setEditingLrn(id);
+      setEditError("");
+      editDirty.current = Boolean(readDraft(editKey(id)));
+      setEditHasDraft(Boolean(readDraft(editKey(id))));
       setEditFormData(
-        readDraft<StudentFormValues>(editKey(id))?.values || hydrated,
+        readDraft<StudentFormValues>(editKey(id))?.values || emptyForm,
       );
-    } catch (err) {
-      if (version === editVersion.current) setEditError(errorMessage(err));
-    } finally {
-      if (version === editVersion.current) setDetailLoading(false);
-    }
-  };
+      setEditOpen(true);
+      setDetailLoading(true);
+      try {
+        const cacheKey = "ames_teacher_student_cache_" + owner + "_" + id;
+        let data: Student;
+        try {
+          const response = await api.get<Student>("/api/students/" + id);
+          if (version !== editVersion.current) return;
+          data = response.data;
+          try {
+            localStorage.setItem(cacheKey, JSON.stringify(data));
+          } catch {
+            /* Server data remains usable when device storage is full. */
+          }
+        } catch (err) {
+          if (!isNetworkError(err)) throw err;
+          const cached = JSON.parse(
+            localStorage.getItem(cacheKey) || "null",
+          ) as Student | null;
+          if (!cached) throw err;
+          data = cached;
+          if (version === editVersion.current)
+            setEditError(
+              "Showing the last saved copy on this device. Reconnect to refresh.",
+            );
+        }
+        if (version !== editVersion.current) return;
+        const hydrated = { ...emptyForm };
+        for (const field of Object.keys(
+          emptyForm,
+        ) as (keyof StudentFormValues)[])
+          hydrated[field] = String(data[field as keyof Student] ?? "");
+        hydrated.lrn_number = data.masked_lrn;
+        hydrated.date_of_birth = data.date_of_birth?.split("T")[0] || "";
+        setEditFormData(
+          readDraft<StudentFormValues>(editKey(id))?.values || hydrated,
+        );
+        setEditHasDraft(Boolean(readDraft(editKey(id))));
+      } catch (err) {
+        if (version === editVersion.current) setEditError(errorMessage(err));
+      } finally {
+        if (version === editVersion.current) setDetailLoading(false);
+      }
+    },
+    [owner],
+  );
+  const handleEditClick = (student: Student) =>
+    loadEditDetails(student.student_id);
+  useEffect(() => {
+    if (!editOpen) return;
+    const refreshDetails = () => {
+      const id = editingId.current;
+      if (
+        !id ||
+        submissionLock.current ||
+        editDirty.current ||
+        readDraft(editKey(id))
+      )
+        return;
+      void loadEditDetails(id);
+    };
+    window.addEventListener("focus", refreshDetails);
+    window.addEventListener("online", refreshDetails);
+    return () => {
+      ++editVersion.current;
+      window.removeEventListener("focus", refreshDetails);
+      window.removeEventListener("online", refreshDetails);
+    };
+  }, [editOpen, loadEditDetails, owner]);
   const handleUpdateStudent = async () => {
     if (submissionLock.current || detailLoading) return;
     const validation = validateStudent(editFormData);
@@ -568,10 +636,27 @@ const StudentManagement: React.FC = () => {
     workbook.choose(file);
     setImportError("");
   };
-  const handleImportSubmit = async () => {
+  const handleImportSubmit = async (overwriteSection = false) => {
     if (!importFile || importLock.current) return;
     if (!section) {
       setImportError("An active section assignment is required.");
+      return;
+    }
+    const revision = workbook.revision.current;
+    const targetSectionId = section.section_id;
+    const targetSectionName =
+      sectionMismatch?.assigned_section || section.section_name;
+    if (
+      overwriteSection &&
+      (!sectionMismatch ||
+        sectionMismatch.file !== importFile ||
+        sectionMismatch.revision !== revision ||
+        sectionMismatch.sectionId !== targetSectionId)
+    ) {
+      setSectionMismatch(null);
+      setImportError(
+        "The workbook or section changed. Import again to confirm the current section.",
+      );
       return;
     }
     importLock.current = true;
@@ -580,16 +665,38 @@ const StudentManagement: React.FC = () => {
     try {
       const result = await workbook.upload<ImportResult>(
         "/api/teachers/import-students",
-        { section_id: String(section.section_id) },
+        {
+          section_id: String(targetSectionId),
+          ...(overwriteSection ? { overwrite_section: "true" } : {}),
+        },
       );
       if (result) {
+        setSectionMismatch(null);
         setImportSummary(result);
         setImportOpen(false);
+        if (!result.failedCount)
+          setImportNotice(
+            `Successfully imported ${result.successCount} ${result.successCount === 1 ? "student" : "students"} into ${targetSectionName}.`,
+          );
         void fetchActiveStudents();
-      } else
+      } else {
+        setSectionMismatch(null);
         setImportError("Workbook saved locally and queued for reconnection.");
+      }
     } catch (err) {
-      setImportError(errorMessage(err));
+      if (
+        isAxiosError<SectionMismatchResponse>(err) &&
+        err.response?.data?.code === "SECTION_MISMATCH" &&
+        typeof err.response.data.file_section === "string" &&
+        typeof err.response.data.assigned_section === "string"
+      ) {
+        setSectionMismatch({
+          ...err.response.data,
+          file: importFile,
+          revision,
+          sectionId: targetSectionId,
+        });
+      } else setImportError(errorMessage(err));
     } finally {
       importLock.current = false;
       setImporting(false);
@@ -1007,6 +1114,19 @@ const StudentManagement: React.FC = () => {
           {parentNotice}
         </Alert>
       </Snackbar>
+      <Snackbar
+        open={Boolean(importNotice)}
+        autoHideDuration={6000}
+        onClose={() => setImportNotice("")}
+      >
+        <Alert
+          severity="success"
+          onClose={() => setImportNotice("")}
+          sx={{ borderRadius: 3 }}
+        >
+          {importNotice}
+        </Alert>
+      </Snackbar>
       <Dialog
         open={editOpen}
         onClose={() => setEditOpen(false)}
@@ -1024,6 +1144,12 @@ const StudentManagement: React.FC = () => {
         }}
       >
         <DialogContent sx={{ p: 0, overflowY: "visible" }}>
+          {editHasDraft && (
+            <Alert severity="info" sx={{ mb: 2, borderRadius: 3 }}>
+              Showing your unsaved edits on this device. Save them to update the
+              student record.
+            </Alert>
+          )}
           {editError && (
             <Alert severity="error" sx={{ mb: 2, borderRadius: 2 }}>
               {editError}
@@ -2216,7 +2342,9 @@ const StudentManagement: React.FC = () => {
       {/* ----------- IMPORT INFO SHEET MODAL ----------- */}
       <Dialog
         open={importOpen}
-        onClose={() => setImportOpen(false)}
+        onClose={() => {
+          if (!importing) setImportOpen(false);
+        }}
         maxWidth="sm"
         fullWidth
         slotProps={{
@@ -2256,6 +2384,7 @@ const StudentManagement: React.FC = () => {
             <input
               type="file"
               accept=".xlsx"
+              disabled={importing}
               onChange={handleImportFileChange}
               style={{
                 position: "absolute",
@@ -2302,7 +2431,7 @@ const StudentManagement: React.FC = () => {
             Cancel
           </Button>
           <Button
-            onClick={handleImportSubmit}
+            onClick={() => void handleImportSubmit()}
             disabled={!importFile || importing}
             variant="contained"
             sx={{
@@ -2315,6 +2444,80 @@ const StudentManagement: React.FC = () => {
           >
             Import
           </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(sectionMismatch)}
+        onClose={() => {
+          if (!importing) {
+            setSectionMismatch(null);
+            setImportError("");
+          }
+        }}
+        aria-labelledby="section-mismatch-title"
+        aria-describedby="section-mismatch-description"
+        maxWidth="sm"
+        fullWidth
+        slotProps={{ paper: { sx: { borderRadius: 4, p: { xs: 1, sm: 2 } } } }}
+      >
+        <DialogTitle id="section-mismatch-title" sx={{ fontWeight: 700 }}>
+          Section Mismatch Detected
+        </DialogTitle>
+        <DialogContent>
+          <Stack sx={{ gap: 2 }}>
+            <Typography
+              id="section-mismatch-description"
+              color="text.secondary"
+              sx={{ overflowWrap: "anywhere" }}
+            >
+              The uploaded file indicates section{" "}
+              <strong>{sectionMismatch?.file_section}</strong>, but your
+              assigned section is{" "}
+              <strong>{sectionMismatch?.assigned_section}</strong>. Do you want
+              to overwrite and import these students into{" "}
+              <strong>{sectionMismatch?.assigned_section}</strong>?
+            </Typography>
+            {importError && (
+              <Alert severity="error" sx={{ borderRadius: 3 }}>
+                {importError}
+              </Alert>
+            )}
+          </Stack>
+        </DialogContent>
+        <DialogActions sx={{ p: 3 }}>
+          <Stack
+            direction={{ xs: "column", sm: "row" }}
+            sx={{ gap: 2, width: "100%", justifyContent: "flex-end" }}
+          >
+            <Button
+              disabled={importing}
+              onClick={() => {
+                setSectionMismatch(null);
+                setImportError("");
+              }}
+              sx={{ borderRadius: 3 }}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="contained"
+              disabled={importing}
+              onClick={() => void handleImportSubmit(true)}
+              startIcon={
+                importing ? (
+                  <CircularProgress
+                    size="1em"
+                    color="inherit"
+                    aria-label="Importing records"
+                  />
+                ) : undefined
+              }
+              sx={{ borderRadius: 3 }}
+            >
+              Overwrite &amp; Import
+            </Button>
+          </Stack>
         </DialogActions>
       </Dialog>
 

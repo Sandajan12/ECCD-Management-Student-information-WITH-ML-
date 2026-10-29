@@ -1,4 +1,5 @@
 import math
+from fastapi import HTTPException
 from sqlalchemy.orm import Session, joinedload, selectinload
 from backend.models import FamilyAccess, Parent, SectionTeacher, Student, SystemSettings, Teacher, User
 from backend.schemas.student import StudentRecordResponse
@@ -72,12 +73,23 @@ def parent_student_name(db: Session, student: Student) -> str:
     return " ".join(part for part in (student.first_name, student.middle_name, student.last_name) if part) or f"Student {student.student_id}"
 
 
-def upsert_guardian(db: Session, student: Student, relationship: str, name: str | None, age: int | None, occupation: str | None, education: str | None, *, user: User) -> None:
-    if not name or not name.strip():
+def upsert_guardian(db: Session, student: Student, relationship: str, name: str | None, age: int | None, occupation: str | None, education: str | None, *, user: User, supplied_fields: set[str] | None = None) -> None:
+    # Workbook callers supply complete records and retain their blank-row semantics.
+    # API callers explicitly identify supplied fields, including optional clears.
+    if supplied_fields is None and (not name or not name.strip()):
+        return
+    if supplied_fields == set():
         return
     parent = db.query(Parent).join(FamilyAccess).filter(FamilyAccess.status == "SYNCED", FamilyAccess.student_id == student.student_id, FamilyAccess.relationship_type == relationship).with_for_update(of=Parent).first()
+    incoming = {"name": name.strip() if name else None, "age": age, "occ": occupation, "educ": education}
+    previous = {"name": parent.fullname, "age": parent.age, "occ": parent.occupation, "educ": parent.educational_attainment} if parent else dict.fromkeys(incoming)
+    merged = {field: value if supplied_fields is None or field in supplied_fields else previous[field] for field, value in incoming.items()}
+    if not merged["name"]:
+        if parent is not None or any(value is not None and value != "" for value in merged.values()):
+            raise HTTPException(422, f"{relationship} name is required when updating guardian information.")
+        return
     if parent is not None:
-        if (parent.fullname, parent.age, parent.occupation, parent.educational_attainment) == (name.strip(), age, occupation, education):
+        if previous == merged:
             return
         # Pending and archived siblings also share these fields. A target's
         # permission cannot grant writes to another child's guardian profile.
@@ -89,5 +101,5 @@ def upsert_guardian(db: Session, student: Student, relationship: str, name: str 
         db.add(parent)
         db.flush()
         db.add(FamilyAccess(student_id=student.student_id, parent_id=parent.parent_id, relationship_type=relationship))
-    parent.fullname, parent.age = name.strip(), age
-    parent.occupation, parent.educational_attainment = occupation, education
+    parent.fullname, parent.age = merged["name"], merged["age"]
+    parent.occupation, parent.educational_attainment = merged["occ"], merged["educ"]

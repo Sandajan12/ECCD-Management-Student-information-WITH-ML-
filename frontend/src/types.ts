@@ -111,6 +111,12 @@ export interface ParentLinkInfo {
   linked_at: string | null;
   requested_at: string;
 }
+export interface ParentLinkResponse {
+  message: string;
+  student_id: number;
+  masked_lrn: string;
+  status: "SYNCED" | "PENDING";
+}
 export interface ParentLinkActionResponse {
   success: boolean;
   message: string;
@@ -267,6 +273,12 @@ export interface ImportResult {
   successCount: number;
   failedCount: number;
   errors: { row: number; error: string }[];
+}
+export interface SectionMismatchResponse {
+  detail: string;
+  code: "SECTION_MISMATCH";
+  file_section: string;
+  assigned_section: string;
 }
 export const studentName = (s: Student): string =>
   s.full_name ||
