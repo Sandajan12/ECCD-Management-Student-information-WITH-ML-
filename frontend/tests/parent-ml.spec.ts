@@ -116,6 +116,12 @@ test("multiple synced children can switch while a prediction is in flight", asyn
   await expect(page.getByLabel("Child prediction", { exact: true })).toHaveCount(0);
   await page.reload();
   await expect(page.getByText(/baseline PRE assessment for Sibling Child/)).toBeVisible();
+  // Removing the selected sibling must fall back to an eligible child.
+  await page.unroute("**/api/students/my-child");
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await expect(page.getByRole("heading", { name: "Test Middle Student", exact: true })).toBeVisible();
+  await expect(page.getByText(/baseline PRE assessment for Sibling Child/)).toHaveCount(0);
+  expect(await page.evaluate(() => localStorage.getItem("ames_child_5"))).toBe("1");
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy();
 });
 
@@ -136,4 +142,23 @@ test("teacher prediction preference survives offline reload and syncs on reconne
   await expect.poll(async () => page.evaluate(() => localStorage.getItem("ames_draft_2_teacher_access"))).toBeNull();
   await page.reload();
   await expect(toggle).toBeChecked();
+});
+
+test("archived child disappears on polling and returns after restoration without losing drafts", async ({ page, request }) => {
+  await permissions(request, { allow_parent_predictions: true });
+  await login(page, parent, "/parent/ml-insights");
+  await expect(page.getByText(/baseline PRE assessment for Test Middle Student/)).toBeVisible();
+  const draftKey = `eccd_draft_1_PRE_1_home_${parent.user.id}`;
+  const draft = { owner_id: parent.user.id, values: { answers: { "1": "KAYA" } }, revision: "visibility-test", is_pending_sync: false };
+  await page.evaluate(({ key, value }) => localStorage.setItem(key, JSON.stringify(value)), { key: draftKey, value: draft });
+  const archived = await request.put(`${backend}/api/students/1/archive`, { headers: headers() });
+  expect(archived.status(), await archived.text()).toBe(200);
+  await expect(page.getByText(/No synced children available/)).toBeVisible({ timeout: 30000 });
+  await expect(page.getByText(/baseline PRE assessment for Test Middle Student/)).toHaveCount(0);
+  expect(await page.evaluate(key => JSON.parse(localStorage.getItem(key) || "null"), draftKey)).toEqual(draft);
+  const restored = await request.put(`${backend}/api/students/1/unarchive`, { headers: headers() });
+  expect(restored.status(), await restored.text()).toBe(200);
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await expect(page.getByText(/baseline PRE assessment for Test Middle Student/)).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy();
 });

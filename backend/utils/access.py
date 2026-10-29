@@ -2,6 +2,7 @@
 import re
 from datetime import date
 from fastapi import HTTPException
+from sqlalchemy import and_, select
 from sqlalchemy.orm import Session
 from backend.models import FamilyAccess, Parent, Section, SectionTeacher, Student, Teacher, User
 from backend.schemas.common import ParentPermissions
@@ -43,8 +44,28 @@ def authorize_student(db: Session, user: User, student: Student, parent_edit: bo
     parent = db.query(Parent).filter_by(user_id=user.user_id).first()
     if parent is None or not db.query(FamilyAccess).filter_by(parent_id=parent.parent_id, student_id=student.student_id, status="SYNCED").first():
         raise HTTPException(403, "This child is not linked to your account.")
+    require_parent_visible_student(db, student)
     if parent_edit and not permissions_for_student(db, student).allow_parent_edit_student_info:
         raise HTTPException(403, "The Class Adviser has locked editing for student records.")
+
+
+def parent_visible_student_filter():
+    """Eligibility shared by parent lists and direct child authorization."""
+    adviser = select(SectionTeacher.id).join(
+        Teacher, Teacher.teacher_id == SectionTeacher.teacher_id
+    ).join(User, User.user_id == Teacher.user_id).where(
+        SectionTeacher.section_id == Student.section_id,
+        SectionTeacher.status == "Active", SectionTeacher.role == "Primary Adviser",
+        User.is_active.is_(True),
+    ).correlate(Student).exists()
+    return and_(Student.is_active.is_(True), adviser)
+
+
+def require_parent_visible_student(db: Session, student: Student) -> None:
+    if not db.query(Student.student_id).filter(
+        Student.student_id == student.student_id, parent_visible_student_filter()
+    ).first():
+        raise HTTPException(403, "This child is unavailable because the student is archived or has no active Class Adviser.")
 
 
 def get_active_adviser_for_student(student: Student, db: Session) -> Teacher | None:

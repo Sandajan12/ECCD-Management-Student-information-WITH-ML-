@@ -5,7 +5,7 @@ from backend.config.database import get_db
 from backend.models import FamilyAccess, Parent, Section, SectionTeacher, Student, SystemLog, Teacher, User
 from backend.schemas.common import MessageResult
 from backend.schemas.student import ChildPublicResponse, EnrollmentRequest, EnrollmentResponse, FamilyAccessCreate, StudentPublicResponse, StudentUpdate, TeacherStudentResponse
-from backend.utils.access import authorize_student, current_teacher, resolve_student, teacher_sections
+from backend.utils.access import authorize_student, current_teacher, resolve_student, teacher_sections, parent_visible_student_filter
 from backend.utils.deps import verify_role
 from backend.utils.lrn import hash_lrn
 from backend.utils.rollover import settings_record
@@ -116,7 +116,7 @@ def linked_children(db: Session = Depends(get_db), user: User = Depends(verify_r
     parent = db.query(Parent).filter_by(user_id=user.user_id).first()
     if parent is None:
         return []
-    students = db.query(Student).options(*student_profile_options()).join(FamilyAccess).filter(FamilyAccess.status == "SYNCED", FamilyAccess.parent_id == parent.parent_id, Student.is_active.is_(True)).distinct().all()
+    students = db.query(Student).options(*student_profile_options()).join(FamilyAccess).filter(FamilyAccess.status == "SYNCED", FamilyAccess.parent_id == parent.parent_id, parent_visible_student_filter()).distinct().all()
     return child_profiles(db, students)
 
 

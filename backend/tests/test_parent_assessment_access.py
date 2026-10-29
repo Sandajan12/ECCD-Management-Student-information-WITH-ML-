@@ -455,9 +455,7 @@ class ParentAssessmentAccessTests(unittest.TestCase):
         with self.sessions() as db:
             db.query(SectionTeacher).filter_by(section_id=1, status="Active").update({"status": "Inactive"})
             db.commit()
-        data = self.call("GET", "/api/eccd/parent/assessment/1", 5).json()
-        self.assertFalse(data["allow_parent_view_eccd_marks"])
-        self.assertTrue(all(v is None for d in data["domains"] for q in d["questions"] for v in q["answers"].values()))
+        self.assertEqual(self.call("GET", "/api/eccd/parent/assessment/1", 5).status_code, 403)
 
     def test_hidden_marks_keep_only_own_home_answers_in_editable_periods(self):
         self.assertEqual(self.save().status_code, 200)

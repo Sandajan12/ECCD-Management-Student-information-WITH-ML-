@@ -59,33 +59,9 @@ def get_child_eccd_summary(
     db: Session = Depends(get_db),
     current_user: User = Depends(verify_role(["user", "parent"])),
 ):
-    parent = db.query(Parent).filter(Parent.user_id == current_user.user_id).first()
-    if not parent:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Parent profile not found."
-        )
-
-    link = (
-        db.query(FamilyAccess)
-        .filter(
-            FamilyAccess.parent_id == parent.parent_id,
-            FamilyAccess.status == "SYNCED",
-            FamilyAccess.student_lrn == lrn,
-        )
-        .first()
-    )
-    if not link:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You are not authorized to view this student.",
-        )
-
-    student = db.query(Student).filter(Student.lrn_number == lrn).first()
-    if not student:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Student not found."
-        )
-
+    from backend.utils.access import authorize_student, resolve_student
+    student = resolve_student(db, lrn)
+    authorize_student(db, current_user, student)
     adviser = get_active_adviser_for_student(student, db)
     can_view_pre = adviser.allow_parent_view_eccd_pre if adviser else False
     can_view_mid = adviser.allow_parent_view_eccd_mid if adviser else False

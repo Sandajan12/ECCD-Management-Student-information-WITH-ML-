@@ -35,14 +35,21 @@ export function useChildren() {
     setLoading(true);
     void refresh();
     const reload = () => void refresh();
+    const reloadVisible = () => {
+      if (document.visibilityState === "visible") reload();
+    };
+    const timer = window.setInterval(reloadVisible, 20000);
     const selection = () => setSelected(Number(localStorage.getItem(key)) || 0);
     window.addEventListener("online", reload);
     window.addEventListener("focus", reload);
     window.addEventListener("ames-record-synced", reload);
     window.addEventListener("ames-child-selected", selection);
     window.addEventListener("storage", selection);
+    document.addEventListener("visibilitychange", reloadVisible);
     return () => {
       ++version.current;
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", reloadVisible);
       window.removeEventListener("online", reload);
       window.removeEventListener("focus", reload);
       window.removeEventListener("ames-record-synced", reload);

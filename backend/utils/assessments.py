@@ -6,7 +6,7 @@ from backend.utils.assessment_access import PERIOD_FLAGS, PERIOD_LABELS, window_
 from backend.models.eccd import EccdAnswer, TestingPeriod
 from backend.schemas.common import ParentPermissions
 from backend.schemas.eccd import EvaluationBatch, ParentEvaluationBatch
-from backend.utils.access import authorize_student, current_teacher, get_active_adviser_for_student, permissions_for_student, resolve_student
+from backend.utils.access import authorize_student, current_teacher, get_active_adviser_for_student, permissions_for_student, resolve_student, require_parent_visible_student
 from backend.utils.eccd_scorer import calculate_decimal_age, calculate_scores
 from backend.utils.eccd_dates import get_grading_date, get_official_testing_date
 from backend.utils.students import public_student
@@ -70,6 +70,7 @@ def save_home_evaluation(db: Session, user: User, payload: ParentEvaluationBatch
     if current_parent is None or not db.query(FamilyAccess).filter_by(parent_id=current_parent.parent_id, student_id=student.student_id, status="SYNCED").first():
         raise HTTPException(403, "This child is not linked to your account.")
     db.query(Student).filter_by(student_id=student.student_id).populate_existing().with_for_update().one()
+    require_parent_visible_student(db, student)
     section = db.query(Section).filter_by(section_id=student.section_id).populate_existing().with_for_update().first()
     ids = {row.question_id for row in payload.evaluations}
     questions = db.query(EccdQuestion.question_id, EccdQuestion.is_home_based).filter(EccdQuestion.question_id.in_(ids)).with_for_update().all()

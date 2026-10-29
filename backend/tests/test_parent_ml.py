@@ -136,12 +136,12 @@ class ParentMLTests(unittest.TestCase):
         with self.fixture.sessions() as db:
             db.get(User, 3).is_active = False
             db.commit()
-        self.assertFalse(self.call("GET", "/api/ml/parent/readiness/1", 5).json()["allow_parent_predictions"])
+        self.assertEqual(self.call("GET", "/api/ml/parent/readiness/1", 5).status_code, 403)
         with self.fixture.sessions() as db:
             db.query(SectionTeacher).filter_by(section_id=1, status="Active").one().status = "Inactive"
             db.get(Section, 1).adviser_teacher_id = 1
             db.commit()
-        self.assertFalse(self.call("GET", "/api/ml/parent/readiness/1", 5).json()["allow_parent_predictions"])
+        self.assertEqual(self.call("GET", "/api/ml/parent/readiness/1", 5).status_code, 403)
 
     def test_additive_migration_idempotence_preservation_and_older_backups(self):
         with self.fixture.test_engine.begin() as connection:

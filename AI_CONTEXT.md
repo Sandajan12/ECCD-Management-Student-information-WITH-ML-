@@ -28,6 +28,18 @@ requirement remains unresolved.
 
 ## 1. Purpose and implementation status
 
+Parent child visibility (2026-10-29): synced children are listed and accessible
+only while the student is active and the section has an Active Primary Adviser
+whose account is active. `utils/access.py` shares this eligibility rule between
+child-list aliases and direct parent authorization, including ECCD summaries,
+home submissions and ML endpoints. Unavailable existing children return HTTP 403;
+deleted students return HTTP 404. Links and assessments survive hiding, allowing
+automatic visibility restoration once student and adviser eligibility return.
+Restoring a teacher account still requires explicitly assigning a section.
+`useChildren` refreshes every 20 seconds in visible tabs and on visibility/focus/
+reconnection; selection falls back to an eligible sibling or the empty state.
+Drafts and pending submissions remain intact. No schema migration is required.
+
 AMES manages early childhood student records and deterministic DepEd ECCD
 assessments. Teachers enroll learners, assess PRE/MID/POST skills, manage assigned
 sections, release results, and communicate with parents. Parents link children,
