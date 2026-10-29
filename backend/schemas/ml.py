@@ -31,6 +31,23 @@ class MLFeatures(BaseModel):
     birth_order: Annotated[int, Field(ge=1, le=31)] | None = None
 
 
+class SandboxRawScores(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    GM: Annotated[int, Field(ge=0, le=13)]
+    FM: Annotated[int, Field(ge=0, le=11)]
+    SH: Annotated[int, Field(ge=0, le=27)]
+    RL: Annotated[int, Field(ge=0, le=5)]
+    EL: Annotated[int, Field(ge=0, le=8)]
+    C: Annotated[int, Field(ge=0, le=21)]
+    SE: Annotated[int, Field(ge=0, le=24)]
+
+
+class SandboxPredictionRequest(MLFeatures):
+    # Public sandbox policy only; student/parent inference keeps MLFeatures.
+    age_months_pre: Annotated[int, Field(strict=True, ge=36, le=71)]
+    raw_scores: SandboxRawScores | None = None
+
+
 class BaselineDomain(BaseModel):
     domain: str
     name: str
@@ -53,15 +70,21 @@ class Intervention(BaselineDomain):
     source_url: str
 
 
-class PredictionResponse(BaseModel):
+class ForecastResponse(BaseModel):
+    prediction_status: Literal["available"]
+    support_reason: None
+    predicted_post_interpretation: str | None
+    confidence_percentages: dict[str, float]
+    confidence_percentage: float | None
+    unsupported_classes: list[str]
+    pre_interpretation: str | None
+
+
+class PredictionResponse(ForecastResponse):
     student_id: int | None = None
     student_name: str | None = None
     assessment_date: date | None = None
-    predicted_post_interpretation: str
     class_probabilities: dict[str, float]
-    confidence_percentages: dict[str, float]
-    confidence_percentage: float
-    unsupported_classes: list[str]
     baseline_domains: list[BaselineDomain]
     features: MLFeatures
     imputed_fields: list[str]
@@ -92,14 +115,11 @@ class HomeIntervention(BaselineDomain):
     source_url: str
 
 
-class ParentPredictionResponse(BaseModel):
+class ParentPredictionResponse(ForecastResponse):
     """Parent projection excludes family model inputs and individual checklist marks."""
     student_id: int
     student_name: str
     assessment_date: date
-    predicted_post_interpretation: str
-    confidence_percentages: dict[str, float]
-    confidence_percentage: float
     baseline_domains: list[BaselineDomain]
     interventions: list[HomeIntervention]
     interpretation_note: str

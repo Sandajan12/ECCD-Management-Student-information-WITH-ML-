@@ -3,12 +3,13 @@ from datetime import date
 import unittest
 from unittest.mock import patch
 
-from backend.ml.common import ACTIVE_CLASSES, ARTIFACTS, DOMAINS, sandbox_composites
+from backend.ml.common import ACTIVE_CLASSES, ARTIFACTS, DOMAINS, sandbox_composites, sha256
+from backend.ml.train_random_forest import acceptance_profiles
 from backend.ml.inference import load_model, predict_student, warm_inference
 from backend.models import EccdQuestion, Parent, StudentEccdEvaluation
 from backend.models.eccd import EccdAnswer, TestingPeriod
 from backend.tests import test_phase2
-from backend.utils.eccd_scorer import lookup_standard_score, scoring_data
+from backend.utils.eccd_scorer import calculate_raw_scores, calculate_scores, lookup_standard_score, scoring_data
 
 
 def sandbox_features():
@@ -99,10 +100,11 @@ class MLApiTests(unittest.TestCase):
             self.assertEqual(self.call("POST", "/api/ml/predict/sandbox", 2, json={**features, **changes}).status_code, 422)
 
     def test_model_unavailability_is_sanitized_and_household_not_invented(self):
-        with patch("backend.routes.ml.predict_student", side_effect=OSError("private artifact path")):
-            response = self.call("POST", "/api/ml/predict/sandbox", 2, json=sandbox_features())
-        self.assertEqual(response.status_code, 503)
-        self.assertNotIn("private artifact path", response.text)
+        for failure in (OSError("private artifact path"), ValueError("private artifact path")):
+            with patch("backend.routes.ml.predict_student", side_effect=failure):
+                response = self.call("POST", "/api/ml/predict/sandbox", 2, json=sandbox_features())
+            self.assertEqual(response.status_code, 503)
+            self.assertNotIn("private artifact path", response.text)
         self.complete_pre()
         with self.fixture.sessions() as db:
             parent = db.get(Parent, 1)
@@ -114,7 +116,7 @@ class MLApiTests(unittest.TestCase):
         self.assertIsNone(result["features"]["household_occupation_tier"])
 
     def test_sandbox_normalizes_stale_composites_and_all_one_households(self):
-        for months in (36, 48, 60, 66, 80):
+        for months in (36, 48, 60, 66, 71):
             for household in ({}, {"mother_education_level": "College",
                     "father_education_level": "College", "household_occupation_tier": "Professional",
                     "num_siblings": 2, "birth_order": 1}):
@@ -129,10 +131,105 @@ class MLApiTests(unittest.TestCase):
                     for name, expected in (("pre_total_scaled", 7), ("pre_standard_score", 37),
                                            ("pre_delayed_domains_count", 7)):
                         self.assertEqual(result["features"][name], expected)
+                    self.assertEqual(result["prediction_status"], "available")
+                    self.assertIn(result["predicted_post_interpretation"], ACTIVE_CLASSES)
+                    self.assertAlmostEqual(sum(result["class_probabilities"].values()), 1)
+                    self.assertEqual(len(result["interventions"]), 7)
+
+    def test_sandbox_raw_scores_override_scaled_and_stale_composites(self):
+        from decimal import Decimal, ROUND_HALF_UP
+        raw = {code: maximum for code, (_, maximum) in DOMAINS.items()}
+        for months in (36, 37, 44, 48, 49, 60, 61, 71):
+            with self.subTest(months=months):
+                response = self.call("POST", "/api/ml/predict/sandbox", 2, json={
+                    **sandbox_features(), "age_months_pre": months, "raw_scores": raw})
+                self.assertEqual(response.status_code, 200, response.text)
+                result = response.json()
+                age = float((Decimal(months) / 12).quantize(Decimal("0.1"), rounding=ROUND_HALF_UP))
+                expected = calculate_raw_scores(raw, age)
+                features = result["features"]
+                self.assertNotIn("raw_scores", features)
+                self.assertEqual(len(features), 18)
+                for code, (prefix, _) in DOMAINS.items():
+                    self.assertEqual(features[f"{prefix}_pre_scaled"], expected["scaled_scores"][code])
+                self.assertEqual(features["pre_total_scaled"], expected["sum_of_scaled_scores"])
+                self.assertEqual(features["pre_standard_score"], expected["standard_score"])
+                self.assertEqual(features["pre_delayed_domains_count"], 0)
+                self.assertEqual(result["pre_interpretation"], expected["interpretation"])
+
+    def test_sandbox_age_policy_and_strict_raw_capacities(self):
+        raw = dict.fromkeys(DOMAINS, 0)
+        invalid = [{"age_months_pre": months} for months in (35, 72, 80, 36.5, True, "66")]
+        for code, (_, maximum) in DOMAINS.items():
+            for value in (-1, maximum + 1, 1.5, "1", True, None):
+                invalid.append({"raw_scores": {**raw, code: value}})
+        invalid.extend([{"raw_scores": {key: value for key, value in raw.items() if key != "GM"}},
+                        {"raw_scores": {**raw, "unknown": 0}}])
+        for changes in invalid:
+            with self.subTest(changes=changes):
+                response = self.call("POST", "/api/ml/predict/sandbox", 2,
+                                     json={**sandbox_features(), **changes})
+                self.assertEqual(response.status_code, 422, response.text)
+
+    def test_minimum_raw_and_all_one_scaled_use_actual_calibrated_probabilities(self):
+        base = {**sandbox_features(), "gender": "MALE", "handedness": "Left"}
+        fixtures = [({"raw_scores": dict.fromkeys(DOMAINS, 0)}, [1, 1, 2, 1, 5, 1, 1], 12),
+                    (dict.fromkeys([f"{prefix}_pre_scaled" for prefix, _ in DOMAINS.values()], 1),
+                     [1] * 7, 7)]
+        for changes, scaled, total in fixtures:
+            with self.subTest(raw="raw_scores" in changes):
+                response = self.call("POST", "/api/ml/predict/sandbox", 2, json={**base, **changes})
+                self.assertEqual(response.status_code, 200, response.text)
+                result = response.json()
+                self.assertEqual([result["features"][f"{p}_pre_scaled"] for p, _ in DOMAINS.values()], scaled)
+                self.assertEqual(result["features"]["pre_total_scaled"], total)
+                self.assertEqual(result["features"]["pre_standard_score"], 37)
+                self.assertEqual(result["features"]["pre_delayed_domains_count"], 7)
+                self.assertEqual(result["predicted_post_interpretation"], ACTIVE_CLASSES[0])
+                expected = predict_student(result["features"])["class_probabilities"]
+                self.assertEqual(result["class_probabilities"], expected)
+                if "raw_scores" not in changes:
+                    self.assertTrue(.65 <= expected[ACTIVE_CLASSES[0]] <= .90)
+                self.assertAlmostEqual(sum(result["confidence_percentages"].values()), 100)
+                self.assertTrue(all(0 < value < 100 for value in result["confidence_percentages"].values()))
+
+    def test_average_and_severe_acceptance_profiles_through_sandbox(self):
+        for scenario in acceptance_profiles():
+            if scenario["gender"] != "FEMALE" or scenario["handedness"] != "Right":
+                continue
+            with self.subTest(name=scenario["name"], age=scenario["age_months"]):
+                features = {key: None if key in ("mother_education_level", "father_education_level",
+                            "household_occupation_tier", "num_siblings", "birth_order") else value
+                            for key, value in scenario["features"].items()}
+                payload = {**features, "pre_total_scaled": 0, "pre_standard_score": 37,
+                           "pre_delayed_domains_count": 0}
+                if scenario["raw_scores"] is not None:
+                    payload["raw_scores"] = scenario["raw_scores"]
+                response = self.call("POST", "/api/ml/predict/sandbox", 2, json=payload)
+                self.assertEqual(response.status_code, 200, response.text)
+                result = response.json()
+                self.assertEqual(result["features"], features)
+                self.assertEqual(result["class_probabilities"], predict_student(features)["class_probabilities"])
+                if scenario["name"].startswith(("A", "B")):
+                    self.assertEqual(result["predicted_post_interpretation"], ACTIVE_CLASSES[2])
+                    self.assertGreaterEqual(result["class_probabilities"][ACTIVE_CLASSES[2]],
+                                            .75 if scenario["name"].startswith("A") else .60)
+                elif scenario["name"] == "C":
                     self.assertEqual(result["predicted_post_interpretation"], ACTIVE_CLASSES[0])
+                    self.assertTrue(.65 <= result["class_probabilities"][ACTIVE_CLASSES[0]] <= .90)
 
 
 class MLSandboxScoringTests(unittest.TestCase):
+    def test_raw_conversion_matches_checklist_for_every_supported_month_and_count(self):
+        from decimal import Decimal, ROUND_HALF_UP
+        for months in range(36, 72):
+            age = float((Decimal(months) / 12).quantize(Decimal("0.1"), rounding=ROUND_HALF_UP))
+            for index, (code, (_, maximum)) in enumerate(DOMAINS.items(), 1):
+                for count in range(maximum + 1):
+                    raw = {**dict.fromkeys(DOMAINS, 0), code: count}
+                    records = [{"domain_id": index, "answer": "KAYA"}] * count
+                    self.assertEqual(calculate_raw_scores(raw, age), calculate_scores(records, age))
+
     def test_standard_lookup_matches_existing_exact_and_fallback_rules(self):
         for age, bracket in ((3.5, "AGE 3.1 - 4.0"), (4.5, "AGE 4.1 - 5.0"),
                              (5.5, "AGE 5.1 - 5.11")):
@@ -157,8 +254,33 @@ class MLSandboxScoringTests(unittest.TestCase):
 
 
 class MLCacheTests(unittest.TestCase):
+    def test_loader_rejects_uncalibrated_or_incompatible_ensembles(self):
+        import copy
+        from types import SimpleNamespace
+        bundle = load_model()
+        original = bundle["pipeline"].named_steps["classifier"]
+        isotonic = copy.copy(original)
+        isotonic.method = "isotonic"
+        unfitted = copy.copy(original)
+        unfitted.calibrated_classifiers_ = []
+        wrong_ensemble = copy.copy(original)
+        wrong_ensemble.calibrated_classifiers_ = [SimpleNamespace(estimator=SimpleNamespace(
+            pipeline_=SimpleNamespace(named_steps={"classifier": object()})))]
+        malformed = copy.copy(original)
+        malformed.calibrated_classifiers_ = [object()]
+        for classifier in (object(), isotonic, unfitted, wrong_ensemble, malformed):
+            load_model.cache_clear()
+            pipeline = SimpleNamespace(classes_=bundle["pipeline"].classes_, named_steps={"classifier": classifier})
+            with patch("backend.ml.inference.joblib.load", return_value={**bundle, "pipeline": pipeline}):
+                with self.assertRaises(ValueError):
+                    load_model()
+        load_model.cache_clear()
+
     def test_startup_and_predictions_share_one_loaded_model(self):
         import joblib
+        import json
+        metrics = json.loads((ARTIFACTS / "evaluation_metrics.json").read_text(encoding="utf-8"))
+        self.assertEqual(sha256(ARTIFACTS / "rf_post_test_model.joblib"), metrics["model_sha256"])
         load_model.cache_clear()
         try:
             with patch("backend.ml.inference.joblib.load", wraps=joblib.load) as loader:

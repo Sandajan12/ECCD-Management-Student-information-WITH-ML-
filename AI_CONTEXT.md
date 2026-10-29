@@ -1,6 +1,6 @@
 # AMES System: Current Codebase Context
 
-Updated: **2026-10-29**. This document describes the active working tree in
+Updated: **2026-10-30**. This document describes the active working tree in
 `backend/` and `frontend/`, including existing uncommitted changes. Local
 configuration observations are a snapshot, not deployment defaults or a claim
 that every workflow has passed testing. This refresh checked active source,
@@ -50,7 +50,7 @@ records, question access, school settings, audit history, exports, and backups.
 
 These workflows exist in the active Python/FastAPI/PostgreSQL and React/TypeScript
 code. **ML predictions are fully implemented for both Teacher and Parent
-portals**, using the shared V1 18-feature Random Forest inference service and
+portals**, using the shared V1 18-feature calibrated ensemble inference service and
 `backend/ml/artifacts/rf_post_test_model.joblib`. Teachers have section-scoped
 batch predictions, student detail modals and a sandbox; parents request a
 prediction on demand for an authorized linked child. Feature implementation does
@@ -72,7 +72,7 @@ and instructional planning; official ECCD scores remain deterministic (section 1
 | JS tooling | pnpm **12.11.2** pinned in root `package.json`; ESLint, Prettier, Playwright |
 | Workspace | Root `pnpm-workspace.yaml` includes frontend and retains separate lockfiles; frontend has matching pnpm 12 YAML overrides and its own package-manager pin for isolated installs; automatic dependency verification before scripts is disabled |
 | Spreadsheets | openpyxl handles active workbook import/export; pandas is installed |
-| ML | V1 fitted scikit-learn Random Forest pipeline, joblib artifact, 18 PRE/demographic inputs, three supported POST outcomes; shared teacher/parent inference |
+| ML | V1 sigmoid-calibrated RF/HistGradientBoosting ensemble, joblib artifact, 18 PRE/demographic inputs, three supported POST outcomes; shared teacher/parent inference |
 | Migrations | Explicit Python migrations 001–014, including production query indexes, email-only identity and credential revocation versioning; no active Alembic setup, pyproject.toml, or uv.lock |
 
 Observed on this Windows checkout on **2026-10-25**:
@@ -1011,16 +1011,161 @@ Validation/permission failures retain inputs for review.
 
 ## 11. Implemented V1 ML service and verification boundaries
 
+### Conditional growth retraining (2026-10-30; current model)
+
+The approved `SYNTHETIC_GROWTH_RETRAINING_PLAN.md` is implemented. Synthetic PRE
+age proposals are uniformly sampled from completed months 36–71; all 36 ages
+occur in the accepted 1,500 synthetic rows. Rejection sampling means the accepted
+age distribution is not uniform. The 29 real records remain unchanged, including
+ages 59–80; the combined fitted age range is now 36–80, not a new norm policy.
+The sandbox still validates 36–71 months; shared student/parent age validation
+and the oldest-bracket fallback for POST ages above 71 remain unchanged.
+
+`dataset_builder.raw_progression` applies default recovery growth
+`clip(0.40*observed_growth - 0.035*risk + N(0,0.006),0,0.4)` to raw capacity.
+For a PRE domain scaled >=8, the POST-age table supplies the smallest raw count
+preserving its PRE scaled level (capped at the future domain's attainable ceiling),
+then growth applies to remaining capacity. Scaled <=6 uses constrained recovery;
+scaled 7 uses the rounded midpoint of normal and constrained raw targets. At
+least three domains <=6 disable norm-preservation floors throughout the profile.
+MID counts interpolate 65% of PRE→POST progress. Counts remain bounded and
+nondecreasing; official scores and labels are always recomputed, never overridden.
+Advanced POST candidates are counted and excluded, not relabeled: this run
+excluded 466 slightly advanced and 200 highly advanced candidates. The final
+synthetic dataset retains 500 records for each of the three supported outcomes.
+Its accepted PRE-Average records yield 340 Average and 13 Slight Delay POST
+outcomes; the previous dataset yielded 249 Average, 14 Slight Delay and 2
+Significant Delay. These are different synthetic mixtures, not controlled
+real-world outcome comparisons. Dataset audit preserves both aggregate summaries.
+
+The user explicitly revised Profile C's required Significant Delay band from
+65–80% to **65–90%** after training-only candidates missed the original band and
+before any holdout evaluation. The default 0.40 scenario is retained. The initial
+five CV candidates, eight additional regularization probes and 0.38/0.42 recovery
+probes are recorded in `backend/ml/artifacts/growth_retraining_experiments.json`.
+Runtime calibration/extrapolation probability logic was not changed. No clipping,
+forced class overrides or separate recovery metric were introduced.
+
+The selected sigmoid-calibrated soft-voting RF/HGB ensemble is
+`soft_voting_rf_histogram`. Five-fold training CV accuracy is **90.28037383%**
+and Macro F1 **90.27987053%**. The frozen winner's one-time 459-row holdout has
+**92.81045752% accuracy (426/459)** and **92.82053665% Macro F1**. Synthetic holdout
+accuracy is **93.79157428% (423/451)**; real holdout accuracy is **37.5% (3/8)**,
+down from the preceding model's 4/8. Real student-excluded accuracy across 29
+records is 10/29 (34.48%); all real POST labels are Average, so an always-Average
+baseline is 100%. These synthetic-dominated benchmarks and shared real anchors
+do not establish independent real-world accuracy or measured recovery rates.
+Teacher and parent ML Insights notices display **92.81%** mixed-holdout and
+**37.5%** real-holdout accuracy, matching this active evaluation record.
+All ten publication gates pass. Only runtime-compatible calibrated RF/HGB
+ensembles passing the behavioral, CV and holdout gates can be published.
+
+Current model SHA-256:
+`835139f31887924c02f98c9d12878755885c4b476ae6ef54e3412b599d54ecc6`.
+The prior model/datasets/reports/source are preserved in a verified 42-file
+snapshot at
+`backend/ml/artifacts/baseline_pre_missingness_weighting/before_growth_retraining_20261029_211422/active_before_growth.zip`
+with an adjacent checksummed manifest. Learner datasets and the snapshot remain
+ignored. The active V1 artifact and aggregate evaluation metrics are updated.
+Restart an existing backend process to reload its cached model; no hosted
+deployment or database migration is part of this change.
+
+Fixed scaled acceptance profiles (FEMALE/Right, blank households; filled
+households produce identical probabilities):
+
+| Profile | PRE months | Average % | Slight Delay % | Significant Delay % |
+| --- | --- | --- | --- | --- |
+| A | 38 | 94.8838900024 | 3.1663444576 | 1.9497655400 |
+| A | 66 | 94.8826658720 | 3.1672097882 | 1.9501243398 |
+| B | 38 | 94.8837327584 | 3.1664467092 | 1.9498205324 |
+| B | 66 | 94.8816292323 | 3.1677470701 | 1.9506236976 |
+| C | 38 | 7.9289066088 | 7.2449590669 | 84.8261343243 |
+| C | 66 | 7.9254203927 | 7.1478459719 | 84.9267336354 |
+
+A=[10,12,10,10,10,12,10], total 74/standard 103. B=[11,12,11,11,6,12,12],
+total 75/standard 104. C=seven scaled 1s, total 7/standard 37. All four
+gender/handedness combinations, both household variants and table-attainable
+raw A/B counterparts pass. At 66 months EL can only be scaled 5 or 11, so raw B
+uses EL=5 while preserving total 75/standard 104. Raw-zero/raw-one counts are
+different profiles from scaled C and are reported without its probability band.
+Full-precision distributions are in `backend/ml/artifacts/evaluation_metrics.json`;
+the human-readable delivery record is `SYNTHETIC_GROWTH_RETRAINING_RESULTS.md`.
+
+Fresh verification after retraining (2026-10-30): **59 backend tests pass**:
+25 in `test_ml_model`/`test_ml_api` (226.960 seconds), and 34 in scoring-asset,
+pipeline, forecast, parent and growth suites (128.325 seconds). **20 sandbox
+Playwright tests pass** in 6.6 minutes and **12 parent/teacher Playwright tests
+pass** in 4.7 minutes, across desktop/mobile. Both wrappers removed their own
+disposable local databases. Raw A/B equivalents at 38/66 months match saved-model
+probabilities exactly through the real API and display Average above the gates.
+Coverage also retains raw conversion/capacity/age checks, non-100% minimum-profile
+probabilities, household invariance, parent privacy/permissions, offline drafts,
+reconnection and stale responses. Both app/node TypeScript checks, additional
+sandbox-spec typing, full lint, production build, focused Prettier and Git
+whitespace checks pass. The score-7 test's initial incorrect reference threshold
+was corrected before its full passing rerun. A sandboxed pnpm fetch failure in
+the optional spec type-check passed after the permitted network retry. Existing
+deprecation/color warnings were non-fatal. No scoring asset or database schema
+changes were needed.
+
+### Forecast bounds gate removed at user request (2026-10-29)
+
+The shared inference wrapper no longer withholds forecasts based on fitted
+numeric ranges, including PRE age. The insufficient-support notice, related
+badges and fitted-bounds messaging have been removed from parent, teacher and
+Sandbox ML Insights. Successful responses retain the existing JSON fields with
+`prediction_status: "available"` and `support_reason: null`, and return the saved
+model's outcome and probabilities. Normal input validation, model availability,
+authorization, active-child, PRE completion and independent PRE-release checks
+remain in force. Parents retain their narrower privacy projection. PRE baseline
+information and activities remain available, with overall PRE table
+interpretation separate from the simplified domain planning tiers.
+
+The 44-month maximum raw-score example now shows the artifact's forecast again,
+alongside total 103 / standard 138 / `Highly Advance` PRE information. The same
+flow serves the recalculated 60/66/72-month examples. Removing the gate does not
+establish training or joint-profile support: fitted PRE ages at that time were
+59–80 months. The 2026-10-30 growth retraining above describes current support.
+The artifact's own saved calibration/extrapolation behavior, raw-score interface,
+scoring tables, age policies and probabilities remain unchanged; no retraining
+was performed. Sandbox results remain bound to the
+submitted owner-key/input snapshot revision, with synchronous edit invalidation,
+request-version checks and cancellation. Durable drafts remain intact.
+
+The builder checksum difference is explained by line endings: the current LF
+source hashes to `3b239b78631aae9b6d0a90205c856a2d0a72551d43f06c07d6af22de47cdf6ac`;
+converting those bytes to CRLF gives the recorded
+`d72e6ab992e6bddd6368431f6db87bd6dfe263c511c46c6fe755da05dbec8806`.
+Historical hashes are preserved. See `ML_MAXIMUM_RAW_SCORE_INVESTIGATION.md` for
+implementation, verification and remaining limitations. The earlier 70.6%
+screenshot's cause remains unestablished. Integration checks use newly created
+disposable loopback databases through `backend.tests.run_ml_forecast_checks`,
+which refuses production/remote settings and removes only its own database.
+
+Historical safeguard verification before its removal (2026-10-29): 11 focused database-free checks, 19 checks in
+the disposable-database API suite, 16 Sandbox and 12 parent/teacher browser cases
+pass. Browser coverage includes desktop/mobile, all raw-score conversions,
+unsupported-age PRE guidance, permissions, draft durability and stale responses
+during debounce. Both TypeScript projects, browser-spec typing, focused ESLint
+and the production build pass. Initial browser timing/mock-cleanup failures were
+corrected in the test harness; complete reruns pass. All disposable databases
+were removed. The artifact checksum remains unchanged; no model refit or hosted
+deployment was performed.
+
 ### Runtime architecture and exact 18-feature contract
 
 Teacher and Parent predictions are fully implemented on the shared **V1**
 research inference path. `backend/ml/common.py` defines the feature order and
 artifact directory; `backend/schemas/ml.py::MLFeatures` validates inputs.
-`backend/ml/inference.py` loads the fitted preprocessing/Random Forest pipeline
+`backend/ml/inference.py` loads the fitted calibrated ensemble pipeline
 from **`backend/ml/artifacts/rf_post_test_model.joblib`** and caches it with
-`lru_cache`. After the 2026-10-24 baseline restoration, numeric missing values use
-training-median imputation and the existing StandardScaler; categorical values use
-training-mode imputation and unknown-safe one-hot encoding. The same cached service supplies
+`lru_cache`. The experimental artifact was promoted to local `main` on 2026-10-29.
+Its custom `backend/ml/pipeline.py` prunes all five household fields, engineers
+internal PRE domain composites and scoring-interval summaries, and applies a
+sigmoid-calibrated RF/HistGradientBoosting ensemble. Retained missing numeric values
+use training medians; categorical values use training modes and unknown-safe
+one-hot encoding. Outside PRE score support, probabilities blend toward training
+priors; this is not measured intervention recovery. The same cached service supplies
 both portals. Inference does not train/refit or write official assessments.
 
 | Feature group | Count | Exact inputs |
@@ -1066,14 +1211,78 @@ classroom/home activities. Parent education is mapped from canonical values in
 SYNCED family records. Free-text occupations have no reviewed tier mapping and
 remain missing rather than inventing family circumstances.
 
-The debounced Sandbox Simulator preserves the 18-field API contract with
-owner-scoped durable drafts. Domain edits recalculate total scaled score, standard
-score and the count of domains <=6. The standard score comes from the existing
-official scoring JSON and closest-lower fallback; all three composites are
-read-only. The backend independently derives the same composites before sandbox
-inference. Old drafts recalculate stale composites while retaining domain and
-household inputs. Successful inference retains inputs; offline failures mark
-pending state and retry on reconnection.
+The debounced Sandbox Simulator accepts raw KAYA counts (GM 0–13, FM 0–11,
+SH 0–27, RL 0–5, EL 0–8, C 0–21, SE 0–24). Its completed-month PRE age must be
+an integer from **36–71**, entered before domain counts. Age is rounded HALF_UP
+to one decimal year; 36 months uses the youngest bracket. The UI shows decimal
+age and scoring bracket. This sandbox policy does not change shared student/
+parent age validation or claim that the model was trained across this range.
+`utils/mlScoring.ts` converts raw scores through the bundled official tables
+with the backend's closest-lower fallback, then derives scaled totals, standard
+score and the count of domains <=6. A responsive live summary above the inputs
+shows each raw count/maximum and scaled value, all three composites, and the
+table's exact DepEd interpretation. Incomplete/invalid scores leave aggregate
+placeholders. Calculated scaled scores also appear beneath raw inputs; all three
+composites are read-only. The standard-score tables are
+identical across brackets, while raw-to-scaled tables differ; age changes within
+a bracket can correctly leave scores unchanged. Invalid raw scores/ages block
+prediction without clearing inputs. The sandbox request uses
+`SandboxPredictionRequest`, extending the existing 18 ML features with optional
+`raw_scores` containing all seven domain codes and strictly validated integer
+capacities. The frontend sends the derived features and raw counts. The server
+converts raw counts through `eccd_scorer.calculate_raw_scores` (also used by
+checklist scoring), overrides conflicting scaled values, and always recomputes
+total, standard score and delayed count before constructing the unchanged
+18-field `MLFeatures` inference input. Scaled-only requests remain supported;
+invalid sandbox ages/counts return 422. Response shape and authoritative
+`features` remain unchanged; `raw_scores` is never an additional model feature.
+Owner-scoped `ml_sandbox_raw_v2` drafts persist raw/age/household inputs. Old
+`ml_sandbox_v1` scaled drafts remain untouched and visible for reference; their
+age/demographics initialize the new form with blank raw scores. Existing v2
+drafts take precedence. Successful inference retains inputs; offline failures
+mark pending state and retry on reconnection. No student/parent scoring, model
+artifact or official assessment records are changed by this sandbox behavior.
+
+Cached artifact loading additionally requires a fitted sigmoid-calibrated soft
+RF/HistGradientBoosting voting ensemble; incompatible models retain sanitized
+503 responses. Regression tests verify the active artifact SHA-256 against the
+matching evaluation record; the current retraining fingerprint is listed above.
+Probabilities come directly from the saved model. Exact table entries, including
+zero scaled scores, are preserved. Before the 2026-10-30 retraining, at 66 months,
+MALE/Left and unknown household
+fields, all-zero raw counts yield scaled `[1,1,2,1,5,1,1]`, total 12, standard 37
+and about 92.9% Significant Delay. Seven supplied scaled scores of 1 yield total
+7, standard 37 and about 70.4% Significant Delay. These are different profiles;
+the UI retains the three class probabilities without a separate recovery metric.
+
+Approved raw-score sandbox implementation verification (2026-10-29): **50 backend
+tests pass**: 25 across `test_scoring_asset`, `test_ml_model`, `test_ml_api`, and
+25 across `test_ml_pipeline`, `test_ml_forecast_bounds`, `test_parent_ml`.
+**All 18 Playwright sandbox cases pass** (nine desktop, nine mobile) using
+`playwright.ml-sandbox.config.ts` and disposable PostgreSQL fixtures. Coverage
+includes every valid raw count at months 36–71, exact/fallback standard scores
+and interpretations, boundary validation, raw/scaled conflicts, stale
+composites, calibrated probability fixtures, legacy drafts, offline reloads,
+reconnection, HTTP 503 recovery and late success/error isolation. The browser
+confirms GM raw 13 gives scaled 14 at 44 months and minimum raw counts display
+92.9% Significant Delay with three nonzero probabilities. Summary screenshots
+and overflow checks cover 320/768/1280px under
+`frontend/test-results/ml-sandbox/`. Both app/node TypeScript checks, full frontend
+lint, production build, focused Prettier and Git whitespace checks pass. The new
+probability browser test initially used a mismatched dropdown selector; after
+correcting it to the accessible combobox role, the complete suite passed.
+No scoring-table/model artifact changes, retraining or application migrations
+were required for this implementation.
+
+Earlier sandbox raw-score verification (2026-10-29, before sandbox age restriction): all 19 focused ML/parent/scoring-asset
+backend tests and all 10 desktop/mobile sandbox checks pass using disposable
+PostgreSQL schemas. Conversion parity checks cover every valid raw score in all
+seven domains and the then-accepted completed-month ages (1–216), plus standard-score
+totals 0–133. Browser checks cover actual inference, age boundaries, invalid
+inputs, older drafts, offline/reconnection, simulated HTTP 503, and late responses;
+layout checks cover 320/768/1280px. Both TypeScript projects, sandbox test typing,
+focused ESLint and the production build pass. Screenshots are under
+`frontend/test-results/ml-sandbox/`. No school assessment records were changed.
 
 ### Parent on-demand workflow and privacy
 
@@ -1115,24 +1324,28 @@ numbers are positions within each domain. These locally authored suggestions
 support teacher/parent planning; they are not clinical diagnoses or evidence of
 treatment effectiveness.
 
-The previous V1 baseline was restored on 2026-10-24 at the user's request, without
-retraining or changing branches. The exact 18 features, unchanged 1,529-row dataset
-and 70/30 stratified seed-42 split remain. The active forest uses 400 trees, gini,
-max_depth=None, max_features='sqrt', min_samples_split=6, min_samples_leaf=2,
-random_state=42 and class_weight='balanced', with median/mode preprocessing and
-no extra source-based sample weights. Its original matching metrics, report,
-real comparison CSV and all five plots were restored from the baseline archive;
-the original trainer and teacher/parent notices were restored as well.
+Before the growth retraining described above, the experimental model was promoted to the local `main` working tree on
+2026-10-29 at the user's request, without retraining. The previous model, metrics,
+source and workspace snapshot are preserved locally in
+`backend/ml/artifacts/baseline_pre_missingness_weighting/main_before_90plus_20261029_213830/main_model_and_workspace.zip`,
+with a verified SHA-256 manifest. Existing ignored datasets already matched the
+experiment; no regeneration was needed. That preceding model SHA-256 was
+`0c20bbd5536f6ffe0362f1e1b48be2105270686b5c1c200b5976e3f8970662a0`.
+The previous model SHA-256 is
+`2de3f5d3b31831438b60936864322935e23d61c30a5df1aeb077509538384541`.
 
-Active mixed-holdout accuracy is **88.89% (408/459)**, Macro F1 **88.98%**,
-synthetic accuracy **90.02% (406/451)** and real holdout accuracy **25% (2/8)**.
-Five-fold training CV accuracy is **88.41%**. The 90%+ mixed-accuracy goal
-remains unmet. The accepted Option A regression gates are now >=0.88 mixed
-accuracy, >=0.90 synthetic accuracy and >=0.88 three-class macro F1; tests also
-pin exact artifact hashes and holdout counts. These consistency gates are not
-production acceptance. Both portals disclose the baseline scores and limitations.
+That preceding model's mixed-holdout accuracy was **91.29% (419/459)**, Macro F1 **91.34%**,
+synthetic accuracy **92.02% (415/451)** and real holdout accuracy **50% (4/8)**.
+Five-fold training CV accuracy is **90.75%**. All-1 scaled PRE inputs at 66 months
+yield Average **15.98057590%**, Slight Delay **13.59085144%**, Significant Delay
+**70.42857266%**, identical for blank/filled households. These hypothetical inputs
+are outside training support. The generator changed, so the metric comparison
+with the baseline is not a controlled model comparison. The API, official scores,
+permissions, and durable raw-score sandbox are preserved. Restart the backend to
+clear cached inference. No hosted deployment was performed. These consistency gates
+are not production acceptance. Both portals disclose active scores and limitations.
 All 29 real POST outcomes are Average and contributed generator anchors, so neither
-this baseline nor the 8/8 experiment establishes independent real-world validity
+this model nor the previous experiments establish independent real-world validity
 or real delay detection. Probabilities are not calibrated clinical confidence.
 
 ### Current verification setup (source checked 2026-10-29)

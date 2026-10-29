@@ -16,6 +16,8 @@ import AutoAwesomeRounded from "@mui/icons-material/AutoAwesomeRounded";
 import HomeOutlined from "@mui/icons-material/HomeOutlined";
 import API, { errorMessage } from "../../services/api";
 import { useChildren } from "../../hooks/useChildren";
+import ForecastSupportNotice from "../../components/common/ForecastSupportNotice";
+import type { ForecastState } from "../../components/common/ForecastSupportNotice";
 
 interface Readiness {
   student_id: number;
@@ -40,13 +42,10 @@ interface HomeGuide extends BaselineDomain {
   success_check: string;
   source_url: string;
 }
-interface Prediction {
+interface Prediction extends ForecastState {
   student_id: number;
   student_name: string;
   assessment_date: string;
-  predicted_post_interpretation: string;
-  confidence_percentages: Record<string, number>;
-  confidence_percentage: number;
   baseline_domains: BaselineDomain[];
   interventions: HomeGuide[];
   interpretation_note: string;
@@ -114,131 +113,151 @@ function PredictionResults({ prediction }: PredictionResultsProps) {
       aria-label="Child prediction"
     >
       <Paper elevation={1} sx={card}>
-        <Stack
-          sx={{
-            gap: 2,
-            minWidth: 0,
-            "@media (min-width: 640px)": {
-              flexDirection: "row",
-              alignItems: "center",
-              justifyContent: "space-between",
-            },
-          }}
-        >
-          <Stack sx={{ gap: 2, minWidth: 0 }}>
-            <Typography variant="overline" sx={{ color: "text.secondary" }}>
-              Predicted Post-Test Outcome
-            </Typography>
-            <Alert
-              severity={outcome?.tone || "info"}
-              icon={false}
-              sx={{
-                borderRadius: 3,
-                fontWeight: 600,
-                minWidth: 0,
-                "& .MuiAlert-message": { minWidth: 0 },
-              }}
-            >
-              {prediction.predicted_post_interpretation}
-            </Alert>
-            <Typography variant="body2" sx={{ color: "text.secondary" }}>
-              PRE assessment: {prediction.assessment_date}
-            </Typography>
-          </Stack>
-          <Box sx={{ flexShrink: 0 }}>
-            <Typography variant="h4" sx={{ fontWeight: 600 }}>
-              {prediction.confidence_percentage.toFixed(1)}%
-            </Typography>
-            <Typography variant="caption" sx={{ color: "text.secondary" }}>
-              Model confidence
-            </Typography>
-          </Box>
-        </Stack>
-        <Stack
-          direction="row"
-          role="img"
-          aria-label={outcomes
-            .map(
-              (item) =>
-                `${item.short}: ${(prediction.confidence_percentages[item.label] || 0).toFixed(1)}%`,
-            )
-            .join(", ")}
-          sx={{
-            mt: 3,
-            overflow: "hidden",
-            borderRadius: 6,
-            width: "100%",
-            height: "0.875rem",
-            bgcolor: "grey.100",
-          }}
-        >
-          {outcomes.map((item) => (
-            <Box
-              key={item.label}
-              sx={{
-                bgcolor: item.color,
-                width: `${prediction.confidence_percentages[item.label] || 0}%`,
-              }}
-            />
-          ))}
-        </Stack>
-        <Stack
-          sx={{
-            gap: 1,
-            mt: 2,
-            flexWrap: "wrap",
-            alignItems: "flex-start",
-            "@media (min-width: 480px)": { flexDirection: "row" },
-            "@media (min-width: 640px)": { gap: 2.5, alignItems: "center" },
-          }}
-        >
-          {outcomes.map((item) => (
-            <Stack
-              key={item.label}
-              direction="row"
-              sx={{ gap: 1, alignItems: "center" }}
-            >
-              <Box
-                component="span"
-                sx={{ color: item.color }}
-                aria-hidden="true"
+        {prediction.prediction_status === "available" &&
+          prediction.confidence_percentage !== null && (
+            <>
+              <Stack
+                sx={{
+                  gap: 2,
+                  minWidth: 0,
+                  "@media (min-width: 640px)": {
+                    flexDirection: "row",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                  },
+                }}
               >
-                ●
-              </Box>
+                <Stack sx={{ gap: 2, minWidth: 0 }}>
+                  <Typography
+                    variant="overline"
+                    sx={{ color: "text.secondary" }}
+                  >
+                    Predicted Post-Test Outcome
+                  </Typography>
+                  <Alert
+                    severity={outcome?.tone || "info"}
+                    icon={false}
+                    sx={{
+                      borderRadius: 3,
+                      fontWeight: 600,
+                      minWidth: 0,
+                      "& .MuiAlert-message": { minWidth: 0 },
+                    }}
+                  >
+                    {prediction.predicted_post_interpretation}
+                  </Alert>
+                </Stack>
+                <Box sx={{ flexShrink: 0 }}>
+                  <Typography variant="h4" sx={{ fontWeight: 600 }}>
+                    {prediction.confidence_percentage.toFixed(1)}%
+                  </Typography>
+                  <Typography
+                    variant="caption"
+                    sx={{ color: "text.secondary" }}
+                  >
+                    Model confidence
+                  </Typography>
+                </Box>
+              </Stack>
+              <Stack
+                direction="row"
+                role="img"
+                aria-label={outcomes
+                  .map(
+                    (item) =>
+                      `${item.short}: ${(prediction.confidence_percentages[item.label] || 0).toFixed(1)}%`,
+                  )
+                  .join(", ")}
+                sx={{
+                  mt: 3,
+                  overflow: "hidden",
+                  borderRadius: 6,
+                  width: "100%",
+                  height: "0.875rem",
+                  bgcolor: "grey.100",
+                }}
+              >
+                {outcomes.map((item) => (
+                  <Box
+                    key={item.label}
+                    sx={{
+                      bgcolor: item.color,
+                      width: `${prediction.confidence_percentages[item.label] || 0}%`,
+                    }}
+                  />
+                ))}
+              </Stack>
+              <Stack
+                sx={{
+                  gap: 1,
+                  mt: 2,
+                  flexWrap: "wrap",
+                  alignItems: "flex-start",
+                  "@media (min-width: 480px)": { flexDirection: "row" },
+                  "@media (min-width: 640px)": {
+                    gap: 2.5,
+                    alignItems: "center",
+                  },
+                }}
+              >
+                {outcomes.map((item) => (
+                  <Stack
+                    key={item.label}
+                    direction="row"
+                    sx={{ gap: 1, alignItems: "center" }}
+                  >
+                    <Box
+                      component="span"
+                      sx={{ color: item.color }}
+                      aria-hidden="true"
+                    >
+                      ●
+                    </Box>
+                    <Typography
+                      variant="body2"
+                      sx={{
+                        color: "text.secondary",
+                        fontSize: "0.75rem",
+                        "@media (min-width: 640px)": { fontSize: "0.875rem" },
+                      }}
+                    >
+                      {item.short}{" "}
+                      {(
+                        prediction.confidence_percentages[item.label] || 0
+                      ).toFixed(1)}
+                      %
+                    </Typography>
+                  </Stack>
+                ))}
+              </Stack>
               <Typography
                 variant="body2"
                 sx={{
-                  color: "text.secondary",
+                  mt: 3,
+                  color: "#64748b",
                   fontSize: "0.75rem",
-                  "@media (min-width: 640px)": { fontSize: "0.875rem" },
+                  lineHeight: 1.625,
                 }}
               >
-                {item.short}{" "}
-                {(prediction.confidence_percentages[item.label] || 0).toFixed(
-                  1,
-                )}
-                %
+                These are model probabilities, not calibrated clinical
+                confidence or a guarantee of future performance.
               </Typography>
-            </Stack>
-          ))}
-        </Stack>
-        <Typography
-          variant="body2"
-          sx={{
-            mt: 3,
-            color: "#64748b",
-            fontSize: "0.75rem",
-            lineHeight: 1.625,
-          }}
-        >
-          These are model probabilities, not calibrated clinical confidence or a
-          guarantee of future performance.
-        </Typography>
-        <Typography
-          variant="caption"
-          sx={{ display: "block", mt: 1, color: "#64748b", lineHeight: 1.625 }}
-        >
-          {prediction.interpretation_note}
+              <Typography
+                variant="caption"
+                sx={{
+                  display: "block",
+                  mt: 1,
+                  color: "#64748b",
+                  lineHeight: 1.625,
+                }}
+              >
+                {prediction.interpretation_note}
+              </Typography>
+            </>
+          )}
+        <ForecastSupportNotice />
+        <Typography variant="body2" sx={{ mt: 2, color: "text.secondary" }}>
+          PRE assessment: {prediction.assessment_date}
         </Typography>
       </Paper>
       <Stack
@@ -255,9 +274,14 @@ function PredictionResults({ prediction }: PredictionResultsProps) {
           >
             Baseline Development Profile
           </Typography>
+          <Typography variant="body2" sx={{ mb: 1, fontWeight: 600 }}>
+            Overall PRE interpretation (scoring table):{" "}
+            {prediction.pre_interpretation ?? "Unavailable"}
+          </Typography>
           <Typography variant="body2" sx={{ color: "text.secondary" }}>
             PRE scaled scores · planning tiers: ≤3 Delay, 4–6 Slight Delay, ≥7
-            Average.
+            Average. These domain support tiers are separate from the overall
+            PRE interpretation.
           </Typography>
         </Box>
         {/* Local priorities override the inherited, unlayered parent grid utilities. */}
@@ -561,8 +585,8 @@ export default function ParentMlInsights() {
         </summary>
         <Typography variant="body2" sx={{ mt: 1 }}>
           Educational research prototype for instructional planning, not a
-          formal clinical diagnosis. Research evaluation reported 88.9%
-          mixed-holdout accuracy, but only 25% on eight real holdout learners.
+          formal clinical diagnosis. Research evaluation reported 92.81%
+          mixed-holdout accuracy, but only 37.5% on eight real holdout learners.
           All 29 observed real POST outcomes were Average and contributed
           generator anchors; there is no independent real-world validation.
           Probabilities are not calibrated clinical confidence. Advanced

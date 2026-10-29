@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { Modal, Stack } from "@mui/material";
 import AutoAwesomeRounded from "@mui/icons-material/AutoAwesomeRounded";
@@ -9,8 +9,16 @@ import API, { errorMessage, isNetworkError } from "../../services/api";
 import { useTeacher } from "../../context/TeacherContext";
 import { useAuth } from "../../context/AuthContext";
 import { readDraft, storeDraft, useDurableForm } from "../../utils/drafts";
-import { sandboxStandardScore } from "../../utils/mlScoring";
+import {
+  sandboxAge,
+  sandboxScaledScore,
+  sandboxStandardScore,
+  sandboxStandardResult,
+} from "../../utils/mlScoring";
+import type { SandboxDomain } from "../../utils/mlScoring";
 import { settleWithConcurrency } from "../../utils/concurrency";
+import ForecastSupportNotice from "../../components/common/ForecastSupportNotice";
+import type { ForecastState } from "../../components/common/ForecastSupportNotice";
 
 interface MLFeatures {
   pre_standard_score: number;
@@ -32,6 +40,9 @@ interface MLFeatures {
   num_siblings: number | null;
   birth_order: number | null;
 }
+interface SandboxPredictionRequest extends MLFeatures {
+  raw_scores: Record<SandboxDomain, number>;
+}
 interface BaselineDomain {
   domain: string;
   name: string;
@@ -50,13 +61,10 @@ interface Intervention extends BaselineDomain {
   success_check: string;
   source_url: string;
 }
-interface Prediction {
+interface Prediction extends ForecastState {
   student_id: number | null;
   student_name: string | null;
   assessment_date: string | null;
-  predicted_post_interpretation: string;
-  confidence_percentage: number;
-  confidence_percentages: Record<string, number>;
   baseline_domains: BaselineDomain[];
   interventions: Intervention[];
   features: MLFeatures;
@@ -72,7 +80,17 @@ interface PredictionViewProps {
   prediction: Prediction;
   sandbox?: boolean;
 }
-type SandboxValues = { [K in keyof MLFeatures]: string };
+type FeatureValues = { [K in keyof MLFeatures]: string };
+type RawFeature = `${SandboxDomain}_pre_raw`;
+type SandboxInputs = Omit<
+  FeatureValues,
+  | DomainFeature
+  | "pre_standard_score"
+  | "pre_total_scaled"
+  | "pre_delayed_domains_count"
+> &
+  Record<RawFeature, string>;
+type SandboxValues = SandboxInputs & FeatureValues;
 type DomainFeature =
   | "gm_pre_scaled"
   | "fm_pre_scaled"
@@ -84,15 +102,60 @@ type DomainFeature =
 interface DomainInput {
   key: DomainFeature;
   name: string;
+  code: SandboxDomain;
+  rawKey: RawFeature;
+  maxRaw: number;
 }
 const domains: DomainInput[] = [
-  { key: "gm_pre_scaled", name: "Gross Motor" },
-  { key: "fm_pre_scaled", name: "Fine Motor" },
-  { key: "sh_pre_scaled", name: "Self-Help" },
-  { key: "rl_pre_scaled", name: "Receptive Language" },
-  { key: "el_pre_scaled", name: "Expressive Language" },
-  { key: "cog_pre_scaled", name: "Cognitive" },
-  { key: "se_pre_scaled", name: "Socio-Emotional" },
+  {
+    key: "gm_pre_scaled",
+    name: "Gross Motor",
+    code: "GM",
+    rawKey: "GM_pre_raw",
+    maxRaw: 13,
+  },
+  {
+    key: "fm_pre_scaled",
+    name: "Fine Motor",
+    code: "FM",
+    rawKey: "FM_pre_raw",
+    maxRaw: 11,
+  },
+  {
+    key: "sh_pre_scaled",
+    name: "Self-Help",
+    code: "SH",
+    rawKey: "SH_pre_raw",
+    maxRaw: 27,
+  },
+  {
+    key: "rl_pre_scaled",
+    name: "Receptive Language",
+    code: "RL",
+    rawKey: "RL_pre_raw",
+    maxRaw: 5,
+  },
+  {
+    key: "el_pre_scaled",
+    name: "Expressive Language",
+    code: "EL",
+    rawKey: "EL_pre_raw",
+    maxRaw: 8,
+  },
+  {
+    key: "cog_pre_scaled",
+    name: "Cognitive",
+    code: "C",
+    rawKey: "C_pre_raw",
+    maxRaw: 21,
+  },
+  {
+    key: "se_pre_scaled",
+    name: "Socio-Emotional",
+    code: "SE",
+    rawKey: "SE_pre_raw",
+    maxRaw: 24,
+  },
 ];
 const classes = [
   {
@@ -118,17 +181,14 @@ const card =
   "min-w-0 overflow-hidden rounded-xl border border-slate-200/80 bg-white p-5 shadow-xs sm:p-6";
 const input =
   "w-full min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-brand! focus:ring-2 focus:ring-brand/15!";
-const initialSandbox: SandboxValues = {
-  pre_standard_score: "66",
-  pre_total_scaled: "49",
-  pre_delayed_domains_count: "0",
-  gm_pre_scaled: "7",
-  fm_pre_scaled: "7",
-  sh_pre_scaled: "7",
-  rl_pre_scaled: "7",
-  el_pre_scaled: "7",
-  cog_pre_scaled: "7",
-  se_pre_scaled: "7",
+const initialSandbox: SandboxInputs = {
+  GM_pre_raw: "",
+  FM_pre_raw: "",
+  SH_pre_raw: "",
+  RL_pre_raw: "",
+  EL_pre_raw: "",
+  C_pre_raw: "",
+  SE_pre_raw: "",
   age_months_pre: "66",
   gender: "",
   handedness: "",
@@ -138,15 +198,6 @@ const initialSandbox: SandboxValues = {
   num_siblings: "",
   birth_order: "",
 };
-const numericFields: (keyof MLFeatures)[] = [
-  ...domains.map((d) => d.key),
-  "pre_standard_score",
-  "pre_total_scaled",
-  "pre_delayed_domains_count",
-  "age_months_pre",
-  "num_siblings",
-  "birth_order",
-];
 function tierTone(tier: string): string {
   return tier === "Average"
     ? classes[0].tone
@@ -166,89 +217,96 @@ function PredictionView({ prediction, sandbox = false }: PredictionViewProps) {
       aria-label={sandbox ? "Sandbox prediction" : "Student prediction"}
     >
       <section className={card}>
-        <Stack
-          direction={{ xs: "column", sm: "row" }}
-          sx={{ gap: 2, justifyContent: "space-between" }}
-        >
-          <div>
-            <p className="text-xs font-semibold tracking-wider text-slate-500 uppercase">
-              {sandbox
-                ? "Hypothetical Post-Test outcome"
-                : "Predicted Post-Test outcome"}
-            </p>
-            <h2
-              className={`mt-3 inline-block rounded-xl px-4 py-3 text-lg font-semibold ${outcome.tone}`}
-            >
-              {prediction.predicted_post_interpretation}
-            </h2>
-            {prediction.student_name && (
-              <p className="mt-3 text-sm text-slate-500">
-                {prediction.student_name} · PRE assessment:{" "}
-                {prediction.assessment_date}
+        {prediction.prediction_status === "available" &&
+          prediction.confidence_percentage !== null && (
+            <>
+              <Stack
+                direction={{ xs: "column", sm: "row" }}
+                sx={{ gap: 2, justifyContent: "space-between" }}
+              >
+                <div>
+                  <p className="text-xs font-semibold tracking-wider text-slate-500 uppercase">
+                    {sandbox
+                      ? "Hypothetical Post-Test outcome"
+                      : "Predicted Post-Test outcome"}
+                  </p>
+                  <h2
+                    className={`mt-3 inline-block rounded-xl px-4 py-3 text-lg font-semibold ${outcome.tone}`}
+                  >
+                    {prediction.predicted_post_interpretation}
+                  </h2>
+                  {prediction.student_name && (
+                    <p className="mt-3 text-sm text-slate-500">
+                      {prediction.student_name} · PRE assessment:{" "}
+                      {prediction.assessment_date}
+                    </p>
+                  )}
+                </div>
+                <div className="shrink-0">
+                  <p className="text-3xl font-semibold text-slate-800">
+                    {prediction.confidence_percentage.toFixed(1)}%
+                  </p>
+                  <p className="text-xs text-slate-500">Model confidence</p>
+                </div>
+              </Stack>
+              <p className="mt-4 text-sm text-slate-500">
+                These are model probabilities, not calibrated clinical
+                confidence or a guarantee of future performance.
               </p>
-            )}
-          </div>
-          <div className="shrink-0">
-            <p className="text-3xl font-semibold text-slate-800">
-              {prediction.confidence_percentage.toFixed(1)}%
-            </p>
-            <p className="text-xs text-slate-500">Model confidence</p>
-          </div>
-        </Stack>
-        <p className="mt-4 text-sm text-slate-500">
-          These are model probabilities, not calibrated clinical confidence or a
-          guarantee of future performance.
-        </p>
-        <div
-          className="mt-5 flex h-4 w-full overflow-hidden rounded-full bg-slate-100"
-          role="img"
-          aria-label={classes
-            .map(
-              (item) =>
-                `${item.short}: ${(prediction.confidence_percentages[item.label] || 0).toFixed(1)}%`,
-            )
-            .join(", ")}
-        >
-          {classes.map((item) => (
-            <div
-              key={item.label}
-              className={item.color}
-              style={{
-                width: `${prediction.confidence_percentages[item.label] || 0}%`,
-              }}
-            />
-          ))}
-        </div>
-        <Stack
-          direction={{ xs: "column", sm: "row" }}
-          sx={{ mt: 2, gap: 2, justifyContent: "space-between" }}
-        >
-          {classes.map((item) => (
-            <p
-              key={item.label}
-              className="flex items-center gap-2 text-sm text-slate-600"
-            >
-              <span
-                className={`inline-block size-2.5 rounded-full ${item.color}`}
-              />
-              {item.short}
-              <strong className="ml-auto sm:ml-1">
-                {(prediction.confidence_percentages[item.label] || 0).toFixed(
-                  1,
-                )}
-                %
-              </strong>
-            </p>
-          ))}
-        </Stack>
+              <div
+                className="mt-5 flex h-4 w-full overflow-hidden rounded-full bg-slate-100"
+                role="img"
+                aria-label={classes
+                  .map(
+                    (item) =>
+                      `${item.short}: ${(prediction.confidence_percentages[item.label] || 0).toFixed(1)}%`,
+                  )
+                  .join(", ")}
+              >
+                {classes.map((item) => (
+                  <div
+                    key={item.label}
+                    className={item.color}
+                    style={{
+                      width: `${prediction.confidence_percentages[item.label] || 0}%`,
+                    }}
+                  />
+                ))}
+              </div>
+              <Stack
+                direction={{ xs: "column", sm: "row" }}
+                sx={{ mt: 2, gap: 2, justifyContent: "space-between" }}
+              >
+                {classes.map((item) => (
+                  <p
+                    key={item.label}
+                    className="flex items-center gap-2 text-sm text-slate-600"
+                  >
+                    <span
+                      className={`inline-block size-2.5 rounded-full ${item.color}`}
+                    />
+                    {item.short}
+                    <strong className="ml-auto sm:ml-1">
+                      {(
+                        prediction.confidence_percentages[item.label] || 0
+                      ).toFixed(1)}
+                      %
+                    </strong>
+                  </p>
+                ))}
+              </Stack>
+            </>
+          )}
+        <ForecastSupportNotice />
         {prediction.imputed_fields.length > 0 && (
           <p className="mt-5 rounded-xl bg-slate-50 p-3 text-xs leading-relaxed text-slate-600">
-            Training median/mode used for missing inputs:{" "}
+            Inputs left blank:{" "}
             {prediction.imputed_fields
               .map((field) => field.replaceAll("_", " "))
               .join(", ")}
-            . These estimates do not describe the learner’s actual family
-            circumstances. Free-text occupations have no reviewed tier mapping.
+            . Household details are excluded from this research prediction.
+            Missing child demographics use training defaults, which do not
+            describe the learner’s actual family circumstances.
           </p>
         )}
       </section>
@@ -259,9 +317,14 @@ function PredictionView({ prediction, sandbox = false }: PredictionViewProps) {
         >
           Baseline profile
         </h2>
+        <p className="mb-2 text-sm font-medium text-slate-700">
+          Overall PRE interpretation (scoring table):{" "}
+          {prediction.pre_interpretation ?? "Unavailable"}
+        </p>
         <p className="mb-4 text-sm text-slate-500">
           PRE scaled scores · local planning tiers: ≤3 Delay, 4–6 Slight Delay,
-          ≥7 Average.
+          ≥7 Average. These domain support tiers are separate from the overall
+          PRE interpretation.
         </p>
         <Stack
           direction="row"
@@ -775,20 +838,34 @@ function StudentEvaluation({
   );
 }
 
-function derivedSandboxValues(values: SandboxValues): SandboxValues {
-  const scores = domains.map((domain) => Number(values[domain.key]));
-  const validDomains = domains.every(
-    (domain, index) =>
-      values[domain.key].trim() !== "" &&
-      Number.isInteger(scores[index]) &&
-      scores[index] >= 0 &&
-      scores[index] <= 19,
+function validInteger(value: string, min: number, max: number): boolean {
+  const number = Number(value);
+  return (
+    value.trim() !== "" &&
+    Number.isInteger(number) &&
+    number >= min &&
+    number <= max
   );
-  const total = scores.reduce((sum, score) => sum + score, 0);
+}
+
+function derivedSandboxValues(values: SandboxInputs): SandboxValues {
   const age = Number(values.age_months_pre);
-  const validAge = Number.isInteger(age) && age >= 1 && age <= 216;
+  const validAge = validInteger(values.age_months_pre, 36, 71);
+  const scaled = {} as Pick<FeatureValues, DomainFeature>;
+  for (const domain of domains) {
+    scaled[domain.key] =
+      validAge && validInteger(values[domain.rawKey], 0, domain.maxRaw)
+        ? String(
+            sandboxScaledScore(domain.code, Number(values[domain.rawKey]), age),
+          )
+        : "";
+  }
+  const validDomains = domains.every((domain) => scaled[domain.key] !== "");
+  const scores = domains.map((domain) => Number(scaled[domain.key]));
+  const total = scores.reduce((sum, score) => sum + score, 0);
   return {
     ...values,
+    ...scaled,
     pre_total_scaled: validDomains ? String(total) : "",
     pre_delayed_domains_count: validDomains
       ? String(scores.filter((score) => score <= 6).length)
@@ -799,12 +876,34 @@ function derivedSandboxValues(values: SandboxValues): SandboxValues {
 }
 
 function SandboxSimulator() {
+  const { user } = useAuth();
+  const [legacyValues] = useState(
+    () =>
+      readDraft<FeatureValues>(`ames_draft_${user?.id || 0}_ml_sandbox_v1`)
+        ?.values,
+  );
+  const [startingValues] = useState<SandboxInputs>(() => {
+    const next = { ...initialSandbox };
+    if (legacyValues) {
+      for (const field of Object.keys(
+        initialSandbox,
+      ) as (keyof SandboxInputs)[]) {
+        if (field in legacyValues)
+          next[field] = legacyValues[field as keyof FeatureValues];
+      }
+    }
+    return next;
+  });
   const {
     values: draftValues,
     change,
     key,
-  } = useDurableForm<SandboxValues>("ml_sandbox_v1", initialSandbox);
-  const [prediction, setPrediction] = useState<Prediction | null>(null);
+  } = useDurableForm<SandboxInputs>("ml_sandbox_raw_v2", startingValues);
+  const [submittedResult, setSubmittedResult] = useState<{
+    revision: string;
+    data: Prediction;
+  } | null>(null);
+  const requestVersion = useRef(0);
   const [error, setError] = useState<string>("");
   const [running, setRunning] = useState<boolean>(false);
   const [retry, setRetry] = useState<number>(0);
@@ -812,18 +911,35 @@ function SandboxSimulator() {
     () => derivedSandboxValues(draftValues),
     [draftValues],
   );
-  useEffect(() => {
-    if (
-      values.pre_total_scaled !== draftValues.pre_total_scaled ||
-      values.pre_standard_score !== draftValues.pre_standard_score ||
-      values.pre_delayed_domains_count !== draftValues.pre_delayed_domains_count
-    ) {
-      change(values);
-    }
-  }, [values, draftValues, change]);
-  const update = (field: keyof MLFeatures, value: string) => {
-    change(derivedSandboxValues({ ...values, [field]: value }));
+  // Bind rendering to the complete input snapshot, including restored drafts.
+  const revision = JSON.stringify([key, draftValues]);
+  const prediction =
+    submittedResult?.revision === revision ? submittedResult.data : null;
+  const update = (field: keyof SandboxInputs, value: string) => {
+    ++requestVersion.current;
+    setSubmittedResult(null);
+    setError("");
+    setRunning(true);
+    change({ ...draftValues, [field]: value });
   };
+  const fieldErrors: Partial<Record<keyof SandboxValues, string>> = {};
+  for (const domain of domains) {
+    if (!validInteger(values[domain.rawKey], 0, domain.maxRaw))
+      fieldErrors[domain.rawKey] =
+        `Enter a whole-number raw score from 0 to ${domain.maxRaw}.`;
+  }
+  for (const [field, min, max] of [
+    ["age_months_pre", 36, 71],
+    ["num_siblings", 0, 30],
+    ["birth_order", 1, 31],
+  ] as const) {
+    if (
+      (field === "age_months_pre" || values[field] !== "") &&
+      !validInteger(values[field], min, max)
+    )
+      fieldErrors[field] = `Enter a whole number from ${min} to ${max}.`;
+  }
+  const invalid = Object.keys(fieldErrors).length > 0;
   useEffect(() => {
     const online = () => setRetry((previous) => previous + 1);
     window.addEventListener("online", online);
@@ -831,13 +947,16 @@ function SandboxSimulator() {
   }, []);
   useEffect(() => {
     const controller = new AbortController();
-    setPrediction(null);
+    const version = ++requestVersion.current;
+    const currentRequest = () =>
+      !controller.signal.aborted && requestVersion.current === version;
+    setSubmittedResult(null);
     setError("");
     setRunning(true);
     const timer = window.setTimeout(() => {
-      const draft = readDraft<SandboxValues>(key);
+      const draft = readDraft<SandboxInputs>(key);
       const markPending = (pending: boolean) => {
-        const current = readDraft<SandboxValues>(key);
+        const current = readDraft<SandboxInputs>(key);
         if (draft && current?.revision === draft.revision)
           storeDraft(key, { ...current, is_pending_sync: pending });
       };
@@ -849,73 +968,104 @@ function SandboxSimulator() {
         setRunning(false);
         return;
       }
-      const requiredNumeric = numericFields.filter(
-        (field) => field !== "num_siblings" && field !== "birth_order",
-      );
-      if (requiredNumeric.some((field) => values[field].trim() === "")) {
+      if (invalid) {
         setError(
-          "Enter all baseline scores and the PRE age to run the simulation.",
+          "Enter valid raw scores and PRE age, and review the highlighted fields to run the simulation.",
         );
         setRunning(false);
         return;
       }
-      const payload = Object.fromEntries(
-        Object.entries(values).map(([field, value]) => [
-          field,
-          value === ""
-            ? null
-            : numericFields.includes(field as keyof MLFeatures)
-              ? Number(value)
-              : value,
-        ]),
-      );
+      const optionalNumber = (value: string): number | null =>
+        value === "" ? null : Number(value);
+      const payload: SandboxPredictionRequest = {
+        gm_pre_scaled: Number(values.gm_pre_scaled),
+        fm_pre_scaled: Number(values.fm_pre_scaled),
+        sh_pre_scaled: Number(values.sh_pre_scaled),
+        rl_pre_scaled: Number(values.rl_pre_scaled),
+        el_pre_scaled: Number(values.el_pre_scaled),
+        cog_pre_scaled: Number(values.cog_pre_scaled),
+        se_pre_scaled: Number(values.se_pre_scaled),
+        pre_standard_score: Number(values.pre_standard_score),
+        pre_total_scaled: Number(values.pre_total_scaled),
+        pre_delayed_domains_count: Number(values.pre_delayed_domains_count),
+        age_months_pre: Number(values.age_months_pre),
+        gender: values.gender || null,
+        handedness: values.handedness || null,
+        father_education_level: values.father_education_level || null,
+        mother_education_level: values.mother_education_level || null,
+        household_occupation_tier: values.household_occupation_tier || null,
+        num_siblings: optionalNumber(values.num_siblings),
+        birth_order: optionalNumber(values.birth_order),
+        raw_scores: {
+          GM: Number(values.GM_pre_raw),
+          FM: Number(values.FM_pre_raw),
+          SH: Number(values.SH_pre_raw),
+          RL: Number(values.RL_pre_raw),
+          EL: Number(values.EL_pre_raw),
+          C: Number(values.C_pre_raw),
+          SE: Number(values.SE_pre_raw),
+        },
+      };
       void API.post<Prediction>("/api/ml/predict/sandbox", payload, {
         signal: controller.signal,
       })
         .then(({ data }) => {
-          if (!controller.signal.aborted) {
-            setPrediction(data);
+          if (currentRequest()) {
+            setSubmittedResult({ revision, data });
             markPending(false);
           }
         })
         .catch((err: unknown) => {
-          if (!controller.signal.aborted) {
+          if (currentRequest()) {
             markPending(isNetworkError(err));
             setError(errorMessage(err));
           }
         })
         .finally(() => {
-          if (!controller.signal.aborted) setRunning(false);
+          if (currentRequest()) setRunning(false);
         });
     }, 450);
     return () => {
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [values, key, retry]);
+  }, [values, key, retry, invalid, revision]);
   const numberField = (
-    field: keyof MLFeatures,
+    field: keyof SandboxValues,
     label: string,
     min: number,
     max: number,
     readOnly = false,
+    helper?: string,
   ) => (
     <label key={field} className="text-sm font-medium text-slate-600">
-      {label}
+      <span>{label}</span>
       <input
         className={`${input} mt-2 ${readOnly ? "bg-slate-50" : ""}`}
         type="number"
         min={min}
         max={max}
         step={1}
+        aria-label={label}
+        aria-invalid={Boolean(fieldErrors[field])}
+        aria-describedby={`${field}-helper`}
         value={values[field]}
         readOnly={readOnly}
-        onChange={(event) => update(field, event.target.value)}
+        onChange={(event) => {
+          if (!readOnly)
+            update(field as keyof SandboxInputs, event.target.value);
+        }}
       />
+      <span
+        id={`${field}-helper`}
+        className={`mt-1 block text-xs ${fieldErrors[field] ? "text-amber-800" : "text-slate-500"}`}
+      >
+        {fieldErrors[field] || helper}
+      </span>
     </label>
   );
   const selectField = (
-    field: keyof MLFeatures,
+    field: keyof SandboxInputs,
     label: string,
     options: string[],
   ) => (
@@ -926,7 +1076,7 @@ function SandboxSimulator() {
         value={values[field]}
         onChange={(event) => update(field, event.target.value)}
       >
-        <option value="">Missing · use training imputer</option>
+        <option value="">Not provided</option>
         {options.map((option) => (
           <option key={option} value={option}>
             {option.replaceAll("_", " ")}
@@ -943,10 +1093,92 @@ function SandboxSimulator() {
         </h2>
         <p className="mt-1 mb-5 text-sm leading-relaxed text-slate-500">
           Explore hypothetical inputs. Predictions update as you adjust values.
-          Total scaled score, standard score and delayed-domain count follow the
-          seven domains using the official ECCD lookup table. Sandbox inputs
-          stay on this device across reloads.
+          Enter each domain’s raw score (number of KAYA answers). Scaled scores,
+          total scaled score, standard score and delayed-domain count are
+          calculated using the PRE age and official ECCD lookup table. Sandbox
+          inputs stay on this device across reloads. Age changes within the same
+          scoring bracket can leave scores unchanged.
         </p>
+        <Stack
+          component="section"
+          aria-label="Live ECCD scoring summary"
+          sx={{ gap: 2, mb: 3, p: { xs: 2, sm: 3 }, borderRadius: 3 }}
+          className="bg-slate-50 shadow-xs"
+        >
+          <h3 className="font-semibold text-slate-800">
+            Live ECCD scoring summary
+          </h3>
+          <p className="text-sm text-slate-500">
+            Raw KAYA counts → official scaled scores for the selected PRE age.
+          </p>
+          <Stack direction="row" sx={{ flexWrap: "wrap", gap: 2 }}>
+            {domains.map((domain) => (
+              <Stack
+                key={domain.code}
+                sx={{
+                  gap: 0.5,
+                  flex: {
+                    xs: "1 1 100%",
+                    sm: "1 1 calc(50% - 1rem)",
+                    lg: "1 1 calc(25% - 1rem)",
+                  },
+                  minWidth: 0,
+                }}
+              >
+                <p className="text-sm text-slate-500">{domain.name}</p>
+                <p className="text-sm font-semibold text-slate-700">
+                  {domain.code}:{" "}
+                  {validInteger(values[domain.rawKey], 0, domain.maxRaw)
+                    ? values[domain.rawKey]
+                    : "—"}
+                  /{domain.maxRaw} (Scaled: {values[domain.key] || "—"})
+                </p>
+              </Stack>
+            ))}
+          </Stack>
+          <Stack direction="row" sx={{ flexWrap: "wrap", gap: 2 }}>
+            {[
+              ["Total scaled score", values.pre_total_scaled],
+              ["Standard score", values.pre_standard_score],
+              [
+                "DepEd interpretation",
+                values.pre_total_scaled !== ""
+                  ? sandboxStandardResult(
+                      Number(values.pre_total_scaled),
+                      Number(values.age_months_pre),
+                    ).interpretation
+                  : "",
+              ],
+              ["Delayed domains (scaled ≤6)", values.pre_delayed_domains_count],
+            ].map(([label, value]) => (
+              <Stack
+                key={label}
+                sx={{ gap: 0.5, flex: "1 1 10rem", minWidth: 0 }}
+              >
+                <p className="text-sm text-slate-500">{label}</p>
+                <p className="font-semibold text-slate-800">{value || "—"}</p>
+              </Stack>
+            ))}
+          </Stack>
+        </Stack>
+        {legacyValues && (
+          <details className="mb-5 rounded-xl bg-slate-50 p-3 text-sm text-slate-600">
+            <summary>
+              Previous scaled-score draft retained for reference
+            </summary>
+            <p className="my-2">
+              Enter raw scores below. Your previous scaled scores are preserved
+              separately.
+            </p>
+            <ul>
+              {domains.map((domain) => (
+                <li key={domain.key}>
+                  {domain.name}: {legacyValues[domain.key]}
+                </li>
+              ))}
+            </ul>
+          </details>
+        )}
         <Stack
           direction="row"
           sx={{
@@ -962,8 +1194,27 @@ function SandboxSimulator() {
             },
           }}
         >
+          {numberField(
+            "age_months_pre",
+            "Age at PRE (completed months)",
+            36,
+            71,
+            false,
+            validInteger(values.age_months_pre, 36, 71)
+              ? `Decimal age: ${sandboxAge(Number(values.age_months_pre)).decimalAge.toFixed(1)} years · ${sandboxAge(Number(values.age_months_pre)).bracket}`
+              : undefined,
+          )}
           {domains.map((domain) =>
-            numberField(domain.key, `${domain.name} scaled score`, 0, 19),
+            numberField(
+              domain.rawKey,
+              `${domain.name} raw score`,
+              0,
+              domain.maxRaw,
+              false,
+              values[domain.key] !== ""
+                ? `Calculated scaled score: ${values[domain.key]}`
+                : `KAYA answers, 0–${domain.maxRaw}`,
+            ),
           )}
           {numberField(
             "pre_standard_score",
@@ -985,12 +1236,6 @@ function SandboxSimulator() {
             0,
             7,
             true,
-          )}
-          {numberField(
-            "age_months_pre",
-            "Age at PRE (completed months)",
-            1,
-            216,
           )}
           {selectField("gender", "Gender", ["MALE", "FEMALE"])}
           {selectField("handedness", "Handedness", ["Left", "Right"])}
@@ -1126,13 +1371,14 @@ export default function MlInsights() {
             </p>
             <p className="mt-2 font-medium">Understand the evaluation limits</p>
             <p className="mt-2">
-              The evaluation report records 88.9% accuracy on 459 mixed
-              real/synthetic holdout records, but only 25% accuracy on its eight
+              The evaluation report records 92.81% accuracy on 459 mixed
+              real/synthetic holdout records, but only 37.5% accuracy on its eight
               real holdout learners. All 29 real learners had Average Post-Test
               outcomes, and all contributed to synthetic generation anchors.
-              Household effects reflect simulation assumptions; they are not
-              causal findings. Model probabilities and activity suggestions do
-              not demonstrate diagnostic validity or intervention effectiveness.
+              Household details are excluded from prediction. The synthetic
+              generator uses simulation assumptions rather than causal findings.
+              Model probabilities and activity suggestions do not demonstrate
+              diagnostic validity or intervention effectiveness.
             </p>
           </details>
           <Stack
@@ -1140,7 +1386,7 @@ export default function MlInsights() {
             sx={{ flexWrap: "wrap", alignItems: "center", gap: 1, ml: "auto" }}
           >
             <span className="rounded border border-slate-200 bg-white/80 px-2 py-0.5 font-medium text-slate-600">
-              Random Forest · 18 inputs
+              Calibrated model · 18 inputs
             </span>
             <span className="rounded border border-slate-200 bg-white/80 px-2 py-0.5 font-medium text-slate-600">
               3 supported classes

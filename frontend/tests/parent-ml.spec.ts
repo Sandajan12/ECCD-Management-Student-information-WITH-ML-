@@ -51,7 +51,9 @@ test("teacher switch persists, enables real parent prediction, and revocation hi
     await login(childPage, parent, "/parent/ml-insights");
     await expect(childPage.getByText("Ready for Prediction", { exact: true })).toBeVisible();
     await expect(childPage.getByRole("combobox", { name: "Select child" })).toHaveCount(0);
+    const predicted = childPage.waitForResponse((response) => response.url().endsWith("/api/ml/parent/predict/1") && response.request().method() === "POST");
     await childPage.getByRole("button", { name: "Predict Post-Test Outcome" }).click();
+    expect((await predicted).status()).toBe(200);
     const results = childPage.getByLabel("Child prediction", { exact: true });
     await expect(results.getByRole("heading", { name: "Baseline Development Profile" })).toBeVisible();
     await expect(results.getByText("At home", { exact: true }).first()).toBeVisible();
@@ -97,11 +99,15 @@ test("multiple synced children can switch while a prediction is in flight", asyn
   });
   await page.route("**/api/ml/parent/readiness/3", route => route.fulfill({ json: { student_id: 3, student_name: "Sibling Child", pre_complete: false, allow_parent_predictions: true, is_published: true, readiness_note: "PRE incomplete" } }));
   let release: (() => void) | undefined;
+  let finished: (() => void) | undefined;
   const pending = new Promise<void>(resolve => { release = resolve; });
+  const oldFinished = new Promise<void>(resolve => { finished = resolve; });
   await page.route("**/api/ml/parent/predict/1", async route => {
-    const response = await route.fetch();
-    await pending;
-    await route.fulfill({ response }).catch(() => {});
+    try {
+      const response = await route.fetch();
+      await pending;
+      await route.fulfill({ response }).catch(() => {});
+    } finally { finished?.(); }
   });
   await login(page, parent, "/parent/ml-insights");
   await expect(page.getByRole("button", { name: "Predict Post-Test Outcome" })).toBeEnabled();
@@ -112,6 +118,7 @@ test("multiple synced children can switch while a prediction is in flight", asyn
   await page.getByRole("combobox", { name: "Select child" }).click();
   await page.getByRole("option", { name: "Sibling Child" }).click();
   release!();
+  await oldFinished;
   await expect(page.getByText(/baseline PRE assessment for Sibling Child/)).toBeVisible();
   await expect(page.getByLabel("Child prediction", { exact: true })).toHaveCount(0);
   await page.reload();
@@ -161,4 +168,55 @@ test("archived child disappears on polling and returns after restoration without
   await page.evaluate(() => window.dispatchEvent(new Event("focus")));
   await expect(page.getByText(/baseline PRE assessment for Test Middle Student/)).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy();
+});
+
+test("PRE age outside training range shows teacher and parent forecasts with permitted guidance", async ({ page, request }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await completePre(request);
+  const updated = await request.put(`${backend}/api/students/1`, {
+    headers: headers(),
+    data: { date_of_birth: "2022-12-10" },
+  });
+  expect(updated.status(), await updated.text()).toBe(200);
+  await permissions(request, {
+    allow_parent_predictions: true,
+    allow_parent_view_eccd_pre: true,
+    allow_parent_view_eccd_marks: false,
+  });
+  await login(page, teacher, "/teacher/ml-insights");
+  await page.getByRole("button", { name: "Predict All Students", exact: true }).click();
+  await expect(page.getByRole("row").filter({ hasText: "Test Middle Student" }).getByText("Ready", { exact: true })).toHaveCount(2);
+  await page.getByRole("cell", { name: "Test Middle Student", exact: true }).click();
+  const teacherResult = page.getByLabel("Student prediction", { exact: true });
+  await expect(teacherResult.getByText("Model confidence", { exact: true })).toBeVisible();
+  await expect(teacherResult.getByText(/Insufficient training support|fitted numeric bounds/)).toHaveCount(0);
+  await expect(teacherResult.getByRole("img")).toHaveCount(1);
+  await teacherResult.locator("summary").filter({ hasText: "Gross Motor" }).click();
+  await expect(teacherResult.getByRole("heading", { name: "At home", exact: true })).toBeVisible();
+
+  await login(page, parent, "/parent/ml-insights");
+  const forecastResponse = page.waitForResponse(response => response.url().endsWith("/api/ml/parent/predict/1") && response.request().method() === "POST");
+  await page.getByRole("button", { name: "Predict Post-Test Outcome", exact: true }).click();
+  const forecast = await (await forecastResponse).json() as { prediction_status: string; confidence_percentages: Record<string, number> };
+  expect(forecast.prediction_status).toBe("available");
+  expect(Object.values(forecast.confidence_percentages).reduce((sum, value) => sum + value, 0)).toBeCloseTo(100);
+  const result = page.getByLabel("Child prediction", { exact: true });
+  await expect(result).toBeVisible();
+  await expect(result.getByText(/Insufficient training support|fitted numeric bounds/)).toHaveCount(0);
+  await expect(result.getByRole("heading", { name: "Baseline Development Profile", exact: true })).toBeVisible();
+  await expect(result.getByText(/Overall PRE interpretation \(scoring table\):/)).toBeVisible();
+  await expect(result.getByText("At home", { exact: true }).first()).toBeVisible();
+  await expect(result.getByRole("img")).toHaveCount(1);
+  expect(await result.innerText()).toMatch(/\d+(?:\.\d+)?%/);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy();
+  await page.screenshot({ path: test.info().outputPath("forecast-outside-training-range-parent.png"), fullPage: true });
+  const draftKey = `eccd_draft_1_PRE_1_home_${parent.user.id}`;
+  await page.evaluate((key) => localStorage.setItem(key, "keep-existing-work"), draftKey);
+  await permissions(request, { allow_parent_view_eccd_pre: false });
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await expect(result).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Predict Post-Test Outcome", exact: true })).toBeDisabled();
+  expect(await page.evaluate((key) => localStorage.getItem(key), draftKey)).toBe("keep-existing-work");
+  expect(errors).toEqual([]);
 });

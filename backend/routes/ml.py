@@ -1,6 +1,7 @@
 """Authorized teacher and parent research predictions; assessments never change."""
 import logging
 import re
+from decimal import Decimal, ROUND_HALF_UP
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import ValidationError
@@ -11,12 +12,12 @@ from backend.ml.common import DOMAINS, DOMAIN_NAMES, sandbox_composites
 from backend.ml.inference import predict_student
 from backend.models import EccdQuestion, FamilyAccess, Parent, Student, StudentEccdEvaluation, User
 from backend.models.eccd import TestingPeriod
-from backend.schemas.ml import MLFeatures, MLStudentOption, PredictionResponse, ParentMLReadiness, ParentPredictionResponse
+from backend.schemas.ml import MLFeatures, MLStudentOption, PredictionResponse, ParentMLReadiness, ParentPredictionResponse, SandboxPredictionRequest
 from backend.schemas.common import PositiveId
 from backend.utils.access import authorize_student, current_teacher, resolve_student, teacher_sections, permissions_for_student
 from backend.utils.deps import verify_role
 from backend.utils.eccd_dates import get_official_testing_date
-from backend.utils.eccd_scorer import calculate_decimal_age, calculate_scores
+from backend.utils.eccd_scorer import calculate_decimal_age, calculate_scores, calculate_raw_scores, lookup_standard_score
 from backend.utils.students import parent_student_name
 
 router = APIRouter(prefix="/api/ml", tags=["ML Research"])
@@ -92,8 +93,10 @@ def prediction_response(features: MLFeatures, item_features: dict | None = None)
         logging.getLogger(__name__).error("ML artifacts unavailable or incompatible.")
         raise HTTPException(503, "The research model is unavailable. Please contact the administrator.") from None
     probabilities = result["class_probabilities"]
+    decimal_age = float((Decimal(values["age_months_pre"]) / 12).quantize(Decimal("0.1"), rounding=ROUND_HALF_UP))
     return {**result, "confidence_percentages": {label: value * 100 for label, value in probabilities.items()},
-            "confidence_percentage": probabilities[result["predicted_post_interpretation"]] * 100,
+            "confidence_percentage": probabilities[result["predicted_post_interpretation"]] * 100 if probabilities else None,
+            "pre_interpretation": lookup_standard_score(values["pre_total_scaled"], decimal_age)["interpretation"],
             "features": features, "imputed_fields": [key for key, value in values.items() if value is None],
             "baseline_domains": [{"domain": code, "name": DOMAIN_NAMES[code],
                 "pre_scaled_score": values[f"{prefix}_pre_scaled"],
@@ -102,8 +105,14 @@ def prediction_response(features: MLFeatures, item_features: dict | None = None)
 
 
 @router.post("/predict/sandbox", response_model=PredictionResponse)
-def predict_sandbox(payload: MLFeatures, user: User = Depends(teacher_only)):
-    values = payload.model_dump()
+def predict_sandbox(payload: SandboxPredictionRequest, user: User = Depends(teacher_only)):
+    values = payload.model_dump(exclude={"raw_scores"})
+    if payload.raw_scores is not None:
+        age = float((Decimal(payload.age_months_pre) / 12).quantize(
+            Decimal("0.1"), rounding=ROUND_HALF_UP))
+        scores = calculate_raw_scores(payload.raw_scores.model_dump(), age)
+        values.update({f"{prefix}_pre_scaled": scores["scaled_scores"][code]
+                       for code, (prefix, _) in DOMAINS.items()})
     return prediction_response(MLFeatures(**{**values, **sandbox_composites(values)}))
 
 

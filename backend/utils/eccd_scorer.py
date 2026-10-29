@@ -55,12 +55,6 @@ def lookup_standard_score(total_scaled: int, decimal_age: float) -> dict:
     return entry or {"standardScore": None, "interpretation": None}
 
 def calculate_scores(evaluations: List[Dict[str, Any]], decimal_age: float) -> Dict[str, Any]:
-    bracket = get_age_bracket(decimal_age)
-    lookup = scoring_data.get(bracket)
-    
-    if not lookup:
-        raise ValueError(f"Scoring data not found for age bracket: {bracket}")
-
     raw_scores = {"GM": 0, "FM": 0, "SH": 0, "RL": 0, "EL": 0, "C": 0, "SE": 0}
     
     domain_mapping = {
@@ -86,6 +80,19 @@ def calculate_scores(evaluations: List[Dict[str, Any]], decimal_age: float) -> D
             if domain_code and domain_code in raw_scores:
                 raw_scores[domain_code] += 1
 
+    return calculate_raw_scores(raw_scores, decimal_age)
+
+
+def calculate_raw_scores(raw_scores: Dict[str, int], decimal_age: float) -> Dict[str, Any]:
+    """Convert domain counts with the same official rules as checklist scoring.
+
+    Request boundaries validate capacities; this shared lookup preserves the
+    existing checklist fallback behavior, including zero scaled table entries.
+    """
+    bracket = get_age_bracket(decimal_age)
+    lookup = scoring_data.get(bracket)
+    if not lookup:
+        raise ValueError(f"Scoring data not found for age bracket: {bracket}")
     scaled_scores = {}
     sum_of_scaled_scores = 0
 

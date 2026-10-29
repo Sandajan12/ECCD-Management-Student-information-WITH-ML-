@@ -5,7 +5,7 @@ from unittest.mock import patch
 from sqlalchemy import text
 
 from backend.migrations.parent_predictions import apply_parent_predictions, check_parent_predictions
-from backend.models import FamilyAccess, Section, SectionTeacher, StudentEccdEvaluation, Teacher, User
+from backend.models import FamilyAccess, Section, SectionTeacher, Student, StudentEccdEvaluation, Teacher, User
 from backend.schemas.backup import TeacherBackupRow
 from backend.tests import test_ml_api, test_phase2
 from backend.utils.teachers import assign_teacher
@@ -122,6 +122,39 @@ class ParentMLTests(unittest.TestCase):
             response = self.call(method, path, 5)
             self.assertEqual(response.status_code, 200, response.text)
             self.assertEqual(response.json()["student_name"], "Test Middle Student")
+
+    def test_age_outside_training_range_keeps_forecast_permitted_pre_and_guides(self):
+        from datetime import date
+        self.complete_pre()
+        self.settings(allow_parent_predictions=True, allow_parent_view_eccd_pre=True,
+                      allow_parent_view_student_info=False, allow_parent_view_eccd_marks=False)
+        with self.fixture.sessions() as db:
+            db.get(Student, 1).date_of_birth = date(2022, 12, 10)  # PRE age 44 months
+            db.commit()
+            before = list(db.execute(StudentEccdEvaluation.__table__.select()))
+        teacher = self.call("POST", "/api/ml/predict/student/1", 2).json()
+        response = self.call("POST", "/api/ml/parent/predict/1", 5)
+        self.assertEqual(response.status_code, 200, response.text)
+        result = response.json()
+        self.assertEqual(result["student_name"], "")
+        self.assertEqual(result["prediction_status"], "available")
+        self.assertIsNone(result["support_reason"])
+        self.assertEqual(result["predicted_post_interpretation"], teacher["predicted_post_interpretation"])
+        self.assertEqual(result["confidence_percentages"], teacher["confidence_percentages"])
+        self.assertAlmostEqual(sum(result["confidence_percentages"].values()), 100)
+        self.assertEqual(result["baseline_domains"], teacher["baseline_domains"])
+        self.assertEqual(result["pre_interpretation"], teacher["pre_interpretation"])
+        self.assertTrue(result["interventions"][0]["home_activity"])
+        self.assertNotIn("features", result)
+        self.assertNotIn("di_kaya_items", result["interventions"][0])
+        with self.fixture.sessions() as db:
+            self.assertEqual(before, list(db.execute(StudentEccdEvaluation.__table__.select())))
+        for changes in ({"allow_parent_view_eccd_pre": False},
+                        {"allow_parent_view_eccd_pre": True, "allow_parent_predictions": False}):
+            self.settings(**changes)
+            response = self.call("POST", "/api/ml/parent/predict/1", 5)
+            self.assertEqual(response.status_code, 403)
+            self.assertNotIn("baseline_domains", response.json())
 
     def test_active_adviser_inheritance_and_no_adviser_fail_closed(self):
         self.settings(allow_parent_predictions=True)
