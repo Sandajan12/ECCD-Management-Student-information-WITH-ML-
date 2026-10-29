@@ -20,13 +20,13 @@ You are maintaining and extending the AMES (Early Childhood Performance Analytic
   - `schemas/`: Pydantic validation models.
   - `routes/`: FastAPI `APIRouter` endpoint handlers.
 - **Validation:** Require Pydantic models for every incoming request payload and outgoing API response.
-- **Commands:** Use `uv` for package management (e.g., `uv pip install <package>`). Verify syntax with `uv run uvicorn main:app`.
+- **Commands:** Use `uv` for package management and explicitly select the project's Python 3.12 environment. From the repository root, run the API with `uv run --no-project --python .venv312 python -m uvicorn backend.main:app --reload --host 127.0.0.1 --port 8000 --env-file backend/.env`. Startup checks required schema upgrades; apply migrations explicitly using the current inventory in AI_CONTEXT.md and `backend/migrations/README.md`.
 
 ## 4. Frontend Rules (React & TypeScript)
 - **Commands:** Exclusively use `pnpm` for package management (e.g., `pnpm install`, `pnpm dev`).
 - **Strict MUI Styling Rule:** Never pass raw CSS properties (like fontWeight) as direct top-level props to MUI components. Always use the `sx` prop for custom styling (e.g., `sx={{ fontWeight: 'bold' }}`).
 - **Strict Typing:** Define explicit TypeScript interfaces for all component props, state variables, and API data payloads. Avoid using the `any` type.
-- **Verification:** Verify type consistency by running `pnpm tsc --noEmit`.
+- **Verification:** From the repository root, run `pnpm --dir frontend exec tsc --noEmit -p tsconfig.app.json` and `pnpm --dir frontend exec tsc --noEmit -p tsconfig.node.json`. The root frontend tsconfig only references these projects; plain `tsc --noEmit` does not check them. Use `pnpm.cmd` on Windows when PowerShell blocks the pnpm launcher. Browser tests require an explicit existing `--config`; there is no default `frontend/playwright.config.ts`.
 - **Responsive-First UI Rule:** The entire frontend must be 100% responsive across all screen sizes (mobile, tablet, and desktop). 
   - Never hardcode fixed pixel widths or heights for layout containers. 
   - Use Material UI's `Grid` or `Stack` components for structural layouts. 
@@ -44,15 +44,17 @@ You are maintaining and extending the AMES (Early Childhood Performance Analytic
 ## 6. Current Architectural State & Generated Endpoints
 ### Normalized Section-Teacher Model & Granular RBAC
 - **Junction Table:** `SectionTeacher` in `backend/models/section_teacher.py` (`section_id`, `teacher_id`, `role`, `status`, `assigned_date`).
-  - Roles: `'Primary Adviser'`, `'Substitute'`. (Legacy roles like `'OJT'` are strictly deprecated).
+  - Role: `'Primary Adviser'` only. Retired roles such as `'Substitute'` and `'OJT'` must not be accepted or grant access.
   - Status: `'Active'`, `'Inactive'`.
+  - Each section has at most one active adviser, and each teacher owns at most one active section. Moves retire the incoming teacher's previous assignments and clear old section pointers. Handovers deactivate displaced advisers who have no remaining active assignment, while preserving student records, evaluations, family links, and section editing windows. Restoring an account requires explicit section reassignment.
+- **Protected Student Identity:** `students.student_id` is the integer primary key. LRNs are encrypted with HMAC lookup and masked in public responses; frontend URLs, payload references, and draft keys use student IDs. Raw LRNs are enrollment/linking inputs, not plaintext database columns.
 - **Granular RBAC Column:** `teachers.allow_eccd_question_management` (Boolean, default `False`).
 - **Access Dependency:** `verify_eccd_question_access` in `backend/utils/deps.py` guards all write operations on ECCD domains/questions. Allows `super-admin` unconditionally, and `admin` only when `allow_eccd_question_management == True`.
 
 ### Key Backend Endpoints
 - `PUT /api/chairman/teachers/{teacher_id}/permissions`: Updates teacher RBAC permissions (`TeacherPermissionUpdate`).
 - `PUT /api/chairman/students/transfer`: Reassigns students to a new section (`StudentTransferRequest`) while guaranteeing 100% assessment evaluation preservation in `student_eccd_evaluations`.
-- `POST /api/chairman/sections/{section_id}/assign-teacher`: Assigns Primary Adviser (auto-deactivates previous adviser) or Substitute (preserves previous adviser).
+- `POST /api/chairman/sections/{section_id}/assign-teacher`: Assigns or unassigns the Primary Adviser under the ownership/handover rules above. A null `teacher_id` unassigns; the optional compatibility `role` accepts only `Primary Adviser`.
 - `GET /api/chairman/sections`: Fetches all sections with active adviser assignments.
 - `GET /api/chairman/teachers`: Fetches all teachers with their assigned sections.
 - `GET /api/teachers/active`: Returns active teachers for dropdown selection.
@@ -60,28 +62,32 @@ You are maintaining and extending the AMES (Early Childhood Performance Analytic
 - `GET /api/eccd/parent/domains-progress/{student_lrn}`: Flat domain progression list for parent progress tracking.
 
 ### Key Frontend Implementations
-- `TeacherManagement.tsx`: Features the "Manage Access" modal with Section Assignment (Primary Adviser vs Substitute) and ECCD Question Management toggle switch.
-- `StudentRecords.tsx`: Features multi-select checkboxes, floating action banner, and `TransferStudentsModal` with evaluation preservation notice.
+- `TeacherManagement.tsx`: Features the "Manage Access" modal with Primary Adviser section assignment, incumbent-specific handover confirmation, and ECCD Question Management toggle switch; there is no role selector.
+- `StudentRecords.tsx`: Features multi-select checkboxes and an inline `TransferStudents` dialog with destination-section selection and durable submission. Backend transfers preserve evaluations.
 - `ProtectedRoute.tsx`: Supports `requiredPermission` prop to enforce granular permissions client-side.
 - `MainLayout.tsx`: Conditionally displays the "ECCD Questions" navigation item in the teacher sidebar based on `user.allow_eccd_question_management`.
-- `/teacher/eccd-questions`: Route mapped to `EccdQuestionManagement.tsx` protected by `allow_eccd_question_management`.
-- `Dashboard.tsx` (Parent): Dynamically displays "Assessment Complete / All Skills Mastered / Ready for Grade 1" on soft green card when mastered, or "Needs Support In" on soft orange card.
+- `/teacher/eccd-questions`: Reuses `pages/chairman/EccdQuestionsManagement.tsx`, protected by `allow_eccd_question_management`.
+- `Dashboard.tsx` (Parent): Displays permission-aware assessment status, pending home observations, and teacher-message previews. `useChildren` refreshes eligible children every 20 seconds in visible tabs and on focus/visibility/reconnection; selection falls back to an eligible sibling or the empty state.
 
 ## 7. Offline Durability & Zero-Data-Loss Standards
 - **Form State Persistence Mandate:** Any future agent or developer MUST maintain offline durability across form inputs—specifically forbidding any changes that clear user inputs on page reload, network drops, or before receiving explicit database confirmation (HTTP 200/201).
-- **Isolated Storage Keys:** Use strictly scoped composite keys (e.g., `eccd_draft_${studentLrn}_${testingPeriod}_${domainId}`).
-- **Prohibition on Global Clearing:** Never invoke global `localStorage.clear()` under any circumstances. Only the exact composite key matching the confirmed server record may be evicted.
+- **Isolated Storage Keys:** Use student IDs and owner-scoped composite keys: teacher `eccd_draft_${studentId}_${testingPeriod}_${domainId}_${ownerId}`, parent `eccd_draft_${studentId}_${testingPeriod}_${domainId}_home_${ownerId}`. Generic form drafts use `ames_draft_${ownerId}_${resource}`.
+- **Prohibition on Global Clearing:** Never invoke global `localStorage.clear()` under any circumstances. Only the exact composite key and revision matching the confirmed server record may be evicted; an older response must never clear newer edits. Logout, access revocation, and child hiding preserve work drafts.
 - **Graceful Network Degradation:** When offline or when network requests fail due to disconnection, save inputs locally with `is_pending_sync: true`, provide non-blocking user feedback, and queue them for automated background synchronization upon reconnection (`window.addEventListener('online')`).
 
 ## 8. Granular Global Parent Access Standards
-- **6-Permission Matrix Mandate:** Never re-introduce coarse boolean flags (`allow_parent_view`, `allow_parent_edit`, `allow_parent_home_based_edit`) for new features. All parent access control must strictly use the 6 granular columns on `teachers`:
+- **8-Permission Matrix Mandate:** Never re-introduce coarse boolean flags (`allow_parent_view`, `allow_parent_edit`, `allow_parent_home_based_edit`) for new features. All parent access control must strictly use the 8 granular columns on `teachers`; `allow_eccd_question_management` is a separate staff permission:
   - `allow_parent_view_student_info` (Boolean, default `True`)
   - `allow_parent_view_eccd_pre` (Boolean, default `False`)
   - `allow_parent_view_eccd_mid` (Boolean, default `False`)
   - `allow_parent_view_eccd_post` (Boolean, default `False`)
+  - `allow_parent_view_eccd_marks` (Boolean, default `False`)
+  - `allow_parent_predictions` (Boolean, default `False`)
   - `allow_parent_edit_student_info` (Boolean, default `True`)
   - `allow_parent_edit_home_based_eccd` (Boolean, default `False`)
-- **Adviser Permission Inheritance:** A student inherits parent access permissions strictly from their section's active Primary Adviser (`get_active_adviser_for_student`).
-- **Data Masking Protocol:** When an ECCD testing period is unreleased, backend endpoints must mask all score metrics with `None`/`null` and return `is_published: false` with qualitative interpretation set to `"Pending Adviser Release"`. Unreleased evaluation data must never leak to the parent client payload.
-- **Strict HTTP 403 Enforcement:** Backend endpoints handling parent updates or home evaluations must raise HTTP 403 Forbidden with descriptive detail messages when the adviser has locked editing permissions.
+- **Adviser Permission Inheritance:** A student inherits parent access permissions strictly from their section's active Primary Adviser with an active account (`get_active_adviser_for_student`). Parent child access requires a SYNCED family link, an active student, and an eligible adviser; unavailable existing children return HTTP 403 and deleted students return HTTP 404. Hiding a child preserves links, assessments, and drafts.
+- **Data Masking Protocol:** When an ECCD testing period is unreleased, backend endpoints must mask official score metrics, dates, ages, and progress with `None`/`null` and return `is_published: false` with qualitative interpretation set to `"Pending Adviser Release"`. A locked latest period cannot fall back to older released scores.
+- **Independent Checklist Marks:** `allow_parent_view_eccd_marks` controls recorded answers and evaluator roles across all domains and periods independently of score release. With marks disabled, only the authenticated parent's own home observations in globally and section-enabled editing windows are visible; teacher marks and other parents' observations remain masked. Marks access never releases official scores or enables editing.
+- **Prediction Access:** Parent predictions additionally require `allow_parent_predictions`, complete teacher-confirmed PRE data, and independent PRE score release. Parent responses exclude family model inputs and individual checklist marks. Predictions never replace official ECCD scores or write assessment records.
+- **Strict HTTP 403 Enforcement:** Backend endpoints handling parent updates or home evaluations must raise HTTP 403 Forbidden with descriptive detail messages when the adviser has locked editing permissions. Home submissions also require the section's period-specific editing window (`PRE=True`, `MID=False`, `POST=False` by default).
 - **Frontend Protective Gating:** Parent views must render locked placeholder states ("Results Pending Adviser Release", read-only alerts, and disabled submission buttons) when permissions are disabled.

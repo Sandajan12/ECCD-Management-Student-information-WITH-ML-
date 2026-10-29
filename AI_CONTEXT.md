@@ -1,12 +1,13 @@
 # AMES System: Current Codebase Context
 
-Updated: **2026-10-27**. This document describes the active working tree in
+Updated: **2026-10-29**. This document describes the active working tree in
 `backend/` and `frontend/`, including existing uncommitted changes. Local
 configuration observations are a snapshot, not deployment defaults or a claim
-that every workflow has passed testing. Current-state descriptions were checked
-against active source, manifests, migration modules, browser-test configurations,
-installed Python metadata, and the trusted V1 artifact on this date. Update this
-context when code changes.
+that every workflow has passed testing. This refresh checked active source,
+manifests, migration modules, browser-test configurations, and Git tracking.
+Installed Python metadata, local settings, model inspection, and earlier test
+results retain their explicitly recorded dates. Update this context when code
+changes.
 
 Sections **1–11 are the authoritative current-state summary**. Section 12 is a
 historical implementation and research archive: its dated behavior, commands,
@@ -474,6 +475,9 @@ uv run --no-project --python .venv312 python -m backend.migrations.adviser_takeo
 uv run --no-project --python .venv312 python -m backend.migrations.parent_eccd_marks --apply
 uv run --no-project --python .venv312 python -m backend.migrations.parent_predictions --apply
 uv run --no-project --python .venv312 python -m backend.migrations.section_ownership --apply
+uv run --no-project --python .venv312 python -m backend.migrations.auth_security_version --apply
+uv run --no-project --python .venv312 python -m backend.migrations.email_only_identity --apply
+uv run --no-project --python .venv312 python -m backend.migrations.production_performance --apply
 
 # Final checks after the feature upgrades; each module also supports --check.
 uv run --no-project --python .venv312 python -m backend.migrations.phase2 --check
@@ -485,13 +489,26 @@ uv run --no-project --python .venv312 python -m backend.migrations.adviser_takeo
 uv run --no-project --python .venv312 python -m backend.migrations.parent_eccd_marks --check
 uv run --no-project --python .venv312 python -m backend.migrations.parent_predictions --check
 uv run --no-project --python .venv312 python -m backend.migrations.section_ownership --check
+uv run --no-project --python .venv312 python -m backend.migrations.auth_security_version --check
+uv run --no-project --python .venv312 python -m backend.migrations.email_only_identity --check
+uv run --no-project --python .venv312 python -m backend.migrations.production_performance --check
 ```
+
+Migration 014 uses transactional index creation and needs a maintenance window;
+it is included in fresh bootstrap but is not required by API startup. For a
+fresh database that also needs reference data and its initial Chairman, prefer
+`uv run --no-project --python .venv312 python -m backend.scripts.seed_supabase --apply`
+after configuring the required settings and `INITIAL_CHAIRMAN_*` values. The
+manual migration sequence above prepares schema only; it does not create accounts.
 
 Phase 2 records `002_student_identity_api` in ames_schema_migrations and checks
 data preservation in the same transaction as schema changes. Do not run
 historical Phase 1 checks against a final Phase 2 database.
 For a historical Phase 1 installation, inspect its existing columns before
-applying 002: that migration fingerprints current ORM fields, so an older
+applying 002: that migration fingerprints actual intermediate columns, excluding
+the retired plaintext LRN columns, rather than the evolving ORM. Its schema
+checker uses the migration ledger to distinguish pre-/post-013 identity and
+still expects the applicable current columns and constraints. A historical
 snapshot lacking later additive columns needs an explicitly reviewed upgrade
 sequence. The fresh-install sequence above is not a universal historical repair.
 
@@ -500,7 +517,7 @@ backs up and updates local environment files, disables OTP for that setup, and
 runs Phase 1/2 preparation. Its final step invokes
 `backend.scripts.seed_development`, but that module is **absent from this
 checkout**. The helper is therefore incomplete and must not be presented as a
-working bootstrap command. It also omits feature upgrades 003–011. Use the
+working bootstrap command. It also omits feature upgrades 003–014. Use the
 explicit migration inventory for schema work; ordinary API startup provisions
 no accounts. Setup and migration commands mutate state, so a documentation or
 code review must not run them merely to inspect the system.
@@ -586,8 +603,9 @@ incorrect-current-password responses.
   Versioned, separate tab-scoped
   acknowledgment keys survive reloads/network failures and are removed only
   after a successful authenticated response, alongside the existing auth drafts.
-  Enforcement is frontend-only; backend routes/schemas and database records have
-  no new consent-history field or migration. Retention wording does not claim
+  Browsers require acknowledgment; the backend validates an explicitly supplied
+  `terms_accepted` value while allowing omission for existing clients. There is
+  no database consent-history field or migration. Retention wording does not claim
   automatic deletion or invent a school retention schedule.
   Verification (2026-10-24): all 27 checks in
   `frontend/playwright.terms-privacy.config.ts` pass at 320/768/1280px using
@@ -678,10 +696,10 @@ via utils/access.py. Neither a substitute nor cached adviser pointer determines
 permissions. No adviser means locked access. Coarse compatibility properties on
 Teacher are not new permission columns; new flows use the eight flags above.
 The question-management flag is a separate teacher permission, outside these eight.
-Older six-permission and Substitute-assignment descriptions in other repository
-documents, including the architectural examples in `AGENTS.md`, are stale
-descriptions of implemented behavior. Current models, access helpers, schemas,
-and the eight-flag table above describe the active contracts.
+`AGENTS.md` follows this eight-permission, Primary-Adviser-only contract. Older
+six-permission and Substitute-assignment descriptions in the historical archive
+describe earlier phases; current models, access helpers, schemas, and the table
+above describe the active contracts.
 
 Teacher Settings places **Student Prediction** under **Student Record
 Permissions**. It persists `allow_parent_predictions` through the existing
@@ -1117,7 +1135,7 @@ All 29 real POST outcomes are Average and contributed generator anchors, so neit
 this baseline nor the 8/8 experiment establishes independent real-world validity
 or real delay detection. Probabilities are not calibrated clinical confidence.
 
-### Current verification setup (source checked 2026-10-25)
+### Current verification setup (source checked 2026-10-29)
 
 Run checks from the repository root and select those relevant to the change:
 
@@ -1150,8 +1168,8 @@ that test server or direct reset operations at school data.
 restricted to the local development database. SMTP diagnostic scripts can send
 real mail and are not ordinary read-only checks.
 
-The following Playwright configurations in `frontend/` support targeted checks;
-each selects the correspondingly named spec in `frontend/tests/`:
+The following ten tracked Playwright configurations in `frontend/` support
+targeted checks, selecting the listed specs in `frontend/tests/`:
 
 | Configuration | Spec | UI origin | Test API | Server management |
 | --- | --- | --- | --- | --- |
@@ -1161,7 +1179,14 @@ each selects the correspondingly named spec in `frontend/tests/`:
 | `playwright.ml-sandbox.config.ts` | `ml-sandbox.spec.ts` | http://127.0.0.1:5186 | 8774 | Starts disposable API and Vite; desktop/mobile |
 | `playwright.terms-privacy.config.ts` | `terms-privacy.spec.ts` | http://127.0.0.1:5188 | 8775 | Starts disposable API and Vite; desktop/tablet/mobile |
 | `playwright.ml-insights.config.ts` | `ml-insights.spec.ts` | http://localhost:5173 | 8769, started separately | Starts/reuses Vite only; Desktop Chrome project, spec adjusts viewport |
-| `playwright.parent-sync.config.ts` | `parent-sync.spec.ts` | http://127.0.0.1:5190 | Mocked API | CI starts Vite only; desktop/mobile, no school database |
+| `playwright.parent-sync.config.ts` | `parent-sync.spec.ts`, `parent-profile.spec.ts`, `teacher-import.spec.ts` | http://127.0.0.1:5190 | Mocked API | Starts Vite; desktop/mobile, no school database |
+| `playwright.auth-security.config.ts` | `auth-security.spec.ts`, `terms-privacy.spec.ts` | http://127.0.0.1:5188 | 8775 | Starts disposable auth-security API and Vite; desktop/mobile |
+| `playwright.messaging.config.ts` | `messaging.spec.ts` | http://127.0.0.1:5191 | 8768 | Starts disposable API and Vite; desktop/mobile |
+| `playwright.performance.config.ts` | `performance.spec.ts` | http://127.0.0.1:5190 | Mocked API | Starts Vite preview of an existing production build; desktop/mobile |
+
+Run configurations separately when they share ports. The messaging configuration
+expects a disposable PostgreSQL server at 127.0.0.1:55432 and, on Windows, uv at
+`%TEMP%/ames-uv/uv.exe`; verify these local harness prerequisites before running it.
 
 Parent-sync/Excel verification on **2026-10-27**: 10 database-free backend
 checks passed, including all three link response contracts and acceptance of
@@ -1222,14 +1247,51 @@ macro F1, plus exact model/data/metrics hashes. They do not establish production
 acceptance. Do not retrain or regenerate datasets as a documentation check.
 
 Root and frontend `.gitignore` rules ignore generated browser reports/caches,
-but **do not ignore browser test source or configuration files**. Existing audit,
-teacher-management, parent-ML and teacher-ML specs/configs are tracked; the new
-sandbox and terms/privacy specs/configs are currently untracked and eligible for
-review/addition. The active V1 model is tracked; raw workbooks, CSV datasets,
+but **do not ignore browser test source or configuration files**. All ten current
+Playwright configurations and their twelve selected specs are tracked, including
+sandbox, terms/privacy, auth-security, messaging, performance, and the parent-sync
+profile/import specs. The active V1 model is tracked; raw workbooks, CSV datasets,
 learner-level benchmarks and the archived experiments remain ignored. Ignored
 local files and generated screenshots are not guaranteed to accompany a clone.
 
-### Verification of this documentation refresh (2026-10-25)
+### Verification of this documentation refresh (2026-10-29)
+
+Compared AI_CONTEXT.md and AGENTS.md with active source, manifests, migrations,
+all ten tracked Playwright configurations, their selected specs, and Git tracking.
+Updated the migration sequence through 014 and reconciled adviser roles, parent
+permissions, student-ID/owner-scoped drafts, routed component names, and explicit
+TypeScript project checks. Focused ESLint for `useParentProfile.ts` passes; the
+older three-error report is preserved as history in section 12. The documentation
+diff and referenced migration/config/spec paths were checked.
+
+This refresh did not rerun full frontend lint, backend regressions, browser
+acceptance, TypeScript, the production build, model evaluation, database
+connectivity, migration-ledger checks, SMTP, or deployment verification. Earlier
+results retain their dates and environments. `DEPLOYMENT_READINESS_AUDIT.md`,
+`ML_ACCURACY_REVIEW.md`, and `MODEL_PRODUCTION_DEFENSE_AUDIT_AND_PLAN.md` provide
+separate dated assessments and proposals; proposals in those files are not
+implemented runtime behavior.
+
+## 12. Historical implementation and research archive
+
+**Historical log only.** Entries below preserve earlier delivery notes, test
+counts, experiments and then-current commands. Statements such as "fresh
+verification", "six permissions", old release-coupled marks behavior, earlier
+UI structure or "no ML implementation" apply only to that entry's phase. They
+do not override sections 1–11, establish current deployment state, or imply that
+those tests were rerun during the latest audit. In particular, independent marks
+(009) superseded score-coupled checklist masking, and predictions (010) expanded
+the teacher-level parent matrix to eight flags. Use the current migration
+inventory and privacy rules above for present-day work. References below to
+legacy paths, inspecting legacy controllers, read-only reference folders, parity
+comparisons, or legacy-dependent test commands are historical records only.
+Those folders have been removed; these entries do not require locating,
+restoring, or requesting legacy files for any current task.
+
+### Earlier documentation verification (2026-10-25)
+
+The following is the earlier refresh's verification record. Its lint failure was
+subsequently resolved; it does not describe the current hook or lint status.
 
 This refresh inspected active source and manifests, the migration inventory,
 all six browser-test configurations, installed Python package metadata, and
@@ -1249,23 +1311,6 @@ refresh. Earlier run counts and environment-specific successes are archived
 below. `DEPLOYMENT_READINESS_AUDIT.md`, `ML_ACCURACY_REVIEW.md`, and
 `MODEL_PRODUCTION_DEFENSE_AUDIT_AND_PLAN.md` provide separate dated assessments
 and proposals; proposals in those files are not implemented runtime behavior.
-
-## 12. Historical implementation and research archive
-
-**Historical log only.** Entries below preserve earlier delivery notes, test
-counts, experiments and then-current commands. Statements such as "fresh
-verification", "six permissions", old release-coupled marks behavior, earlier
-UI structure or "no ML implementation" apply only to that entry's phase. They
-do not override sections 1–11, establish current deployment state, or imply that
-those tests were rerun during the latest audit. In particular, independent marks
-(009) superseded score-coupled checklist masking, and predictions (010) expanded
-the teacher-level parent matrix to eight flags. Use the current migration
-inventory and privacy rules above for present-day work. References below to
-legacy paths, inspecting legacy controllers, read-only reference folders, parity
-comparisons, or legacy-dependent test commands are historical records only.
-Those folders have been removed; these entries do not require locating,
-restoring, or requesting legacy files for any current task.
-
 
 ### Earlier baseline restoration and sandbox delivery evidence (2026-10-24)
 
