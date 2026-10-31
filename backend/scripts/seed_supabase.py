@@ -21,7 +21,7 @@ from backend.migrations import (
     adviser_takeover, auth_security_version, eccd_evaluator_tracking,
     parent_assessment_access, parent_eccd_marks, parent_linking,
     parent_predictions, parity_batch1, parity_batch2, phase1, phase2,
-    section_ownership, email_only_identity, production_performance,
+    section_ownership, email_only_identity, production_performance, optional_student_lrn,
 )
 from backend.models import EccdDomain, EccdQuestion, User, SystemSettings
 from backend.models.user import UserRole
@@ -46,6 +46,7 @@ MIGRATIONS = (
     (auth_security_version.VERSION, auth_security_version.apply_auth_security_version),
     (email_only_identity.VERSION, email_only_identity.apply_email_only_identity),
     (production_performance.VERSION, production_performance.apply_production_performance),
+    (optional_student_lrn.VERSION, optional_student_lrn.apply_optional_student_lrn),
 )
 
 

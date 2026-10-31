@@ -1,7 +1,7 @@
 # Feature migrations: Phase 2 is the current backend schema
 
 For a fresh PostgreSQL/Supabase database, the explicit
-[bootstrap command](../scripts/README.md) applies pending migrations 001–012 and
+[bootstrap command](../scripts/README.md) applies pending migrations 001–015 and
 seeds the exact tracked 7-domain/109-question ECCD baseline plus an
 environment-configured Chairman in one transaction:
 
@@ -11,6 +11,25 @@ uv run --no-project --python 3.12 python -m backend.scripts.seed_supabase --appl
 
 Repeated runs preserve existing accounts and matching reference data. Existing
 school/account exports are not embedded in the seed fixture.
+
+## Optional student LRN (015)
+
+Stop API writers, then explicitly apply this migration before starting the updated API:
+
+```powershell
+uv run --no-project --python .venv312 python -m backend.migrations.optional_student_lrn --apply
+uv run --no-project --python .venv312 python -m backend.migrations.optional_student_lrn --check
+```
+
+This repeatable migration makes only the three protected LRN columns nullable,
+keeps the unique HMAC constraint, and verifies that existing student data is
+unchanged. Blank enrollment/edit LRNs become null in all three columns; supplied
+LRNs still require exactly 12 digits and remain encrypted. Startup checks the
+nullable schema without applying it. Fresh bootstrap includes migration 015.
+Authorized staff student details return the full LRN in `lrn_number` for editing;
+parent responses, rosters, and audit logs retain masked values or "Pending".
+Encrypted backups support multiple students awaiting LRNs; workbook exports
+leave their LRN cells blank. Workbook imports still require LRNs for matching.
 
 ## Credential revocation version (012)
 

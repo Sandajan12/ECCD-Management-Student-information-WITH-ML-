@@ -1,15 +1,11 @@
-from backend.schemas.eccd import EvaluationBatch, ParentEvaluationBatch, ParentEvaluationSaved, AssessmentResponse, ParentAssessmentResponse, ParentDashboardResponse, EvaluationSaved, EvaluationPublicResponse, DomainProgress
+from backend.schemas.eccd import EvaluationBatch, ParentEvaluationBatch, ParentEvaluationSaved, TeacherAssessmentResponse, ParentAssessmentResponse, ParentDashboardResponse, EvaluationSaved, EvaluationPublicResponse, DomainProgress
 from backend.schemas.student import StudentPublicResponse
 from backend.schemas.operations import DomainProgressResult, ParentProgressPeriod, SectionSummaryItem
-import io
 import math
 from collections import defaultdict
-from datetime import date
 
-import openpyxl
 from backend.config.database import get_db
 from backend.models.eccd import (
-    EccdAnswer,
     EccdDomain,
     EccdQuestion,
     StudentEccdEvaluation,
@@ -23,10 +19,7 @@ from backend.utils.deps import verify_role
 from backend.utils.eccd_scorer import calculate_decimal_age, calculate_scores
 from backend.utils.eccd_dates import get_grading_date, get_official_testing_date
 from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import StreamingResponse
-from openpyxl.styles import Alignment, Font
-from pydantic import BaseModel
-from sqlalchemy import case, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 router = APIRouter(prefix="/api/eccd", tags=["ECCD"])
@@ -130,14 +123,13 @@ def get_domains_progress(
     return formatted_domains
 
 
-@router.get("/assessment/{lrn}", response_model=AssessmentResponse)
+@router.get("/assessment/{lrn}", response_model=TeacherAssessmentResponse)
 def get_assessment_data(lrn: str, db: Session = Depends(get_db), current_user=Depends(verify_role(["admin", "super-admin"]))):
     from backend.utils.assessments import assessment_data
     return assessment_data(db, current_user, lrn)
 
 
 
-from backend.models.parent import FamilyAccess, Parent
 
 
 @router.get("/parent/assessment/{student_lrn}", response_model=ParentAssessmentResponse)

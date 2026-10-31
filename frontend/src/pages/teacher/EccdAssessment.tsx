@@ -144,6 +144,7 @@ const EccdAssessment: React.FC = () => {
     handleSave,
     triggerBackgroundSync,
     getAnswer,
+    isPreKaya,
   } = useTeacherAssessment(
     Number(selectedLrn),
     activeDomain,
@@ -200,9 +201,11 @@ const EccdAssessment: React.FC = () => {
       );
       const values =
         draft && draft.owner_id === user?.id ? draft.values : undefined;
-      const state = resolveTeacherDrafts(domainQuestions, {
-        [activePeriod]: values,
-      });
+      const state = resolveTeacherDrafts(
+        domainQuestions,
+        { [activePeriod]: values },
+        assessment.pre_kaya_question_ids,
+      );
       const progress = teacherDomainProgress(
         domainQuestions,
         state[activePeriod],
@@ -955,10 +958,12 @@ const EccdAssessment: React.FC = () => {
                             className="py-2.5 px-2 sm:px-3 text-center border-l border-slate-200 align-middle"
                           >
                             <div className="flex items-center justify-center gap-1.5 sm:gap-2">
-                              {/* KAYA BUTTON */}
                               <button
                                 type="button"
-                                disabled={!isCurrentPeriod}
+                                disabled={
+                                  !isCurrentPeriod ||
+                                  isPreKaya(q.question_id, period)
+                                }
                                 onClick={() =>
                                   handleAnswerChange(
                                     q.question_id,
@@ -979,10 +984,12 @@ const EccdAssessment: React.FC = () => {
                                 KAYA
                               </button>
 
-                              {/* DI-KAYA BUTTON */}
                               <button
                                 type="button"
-                                disabled={!isCurrentPeriod}
+                                disabled={
+                                  !isCurrentPeriod ||
+                                  isPreKaya(q.question_id, period)
+                                }
                                 onClick={() =>
                                   handleAnswerChange(
                                     q.question_id,

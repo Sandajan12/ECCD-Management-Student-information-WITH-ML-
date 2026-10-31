@@ -17,7 +17,7 @@ from backend.models.message import SenderRole
 from backend.models.section_teacher import AssignmentStatus, TeacherRole
 from backend.models.student import Gender, Handedness
 from backend.models.user import UserRole
-from .common import ApiModel, LoginEmail, Lrn, PositiveId
+from .common import ApiModel, LoginEmail, PositiveId
 from backend.utils.lrn import decrypt_lrn, hash_lrn
 
 
@@ -99,9 +99,9 @@ class SectionTeacherBackupRow(BackupRow):
 
 class StudentBackupRow(BackupRow):
     student_id: PositiveId
-    lrn_encrypted: str = Field(pattern=r"^[0-9a-fA-F]{32}:[0-9a-fA-F]{32}:[0-9a-fA-F]{24}$")
-    lrn_search_hash: str = Field(pattern=r"^[0-9a-fA-F]{64}$")
-    lrn_last4: str = Field(pattern=r"^[0-9]{4}$")
+    lrn_encrypted: str | None = Field(pattern=r"^[0-9a-fA-F]{32}:[0-9a-fA-F]{32}:[0-9a-fA-F]{24}$")
+    lrn_search_hash: str | None = Field(pattern=r"^[0-9a-fA-F]{64}$")
+    lrn_last4: str | None = Field(pattern=r"^[0-9]{4}$")
     first_name: str | None = Field(max_length=100)
     middle_name: str | None = Field(max_length=100)
     last_name: str | None = Field(max_length=100)
@@ -119,6 +119,11 @@ class StudentBackupRow(BackupRow):
 
     @model_validator(mode="after")
     def validate_lrn_protection(self) -> "StudentBackupRow":
+        fields = (self.lrn_encrypted, self.lrn_search_hash, self.lrn_last4)
+        if all(value is None for value in fields):
+            return self
+        if any(value is None for value in fields):
+            raise ValueError("Protected LRN fields must be all present or all null")
         try:
             lrn = decrypt_lrn(self.lrn_encrypted)
             if hash_lrn(lrn) != self.lrn_search_hash or self.lrn_last4 != lrn[-4:]:
@@ -259,7 +264,7 @@ class BackupDocument(BackupRow):
             if len(ids) != len(set(ids)):
                 raise ValueError(f"Duplicate identifiers in {table_name}")
         students = {student.student_id: student for student in self.students}
-        hashes = [student.lrn_search_hash for student in self.students]
+        hashes = [student.lrn_search_hash for student in self.students if student.lrn_search_hash is not None]
         if len(hashes) != len(set(hashes)):
             raise ValueError("Duplicate LRNs in students")
         for record in (*self.family_access, *self.student_eccd_evaluations):

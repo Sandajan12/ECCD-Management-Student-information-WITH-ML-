@@ -23,9 +23,9 @@ class Student(Base):
     __tablename__ = "students"
 
     student_id = Column(Integer, Identity(), primary_key=True)
-    lrn_encrypted = Column(Text, nullable=False)
-    lrn_search_hash = Column(String(64), nullable=False)
-    lrn_last4 = Column(String(4), nullable=False)
+    lrn_encrypted = Column(Text, nullable=True)
+    lrn_search_hash = Column(String(64), nullable=True)
+    lrn_last4 = Column(String(4), nullable=True)
     first_name = Column(String(100), nullable=True)
     middle_name = Column(String(100), nullable=True)
     last_name = Column(String(100), nullable=True)
@@ -71,13 +71,16 @@ class Student(Base):
         return mask_lrn(self.lrn_last4)
 
     @hybrid_property
-    def lrn_number(self) -> str:
+    def lrn_number(self) -> str | None:
         from backend.utils.lrn import decrypt_lrn
-        return decrypt_lrn(self.lrn_encrypted)
+        return decrypt_lrn(self.lrn_encrypted) if self.lrn_encrypted is not None else None
 
     @lrn_number.setter
-    def lrn_number(self, value: str) -> None:
+    def lrn_number(self, value: str | None) -> None:
         from backend.utils.lrn import encrypt_lrn, hash_lrn, validate_lrn
+        if value is None:
+            self.lrn_encrypted = self.lrn_search_hash = self.lrn_last4 = None
+            return
         value = validate_lrn(value)
         self.lrn_encrypted, self.lrn_search_hash, self.lrn_last4 = encrypt_lrn(value), hash_lrn(value), value[-4:]
 
@@ -90,10 +93,12 @@ class Student(Base):
 @event.listens_for(Student, "before_insert")
 @event.listens_for(Student, "before_update")
 def protect_student_lrn(mapper: Mapper[Student], connection: Connection, student: Student) -> None:
-    from backend.utils.lrn import decrypt_lrn, encrypt_lrn, hash_lrn, validate_lrn
+    from backend.utils.lrn import hash_lrn
 
-    value = validate_lrn(student.lrn_number)
-    if student.lrn_encrypted is None or decrypt_lrn(student.lrn_encrypted) != value:
-        student.lrn_encrypted = encrypt_lrn(value)
+    if student.lrn_encrypted is None:
+        if student.lrn_search_hash is not None or student.lrn_last4 is not None:
+            raise ValueError("Protected LRN fields must be all present or all null")
+        return
+    value = student.lrn_number
     student.lrn_search_hash = hash_lrn(value)
     student.lrn_last4 = value[-4:]

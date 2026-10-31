@@ -31,11 +31,15 @@ class StudentBase(BaseModel):
 
 
 class StudentCreate(StudentBase):
-    lrn_number: Lrn
+    lrn_number: Lrn | None = Field(default=None, validation_alias=AliasChoices("lrn_number", "lrn"))
+
+    @field_validator("lrn_number", mode="before")
+    @classmethod
+    def normalize_lrn(cls, value: object) -> object:
+        return (value.strip() or None) if isinstance(value, str) else value
 
 
-class StudentUpdate(StudentBase):
-    lrn_number: Lrn | None = None
+class StudentUpdate(StudentCreate):
     father_name: Name | None = None
     father_age: int | None = Field(default=None, ge=0)
     father_occ: str | None = Field(default=None, max_length=50)
@@ -66,7 +70,7 @@ class StudentResponse(StudentBase):
     middle_name: str | None = Field(default=None, max_length=100)
     last_name: str | None = Field(default=None, max_length=100)
     emergency_contact: str | None = Field(default=None, max_length=20)
-    lrn_number: str
+    lrn_number: str | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -93,13 +97,13 @@ class StudentTransferRequest(BaseModel):
 
 
 class StudentRecordResponse(StudentBase):
-    """ID-based response for Phase 2; never serializes the raw LRN or ciphertext."""
+    """ID-based profile fields shared by masked public and staff detail responses."""
     first_name: str | None = Field(default=None, max_length=100)
     middle_name: str | None = Field(default=None, max_length=100)
     last_name: str | None = Field(default=None, max_length=100)
     emergency_contact: str | None = Field(default=None, max_length=20)
     student_id: PositiveId
-    lrn_last4: str = Field(pattern=r"^[0-9]{4}$")
+    lrn_last4: str | None = Field(default=None, pattern=r"^[0-9]{4}$")
     decimal_age: float | None = None
     model_config = ConfigDict(from_attributes=True)
 
@@ -160,7 +164,7 @@ class LinkedGuardian(ApiModel):
 
 
 class StudentPublicResponse(StudentRecordResponse):
-    lrn_number: str
+    lrn_number: str | None = None
     lrn: str
     parent_names: str | None = None
     profile_completeness: int = 0

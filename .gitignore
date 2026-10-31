@@ -164,3 +164,6 @@ backend/ml/.mplconfig/
 
 # Existing acceptance tests containing real beneficiary exclusion facts
 backend/tests/test_ml_model.py
+
+# Workspace-local verification tools
+.tools/

@@ -101,7 +101,7 @@ interface StudentPayload extends Omit<
   | "num_of_siblings"
   | "handedness"
 > {
-  lrn_number?: string;
+  lrn_number: string | null;
   section_id?: number;
   father_age: number | null;
   mother_age: number | null;
@@ -156,6 +156,7 @@ function studentPayload(values: StudentFormValues): StudentPayload {
   const numeric = (value: string) => (value.trim() ? Number(value) : null);
   return {
     ...cleaned,
+    lrn_number: values.lrn_number.trim() || null,
     handedness: cleaned.handedness || null,
     father_age: numeric(values.father_age),
     mother_age: numeric(values.mother_age),
@@ -163,10 +164,7 @@ function studentPayload(values: StudentFormValues): StudentPayload {
     num_of_siblings: numeric(values.num_of_siblings),
   };
 }
-function validateStudent(
-  values: StudentFormValues,
-  enrollment = false,
-): string {
+function validateStudent(values: StudentFormValues): string {
   if (
     !values.first_name.trim() ||
     !values.last_name.trim() ||
@@ -174,7 +172,7 @@ function validateStudent(
     !values.gender
   )
     return "First Name, Last Name, Date of Birth, and Gender are required.";
-  if (enrollment && !/^\d{12}$/.test(values.lrn_number.trim()))
+  if (values.lrn_number.trim() && !/^\d{12}$/.test(values.lrn_number.trim()))
     return "LRN must contain exactly 12 digits.";
   for (const name of [
     "first_name",
@@ -404,7 +402,7 @@ const StudentManagement: React.FC = () => {
   };
   const handleSaveStudent = async () => {
     if (submissionLock.current) return;
-    const validation = validateStudent(formData, true);
+    const validation = validateStudent(formData);
     if (validation || !section) {
       setError(validation || "An active section assignment is required.");
       return;
@@ -415,7 +413,6 @@ const StudentManagement: React.FC = () => {
     try {
       const payload = {
         ...studentPayload(formData),
-        lrn_number: formData.lrn_number.trim(),
         section_id: section.section_id,
       };
       if (!navigator.onLine) {
@@ -487,16 +484,22 @@ const StudentManagement: React.FC = () => {
             );
         }
         if (version !== editVersion.current) return;
+        if (data.lrn_number && !/^\d{12}$/.test(data.lrn_number))
+          throw new Error(
+            "Reconnect to load the full LRN before editing this student.",
+          );
         const hydrated = { ...emptyForm };
         for (const field of Object.keys(
           emptyForm,
         ) as (keyof StudentFormValues)[])
           hydrated[field] = String(data[field as keyof Student] ?? "");
-        hydrated.lrn_number = data.masked_lrn;
+        hydrated.lrn_number = data.lrn_number || "";
         hydrated.date_of_birth = data.date_of_birth?.split("T")[0] || "";
-        setEditFormData(
-          readDraft<StudentFormValues>(editKey(id))?.values || hydrated,
-        );
+        const savedDraft = readDraft<StudentFormValues>(editKey(id))?.values;
+        const restored = savedDraft ? { ...hydrated, ...savedDraft } : hydrated;
+        if (restored.lrn_number.includes("\u2022"))
+          restored.lrn_number = hydrated.lrn_number;
+        setEditFormData(restored);
         setEditHasDraft(Boolean(readDraft(editKey(id))));
       } catch (err) {
         if (version === editVersion.current) setEditError(errorMessage(err));
@@ -559,7 +562,10 @@ const StudentManagement: React.FC = () => {
         );
         return;
       }
-      const response = await api.put(draft.request!.path, draft.request!.data);
+      const response = await api.put(
+        "/api/students/" + editingLrn,
+        studentPayload(editFormData),
+      );
       if (response.status !== 200 && response.status !== 201)
         throw new Error("The server did not confirm this save.");
       confirmDraft(key, draft.revision);
@@ -1273,8 +1279,31 @@ const StudentManagement: React.FC = () => {
                 color="textSecondary"
                 sx={{ mb: 1 }}
               >
-                LRN: {editFormData.lrn_number}
+                LRN
               </Typography>
+              <TextField
+                fullWidth
+                name="lrn_number"
+                value={editFormData.lrn_number}
+                placeholder="Pending"
+                onChange={handleEditInputChange}
+                disabled={detailLoading}
+                size="small"
+                slotProps={{
+                  htmlInput: {
+                    "aria-label": "LRN",
+                    inputMode: "numeric",
+                    maxLength: 12,
+                  },
+                }}
+                sx={{
+                  mb: 2,
+                  "& .MuiOutlinedInput-root": {
+                    borderRadius: 2,
+                    bgcolor: "#f9fafb",
+                  },
+                }}
+              />
 
               <Box sx={{ width: "100%", mb: 2 }}>
                 <Typography

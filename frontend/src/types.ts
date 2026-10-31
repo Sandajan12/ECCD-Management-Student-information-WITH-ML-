@@ -64,6 +64,7 @@ export interface Guardian {
   educational_attainment: string | null;
 }
 export interface Student extends Partial<Permissions> {
+  lrn_number?: string | null;
   parent_link_status?: "NONE" | "PENDING" | "SYNCED";
   parent_info?: ParentLinkInfo | null;
   student_id: number;
@@ -212,6 +213,7 @@ export interface SectionAssessmentAccess extends ParentAssessmentAccess {
   section_id: number;
 }
 export interface Assessment {
+  pre_kaya_question_ids?: number[];
   allow_parent_view_eccd_marks?: boolean;
   parent_assessment_access?: ParentAssessmentAccess;
   student_id: number;

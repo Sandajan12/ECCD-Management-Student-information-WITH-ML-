@@ -54,7 +54,9 @@ def hash_lrn(value: str) -> str:
     return hmac.new(secret, value.encode("ascii"), hashlib.sha256).hexdigest()
 
 
-def mask_lrn(last_four: str) -> str:
+def mask_lrn(last_four: str | None) -> str:
+    if last_four is None:
+        return "Pending"
     if re.fullmatch(r"[0-9]{4}", last_four) is None:
         raise ValueError("LRN suffix must contain exactly four digits")
     return "\u2022" * 8 + last_four

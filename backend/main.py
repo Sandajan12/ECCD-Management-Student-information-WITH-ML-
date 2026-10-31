@@ -14,6 +14,7 @@ from backend.routes import auth, eccd, sections, students, settings, analytics, 
 from backend.ml.inference import warm_inference
 from backend.config.database import SessionLocal, engine
 from backend.migrations.phase2 import check_phase2
+from backend.migrations.optional_student_lrn import check_optional_student_lrn
 from backend.utils.realtime import sio
 from backend.utils.reference_data import seed_reference_data
 from backend.schemas.common import MessageResult
@@ -74,6 +75,7 @@ def initialize_runtime():
         check_auth_security_version(connection, schema)
         check_email_only_identity(connection, schema)
         check_phase2(connection, schema)
+        check_optional_student_lrn(connection, schema)
         check_batch2(connection, schema)
     with SessionLocal() as db:
         seed_reference_data(db)

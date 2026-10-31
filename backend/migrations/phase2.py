@@ -1,7 +1,7 @@
 """Remove Phase 1 plaintext compatibility columns after ID-based APIs are ready."""
 import argparse
 import hashlib
-from sqlalchemy import CheckConstraint, ForeignKeyConstraint, UniqueConstraint, inspect, text
+from sqlalchemy import CheckConstraint, UniqueConstraint, inspect, text
 from sqlalchemy.schema import AddConstraint
 from sqlalchemy.engine import Connection
 from backend.config.database import engine
@@ -57,6 +57,8 @@ def check_phase2(connection: Connection, schema: str = "public") -> None:
         if any(constraint.name not in checks for constraint in table.constraints if isinstance(constraint, CheckConstraint)):
             raise MigrationError(f"Phase 2 check constraint mismatch: {name}")
     for row in connection.execute(text("SELECT lrn_encrypted, lrn_search_hash, lrn_last4 FROM students")):
+        if all(value is None for value in row):
+            continue
         try:
             value = decrypt_lrn(row.lrn_encrypted)
             if hash_lrn(value) != row.lrn_search_hash or value[-4:] != row.lrn_last4:

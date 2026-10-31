@@ -26,8 +26,13 @@ export function teacherDomainProgress(
   ).length;
   const draftCount = questions.filter(
     (q) =>
-      state.draftAnswers[q.question_id] &&
-      state.draftAnswers[q.question_id] !== state.savedAnswers[q.question_id],
+      (state.draftAnswers[q.question_id] &&
+        state.draftAnswers[q.question_id] !==
+          state.savedAnswers[q.question_id]) ||
+      (state.savedAnswers[q.question_id] &&
+        state.inheritedAnswers[q.question_id] &&
+        state.inheritedAnswers[q.question_id] !==
+          state.savedAnswers[q.question_id]),
   ).length;
   return {
     savedCount,
@@ -49,6 +54,7 @@ export function teacherDomainProgress(
 export function resolveTeacherDrafts(
   questions: readonly DraftQuestion[],
   drafts: Partial<Record<Period, TeacherAssessmentDraft>>,
+  preKayaQuestionIds: readonly number[] = [],
 ): Record<Period, TeacherQuestionState> {
   const empty = (): TeacherQuestionState => ({
     savedAnswers: {},
@@ -57,6 +63,7 @@ export function resolveTeacherDrafts(
     answers: {},
   });
   const result = { PRE: empty(), MID: empty(), POST: empty() };
+  const preKaya = new Set(preKayaQuestionIds);
   for (const question of questions) {
     let savedSource: Answer | null = null;
     let blocked = false;
@@ -71,9 +78,15 @@ export function resolveTeacherDrafts(
         blocked = false;
       }
       if (draft) state.draftAnswers[question.question_id] = draft;
-      const inherited = !saved && !draft && !blocked && savedSource === "KAYA";
+      const locked = period !== "PRE" && preKaya.has(question.question_id);
+      const inherited = locked
+        ? saved !== "KAYA"
+        : !saved && !draft && !blocked && savedSource === "KAYA";
       if (inherited) state.inheritedAnswers[question.question_id] = "KAYA";
-      const answer = draft || saved || (inherited ? "KAYA" : null);
+      const answer = locked
+        ? "KAYA"
+        : draft || saved || (inherited ? "KAYA" : null);
+      if (locked && draft) state.draftAnswers[question.question_id] = "KAYA";
       if (answer) state.answers[question.question_id] = answer;
       // Draft KAYA is never a source. DI-KAYA immediately blocks dependent
       // virtual answers, without deleting independent saved or explicit values.

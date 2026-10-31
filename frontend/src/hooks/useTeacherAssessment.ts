@@ -78,7 +78,10 @@ export function useTeacherAssessment(
     const draft = readDraft<AssessmentDraft>(keyFor(p));
     if (draft?.owner_id === owner) drafts[p] = draft.values;
   }
-  const resolved = resolveTeacherDrafts(questions, drafts);
+  const preKayaQuestionIds = data?.pre_kaya_question_ids || [];
+  const isPreKaya = (questionId: number, p: string): boolean =>
+    p !== "PRE" && preKayaQuestionIds.includes(questionId);
+  const resolved = resolveTeacherDrafts(questions, drafts, preKayaQuestionIds);
   const dates: Record<Period, string> = {
     PRE: localToday(),
     MID: localToday(),
@@ -139,7 +142,11 @@ export function useTeacherAssessment(
     answer: Answer,
   ) => {
     if (p !== period || !data || loading || !domain) return;
-    if (!questions.some((q) => q.question_id === questionId)) return;
+    if (
+      !questions.some((q) => q.question_id === questionId) ||
+      isPreKaya(questionId, p)
+    )
+      return;
     // Read the latest revision so rapid edits cannot replace another selection.
     const draft = readDraft<AssessmentDraft>(keyFor(period));
     persist(period, {
@@ -393,6 +400,7 @@ export function useTeacherAssessment(
     handleDateChange,
     handleSave,
     triggerBackgroundSync,
+    isPreKaya,
     getAnswer: (id: number, p: string) =>
       resolved[p as Period]?.answers[id] || null,
   };

@@ -71,7 +71,7 @@ def by_section(section_id: int, db: Session = Depends(get_db), user: User = Depe
 @router.post("/", response_model=EnrollmentResponse, status_code=201)
 @router.post("/create", response_model=EnrollmentResponse, status_code=201)
 def create_student(payload: EnrollmentRequest, db: Session = Depends(get_db), user: User = Depends(verify_role(["admin", "super-admin"]))):
-    if db.query(Student).filter_by(lrn_search_hash=hash_lrn(payload.lrn_number)).first():
+    if payload.lrn_number is not None and db.query(Student).filter_by(lrn_search_hash=hash_lrn(payload.lrn_number)).first():
         raise HTTPException(400, "A student with this LRN already exists.")
     section_id = payload.section_id
     if user.role.value == "admin":
@@ -213,10 +213,10 @@ def update(identifier: str, payload: StudentUpdate, db: Session = Depends(get_db
         authorize_student(db, user, student, parent_edit=user.role.value == "user")
         before = student_change_snapshot(db, student)
         old_lrn_hash = student.lrn_search_hash
-        if payload.lrn_number is not None:
+        if "lrn_number" in payload.model_fields_set:
             if user.role.value == "user":
                 raise HTTPException(403, "Only school staff can correct a student's LRN.")
-            duplicate = db.query(Student).filter(Student.lrn_search_hash == hash_lrn(payload.lrn_number), Student.student_id != student.student_id).first()
+            duplicate = payload.lrn_number is not None and db.query(Student).filter(Student.lrn_search_hash == hash_lrn(payload.lrn_number), Student.student_id != student.student_id).first()
             if duplicate:
                 raise HTTPException(400, "Another student is already using this LRN.")
             student.lrn_number = payload.lrn_number
@@ -255,6 +255,7 @@ def get_student(identifier: str, db: Session = Depends(get_db), user: User = Dep
     if user.role.value == "user":
         return child_profile(db, student)
     result = public_student(db, student)
+    result["lrn_number"] = student.lrn_number
     for relationship, prefix in (("Father", "father"), ("Mother", "mother"), ("Guardian", "legal_guardian")):
         parent = db.query(Parent).join(FamilyAccess).filter(FamilyAccess.status == "SYNCED", FamilyAccess.student_id == student.student_id, FamilyAccess.relationship_type == relationship).first()
         if parent:

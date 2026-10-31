@@ -1,6 +1,6 @@
 # AMES System: Current Codebase Context
 
-Updated: **2026-10-30**. This document describes the active working tree in
+Updated: **2026-10-31**. This document describes the active working tree in
 `backend/` and `frontend/`, including existing uncommitted changes. Local
 configuration observations are a snapshot, not deployment defaults or a claim
 that every workflow has passed testing. This refresh checked active source,
@@ -28,6 +28,41 @@ active codebase first; ask only when required current information or a material
 requirement remains unresolved.
 
 ## 1. Purpose and implementation status
+
+Batch 1 (2026-10-31): Student enrollment and staff edits accept absent/null/blank
+LRNs, normalizing blanks to null across the encrypted value, HMAC lookup and
+last-four fields. Supplied LRNs still require 12 ASCII digits. Explicit migration
+015 (`backend.migrations.optional_student_lrn`) drops only their NOT NULL
+requirements, preserving the unique HMAC constraint and existing student data.
+Startup checks it; fresh bootstrap includes it. No configured database or
+migration application is established by this checkout. Backups accept complete
+null identities and reject partial identities; exports leave absent LRNs blank.
+Workbook imports retain required LRNs for record matching. Authorized staff
+`GET /api/students/{identifier}` returns decrypted `lrn_number` for editing;
+parent responses and other public profiles remain masked. The Edit Student
+LRN input and optional Add Student validation preserve owner-scoped drafts.
+
+Completed PRE mastery is now cumulative in teacher MID/POST drafts. Completion
+for this lock requires a teacher-confirmed date on every configured PRE item.
+`utils/mastery.py` shares that definition between reads and save guards.
+Staff assessments expose `pre_kaya_question_ids`; teacher draft resolution
+forces those later-period answers to KAYA above conflicting old drafts/saves,
+and disables both scoring buttons for those items. Inherited values remain
+unsaved until explicit Save; dates and unmastered items remain editable. Both
+teacher and parent save endpoints reject conflicting later-period answers before
+any writes. Parent responses never expose mastery IDs. Saved conflicting old
+answers are not silently rewritten; they require an explicit corrective save.
+
+Verification for this batch: both frontend TypeScript projects, full lint,
+production build and Git whitespace checks pass. All 19 focused backend checks
+(12 new regressions, six existing validation tests, scoring-asset parity) and
+five standalone draft tests pass; the standalone TypeScript test also type-checks.
+The requested test_ml_model module is absent. Supplemental ML modules ran 34
+checks, with 30 passing and four blocked by absent synthetic/holdout CSVs.
+No PostgreSQL-backed integration run or migration application was performed;
+backend/.env and a configured database are absent in this checkout. Unit checks
+used process-local test settings and did not create application configuration.
+
 
 Parent child visibility (2026-10-29): synced children are listed and accessible
 only while the student is active and the section has an Active Primary Adviser
@@ -73,7 +108,7 @@ and instructional planning; official ECCD scores remain deterministic (section 1
 | Workspace | Root `pnpm-workspace.yaml` includes frontend and retains separate lockfiles; frontend has matching pnpm 12 YAML overrides and its own package-manager pin for isolated installs; automatic dependency verification before scripts is disabled |
 | Spreadsheets | openpyxl handles active workbook import/export; pandas is installed |
 | ML | V1 sigmoid-calibrated RF/HistGradientBoosting ensemble, joblib artifact, 18 PRE/demographic inputs, three supported POST outcomes; shared teacher/parent inference |
-| Migrations | Explicit Python migrations 001–014, including production query indexes, email-only identity and credential revocation versioning; no active Alembic setup, pyproject.toml, or uv.lock |
+| Migrations | Explicit Python migrations 001–015, including production query indexes, email-only identity and credential revocation versioning; no active Alembic setup, pyproject.toml, or uv.lock |
 
 Observed on this Windows checkout on **2026-10-25**:
 
@@ -417,9 +452,10 @@ columns**. Hybrid Python compatibility properties in student.py,
 student_identity.py, and student_reference.py map operations onto protected
 identity. Do not restore plaintext SQL columns. Keep FK/cascade integrity.
 
-LRNs are exactly 12 digits, AES-GCM encrypted as iv:tag:ciphertext hex, indexed by
+Assigned LRNs are exactly 12 digits, AES-GCM encrypted as iv:tag:ciphertext hex, indexed by
 HMAC, and publicly masked as eight bullets plus four digits. Public aliases
-`lrn`, `lrn_number`, and `student_lrn` contain masked values. Frontend
+`lrn`, `lrn_number`, and `student_lrn` contain masked values or "Pending".
+The authorized staff student-detail `lrn_number` is the plaintext/null exception. Frontend
 URLs/payloads/drafts use student_id; raw LRNs are enrollment/linking inputs.
 Some backend path parameters still say lrn and accept valid LRNs or IDs;
 preserve those routes and their protection.
@@ -448,6 +484,7 @@ add the newer feature columns. The explicit migration inventory is:
 | 012 | auth_security_version | Persistent credential revocation version |
 | 013 | email_only_identity | Move Chairman name to settings, remove username, normalize emails and enforce case-insensitive uniqueness |
 | 014 | production_performance | Add 18 supporting B-tree indexes; explicit transactional maintenance-window upgrade, included in fresh bootstrap |
+| 015 | optional_student_lrn | Allow null protected LRNs while preserving assigned-LRN uniqueness and existing student data |
 
 Migration 013 was applied and checked on the configured local `ames_parity_dev`
 database on 2026-10-25. Uvicorn startup, `/ready` and `/api/settings` pass with
@@ -782,7 +819,8 @@ files and production data were not changed.
   parent-only rows are not assigned an official teacher date. Earlier parent
   provenance remains available. Later-period answers are not saved automatically.
 - Teacher UI carry-over in hooks/useTeacherAssessment.ts is virtual: earlier KAYA
-  can prefill unsaved later periods; saved answers and deliberate drafts win.
+  can prefill unsaved later periods. Completed-PRE KAYA always wins and locks
+  corresponding MID/POST items; other saved answers and deliberate drafts win.
   Each later period needs an explicit save and its own assessment date.
 - Parent saves accept nonempty, unique home-based answers for one testing period,
   with matching top-level/row period identifiers. They record parent_id,

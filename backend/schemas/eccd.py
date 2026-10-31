@@ -2,7 +2,7 @@ from datetime import date, datetime
 from typing import Literal, Optional
 
 from backend.models.eccd import EccdAnswer, TestingPeriod
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, model_validator
 from .common import ApiModel, PositiveId
 from .common import ParentPermissions
 from .student import StudentPublicResponse
@@ -212,6 +212,10 @@ class AssessmentResponse(ApiModel):
     evaluationDates: dict[TestingPeriod, date | None]
     gradingDates: dict[TestingPeriod, date | None] = Field(default_factory=dict)
     student_birth_date: date | None = None
+
+
+class TeacherAssessmentResponse(AssessmentResponse):
+    pre_kaya_question_ids: list[PositiveId] = Field(default_factory=list)
 
 
 class ParentAssessmentResponse(AssessmentResponse):

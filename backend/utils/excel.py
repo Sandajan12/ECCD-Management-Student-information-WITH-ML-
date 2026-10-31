@@ -1,4 +1,4 @@
-"""DepEd workbook import/export translated from the legacy functional flows."""
+"""DepEd workbook import/export with protected student identity."""
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date, datetime
@@ -19,14 +19,13 @@ from sqlalchemy.orm import Session, joinedload
 
 from backend.models import EccdQuestion, FamilyAccess, Parent, Section, SectionTeacher, Student, StudentEccdEvaluation, SystemSettings, Teacher, User
 from backend.models.eccd import EccdAnswer, TestingPeriod
-from backend.models.student import Gender, Handedness
 from backend.schemas.student import StudentCreate
 from backend.schemas.operations import SectionMismatchResponse
 from backend.schemas.common import validate_person_name
 from backend.utils.access import authorize_student, current_teacher, get_active_adviser_for_student, resolve_student, teacher_sections
 from backend.utils.eccd_scorer import calculate_decimal_age, calculate_scores
 from backend.utils.eccd_dates import get_official_testing_date
-from backend.utils.lrn import decrypt_lrn, hash_lrn
+from backend.utils.lrn import hash_lrn
 from backend.utils.rollover import settings_record
 from backend.utils.students import upsert_guardian
 
@@ -269,7 +268,7 @@ def summary_workbook(db: Session, section: Section, students: list[Student]):
             middle = f" {student.middle_name[:1].upper()}." if student.middle_name else ""
             name = f"{student.last_name or ''}, {student.first_name or ''}{middle}".upper()
             records = by_student_period[(student.student_id, period)]
-            values = [index + 1, decrypt_lrn(student.lrn_encrypted), name, None, None, student.gender.value.upper() if student.gender else "", student.date_of_birth]
+            values = [index + 1, student.lrn_number, name, None, None, student.gender.value.upper() if student.gender else "", student.date_of_birth]
             for column, value in enumerate(values, 2):
                 if value is not None:
                     write_cell(sheet, row, column, value)
@@ -475,6 +474,8 @@ def import_workbook(db: Session, user: User, teacher: Teacher, section: Section,
             birth = parse_date(cell(9), wb.epoch)
             if cell(9) and birth is None:
                 raise ValueError("Invalid birth date.")
+            if not string(5):
+                raise ValueError("A 12-digit LRN is required to match workbook student records.")
             data = StudentCreate(lrn_number=string(5), first_name=names[1], middle_name=" ".join(names[2:]) or None, last_name=names[0], gender=gender, handedness=handedness, date_of_birth=birth, address=string(16) or None, num_of_siblings=int(string(25)) if string(25) else None, birth_order=string(26) or None, school_year=school_year, section_id=section_id, section_name=section.section_name)
             student = db.query(Student).filter_by(lrn_search_hash=hash_lrn(data.lrn_number)).with_for_update().first()
             if student and student.section_id != section_id:

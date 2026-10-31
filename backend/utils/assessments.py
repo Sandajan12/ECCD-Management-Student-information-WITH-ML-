@@ -10,6 +10,7 @@ from backend.utils.access import authorize_student, current_teacher, get_active_
 from backend.utils.eccd_scorer import calculate_decimal_age, calculate_scores
 from backend.utils.eccd_dates import get_grading_date, get_official_testing_date
 from backend.utils.students import public_student
+from backend.utils.mastery import completed_pre_kaya, guard_pre_mastery
 from backend.utils.audit import person_name, record_audit, teacher_name
 
 PERIODS = (TestingPeriod.PRE, TestingPeriod.MID, TestingPeriod.POST)
@@ -31,6 +32,7 @@ def save_evaluation(db: Session, user: User, payload: EvaluationBatch) -> dict:
     if actual_ids != set(question_ids):
         raise HTTPException(400, "Unknown assessment question.")
     existing = db.query(StudentEccdEvaluation).filter_by(student_id=student.student_id).all()
+    guard_pre_mastery(db, existing, payload.evaluations)
     for record in existing:
         if record.testing_period == payload.testing_period or record.teacher_evaluation_date is None:
             continue
@@ -86,6 +88,8 @@ def save_home_evaluation(db: Session, user: User, payload: ParentEvaluationBatch
     permissions = permissions_for_student(db, student)
     if not permissions.allow_parent_edit_home_based_eccd:
         raise HTTPException(403, "Editing is currently locked by the Class Adviser.")
+    existing = db.query(StudentEccdEvaluation).filter_by(student_id=student.student_id).all()
+    guard_pre_mastery(db, existing, payload.evaluations)
     submitted_at = datetime.now(timezone.utc)
     compatibility_date = date.today()
     for answer in payload.evaluations:
@@ -164,6 +168,8 @@ def assessment_data(db: Session, user: User, identifier: str, parent_view: bool 
         checklist.extend(row for row in rows if row["is_home_based"])
     result = {"student_id": student.student_id, "masked_lrn": student.masked_lrn, "student_birth_date": student.date_of_birth if not parent_view or permissions.allow_parent_view_student_info else None,
               "domains": formatted, "evalAges": ages, "periodDates": dates, "evaluationDates": dates, "gradingDates": grading_dates}
+    if not parent_view:
+        result["pre_kaya_question_ids"] = sorted(completed_pre_kaya({question.question_id for question in questions}, evaluations))
     if parent_view:
         result["parent_assessment_access"] = windows
         result["allow_parent_view_eccd_marks"] = permissions.allow_parent_view_eccd_marks
