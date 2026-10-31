@@ -29,6 +29,29 @@ requirement remains unresolved.
 
 ## 1. Purpose and implementation status
 
+Batch 2 (2026-10-31): Existing dashboard stats routes now expose a typed teacher
+`criticalDomain` summary (domain name, total Di-Kaya items, completed student
+count) and Chairman `delaySummary` (male/female counts, total delayed/scored
+students, and zero-inclusive section counts). Both select each active student's
+latest completed, teacher-confirmed period, POST > MID > PRE. Every configured
+question, including home-based questions, must have an official teacher date;
+partial later periods do not displace a completed earlier period. Teacher metrics
+remain scoped to active Primary Adviser assignments. Chairman delays use the
+existing official scorer at the assessment-date age, counting its `Slight Delay`
+and `Delay` (significant-delay band) labels. Missing birth dates cannot be scored.
+Section and school-year filters apply; these new summaries always exclude
+inactive students, even when selecting a historical school year.
+
+Teacher Dashboard's Most Critical Domain card displays the name and item count;
+the browser-side priority override and unused sectionPriority helper are removed.
+Chairman Dashboard adds Delayed Males/Females cards and a section breakdown with
+loading/error/empty states. No schema migration or form/draft changes are needed.
+Verification: 12 isolated ORM/query/scoring/route regressions pass using synthetic
+SQLite data and process-local test settings. Both TypeScript projects, full lint
+and production build pass. Full backend unittest discovery was attempted but is
+blocked by missing application settings (backend/.env is absent) and missing ML
+dataset CSVs; no configured PostgreSQL integration run was performed.
+
 Batch 1 (2026-10-31): Student enrollment and staff edits accept absent/null/blank
 LRNs, normalizing blanks to null across the encrypted value, HMAC lookup and
 last-four fields. Supplied LRNs still require 12 ASCII digits. Explicit migration
@@ -857,13 +880,14 @@ files and production data were not changed.
   Responses include totalKaya/totalDiKaya, overallStatus, domainCards/publication.
 - Staff analytics filter by section/domain/period/school year. schoolYear=All
   generally uses active students; a specified year permits historical cohorts.
-  Teacher queries stay within active assignments. Backend teacher priority uses
-  latest period **per student/question**; completion divides submitted rows by
-  students × questions × three periods. Chairman summaries aggregate answer counts.
-  These percentages are distinct from scaled/standard scores.
-- frontend/src/utils/teacherMetrics.ts calculates selected-section display
-  metrics from committed assessments: full-domain completion and priority from
-  each student's latest populated period. Distinguish these from backend aggregates.
+  Teacher queries stay within active assignments. Teacher critical-domain and
+  Chairman delay summaries always use active students and their latest completed,
+  teacher-confirmed periods (see Batch 2 above). Completion still divides submitted
+  rows by students × questions × three periods. Other Chairman summary cards
+  aggregate answer counts. These percentages are distinct from scaled/standard scores.
+- frontend/src/utils/teacherMetrics.ts calculates selected-section domain
+  completion from committed assessments. Dashboard critical-domain calculation
+  lives in backend/utils/dashboard_analytics.py alongside the delay summary.
 
 ## 8. Excel import/export
 

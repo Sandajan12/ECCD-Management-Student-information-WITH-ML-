@@ -2,7 +2,8 @@
 import math
 
 from backend.config.database import get_db
-from backend.models.eccd import EccdDomain, EccdQuestion, StudentEccdEvaluation, TestingPeriod
+from backend.models.eccd import EccdDomain, EccdQuestion, StudentEccdEvaluation
+from backend.models.log import SystemLog
 from backend.models.message import Message
 from backend.models.parent import Parent
 from backend.models.section import Section
@@ -14,9 +15,10 @@ from backend.models.user import User, UserRole
 from backend.schemas.analytics import DashboardFilters, PieChartSlice
 from backend.schemas.operations import AnalyticsStats, AuditLogItem
 from backend.utils.deps import verify_role
+from backend.utils.dashboard_analytics import critical_domain, delay_summary
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import desc, distinct, func, case
-from sqlalchemy.orm import Session, aliased
+from sqlalchemy import desc, distinct, func
+from sqlalchemy.orm import Session
 
 router = APIRouter(prefix="/api/analytics", tags=["Analytics"])
 legacy_router = APIRouter(prefix="/api/logs", tags=["Audit logs"])
@@ -62,7 +64,7 @@ def get_dashboard_filters(
         if not teacher:
             return {"sections": [], "domains": domains, "schoolYears": []}
 
-        # A teacher only sees their assigned sections (via section_teachers or legacy section)
+        # Only active Primary Adviser assignments grant classroom access.
         sec_ids = get_teacher_section_ids(teacher.teacher_id, db)
         sections = [
             s[0]
@@ -233,19 +235,26 @@ def get_dashboard_stats(
 
         domain_row = domain_query.group_by(EccdDomain.domain_name).order_by(desc("dikaya_count")).first()
         if domain_row:
-            critical_domain = domain_row.domain_name.replace(" Domain", "")
+            critical_domain_name = domain_row.domain_name.replace(" Domain", "")
             critical_subtitle = "Needs Improvement"
         else:
-            critical_domain = "Perfect"
+            critical_domain_name = "Perfect"
             critical_subtitle = "Fully Mastered"
 
+        delay_scope = [Student.is_active.is_(True)]
+        if schoolYear != "All":
+            delay_scope.append(Student.school_year == schoolYear)
+        if section != "All":
+            delay_scope.append(Student.section.has(section_name=section))
+
         return {
+            "delaySummary": delay_summary(db, delay_scope, section).model_dump(),
             "stats": {
                 "totalStudents": str(total_students),
                 "totalTeachers": str(total_teachers),
                 "priorityIntervention": priority_intervention,
                 "priorityInterventionSubtitle": priority_subtitle,
-                "criticalDomain": critical_domain,
+                "criticalDomain": critical_domain_name,
                 "criticalDomainSubtitle": critical_subtitle,
                 "eccdProgress": f"{kaya_percentage}%",
                 "eccdAvg": f"{kaya_percentage}%" if kaya_percentage > 0 else "0%"
@@ -266,6 +275,7 @@ def get_dashboard_stats(
                     "eccdProgress": "0%",
                     "priorityDomain": "None"
                 },
+                "criticalDomain": {"domainName": None, "totalDiKaya": 0, "completedStudents": 0},
                 "messages": []
             }
 
@@ -314,50 +324,10 @@ def get_dashboard_stats(
         if total_possible > 0:
             progress = f"{(total_submitted / total_possible) * 100:.1f}%"
 
-        EccdEvalAlias = aliased(StudentEccdEvaluation)
-        
-        period_sort_logic = case(
-            (EccdEvalAlias.testing_period == TestingPeriod.PRE, 1),
-            (EccdEvalAlias.testing_period == TestingPeriod.MID, 2),
-            (EccdEvalAlias.testing_period == TestingPeriod.POST, 3),
-            else_=0,
-        )
-        
-        latest_period_subquery = (
-            db.query(EccdEvalAlias.testing_period)
-            .filter(EccdEvalAlias.student_id == StudentEccdEvaluation.student_id,
-                    EccdEvalAlias.question_id == StudentEccdEvaluation.question_id)
-            .order_by(period_sort_logic.desc())
-            .limit(1)
-            .correlate(StudentEccdEvaluation)
-            .scalar_subquery()
-        )
-
-        top_domain = (
-            db.query(
-                EccdDomain.domain_name,
-                func.count(StudentEccdEvaluation.answer).label("count"),
-            )
-            .select_from(StudentEccdEvaluation)
-            .join(Student, StudentEccdEvaluation.student_id == Student.student_id)
-            .join(EccdQuestion, StudentEccdEvaluation.question_id == EccdQuestion.question_id)
-            .join(EccdDomain, EccdQuestion.domain_id == EccdDomain.domain_id)
-            .filter(
-                *student_scope,
-                StudentEccdEvaluation.answer == "DI-KAYA",
-                StudentEccdEvaluation.testing_period == latest_period_subquery,
-            )
-            .group_by(EccdDomain.domain_id, EccdDomain.domain_name)
-            .order_by(desc("count"), EccdDomain.domain_name)
-            .first()
-            if sec_ids
-            else None
-        )
-
-        priority_domain = top_domain.domain_name.replace(" Domain", "") if top_domain else "None"
+        critical = critical_domain(db, [*student_scope, Student.is_active.is_(True)])
+        priority_domain = critical.domainName or "None"
 
         # Recent messages feed
-        from backend.models.parent import Parent
         recent_messages = (
             db.query(Message, Parent.fullname)
             .join(Parent, Message.parent_id == Parent.parent_id)
@@ -390,10 +360,10 @@ def get_dashboard_stats(
                 "priorityDomain": priority_domain,
             },
             "messages": messages_list,
+            "criticalDomain": critical.model_dump(),
             "allow_eccd_question_management": bool(teacher.allow_eccd_question_management),
         }
 
-from backend.models.log import SystemLog
 @router.get("/logs", response_model=list[AuditLogItem])
 @legacy_router.get("", response_model=list[AuditLogItem])
 @legacy_router.get("/", response_model=list[AuditLogItem])

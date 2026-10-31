@@ -1,4 +1,3 @@
-// Visual source: AMES-SYSTEM/frontend/src/pages/chairman/Dashboard.jsx.
 import { useEffect, useState } from "react";
 import {
   Cell,
@@ -14,6 +13,8 @@ import API, { errorMessage } from "../../services/api";
 import { Notice, Select } from "../../components/chairman/ui";
 import Icon from "../../components/chairman/Icon";
 import LegacyIcon from "../../components/LegacyIcon";
+import DelaySummary from "../../components/chairman/DelaySummary";
+import type { DelaySummaryData } from "../../components/chairman/DelaySummary";
 interface Filters {
   sections: string[];
   domains: string[];
@@ -27,6 +28,7 @@ interface Slice {
 interface Stats {
   stats: Record<string, string>;
   functionalMastery?: { kaya: number; dikaya: number };
+  delaySummary?: DelaySummaryData;
 }
 interface Selection {
   section: string;
@@ -271,6 +273,11 @@ export default function Dashboard() {
           </section>
         ))}
       </div>
+      <DelaySummary
+        summary={stats?.delaySummary}
+        loading={statsRequest.loading}
+        failed={Boolean(statsRequest.error)}
+      />
       <div className="grid gap-6 legacy-md:grid-cols-12">
         <section
           aria-labelledby="chairman-progress-title"

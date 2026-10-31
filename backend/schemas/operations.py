@@ -2,6 +2,7 @@
 from datetime import date, datetime
 from typing import Literal
 from pydantic import Field, computed_field
+from .analytics import CriticalDomainSummary, DelaySummary
 from .common import ApiModel, PositiveId
 
 
@@ -130,6 +131,8 @@ class AnalyticsStats(ApiModel):
     functionalMastery: dict[str, int] | None = None
     messages: list['RecentMessage'] | None = None
     allow_eccd_question_management: bool | None = None
+    criticalDomain: CriticalDomainSummary | None = None
+    delaySummary: DelaySummary | None = None
 
 
 class RecentMessage(ApiModel):

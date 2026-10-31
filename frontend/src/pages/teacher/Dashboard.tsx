@@ -33,15 +33,13 @@ import {
 } from "recharts";
 import api from "../../services/api";
 import { useTeacher } from "../../context/TeacherContext";
-import { sectionPriority } from "../../utils/teacherMetrics";
-import type { Assessment, Domain, Student } from "../../types";
+import type { Domain, Student } from "../../types";
 import { useAuth } from "../../context/AuthContext";
 import { assessmentRefreshScheduler } from "../../hooks/assessmentRefresh";
 interface DashboardStats {
   totalStudents: string | number;
   unreadMessages: string | number;
   eccdProgress: string;
-  priorityDomain: string;
 }
 interface Message {
   id: number;
@@ -58,6 +56,12 @@ interface PieData {
 interface DashboardResponse {
   stats: DashboardStats;
   messages: Message[];
+  criticalDomain: CriticalDomainSummary;
+}
+interface CriticalDomainSummary {
+  domainName: string | null;
+  totalDiKaya: number;
+  completedStudents: number;
 }
 interface DashboardFilters {
   sections: string[];
@@ -71,33 +75,35 @@ const emptyStats: DashboardStats = {
   totalStudents: "0",
   unreadMessages: "0",
   eccdProgress: "0%",
-  priorityDomain: "None",
 };
 const Dashboard: React.FC = () => {
   const { settings } = useContext(SettingsContext);
   const { user } = useAuth();
-  const { section, sections } = useTeacher();
+  const { section } = useTeacher();
   const navigate = useNavigate();
   const filterSection = section?.section_name || "";
   const [filterDomain, setFilterDomain] = useState("All");
   const [filterPeriod, setFilterPeriod] = useState("PRE");
   const [pieData, setPieData] = useState<PieData[]>([]);
   const [domains, setDomains] = useState<string[]>([]);
-  const [dashboardStats, setDashboardStats] = useState<DashboardStats>({
-    ...emptyStats,
-    priorityDomain: "Loading...",
-  });
+  const [dashboardStats, setDashboardStats] =
+    useState<DashboardStats>(emptyStats);
   const [distribution, setDistribution] = useState<GenderDistribution>({
     male: 0,
     female: 0,
   });
   const [messages, setMessages] = useState<Message[]>([]);
+  const [criticalDomain, setCriticalDomain] =
+    useState<CriticalDomainSummary | null>(null);
+  const [criticalDomainError, setCriticalDomainError] = useState(false);
   useEffect(() => {
     let current = true;
     let controller: AbortController | null = null;
-    setDashboardStats({ ...emptyStats, priorityDomain: "Loading..." });
+    setDashboardStats(emptyStats);
     setMessages([]);
     setDistribution({ male: 0, female: 0 });
+    setCriticalDomain(null);
+    setCriticalDomainError(false);
     const load = () => {
       controller?.abort();
       const request = new AbortController();
@@ -123,7 +129,6 @@ const Dashboard: React.FC = () => {
       let roster: Student[] | undefined;
       let questionCount: number | undefined;
       let submitted: number | undefined;
-      let priorityDomain: string | undefined;
       let progress: string | undefined;
       const updateProgress = () => {
         if (
@@ -155,26 +160,27 @@ const Dashboard: React.FC = () => {
             ...emptyStats,
             ...data.stats,
             totalStudents: roster ? roster.length : data.stats.totalStudents,
-            priorityDomain:
-              priorityDomain ?? data.stats.priorityDomain ?? "None",
             eccdProgress: progress ?? previous.eccdProgress,
           }));
           setMessages(data.messages || []);
+          setCriticalDomain(data.criticalDomain);
+          setCriticalDomainError(false);
         })
         .catch(() => {
           if (!activeRequest()) return;
           setDashboardStats((previous) => ({
             ...previous,
             unreadMessages: 0,
-            priorityDomain: priorityDomain ?? "None",
           }));
+          setCriticalDomain(null);
+          setCriticalDomainError(true);
           setMessages([]);
         });
       void api
         .get<Student[]>("/api/students/section/" + section.section_id, {
           signal,
         })
-        .then(async ({ data }) => {
+        .then(({ data }) => {
           if (!activeRequest()) return;
           const active = data.filter(
             (s) => s.is_active && s.section_id === section.section_id,
@@ -191,25 +197,6 @@ const Dashboard: React.FC = () => {
               .length,
           });
           updateProgress();
-          // Preserve the existing latest-period-per-student priority rule for
-          // multiple assignments. Single-section views never need checklists.
-          if (sections.length > 1) {
-            const records = await Promise.all(
-              active.map(async (student) => {
-                const response = await api.get<Assessment>(
-                  `/api/eccd/assessment/${student.student_id}`,
-                  { signal },
-                );
-                return response.data;
-              }),
-            );
-            if (!activeRequest()) return;
-            priorityDomain = sectionPriority(records);
-            setDashboardStats((previous) => ({
-              ...previous,
-              priorityDomain: priorityDomain!,
-            }));
-          }
         })
         .catch(() => {
           // Keep independently loaded summary data when roster/detail fails.
@@ -264,7 +251,7 @@ const Dashboard: React.FC = () => {
       window.removeEventListener("focus", reload);
       window.removeEventListener("ames-record-synced", scheduler.schedule);
     };
-  }, [section?.section_id, section?.section_name, sections.length, user?.id]);
+  }, [section?.section_id, section?.section_name, user?.id]);
   useEffect(() => {
     let current = true;
     let controller: AbortController | null = null;
@@ -306,7 +293,6 @@ const Dashboard: React.FC = () => {
       window.removeEventListener("ames-record-synced", scheduler.schedule);
     };
   }, [filterSection, filterDomain, filterPeriod, user?.id]);
-  // Dynamically populated stats array
   const stats = [
     {
       title: "Total Student",
@@ -327,8 +313,19 @@ const Dashboard: React.FC = () => {
       bg: "#ecfdf5",
     },
     {
-      title: "Priority Domain",
-      value: dashboardStats.priorityDomain,
+      title: "Most Critical Domain",
+      value:
+        criticalDomain?.domainName ||
+        (criticalDomain?.completedStudents ? "All Skills Mastered" : "No Data"),
+      subtitle: criticalDomainError
+        ? "Summary unavailable"
+        : !section
+          ? "No section assigned"
+          : !criticalDomain
+            ? "Loading..."
+            : criticalDomain.completedStudents
+              ? `${criticalDomain.totalDiKaya} Di-Kaya items · latest completed assessments`
+              : "No completed assessments yet",
       icon: <AssessmentIcon sx={{ fontSize: 32, color: "#f59e0b" }} />,
       bg: "#fffbeb",
     },
@@ -435,7 +432,7 @@ const Dashboard: React.FC = () => {
                 >
                   {stat.icon}
                 </Box>
-                <Box>
+                <Box sx={{ minWidth: 0, overflowWrap: "anywhere" }}>
                   <Typography
                     variant="caption"
                     sx={{
@@ -453,6 +450,18 @@ const Dashboard: React.FC = () => {
                   >
                     {stat.value}
                   </Typography>
+                  {stat.subtitle && (
+                    <Typography
+                      variant="caption"
+                      sx={{
+                        color: "text.secondary",
+                        display: "block",
+                        mt: 0.5,
+                      }}
+                    >
+                      {stat.subtitle}
+                    </Typography>
+                  )}
                 </Box>
               </CardContent>
             </Card>

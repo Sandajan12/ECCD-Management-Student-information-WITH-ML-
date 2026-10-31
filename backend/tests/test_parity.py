@@ -105,7 +105,7 @@ class ParityTests(unittest.TestCase):
             db.commit()
         self.assertEqual(self.call("GET", "/api/teachers/dashboard-filters", 2).json()["schoolYears"], ["2026-2027"])
 
-    def test_teacher_priority_uses_latest_answer_per_question(self):
+    def test_teacher_critical_domain_requires_a_completed_teacher_confirmed_period(self):
         with self.sessions() as db:
             db.add_all([
                 StudentEccdEvaluation(student_id=1, teacher_id=1, question_id=1, testing_period="PRE", answer="DI-KAYA", evaluation_date=date(2026, 8, 10)),
@@ -114,7 +114,9 @@ class ParityTests(unittest.TestCase):
             db.commit()
         response = self.call("GET", "/api/teachers/dashboard-stats", 2)
         self.assertEqual(response.status_code, 200, response.text)
-        self.assertEqual(response.json()["stats"]["priorityDomain"], "Gross Motor")
+        self.assertEqual(response.json()["stats"]["priorityDomain"], "None")
+        self.assertEqual(response.json()["criticalDomain"]["totalDiKaya"], 0)
+        self.assertEqual(response.json()["criticalDomain"]["completedStudents"], 0)
 
     def test_legacy_handover_field_preserves_scores_and_assignment_history(self):
         self.assertEqual(self.fixture.evaluate().status_code, 200)
