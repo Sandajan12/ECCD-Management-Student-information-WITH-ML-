@@ -32,15 +32,6 @@ interface HomeEvaluation {
   testing_period: Period;
   answer: Answer;
 }
-const DOMAIN_NAMES: Record<string, string> = {
-  GM: "Gross Motor",
-  FM: "Fine Motor",
-  SH: "Self-Help",
-  RL: "Receptive Language",
-  EL: "Expressive Language",
-  C: "Cognitive",
-  SE: "Socio-Emotional",
-};
 const VIEW_FLAGS = {
   PRE: "allow_parent_view_eccd_pre",
   MID: "allow_parent_view_eccd_mid",
@@ -52,7 +43,7 @@ const EDIT_FLAGS = {
   POST: "post_test_parent_editable",
 } as const;
 
-export function useParentAssessment(child?: Student) {
+export function useParentAssessment(child?: Student, readOnly = false) {
   const { user } = useAuth();
   const id = child?.student_id || 0;
   const owner = user?.id || 0;
@@ -82,11 +73,18 @@ export function useParentAssessment(child?: Student) {
   useEffect(() => {
     const redraw = () => updateDrafts((version) => version + 1);
     const reload = () => void assessment.refresh();
+    const reloadVisible = () => {
+      if (document.visibilityState === "visible") reload();
+    };
+    const timer = window.setInterval(reloadVisible, 20000);
     window.addEventListener("ames-drafts-changed", redraw);
     window.addEventListener("storage", redraw);
     window.addEventListener("online", reload);
     window.addEventListener("focus", reload);
+    document.addEventListener("visibilitychange", reloadVisible);
     return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", reloadVisible);
       window.removeEventListener("ames-drafts-changed", redraw);
       window.removeEventListener("storage", redraw);
       window.removeEventListener("online", reload);
@@ -94,6 +92,7 @@ export function useParentAssessment(child?: Student) {
     };
   }, [assessment.refresh]);
   const canEditHomeBased =
+    !readOnly &&
     data?.can_edit_home_based === true &&
     data.permissions?.allow_parent_edit_home_based_eccd === true &&
     child?.allow_parent_edit_home_based_eccd === true;
@@ -102,8 +101,15 @@ export function useParentAssessment(child?: Student) {
     data?.parent_assessment_access?.[EDIT_FLAGS[period]] === true;
   const hasOpenPeriod = PERIODS.some(canEditPeriod);
   const editablePeriods = PERIODS.filter(canEditPeriod);
-  const canViewMarks = data?.allow_parent_view_eccd_marks === true;
-  const viewablePeriods = canViewMarks ? PERIODS : editablePeriods;
+  const canViewMarks =
+    child?.allow_parent_view_eccd_marks === true &&
+    data?.permissions?.allow_parent_view_eccd_marks === true &&
+    data.allow_parent_view_eccd_marks === true;
+  const viewablePeriods = readOnly
+    ? canViewMarks
+      ? PERIODS
+      : []
+    : editablePeriods;
   const preferred =
     periodSelection?.owner === owner && periodSelection.child === id
       ? periodSelection.period
@@ -136,7 +142,6 @@ export function useParentAssessment(child?: Student) {
         Number(a.questions.some((q) => q.is_home_based === true)) ||
       a.domain_id - b.domain_id,
   );
-  // Marks access also permits read-only period selection with editing closed.
   const activePeriod =
     selectedPeriod ?? PERIODS.find(isPeriodReleased) ?? "PRE";
   const activeDomain =
@@ -390,34 +395,6 @@ export function useParentAssessment(child?: Student) {
       setSaving(false);
     }
   };
-  const domainProgress = (domain: Domain, period: Period) => {
-    const released = isPeriodReleased(period);
-    const saved = domain.questions.filter((q) =>
-      serverAnswer(q.question_id, period),
-    ).length;
-    const local = domain.questions.filter(
-      (q) =>
-        q.is_home_based === true &&
-        (canEditHomeBased || released) &&
-        draftFor(domain.domain_id, period)?.values.answers[q.question_id],
-    ).length;
-    const answered = domain.questions.filter((q) =>
-      getAnswer(q.question_id, period),
-    ).length;
-    return {
-      saved,
-      local,
-      answered,
-      total: domain.questions.length,
-      percentage:
-        canViewMarks || saved > 0 || local > 0
-          ? domain.questions.length
-            ? Math.round((answered * 100) / domain.questions.length)
-            : 0
-          : null,
-      provisional: !canViewMarks || local > 0,
-    };
-  };
   const sortedQuestions = (questions: Question[]) =>
     [...questions].sort(
       (a, b) =>
@@ -425,78 +402,6 @@ export function useParentAssessment(child?: Student) {
         a.sequence_order - b.sequence_order ||
         a.question_id - b.question_id,
     );
-  const summaryData = data
-    ? {
-        permissions: data.permissions,
-        periods: Object.fromEntries(
-          PERIODS.map((period) => {
-            const summary = data.summary?.[period];
-            const released = isPeriodReleased(period);
-            return [
-              period,
-              {
-                testing_period: period,
-                evaluation_date: released ? summary?.assessmentDate : null,
-                decimal_age: released ? summary?.decimalAge : null,
-                sum_of_scaled_scores: released
-                  ? summary?.sumOfScaledScores
-                  : null,
-                standard_score: released ? summary?.standardScore : null,
-                interpretation: released
-                  ? summary?.interpretation
-                  : "Pending Adviser Release",
-                is_published: released,
-                domains: (data.matrix || []).map((domain) => ({
-                  domain_code: domain.domain_code,
-                  domain_name:
-                    DOMAIN_NAMES[domain.domain_code] ||
-                    domain.domain_name
-                      .replace(/ Domain$/i, "")
-                      .replace(/^Social-Emotional$/i, "Socio-Emotional"),
-                  raw_score: released
-                    ? (summary?.rawScores?.[domain.domain_code] ?? null)
-                    : null,
-                  scaled_score: released
-                    ? (summary?.scaledScores?.[domain.domain_code] ??
-                      domain.scores[period])
-                    : null,
-                })),
-              },
-            ];
-          }),
-        ) as Record<
-          Period,
-          {
-            testing_period: Period;
-            evaluation_date: string | null | undefined;
-            decimal_age: number | null | undefined;
-            sum_of_scaled_scores: number | null | undefined;
-            standard_score: number | null | undefined;
-            interpretation: string | null | undefined;
-            is_published: boolean;
-            domains: {
-              domain_code: string;
-              domain_name: string;
-              raw_score: number | null;
-              scaled_score: number | null;
-            }[];
-          }
-        >,
-      }
-    : null;
-  const evalAges = Object.fromEntries(
-    checklistDomains.map((domain) => [
-      String(domain.domain_id),
-      Object.fromEntries(
-        PERIODS.map((period) => [
-          period,
-          isPeriodReleased(period)
-            ? (data?.evalAges[String(domain.domain_id)]?.[period] ?? null)
-            : null,
-        ]),
-      ),
-    ]),
-  );
   return {
     data,
     checklistDomains,
@@ -511,15 +416,12 @@ export function useParentAssessment(child?: Student) {
     selectedPeriod,
     activePeriod,
     setSelectedPeriod,
-    domainProgress,
     sortedQuestions,
     isPeriodReleased,
     getAnswer,
     handleAnswerChange,
     handleSaveChecklist,
     saving,
-    summaryData,
-    evalAges,
     loading: assessment.loading,
     error:
       assessment.error || (feedback.scope === identity ? feedback.error : ""),

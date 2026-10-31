@@ -1,21 +1,13 @@
 import { useState } from "react";
 import type { ChangeEvent } from "react";
-import {
-  Box,
-  Grid,
-  Stack,
-  CircularProgress,
-  Alert,
-  Snackbar,
-} from "@mui/material";
+import { Box, CircularProgress, Alert } from "@mui/material";
 import BarChartIcon from "@mui/icons-material/BarChart";
 import AssignmentIcon from "@mui/icons-material/Assignment";
 import LockOutlinedIcon from "@mui/icons-material/LockOutlined";
 import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import HelpOutlineIcon from "@mui/icons-material/HelpOutlineOutlined";
 import ChildCareIcon from "@mui/icons-material/ChildCare";
-import SaveIcon from "@mui/icons-material/Save";
-import ArrowBackIcon from "@mui/icons-material/ArrowBack";
+import ReadOnlyDomainChecklist from "../../components/parent/ReadOnlyDomainChecklist";
 import { useChildren } from "../../hooks/useChildren";
 import { useParentAssessment } from "../../hooks/useParentAssessment";
 import { formatDisplayDate } from "../../utils/dateUtils";
@@ -28,28 +20,16 @@ const ParentEccdAssessment = () => {
     0,
     childrenList.findIndex((child) => child.student_id === roster.selected),
   );
-  const assessment = useParentAssessment(roster.child);
+  const assessment = useParentAssessment(roster.child, true);
   const [activeTab, setActiveTab] = useState<"official" | "checklist">(
     "official",
   );
-  const [toast, setToast] = useState<{
-    open: boolean;
-    message: string;
-    severity: "success" | "error";
-  }>({ open: false, message: "", severity: "success" });
   const loading = roster.loading || assessment.loading;
-  const saving = assessment.saving;
   const error = roster.error || assessment.error;
-  const handleAnswerChange = assessment.handleAnswerChange;
   const handleChildSwitch = (event: ChangeEvent<HTMLSelectElement>) => {
     const child = childrenList[Number(event.target.value)];
     if (child) roster.select(child.student_id);
   };
-  const handleSaveHomeBased = async () => {
-    const result = await assessment.handleSaveChecklist();
-    if (result) setToast({ open: true, ...result });
-  };
-
   const getInterpretationBadge = (interp: string | null | undefined) => {
     if (!interp) return <span className="text-slate-400 font-semibold">-</span>;
 
@@ -128,45 +108,34 @@ const ParentEccdAssessment = () => {
     POST: { isReleased: false },
   };
   const matrix = assessment.data?.matrix || [];
-  const homeChecklist = assessment.data?.homeBasedChecklist || [];
-  const selectedPeriod = assessment.activePeriod;
-  const activeDomain = assessment.activeDomain;
-  const canEditHomeBased = assessment.canEditHomeBased;
 
-  const periodsConfig: { key: Period; title: string; permissionKey: string }[] =
-    [
-      {
-        key: "PRE",
-        title: "Pre-Test",
-        permissionKey: "allow_parent_view_eccd_pre",
-      },
-      {
-        key: "MID",
-        title: "Mid-Test",
-        permissionKey: "allow_parent_view_eccd_mid",
-      },
-      {
-        key: "POST",
-        title: "Post-Test",
-        permissionKey: "allow_parent_view_eccd_post",
-      },
-    ];
+  const periodsConfig: { key: Period; title: string }[] = [
+    {
+      key: "PRE",
+      title: "Pre-Test",
+    },
+    {
+      key: "MID",
+      title: "Mid-Test",
+    },
+    {
+      key: "POST",
+      title: "Post-Test",
+    },
+  ];
 
   return (
     <div className="w-full max-w-7xl mx-auto space-y-2.5 sm:space-y-4 px-3 py-2.5 sm:px-6 sm:py-6 pb-20 md:pb-6">
-      {/* 1. Header Section */}
       <div className="min-w-0">
         <div>
           <h1 className="text-lg sm:text-2xl font-bold text-slate-900">
             ECCD Assessment
           </h1>
           <p className="text-xs text-slate-500 mt-0.5 line-clamp-1 sm:line-clamp-none">
-            View official DepEd assessment summaries and submit home-based
-            evaluations.
+            View official DepEd assessment summaries and saved checklist
+            results.
           </p>
         </div>
-
-        {/* Child Selector */}
         <div className="mt-1.5 flex min-w-0">
           {childrenList.length > 1 ? (
             <div className="inline-flex max-w-full min-w-0 items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-100 text-slate-700 text-xs font-medium">
@@ -201,8 +170,6 @@ const ParentEccdAssessment = () => {
           {error}
         </Alert>
       )}
-
-      {/* 2. Segmented View Switcher */}
       <div className="grid grid-cols-2 p-1 bg-slate-100 rounded-lg gap-1 max-w-md w-full">
         <button
           type="button"
@@ -243,27 +210,11 @@ const ParentEccdAssessment = () => {
               flexShrink: 0,
             }}
           />
-          <span className="min-w-0 leading-tight">Home-Based Checklist</span>
-          {homeChecklist.length > 0 && (
-            <span
-              className={`shrink-0 text-xs px-1.5 py-0.5 rounded-full font-medium ${
-                activeTab === "checklist"
-                  ? "bg-slate-100 text-slate-900"
-                  : "bg-slate-200 text-slate-700"
-              }`}
-            >
-              {homeChecklist.length}
-            </span>
-          )}
+          <span className="min-w-0 leading-tight">ECCD Checklists</span>
         </button>
       </div>
-
-      {/* ============================================================== */}
-      {/* TAB 1: OFFICIAL EVALUATION SUMMARY                             */}
-      {/* ============================================================== */}
       {activeTab === "official" && (
         <div>
-          {/* Section: Testing Period Status Cards */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5 sm:gap-5 mb-4 sm:mb-8">
             {periodsConfig.map(({ key, title }) => {
               const periodData = summary[key] || {};
@@ -275,7 +226,6 @@ const ParentEccdAssessment = () => {
                   key={key}
                   className="bg-white rounded-2xl border border-slate-200/90 shadow-sm flex flex-col overflow-hidden transition-shadow hover:shadow-md"
                 >
-                  {/* Card Header */}
                   <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
                     <span className="font-bold text-slate-800 text-base">
                       {title}
@@ -299,8 +249,6 @@ const ParentEccdAssessment = () => {
                       </span>
                     )}
                   </div>
-
-                  {/* Card Body */}
                   <div className="p-5 flex-grow flex flex-col justify-center">
                     {!isReleased ? (
                       /* b. Locked / Unreleased State (Pending Adviser Release) */
@@ -381,8 +329,6 @@ const ParentEccdAssessment = () => {
               );
             })}
           </div>
-
-          {/* Section: DepEd Official ECCD Summary Matrix Table */}
           <div className="bg-white rounded-2xl border border-slate-200/90 shadow-sm overflow-hidden p-5 sm:p-6 mb-10">
             <div className="mb-5">
               <h3 className="text-lg font-bold text-slate-900">
@@ -443,7 +389,6 @@ const ParentEccdAssessment = () => {
                   ))}
                 </tbody>
                 <tfoot>
-                  {/* Summary Row 1: Sum of Scaled Scores */}
                   <tr className="border-t-2 border-slate-200 bg-slate-50/40 text-sm">
                     <td className="py-3 px-4 font-bold text-slate-700">
                       Sum of Scaled Scores
@@ -470,8 +415,6 @@ const ParentEccdAssessment = () => {
                       );
                     })}
                   </tr>
-
-                  {/* Summary Row 2: Standard Score */}
                   <tr className="bg-slate-50/40 text-sm">
                     <td className="py-3 px-4 font-bold text-slate-700">
                       Standard Score
@@ -495,8 +438,6 @@ const ParentEccdAssessment = () => {
                       );
                     })}
                   </tr>
-
-                  {/* Summary Row 3: DepEd Interpretation */}
                   <tr className="bg-slate-50/40 text-sm">
                     <td className="py-3 px-4 font-bold text-slate-700">
                       Overall Interpretation
@@ -522,363 +463,9 @@ const ParentEccdAssessment = () => {
           </div>
         </div>
       )}
-
-      {/* ============================================================== */}
-      {/* TAB 2: HOME-BASED CHECKLIST                                    */}
-      {/* ============================================================== */}
       {activeTab === "checklist" && (
-        <Stack>
-          {/* Keep guidance below the assessment on mobile to show domains first. */}
-          {!assessment.hasOpenPeriod && (
-            <div className="order-1 sm:order-none flex items-start sm:items-center gap-2 sm:gap-3 p-2.5 sm:p-4 mt-2.5 sm:mt-0 mb-0 sm:mb-4 bg-amber-50 border border-amber-200/90 rounded-xl sm:rounded-2xl text-amber-900 shadow-xs">
-              <div className="p-1 sm:p-2 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center flex-shrink-0 mt-0.5 sm:mt-0">
-                <LockOutlinedIcon sx={{ fontSize: 20 }} />
-              </div>
-              <div className="min-w-0 text-xs sm:text-sm">
-                <span className="font-bold block">
-                  Submission Closed / Read-Only
-                </span>
-                <span className="text-amber-800/90 text-xs sm:text-sm">
-                  Editing is currently locked by the Class Adviser. You can only
-                  view the submitted checklist.
-                </span>
-              </div>
-            </div>
-          )}
-
-          {assessment.hasOpenPeriod && (
-            <div className="order-1 sm:order-none flex items-start sm:items-center gap-2 sm:gap-3 p-2.5 sm:p-4 mt-2.5 sm:mt-0 mb-0 sm:mb-4 bg-blue-50 border border-blue-200/80 rounded-xl sm:rounded-2xl text-blue-900 shadow-xs">
-              <div className="p-1 sm:p-2 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center flex-shrink-0 mt-0.5 sm:mt-0">
-                <CheckCircleIcon sx={{ fontSize: 20 }} />
-              </div>
-              <div className="min-w-0 text-xs sm:text-sm">
-                <span className="font-bold block">
-                  Home-Based Checklist Open for Submission
-                </span>
-                {/* Preserve the reference text-node boundaries for identical font shaping. */}
-                {/* prettier-ignore */}
-                <span className="text-blue-800/90 text-xs sm:text-sm">
-                  Evaluate your child's home activities. Select <strong className="text-emerald-700">KAYA</strong> if able to perform independently, or <strong className="text-rose-700">DI-KAYA</strong> if not yet capable.
-                </span>
-              </div>
-            </div>
-          )}
-
-          <div className="sticky top-14 z-20 legacy-md:top-0 flex flex-col sm:flex-row sm:flex-wrap sm:items-center justify-between sm:gap-3 mb-3 sm:mb-4 bg-white p-2.5 sm:p-4 rounded-2xl border border-slate-100 shadow-sm">
-            <h2 className="text-base sm:text-lg lg:text-xl font-bold text-slate-900 tracking-tight leading-tight">
-              Developmental Domains
-            </h2>
-            <Stack
-              direction="row"
-              sx={{
-                alignItems: "center",
-                justifyContent: "space-between",
-                gap: 1.25,
-                mt: 1,
-                width: "100%",
-                minWidth: 0,
-                "@media (min-width: 640px)": {
-                  mt: 0,
-                  width: "auto",
-                  flex: 1,
-                  maxWidth: "28rem",
-                },
-              }}
-            >
-              <select
-                aria-label="Testing period"
-                value={assessment.selectedPeriod || ""}
-                disabled={
-                  saving || loading || !assessment.viewablePeriods.length
-                }
-                onChange={(event) =>
-                  assessment.setSelectedPeriod(event.target.value as Period)
-                }
-                className="flex-1 min-w-0 h-[2.25rem] sm:h-10 px-2 sm:px-3 py-1.5 text-xs sm:text-sm bg-white border border-slate-300 rounded-lg font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all cursor-pointer"
-              >
-                {!assessment.viewablePeriods.length && (
-                  <option value="">No periods open</option>
-                )}
-                {assessment.viewablePeriods.map((period) => (
-                  <option key={period} value={period}>
-                    {
-                      periodsConfig.find((config) => config.key === period)
-                        ?.title
-                    }
-                  </option>
-                ))}
-              </select>
-              <button
-                type="button"
-                onClick={handleSaveHomeBased}
-                disabled={
-                  saving || loading || !assessment.canEditPeriod(selectedPeriod)
-                }
-                className="h-[2.25rem] sm:h-10 px-2 sm:px-4 text-xs sm:text-sm font-medium rounded-lg flex items-center justify-center gap-1.5 shrink-0 whitespace-nowrap bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs transition-colors cursor-pointer disabled:opacity-50"
-              >
-                {saving ? (
-                  <CircularProgress size={16} color="inherit" />
-                ) : (
-                  <SaveIcon sx={{ fontSize: 18 }} />
-                )}
-                <span>{saving ? "Saving..." : "Save Assessment"}</span>
-              </button>
-            </Stack>
-          </div>
-          {!assessment.canViewMarks && (
-            <p className="text-xs text-slate-500 mb-4">
-              Marks hidden by class adviser. Your own home-based observations
-              remain visible while editing is permitted.
-            </p>
-          )}
-          {!activeDomain ? (
-            <Grid
-              sx={{
-                display: "grid",
-                gridTemplateColumns: "minmax(0, 1fr)",
-                gap: 1.5,
-                mt: 0,
-                width: "100%",
-                maxWidth: "80rem",
-                mx: "auto",
-                "@media (min-width: 640px)": {
-                  gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-                  gap: 2,
-                  mt: 2,
-                },
-                "@media (min-width: 1024px)": {
-                  gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
-                },
-              }}
-            >
-              {assessment.checklistDomains.map((domain, index) => {
-                const homeCount = domain.questions.filter(
-                  (question) => question.is_home_based === true,
-                ).length;
-                return (
-                  <div
-                    key={domain.domain_id}
-                    className="min-w-0 bg-white rounded-2xl p-3 sm:p-4 border border-slate-100 shadow-sm flex flex-col justify-between h-full hover:shadow-md hover:border-slate-300 transition-all group"
-                  >
-                    <div>
-                      <div className="flex items-start gap-2.5 sm:gap-3 mb-3">
-                        <div className="w-[2.25rem] h-[2.25rem] sm:w-10 sm:h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center flex-shrink-0 font-black text-base sm:text-lg group-hover:bg-blue-600 group-hover:text-white transition-colors">
-                          {index + 1}
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <h3 className="text-base lg:text-lg font-bold text-slate-800 leading-snug break-words">
-                            {domain.domain_name}
-                          </h3>
-                          <p className="text-xs text-slate-500 font-medium mt-1">
-                            {domain.questions.length} Indicators Checklist
-                          </p>
-                        </div>
-                      </div>
-                      <span className="inline-flex max-w-full items-center px-2 py-0.5 rounded-full text-[0.625rem] sm:text-xs font-semibold bg-slate-100 text-slate-600 border border-slate-200">
-                        {homeCount
-                          ? "Contains Home Questions"
-                          : "Teacher Assessed / View Only"}
-                      </span>
-                      <div className="flex flex-col gap-2 sm:gap-2.5 my-3 sm:my-4 pt-2 border-t border-slate-100">
-                        {periodsConfig.map(({ key, title }) => {
-                          const progress = assessment.domainProgress(
-                            domain,
-                            key,
-                          );
-                          return (
-                            <div key={key}>
-                              <div className="flex flex-wrap justify-between items-center gap-x-2 gap-y-0.5 mb-1 text-[0.6875rem] sm:text-xs">
-                                <span className="font-semibold text-slate-600 whitespace-nowrap">
-                                  {title}
-                                </span>
-                                <span
-                                  className={`min-w-0 ml-auto text-right font-bold ${key === "PRE" ? "text-blue-600" : key === "MID" ? "text-amber-600" : "text-emerald-600"}`}
-                                >
-                                  {progress.percentage === null
-                                    ? "Pending Adviser Release"
-                                    : `${progress.percentage}%${progress.provisional ? " (provisional)" : ""}`}
-                                </span>
-                              </div>
-                              <div className="w-full h-1.5 sm:h-2 bg-slate-100 rounded-full overflow-hidden">
-                                <div
-                                  className={`h-full rounded-full transition-all duration-500 ${key === "PRE" ? "bg-blue-500" : key === "MID" ? "bg-amber-500" : "bg-emerald-500"}`}
-                                  style={{
-                                    width: `${progress.percentage ?? 0}%`,
-                                  }}
-                                />
-                              </div>
-                              {progress.local > 0 && (
-                                <p className="text-xs text-slate-500 mt-1">
-                                  {progress.local} local observation(s) /{" "}
-                                  {progress.total} indicators
-                                </p>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => assessment.setActiveDomain(domain)}
-                      aria-label={`${homeCount ? "Assess" : "View"} ${domain.domain_name}`}
-                      className="mt-auto w-full h-[2.25rem] sm:h-10 px-3 font-medium rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition-colors cursor-pointer text-xs sm:text-sm shadow-xs flex items-center justify-center"
-                    >
-                      {homeCount ? "Assess Domain" : "View Domain"}
-                    </button>
-                  </div>
-                );
-              })}
-            </Grid>
-          ) : (
-            <div className="flex flex-col min-h-0 w-full">
-              <button
-                type="button"
-                onClick={() => assessment.setActiveDomain(null)}
-                className="inline-flex items-center gap-1.5 text-xs sm:text-sm font-semibold text-slate-500 hover:text-slate-800 transition-colors mb-3 cursor-pointer group w-fit"
-              >
-                <ArrowBackIcon
-                  sx={{ fontSize: 18 }}
-                  className="group-hover:-translate-x-0.5 transition-transform"
-                />
-                Back to Domains
-              </button>
-              <h2 className="text-base sm:text-lg lg:text-xl font-bold text-slate-900 tracking-tight leading-tight mb-4">
-                {activeDomain.domain_name}
-              </h2>
-              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden mb-12">
-                {[
-                  { home: true, title: "Home-Based Questions" },
-                  {
-                    home: false,
-                    title: "School-Administered Questions · View Only",
-                  },
-                ].map((group) => {
-                  const questions = assessment
-                    .sortedQuestions(activeDomain.questions)
-                    .filter(
-                      (question) =>
-                        (question.is_home_based === true) === group.home,
-                    );
-                  if (!questions.length) return null;
-                  return (
-                    <section key={group.title} aria-label={group.title}>
-                      <h3 className="px-4 py-3 bg-slate-50 border-b border-slate-200 text-xs font-bold text-slate-600">
-                        {group.title}
-                      </h3>
-                      <div className="divide-y divide-slate-100">
-                        {questions.map((question) => {
-                          const answer = assessment.getAnswer(
-                            question.question_id,
-                            selectedPeriod,
-                          );
-                          return (
-                            <div
-                              key={question.question_id}
-                              role="group"
-                              aria-label={question.question_text}
-                              className="flex flex-wrap items-center justify-between gap-3 py-3 px-4 hover:bg-slate-50/70 transition-colors"
-                            >
-                              <div className="flex-1 min-w-0 basis-full sm:basis-auto">
-                                <p className="text-xs lg:text-sm font-medium text-slate-800 leading-snug break-words">
-                                  {question.question_text}
-                                </p>
-                                {!group.home && (
-                                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-600 border border-slate-200 mt-1">
-                                    Teacher Assessed — View Only
-                                  </span>
-                                )}
-                              </div>
-                              {group.home ? (
-                                <div className="flex items-center justify-center gap-1.5 sm:gap-2">
-                                  {(["KAYA", "DI-KAYA"] as const).map(
-                                    (value) => (
-                                      <button
-                                        key={value}
-                                        type="button"
-                                        aria-pressed={answer === value}
-                                        disabled={
-                                          !assessment.selectedPeriod ||
-                                          !assessment.canEditPeriod(
-                                            selectedPeriod,
-                                          ) ||
-                                          saving ||
-                                          loading
-                                        }
-                                        onClick={() =>
-                                          handleAnswerChange(
-                                            question.question_id,
-                                            selectedPeriod,
-                                            value,
-                                          )
-                                        }
-                                        className={`min-w-[44px] min-h-[36px] px-2.5 py-1 text-xs font-bold rounded-lg transition-all ${answer === value ? (value === "KAYA" ? "bg-emerald-600 text-white shadow-xs" : "bg-rose-600 text-white shadow-xs") : "bg-slate-100 text-slate-600 hover:bg-slate-200"} ${!assessment.canEditPeriod(selectedPeriod) ? "opacity-60 cursor-not-allowed" : "cursor-pointer"}`}
-                                      >
-                                        {value}
-                                      </button>
-                                    ),
-                                  )}
-                                </div>
-                              ) : !assessment.canViewMarks ? (
-                                <span className="text-xs text-slate-500">
-                                  Marks hidden by class adviser
-                                </span>
-                              ) : (
-                                <span
-                                  className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold border ${answer === "KAYA" ? "bg-emerald-100 text-emerald-800 border-emerald-200" : answer === "DI-KAYA" ? "bg-amber-100 text-amber-800 border-amber-200" : "bg-slate-100 text-slate-600 border-slate-200"}`}
-                                >
-                                  {answer || "Not yet evaluated"}
-                                </span>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </section>
-                  );
-                })}
-                {canEditHomeBased && (
-                  <div className="p-4 bg-slate-50 border-t border-slate-200 flex justify-end">
-                    <button
-                      type="button"
-                      onClick={handleSaveHomeBased}
-                      disabled={
-                        saving ||
-                        loading ||
-                        !assessment.canEditPeriod(selectedPeriod)
-                      }
-                      className="inline-flex items-center gap-2 px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm rounded-xl shadow-xs transition-colors cursor-pointer disabled:opacity-50"
-                    >
-                      {saving ? (
-                        <CircularProgress size={16} color="inherit" />
-                      ) : (
-                        <SaveIcon sx={{ fontSize: 18 }} />
-                      )}
-                      <span>{saving ? "Saving..." : "Save Assessment"}</span>
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-        </Stack>
+        <ReadOnlyDomainChecklist assessment={assessment} />
       )}
-
-      {/* Snackbar feedback */}
-      <Snackbar
-        open={toast.open}
-        autoHideDuration={4000}
-        onClose={() => setToast({ ...toast, open: false })}
-        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
-      >
-        <Alert
-          onClose={() => setToast({ ...toast, open: false })}
-          severity={toast.severity}
-          sx={{ width: "100%", borderRadius: 2, fontWeight: "bold" }}
-        >
-          {toast.message}
-        </Alert>
-      </Snackbar>
     </div>
   );
 };

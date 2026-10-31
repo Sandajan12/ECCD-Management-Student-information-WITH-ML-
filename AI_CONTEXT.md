@@ -29,6 +29,35 @@ requirement remains unresolved.
 
 ## 1. Purpose and implementation status
 
+Batch 4 (2026-10-31): Parent Overview now ends with a unified Home-Based
+Assessment form. It groups every configured home item by domain, repeats a
+domain badge per question, and submits the selected open period through the
+existing `useParentAssessment` hook and `/api/eccd/parent/evaluate` endpoint.
+The Home Checklist shortcut scrolls to this form. Existing owner/student/period/
+domain draft keys, revision-safe confirmations and reconnect synchronization
+remain in use. Global home-edit permission and section period windows both gate
+submissions; denied requests retain answers.
+
+Parent ECCD Assessment keeps the official summary and replaces the editable
+checklist with read-only ECCD Checklists. Domain cards contain only domain names
+and View Domain actions. Details group that domain's home and school questions
+and show only server-saved results, without draft overlays or inferred answers.
+Independent checklist-marks permission gates the complete breakdown; score
+release remains independent. Both parent pages refresh assessment access every
+20 seconds in visible tabs and on focus, visibility and reconnection. No backend
+route, schema, permission-column or database changes are required.
+
+Verification: all 24 mocked-API browser checks pass at 320/768/1280px, covering
+home-only batches, child isolation, reload/reconnect, denied saves, revision-safe
+confirmation, saved-only domain results and access revocation. App/tooling
+TypeScript, full frontend lint and production build pass. Requested full backend
+discovery was attempted and reports 36 errors among 50 discovered cases due to
+missing required application settings and missing ML dataset files. This is not
+a configured PostgreSQL integration run. Browser configuration and regressions
+are in `frontend/playwright.parent-assessment.config.ts` and
+`frontend/tests/parent-assessment.spec.ts`; screenshots are under
+`frontend/test-results/parent-assessment/`.
+
 Batch 3 (2026-10-31): Teacher ECCD Assessment adds **Preview ECCD Card** with
 student selection, loading/error/retry states and a responsive, scrollable dialog.
 Staff-only `GET /api/eccd/card-preview/{student_id}` authorizes section ownership
@@ -432,10 +461,11 @@ Old workspace/shim page directories are absent.
   home observations; counts distinguish server-confirmed answers from local drafts.
   Recent-message previews include teacher messages only.
 - Parent `pages/parent/ParentEccdAssessment.tsx` is the routed ECCD page. It uses
-  compact Official Evaluation Summary/Home-Based Checklist tabs, a responsive
-  domain grid and sticky Developmental Domains controls. Testing-period selection
-  and **Save Assessment** share one row, including mobile. School questions remain
-  read-only; marks, released scores and editing use their independent gates.
+  Official Evaluation Summary/ECCD Checklists tabs and a responsive domain grid.
+  `components/parent/ReadOnlyDomainChecklist.tsx` renders saved home/school results
+  under independent marks access. Home editing is on Overview through
+  `components/parent/HomeAssessmentForm.tsx`, using the shared parent hook and
+  existing durable save endpoint. Marks, score release and editing remain separate.
 - `layouts/MainLayout.tsx` uses a mobile-first parent layout: below the 900px
   layout breakpoint, the redundant parent hamburger/drawer is removed, the fixed
   school header has a **top-right Logout button**, and bottom navigation remains

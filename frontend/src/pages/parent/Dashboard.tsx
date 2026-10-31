@@ -31,7 +31,8 @@ import api, { errorMessage, isNetworkError } from "../../services/api";
 import type { ParentLinkResponse } from "../../types";
 import type { RecordSyncedEvent } from "../../utils/drafts";
 import { useChildren } from "../../hooks/useChildren";
-import { useAssessment } from "../../hooks/useAssessment";
+import { useParentAssessment } from "../../hooks/useParentAssessment";
+import HomeAssessmentForm from "../../components/parent/HomeAssessmentForm";
 import { PERIODS, PERIOD_LABELS } from "../../types";
 import { useAuth } from "../../context/AuthContext";
 import { userDisplayName } from "../../utils/displayName";
@@ -75,12 +76,9 @@ const primaryColor = "var(--primary-color)";
 const primaryTint = "color-mix(in srgb, var(--primary-color) 10%, white)";
 
 const periodFlags = {
-  PRE: { view: "allow_parent_view_eccd_pre", edit: "pre_test_parent_editable" },
-  MID: { view: "allow_parent_view_eccd_mid", edit: "mid_test_parent_editable" },
-  POST: {
-    view: "allow_parent_view_eccd_post",
-    edit: "post_test_parent_editable",
-  },
+  PRE: { view: "allow_parent_view_eccd_pre" },
+  MID: { view: "allow_parent_view_eccd_mid" },
+  POST: { view: "allow_parent_view_eccd_post" },
 } as const;
 
 const surfaceSx = {
@@ -136,7 +134,7 @@ const Dashboard: React.FC = () => {
   const roster = useChildren();
   const linkedChildren = roster.children;
   const activeChild = roster.child;
-  const assessment = useAssessment(activeChild?.student_id || 0, true);
+  const assessment = useParentAssessment(activeChild);
   const activeChildIndex = Math.max(
     0,
     linkedChildren.findIndex((child) => child.student_id === roster.selected),
@@ -337,15 +335,8 @@ const Dashboard: React.FC = () => {
     if (child) roster.select(child.student_id);
   };
   const assessmentData = assessment.data;
-  const editablePeriods = PERIODS.filter(
-    (period) =>
-      activeChild?.allow_parent_edit_home_based_eccd === true &&
-      assessmentData?.can_edit_home_based === true &&
-      assessmentData.permissions?.allow_parent_edit_home_based_eccd === true &&
-      assessmentData.parent_assessment_access?.[periodFlags[period].edit] ===
-        true,
-  );
-  const isHomeAssessmentOpen = editablePeriods.length > 0;
+  const editablePeriods = assessment.editablePeriods;
+  const isHomeAssessmentOpen = assessment.hasOpenPeriod;
   const visibleStats =
     hydratedChild === activeChild?.student_id ? dashboardStats : null;
   const childName =
@@ -636,7 +627,14 @@ const Dashboard: React.FC = () => {
                     <Button
                       variant="contained"
                       disabled={!isHomeAssessmentOpen}
-                      onClick={() => navigate("/parent/eccdassessment")}
+                      onClick={() =>
+                        document
+                          .getElementById("home-assessment")
+                          ?.scrollIntoView({
+                            behavior: "smooth",
+                            block: "start",
+                          })
+                      }
                       sx={actionSx}
                     >
                       {pendingHomeCount > 0
@@ -926,6 +924,7 @@ const Dashboard: React.FC = () => {
               </Card>
             </Grid>
           </Grid>
+          <HomeAssessmentForm assessment={assessment} childName={childName} />
         </>
       )}
 
