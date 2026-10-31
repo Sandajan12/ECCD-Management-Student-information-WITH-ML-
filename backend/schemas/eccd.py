@@ -218,6 +218,11 @@ class TeacherAssessmentResponse(AssessmentResponse):
     pre_kaya_question_ids: list[PositiveId] = Field(default_factory=list)
 
 
+class EccdCardPreviewResponse(ApiModel):
+    student_id: PositiveId
+    html: str
+
+
 class ParentAssessmentResponse(AssessmentResponse):
     allow_parent_view_eccd_marks: bool = False
     parent_assessment_access: ParentAssessmentAccess

@@ -1,8 +1,9 @@
-from backend.schemas.eccd import EvaluationBatch, ParentEvaluationBatch, ParentEvaluationSaved, TeacherAssessmentResponse, ParentAssessmentResponse, ParentDashboardResponse, EvaluationSaved, EvaluationPublicResponse, DomainProgress
-from backend.schemas.student import StudentPublicResponse
-from backend.schemas.operations import DomainProgressResult, ParentProgressPeriod, SectionSummaryItem
 import math
 from collections import defaultdict
+
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from backend.config.database import get_db
 from backend.models.eccd import (
@@ -15,14 +16,48 @@ from backend.models.student import Student
 from backend.models.teacher import Teacher
 from backend.models.section import Section
 from backend.models.section_teacher import SectionTeacher
+from backend.schemas.eccd import (
+    DomainProgress,
+    EccdCardPreviewResponse,
+    EvaluationBatch,
+    EvaluationPublicResponse,
+    EvaluationSaved,
+    ParentAssessmentResponse,
+    ParentDashboardResponse,
+    ParentEvaluationBatch,
+    ParentEvaluationSaved,
+    TeacherAssessmentResponse,
+)
+from backend.schemas.operations import DomainProgressResult, ParentProgressPeriod, SectionSummaryItem
+from backend.schemas.student import StudentPublicResponse
 from backend.utils.deps import verify_role
 from backend.utils.eccd_scorer import calculate_decimal_age, calculate_scores
 from backend.utils.eccd_dates import get_grading_date, get_official_testing_date
-from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select
-from sqlalchemy.orm import Session
 
 router = APIRouter(prefix="/api/eccd", tags=["ECCD"])
+
+
+@router.get("/card-preview/{student_id}", response_model=EccdCardPreviewResponse)
+def preview_eccd_card(
+    response: Response,
+    student_id: int = Path(gt=0),
+    db: Session = Depends(get_db),
+    current_user=Depends(verify_role(["admin", "super-admin"])),
+):
+    from backend.utils.access import authorize_student, resolve_student
+    from backend.utils.excel import student_workbook
+    from backend.utils.workbook_preview import worksheet_preview
+
+    student = resolve_student(db, student_id)
+    authorize_student(db, current_user, student)
+    workbook = student_workbook(db, student)
+    try:
+        html = worksheet_preview(workbook["CHECKLIST"])
+    finally:
+        workbook.close()
+    response.headers["Cache-Control"] = "no-store"
+    return EccdCardPreviewResponse(student_id=student.student_id, html=html)
+
 
 @router.get("/students", response_model=list[StudentPublicResponse])
 def get_teacher_students(db: Session = Depends(get_db), current_user=Depends(verify_role(["admin", "super-admin"]))):
@@ -257,7 +292,10 @@ def get_section_summary(
 
 @router.get("/section/{section_id}/export")
 def export_section_summary(section_id: int, testing_period: TestingPeriod = Query(TestingPeriod.PRE), db: Session = Depends(get_db), current_user=Depends(verify_role(["super-admin", "admin"]))):
+    from backend.utils.access import current_teacher, teacher_sections
     from backend.utils.excel import summary_response
+    if current_user.role.value == "admin" and section_id not in teacher_sections(db, current_teacher(db, current_user)):
+        raise HTTPException(403, "Section is not assigned to you.")
     return summary_response(db, current_user, section_filter=section_id)
 
 @router.get("/export-all")

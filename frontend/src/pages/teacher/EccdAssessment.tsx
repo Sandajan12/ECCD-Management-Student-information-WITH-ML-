@@ -17,9 +17,11 @@ import {
   Tooltip,
   Snackbar,
   Chip,
+  Stack,
 } from "@mui/material";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import DownloadIcon from "@mui/icons-material/Download";
+import PreviewIcon from "@mui/icons-material/Preview";
 import WifiIcon from "@mui/icons-material/Wifi";
 import WifiOffIcon from "@mui/icons-material/WifiOff";
 import CloudSyncIcon from "@mui/icons-material/CloudSync";
@@ -42,6 +44,7 @@ import {
 } from "../../utils/eccdDrafts";
 import type { TeacherAssessmentDraft } from "../../utils/eccdDrafts";
 import { assessmentRefreshScheduler } from "../../hooks/assessmentRefresh";
+import EccdCardPreviewDialog from "../../components/teacher/EccdCardPreviewDialog";
 import type {
   Domain as AssessmentDomain,
   DomainProgress,
@@ -62,7 +65,8 @@ const EccdAssessment: React.FC = () => {
   const [downloadMenuAnchor, setDownloadMenuAnchor] =
     useState<HTMLElement | null>(null);
   const [singleDownloadModalOpen, setSingleDownloadModalOpen] = useState(false);
-  const [downloadTargetLrn, setDownloadTargetLrn] = useState("");
+  const [downloadStudentId, setDownloadStudentId] = useState<string>("");
+  const [previewScope, setPreviewScope] = useState<string | null>(null);
   const [activePeriod, setActivePeriod] = useState<Period>("PRE");
   const requestVersion = useRef(0);
   const progressVersion = useRef(0);
@@ -238,7 +242,10 @@ const EccdAssessment: React.FC = () => {
     setDomains([]);
     setClassAssessments(null);
     setLoading(false);
-    setDownloadTargetLrn("");
+    setDownloadStudentId("");
+    setSingleDownloadModalOpen(false);
+    setDownloadMenuAnchor(null);
+    setPreviewScope(null);
     const version = ++requestVersion.current;
     let rosterController: AbortController | null = null;
     const scheduler = assessmentRefreshScheduler(user?.id || 0, () =>
@@ -311,40 +318,18 @@ const EccdAssessment: React.FC = () => {
     setActiveDomain(domain);
     setSelectedLrn("");
   };
-  const handleDownloadSpecific = async (id: string) => {
-    if (!id || downloading) return;
-    setDownloading(true);
-    try {
-      await downloadFile(
-        "/api/teachers/download/" + id,
-        "ECCD_Assessment.xlsx",
-      );
-      setSnackbar({
-        open: true,
-        message: "Assessment checklist downloaded successfully!",
-        severity: "success",
-      });
-    } catch (err) {
-      setSnackbar({
-        open: true,
-        message: errorMessage(err),
-        severity: "error",
-      });
-    } finally {
-      setDownloading(false);
-    }
-  };
-  const handleDownloadAll = async () => {
+  const handleDownload = async (
+    path: string,
+    fallback: string,
+    message: string,
+  ) => {
     if (downloading) return;
     setDownloading(true);
     try {
-      await downloadFile(
-        "/api/teachers/download-all",
-        "Class_ECCD_Assessments.zip",
-      );
+      await downloadFile(path, fallback);
       setSnackbar({
         open: true,
-        message: "All section assessments downloaded successfully!",
+        message,
         severity: "success",
       });
     } catch (err) {
@@ -360,13 +345,13 @@ const EccdAssessment: React.FC = () => {
   return (
     <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6 flex flex-col min-h-0 relative pb-16">
       {/* Header section */}
-      <Box
+      <Stack
         sx={{
           display: "flex",
           justifyContent: "space-between",
-          alignItems: { xs: "flex-start", sm: "center" },
+          alignItems: { xs: "flex-start", lg: "center" },
           mb: 4,
-          flexDirection: { xs: "column", sm: "row" },
+          flexDirection: { xs: "column", lg: "row" },
           gap: 2,
         }}
       >
@@ -386,13 +371,14 @@ const EccdAssessment: React.FC = () => {
             Evaluate and monitor student progress across ECCD domains.
           </Typography>
         </Box>
-        <Box
+        <Stack
+          direction="row"
+          spacing={2}
+          useFlexGap
           sx={{
-            display: "flex",
-            gap: 2,
             alignItems: "center",
             flexWrap: "wrap",
-            flexShrink: 0,
+            width: { xs: "100%", md: "auto" },
           }}
         >
           <Chip
@@ -447,6 +433,15 @@ const EccdAssessment: React.FC = () => {
             </Tooltip>
           )}
           <Button
+            variant="outlined"
+            startIcon={<PreviewIcon />}
+            onClick={() => setPreviewScope(progressScope)}
+            disabled={!section || students.length === 0}
+            sx={{ borderRadius: 3, fontWeight: "bold" }}
+          >
+            Preview ECCD Card
+          </Button>
+          <Button
             variant="contained"
             color="primary"
             startIcon={
@@ -457,53 +452,84 @@ const EccdAssessment: React.FC = () => {
               )
             }
             onClick={(e) => setDownloadMenuAnchor(e.currentTarget)}
-            disabled={downloading}
-            sx={{ borderRadius: 2, fontWeight: "bold", flexShrink: 0 }}
+            disabled={downloading || !section}
+            aria-haspopup="menu"
+            aria-expanded={Boolean(downloadMenuAnchor)}
+            sx={{ borderRadius: 3, fontWeight: "bold" }}
           >
-            {downloading ? "Downloading..." : "Download Records"}
+            {downloading ? "Downloading..." : "Download"}
           </Button>
-        </Box>
-      </Box>
+        </Stack>
+      </Stack>
+
+      {previewScope === progressScope && (
+        <EccdCardPreviewDialog
+          key={progressScope}
+          students={students}
+          initialStudentId={selectedLrn}
+          onClose={() => setPreviewScope(null)}
+        />
+      )}
 
       <Menu
         anchorEl={downloadMenuAnchor}
         open={Boolean(downloadMenuAnchor)}
         onClose={() => setDownloadMenuAnchor(null)}
+        slotProps={{ paper: { sx: { borderRadius: 3 } } }}
       >
         <MenuItem
           onClick={() => {
             setDownloadMenuAnchor(null);
+            setDownloadStudentId(selectedLrn);
             setSingleDownloadModalOpen(true);
           }}
         >
-          Download Single Student
+          ECCD Records
         </MenuItem>
         <MenuItem
           onClick={() => {
             setDownloadMenuAnchor(null);
-            handleDownloadAll();
+            if (section) {
+              void handleDownload(
+                `/api/eccd/section/${section.section_id}/export`,
+                "Section_ECCD_Summary.xlsx",
+                "Section summary record downloaded successfully!",
+              );
+            }
           }}
         >
-          Download All Students (ZIP)
+          Section Summary Record
         </MenuItem>
       </Menu>
 
       <Dialog
         open={singleDownloadModalOpen}
         onClose={() => setSingleDownloadModalOpen(false)}
+        fullWidth
+        maxWidth="sm"
+        aria-labelledby="eccd-records-download-title"
+        slotProps={{ paper: { sx: { borderRadius: 3 } } }}
       >
-        <DialogTitle>Select Student to Download</DialogTitle>
-        <DialogContent sx={{ minWidth: "25rem", pt: 2 }}>
+        <DialogTitle id="eccd-records-download-title">
+          Download ECCD Records
+        </DialogTitle>
+        <DialogContent sx={{ pt: 2 }}>
+          <Typography variant="body2" sx={{ color: "text.secondary", mb: 2 }}>
+            Select one student's checklist or download all active students'
+            records as a ZIP.
+          </Typography>
           <FormControl fullWidth size="small" sx={{ mt: 1 }}>
             <InputLabel id="teacher-export-student-label">
               Select Student
             </InputLabel>
             <Select
               labelId="teacher-export-student-label"
-              value={downloadTargetLrn}
+              value={downloadStudentId}
               label="Select Student"
-              onChange={(e) => setDownloadTargetLrn(e.target.value)}
+              onChange={(e) => setDownloadStudentId(e.target.value)}
+              sx={{ borderRadius: 3 }}
             >
+              <MenuItem value="all">All Students (ZIP)</MenuItem>
               {students.map((s) => {
                 const idVal = String(s.student_id);
                 return (
@@ -519,16 +545,41 @@ const EccdAssessment: React.FC = () => {
           <Button
             onClick={() => setSingleDownloadModalOpen(false)}
             color="inherit"
+            sx={{ borderRadius: 3 }}
           >
             Cancel
           </Button>
           <Button
             variant="contained"
             onClick={() => {
-              handleDownloadSpecific(downloadTargetLrn);
+              if (downloadStudentId === "all") {
+                void handleDownload(
+                  "/api/teachers/download-all",
+                  "Class_ECCD_Assessments.zip",
+                  "All section assessments downloaded successfully!",
+                );
+              } else if (
+                students.some(
+                  (student) => String(student.student_id) === downloadStudentId,
+                )
+              ) {
+                void handleDownload(
+                  `/api/teachers/download/${downloadStudentId}`,
+                  "ECCD_Assessment.xlsx",
+                  "Assessment checklist downloaded successfully!",
+                );
+              }
               setSingleDownloadModalOpen(false);
             }}
-            disabled={!downloadTargetLrn || downloading}
+            disabled={
+              !singleDownloadModalOpen ||
+              downloading ||
+              (downloadStudentId !== "all" &&
+                !students.some(
+                  (student) => String(student.student_id) === downloadStudentId,
+                ))
+            }
+            sx={{ borderRadius: 3 }}
           >
             {downloading ? "Downloading..." : "Download"}
           </Button>

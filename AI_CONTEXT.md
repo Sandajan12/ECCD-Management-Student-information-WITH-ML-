@@ -29,6 +29,25 @@ requirement remains unresolved.
 
 ## 1. Purpose and implementation status
 
+Batch 3 (2026-10-31): Teacher ECCD Assessment adds **Preview ECCD Card** with
+student selection, loading/error/retry states and a responsive, scrollable dialog.
+Staff-only `GET /api/eccd/card-preview/{student_id}` authorizes section ownership
+and renders the existing populated CHECKLIST workbook as escaped HTML, preserving
+the template's merged layout, marks, dates and deterministic scores across all
+periods. The response is typed and `no-store`; the iframe is sandboxed and starts
+no download. Preview shows server-saved records and never edits assessment drafts.
+The primary **Download** menu offers **ECCD Records** (one student or all-student
+ZIP) and **Section Summary Record**. Summary reuses the existing
+`/api/eccd/section/{section_id}/export` route and Chairman summary builder, including
+active-student filtering, school-year cohorts and batches of at most 30 students.
+The route now rejects unassigned sections before querying export records.
+Verification: seven isolated SQLite ORM/HTTP regressions pass, including card
+renderer parity, Chairman workbook values/styles, ownership and large cohorts.
+Fifteen mocked-API browser cases pass at 320/768/1280px. Both app/tooling TypeScript
+checks, full frontend lint and production build pass. Requested full backend
+discovery fails on missing application settings (`backend/.env` is absent) and
+missing ML dataset CSVs. No migration or school-data changes are required.
+
 Batch 2 (2026-10-31): Existing dashboard stats routes now expose a typed teacher
 `criticalDomain` summary (domain name, total Di-Kaya items, completed student
 count) and Chairman `delaySummary` (male/female counts, total delayed/scored
