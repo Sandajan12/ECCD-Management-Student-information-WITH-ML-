@@ -8,8 +8,23 @@ import {
 } from "react";
 import type { ReactNode } from "react";
 import { useAuth } from "./AuthContext";
-import API, { errorMessage } from "../services/api";
-import type { Section } from "../types";
+import { errorMessage } from "../services/api";
+import { sharedGet } from "../services/sharedGet";
+import type { Permissions, Section, SessionUser } from "../types";
+
+export interface TeacherDashboardFilters {
+  sections: string[];
+  domains: string[];
+  schoolYears: string[];
+  sectionOptions: Pick<Section, "section_id" | "section_name">[];
+  currentSchoolYear: string | null;
+}
+interface TeacherAccess extends Permissions {
+  allow_eccd_question_management: boolean;
+  section_id: number | null;
+  section_name: string | null;
+  class_name: string | null;
+}
 
 interface TeacherContextState {
   sections: Section[];
@@ -17,6 +32,10 @@ interface TeacherContextState {
   loading: boolean;
   error: string;
   selectSection: (id: number) => void;
+  dashboardFilters: TeacherDashboardFilters | null;
+  access: TeacherAccess | null;
+  initialized: boolean;
+  refresh: () => Promise<void>;
 }
 const TeacherContext = createContext<TeacherContextState | null>(null);
 interface TeacherProviderProps {
@@ -24,7 +43,12 @@ interface TeacherProviderProps {
 }
 
 export function TeacherProvider({ children }: TeacherProviderProps) {
-  const { user } = useAuth();
+  const { user, token, login } = useAuth();
+  const userId = user?.id;
+  const latestUser = useRef<SessionUser | null>(user);
+  useEffect(() => {
+    latestUser.current = user;
+  }, [user]);
   const storageKey = `ames_teacher_section_${user?.id}`;
   const [selectedId, setSelectedId] = useState<number>(
     () => Number(localStorage.getItem(storageKey)) || user?.section_id || 0,
@@ -40,6 +64,10 @@ export function TeacherProvider({ children }: TeacherProviderProps) {
   const requestVersion = useRef<number>(0);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string>("");
+  const [dashboardFilters, setDashboardFilters] =
+    useState<TeacherDashboardFilters | null>(null);
+  const [access, setAccess] = useState<TeacherAccess | null>(null);
+  const [initialized, setInitialized] = useState<boolean>(false);
   const selectSection = useCallback(
     (id: number) => {
       setSelectedId(id);
@@ -47,49 +75,73 @@ export function TeacherProvider({ children }: TeacherProviderProps) {
     },
     [storageKey],
   );
-  useEffect(() => {
-    let current = true;
+  const refresh = useCallback(async () => {
+    if (!userId || !token) return;
     // The filters endpoint is scoped to active teacher assignments; /sections
     // alone returns the whole school and must not define teacher choices.
-    const load = async () => {
-      const version = ++requestVersion.current;
-      setLoading(true);
-      try {
-        const [choices, names] = await Promise.all([
-          API.get<Section[]>("/api/sections/"),
-          API.get<{ sections: string[] }>("/api/teachers/dashboard-filters"),
-        ]);
-        if (!current || version !== requestVersion.current) return;
-        const assigned = choices.data.filter((s) =>
-          names.data.sections.includes(s.section_name),
-        );
-        setSections(assigned);
-        localStorage.setItem(cacheKey, JSON.stringify(assigned));
-        const stored = Number(localStorage.getItem(storageKey));
-        const next =
-          assigned.find((s) => s.section_id === stored) ||
-          assigned.find((s) => s.section_id === user?.section_id) ||
-          assigned[0];
-        selectSection(next?.section_id || 0);
-        setError("");
-      } catch (err) {
-        if (current && version === requestVersion.current)
-          setError(errorMessage(err));
-      } finally {
-        if (current && version === requestVersion.current) setLoading(false);
+    const version = ++requestVersion.current;
+    setLoading(true);
+    try {
+      const [choices, filters, controls] = await Promise.all([
+        sharedGet<Section[]>("/api/sections/"),
+        sharedGet<TeacherDashboardFilters>("/api/teachers/dashboard-filters"),
+        sharedGet<TeacherAccess>("/api/teachers/access-controls"),
+      ]);
+      if (version !== requestVersion.current) return;
+      const assigned = choices.filter((s) =>
+        filters.sections.includes(s.section_name),
+      );
+      setDashboardFilters(filters);
+      setAccess(controls);
+      setSections(assigned);
+      localStorage.setItem(cacheKey, JSON.stringify(assigned));
+      const stored = Number(localStorage.getItem(storageKey));
+      const next =
+        assigned.find((s) => s.section_id === stored) ||
+        assigned.find((s) => s.section_id === controls.section_id) ||
+        assigned[0];
+      selectSection(next?.section_id || 0);
+      const currentUser = latestUser.current;
+      if (
+        currentUser?.id === userId &&
+        (currentUser.allow_eccd_question_management !==
+          controls.allow_eccd_question_management ||
+          currentUser.section_id !== controls.section_id ||
+          currentUser.section_name !== controls.section_name)
+      ) {
+        login({
+          success: true,
+          requireOtp: false,
+          requiresPasswordChange: false,
+          token,
+          user: {
+            ...currentUser,
+            allow_eccd_question_management:
+              controls.allow_eccd_question_management,
+            section_id: controls.section_id,
+            section_name: controls.section_name,
+          },
+        });
       }
-    };
-    void load();
-    const refresh = () => void load();
-    window.addEventListener("focus", refresh);
-    window.addEventListener("online", refresh);
+      setInitialized(true);
+      setError("");
+    } catch (err) {
+      if (version === requestVersion.current) setError(errorMessage(err));
+    } finally {
+      if (version === requestVersion.current) setLoading(false);
+    }
+  }, [userId, token, cacheKey, storageKey, selectSection, login]);
+  useEffect(() => {
+    void refresh();
+    const reload = () => void refresh();
+    window.addEventListener("focus", reload);
+    window.addEventListener("online", reload);
     return () => {
-      current = false;
       ++requestVersion.current;
-      window.removeEventListener("focus", refresh);
-      window.removeEventListener("online", refresh);
+      window.removeEventListener("focus", reload);
+      window.removeEventListener("online", reload);
     };
-  }, [storageKey, cacheKey, user?.section_id, selectSection]);
+  }, [refresh]);
   return (
     <TeacherContext.Provider
       value={{
@@ -98,6 +150,10 @@ export function TeacherProvider({ children }: TeacherProviderProps) {
         loading,
         error,
         selectSection,
+        dashboardFilters,
+        access,
+        initialized,
+        refresh,
       }}
     >
       {children}

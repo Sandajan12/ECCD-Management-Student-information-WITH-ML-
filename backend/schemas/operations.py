@@ -2,7 +2,7 @@
 from datetime import date, datetime
 from typing import Literal
 from pydantic import Field, computed_field
-from .analytics import CriticalDomainSummary, DelaySummary
+from .analytics import CriticalDomainSummary, DelaySummary, ExcellingDomainSummary, TeacherPeriodInsights
 from .common import ApiModel, PositiveId
 
 
@@ -132,7 +132,10 @@ class AnalyticsStats(ApiModel):
     messages: list['RecentMessage'] | None = None
     allow_eccd_question_management: bool | None = None
     criticalDomain: CriticalDomainSummary | None = None
+    criticalDomainDiKayaRate: float | None = Field(default=None, ge=0, le=100)
     delaySummary: DelaySummary | None = None
+    excellingDomain: ExcellingDomainSummary | None = None
+    teacherInsights: TeacherPeriodInsights | None = None
 
 
 class RecentMessage(ApiModel):

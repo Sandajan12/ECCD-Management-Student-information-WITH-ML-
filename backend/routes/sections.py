@@ -1,12 +1,14 @@
 
 from backend.config.database import get_db
 from backend.models.section import Section
-from backend.schemas.section import SectionCreate, SectionResponse, SectionUpdate
+from backend.schemas.section import SectionCreate, SectionResponse, SectionRename
 from backend.utils.deps import verify_role
 from backend.schemas.teacher import AssignTeacherSectionRequest
 from backend.schemas.common import MessageResult
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy import func, or_
+from sqlalchemy.exc import IntegrityError
 
 router = APIRouter(prefix="/api/sections", tags=["Sections"])
 
@@ -35,9 +37,45 @@ def create_section(payload: SectionCreate, db: Session = Depends(get_db), curren
 
 
 from backend.models.teacher import Teacher
-from backend.models.user import User
 from backend.models.section_teacher import SectionTeacher
-from backend.models.log import SystemLog
+
+
+@router.put("/{section_id}", response_model=SectionResponse)
+def rename_section(section_id: int, payload: SectionRename, db: Session = Depends(get_db), current_user=Depends(verify_role(["super-admin"]))):
+    from backend.models.student import Student
+    from backend.utils.audit import record_audit
+
+    section = db.get(Section, section_id)
+    if section is None:
+        raise HTTPException(404, "Section not found.")
+    duplicate = db.query(Section).filter(
+        Section.section_id != section_id,
+        func.lower(func.trim(Section.section_name)) == payload.section_name.lower(),
+    ).first()
+    if duplicate:
+        raise HTTPException(409, "Section name already exists.")
+    previous_name = section.section_name
+    section.section_name = payload.section_name
+    # Keep the existing denormalized labels consistent, including archived pupils.
+    db.query(Student).filter_by(section_id=section_id).update(
+        {Student.section_name: payload.section_name}, synchronize_session=False,
+    )
+    owners = db.query(SectionTeacher.teacher_id).filter_by(
+        section_id=section_id, status="Active", role="Primary Adviser",
+    )
+    db.query(Teacher).filter(or_(
+        Teacher.teacher_id.in_(owners), Teacher.teacher_id == section.adviser_teacher_id,
+    )).update({Teacher.class_name: payload.section_name}, synchronize_session=False)
+    record_audit(db, current_user, "UPDATE_SECTION",
+                 f'Renamed Section "{previous_name}" to "{payload.section_name}".',
+                 sectionId=section_id, sectionName=payload.section_name, previousSectionName=previous_name)
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(409, "Section name already exists.") from None
+    db.refresh(section)
+    return section
 
 
 @router.put("/{section_id}/assign", response_model=SectionResponse)

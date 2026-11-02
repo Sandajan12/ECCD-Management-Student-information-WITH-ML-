@@ -1,8 +1,9 @@
 
 import math
+from typing import Annotated
 
 from backend.config.database import get_db
-from backend.models.eccd import EccdDomain, EccdQuestion, StudentEccdEvaluation
+from backend.models.eccd import EccdDomain, EccdQuestion, StudentEccdEvaluation, TestingPeriod
 from backend.models.log import SystemLog
 from backend.models.message import Message
 from backend.models.parent import Parent
@@ -12,11 +13,11 @@ from backend.models.student import Student
 from backend.models.settings import SystemSettings
 from backend.models.teacher import Teacher
 from backend.models.user import User, UserRole
-from backend.schemas.analytics import DashboardFilters, PieChartSlice
+from backend.schemas.analytics import DashboardFilters, DevelopmentalInterpretation, PieChartSlice, TeacherPeriodInsights
 from backend.schemas.operations import AnalyticsStats, AuditLogItem
 from backend.utils.deps import verify_role
-from backend.utils.dashboard_analytics import critical_domain, delay_summary
-from fastapi import APIRouter, Depends, Query
+from backend.utils.dashboard_analytics import critical_domain, delay_summary, excelling_domain, teacher_period_insights
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import desc, distinct, func
 from sqlalchemy.orm import Session
 
@@ -26,6 +27,16 @@ legacy_router = APIRouter(prefix="/api/logs", tags=["Audit logs"])
 
 def get_teacher_section_ids(teacher_id: int, db: Session) -> list[int]:
     return [row[0] for row in db.query(SectionTeacher.section_id).filter_by(teacher_id=teacher_id, role="Primary Adviser", status="Active").distinct()]
+
+
+def resolve_section_name(db: Session, section: str, section_id: int | None) -> str:
+    """Accept stable section IDs while preserving existing name-based clients."""
+    if section_id is None:
+        return section
+    selected = db.get(Section, section_id)
+    if selected is None:
+        raise HTTPException(404, "Section not found")
+    return selected.section_name
 
 
 @router.get("/filters", response_model=DashboardFilters)
@@ -41,10 +52,7 @@ def get_dashboard_filters(
     ]
 
     if current_user.role in [UserRole.SUPER_ADMIN, "chairman"]:
-        sections = [
-            s[0]
-            for s in db.query(Section.section_name).order_by(Section.section_name).all()
-        ]
+        sections = db.query(Section).order_by(Section.section_name).all()
         school_years = [
             y[0]
             for y in db.query(distinct(Student.school_year))
@@ -55,7 +63,9 @@ def get_dashboard_filters(
         setting = db.get(SystemSettings, 1)
         if setting and setting.current_school_year:
             school_years = sorted(set(school_years + [setting.current_school_year]), reverse=True)
-        return {"sections": sections, "domains": domains, "schoolYears": school_years}
+        return {"sections": [s.section_name for s in sections], "domains": domains, "schoolYears": school_years,
+                "sectionOptions": [{"section_id": s.section_id, "section_name": s.section_name} for s in sections],
+                "currentSchoolYear": setting.current_school_year if setting else None}
     else:
         # Teacher view
         teacher = (
@@ -66,18 +76,19 @@ def get_dashboard_filters(
 
         # Only active Primary Adviser assignments grant classroom access.
         sec_ids = get_teacher_section_ids(teacher.teacher_id, db)
-        sections = [
-            s[0]
-            for s in db.query(Section.section_name)
+        sections = (
+            db.query(Section)
             .filter(Section.section_id.in_(sec_ids))
             .order_by(Section.section_name)
             .all()
-        ]
+        )
         school_years = [row[0] for row in db.query(distinct(Student.school_year)).filter(Student.section_id.in_(sec_ids), Student.school_year.isnot(None)).order_by(desc(Student.school_year))]
         setting = db.get(SystemSettings, 1)
         if setting and setting.current_school_year:
             school_years = sorted(set(school_years + [setting.current_school_year]), reverse=True)
-        return {"sections": sections, "domains": domains, "schoolYears": school_years}
+        return {"sections": [s.section_name for s in sections], "domains": domains, "schoolYears": school_years,
+                "sectionOptions": [{"section_id": s.section_id, "section_name": s.section_name} for s in sections],
+                "currentSchoolYear": setting.current_school_year if setting else None}
 
 
 @router.get("/pie-data", response_model=list[PieChartSlice])
@@ -90,7 +101,9 @@ def get_dashboard_pie_data(
     current_user: User = Depends(
         verify_role(["super-admin", "admin", "teacher", "chairman"])
     ),
+    section_id: Annotated[int | None, Query(gt=0)] = None,
 ):
+    section = resolve_section_name(db, section, section_id)
     query = (
         db.query(StudentEccdEvaluation.answer, func.count().label("count"))
         .join(Student, StudentEccdEvaluation.student_id == Student.student_id)
@@ -100,7 +113,7 @@ def get_dashboard_pie_data(
         .join(EccdDomain, EccdQuestion.domain_id == EccdDomain.domain_id)
     )
 
-    if section != "All":
+    if section_id is not None or section != "All":
         # Check if the section name matches any section
         query = query.filter(Student.section.has(section_name=section))
 
@@ -109,6 +122,8 @@ def get_dashboard_pie_data(
 
     if period != "All":
         query = query.filter(StudentEccdEvaluation.testing_period == period)
+        if current_user.role in [UserRole.SUPER_ADMIN, "chairman"]:
+            query = query.filter(Student.is_active.is_(True))
 
     if schoolYear != "All":
         query = query.filter(Student.school_year == schoolYear)
@@ -160,7 +175,12 @@ def get_dashboard_stats(
     current_user: User = Depends(
         verify_role(["super-admin", "admin", "teacher", "chairman"])
     ),
+    section_id: Annotated[int | None, Query(gt=0)] = None,
+    delay_period: Annotated[TestingPeriod | None, Query(description="Delay summary period; omit for latest completed.")] = None,
+    interpretation: Annotated[DevelopmentalInterpretation | None, Query(description="Developmental summary interpretation; omit for the existing delay-only summary.")] = None,
+    period: Annotated[TestingPeriod | None, Query(description="Global assessment period; omission preserves existing KPI scopes.")] = None,
 ):
+    section = resolve_section_name(db, section, section_id)
     if current_user.role in [UserRole.SUPER_ADMIN, "chairman"]:
         students_query = db.query(Student)
         teachers_query = db.query(Teacher).join(User, Teacher.user_id == User.user_id).filter(User.is_active.is_(True))
@@ -170,9 +190,15 @@ def get_dashboard_stats(
         else:
             students_query = students_query.filter(Student.is_active == True)
 
-        if section != "All":
+        if section_id is not None or section != "All":
             students_query = students_query.filter(Student.section.has(section_name=section))
             teachers_query = teachers_query.filter(Teacher.section_assignments.any((SectionTeacher.status == "Active") & (SectionTeacher.role == "Primary Adviser") & SectionTeacher.section.has(section_name=section)))
+
+        if period is not None:
+            students_query = students_query.filter(
+                Student.is_active.is_(True),
+                Student.evaluations.any(StudentEccdEvaluation.testing_period == period),
+            )
             
         total_students = students_query.count()
         total_teachers = teachers_query.count()
@@ -185,8 +211,10 @@ def get_dashboard_stats(
             eccd_query = eccd_query.filter(Student.school_year == schoolYear)
         else:
             eccd_query = eccd_query.filter(Student.is_active == True)
-        if section != "All":
+        if section_id is not None or section != "All":
             eccd_query = eccd_query.filter(Student.section.has(section_name=section))
+        if period is not None:
+            eccd_query = eccd_query.filter(Student.is_active.is_(True), StudentEccdEvaluation.testing_period == period)
             
         eccd_rows = eccd_query.group_by(StudentEccdEvaluation.answer).all()
         kaya_count = sum([r.count for r in eccd_rows if r.answer == "KAYA"])
@@ -207,8 +235,10 @@ def get_dashboard_stats(
             priority_query = priority_query.filter(Student.school_year == schoolYear)
         else:
             priority_query = priority_query.filter(Student.is_active == True)
-        if section != "All":
+        if section_id is not None or section != "All":
             priority_query = priority_query.filter(Student.section.has(section_name=section))
+        if period is not None:
+            priority_query = priority_query.filter(Student.is_active.is_(True), StudentEccdEvaluation.testing_period == period)
             
         priority_row = priority_query.group_by(Section.section_name).order_by(desc("dikaya_count")).first()
         if priority_row:
@@ -219,7 +249,7 @@ def get_dashboard_stats(
             priority_subtitle = "Fully on Track"
 
         domain_query = (
-            db.query(EccdDomain.domain_name, func.count().label("dikaya_count"))
+            db.query(EccdDomain.domain_id, EccdDomain.domain_name, func.count().label("dikaya_count"))
             .select_from(StudentEccdEvaluation)
             .join(EccdQuestion, StudentEccdEvaluation.question_id == EccdQuestion.question_id)
             .join(EccdDomain, EccdQuestion.domain_id == EccdDomain.domain_id)
@@ -230,13 +260,24 @@ def get_dashboard_stats(
             domain_query = domain_query.filter(Student.school_year == schoolYear)
         else:
             domain_query = domain_query.filter(Student.is_active == True)
-        if section != "All":
+        if section_id is not None or section != "All":
             domain_query = domain_query.filter(Student.section.has(section_name=section))
+        if period is not None:
+            domain_query = domain_query.filter(Student.is_active.is_(True), StudentEccdEvaluation.testing_period == period)
 
-        domain_row = domain_query.group_by(EccdDomain.domain_name).order_by(desc("dikaya_count")).first()
+        domain_row = domain_query.group_by(EccdDomain.domain_id, EccdDomain.domain_name).order_by(desc("dikaya_count")).first()
+        critical_dikaya_rate = None
         if domain_row:
             critical_domain_name = domain_row.domain_name.replace(" Domain", "")
             critical_subtitle = "Needs Improvement"
+            # Use the same cohort and periods as the existing critical-domain count.
+            domain_total = (
+                eccd_query.with_entities(func.count())
+                .join(EccdQuestion, StudentEccdEvaluation.question_id == EccdQuestion.question_id)
+                .filter(EccdQuestion.domain_id == domain_row.domain_id)
+                .scalar()
+            )
+            critical_dikaya_rate = round(domain_row.dikaya_count * 100 / domain_total, 2) if domain_total else None
         else:
             critical_domain_name = "Perfect"
             critical_subtitle = "Fully Mastered"
@@ -244,11 +285,15 @@ def get_dashboard_stats(
         delay_scope = [Student.is_active.is_(True)]
         if schoolYear != "All":
             delay_scope.append(Student.school_year == schoolYear)
-        if section != "All":
+        if section_id is not None or section != "All":
             delay_scope.append(Student.section.has(section_name=section))
 
         return {
-            "delaySummary": delay_summary(db, delay_scope, section).model_dump(),
+            "criticalDomainDiKayaRate": critical_dikaya_rate,
+            "delaySummary": delay_summary(db, delay_scope, section, section_id, period or delay_period, interpretation).model_dump(),
+            "excellingDomain": excelling_domain(
+                db, [*delay_scope, Student.section.has()], period
+            ).model_dump(),
             "stats": {
                 "totalStudents": str(total_students),
                 "totalTeachers": str(total_teachers),
@@ -276,6 +321,7 @@ def get_dashboard_stats(
                     "priorityDomain": "None"
                 },
                 "criticalDomain": {"domainName": None, "totalDiKaya": 0, "completedStudents": 0},
+                "teacherInsights": TeacherPeriodInsights(period=period.value).model_dump() if period else None,
                 "messages": []
             }
 
@@ -283,7 +329,7 @@ def get_dashboard_stats(
 
         student_scope = [Student.section_id.in_(sec_ids)]
         student_scope.append(Student.school_year == schoolYear if schoolYear != "All" else Student.is_active.is_(True))
-        if section != "All":
+        if section_id is not None or section != "All":
             student_scope.append(Student.section.has(section_name=section))
 
         total_students = (
@@ -361,6 +407,7 @@ def get_dashboard_stats(
             },
             "messages": messages_list,
             "criticalDomain": critical.model_dump(),
+            "teacherInsights": teacher_period_insights(db, student_scope, period).model_dump() if period else None,
             "allow_eccd_question_management": bool(teacher.allow_eccd_question_management),
         }
 

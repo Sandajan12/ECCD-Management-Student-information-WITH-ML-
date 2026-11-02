@@ -1,333 +1,117 @@
-import React, { useState, useEffect, useContext } from "react";
-import { useNavigate } from "react-router-dom";
+import React, { useState, useContext } from "react";
 import { SettingsContext } from "../../context/SettingsContext";
 import {
   Box,
   Typography,
-  Card,
-  CardContent,
   Divider,
   Select,
   MenuItem,
   FormControl,
   InputLabel,
-  Avatar,
-  List,
-  ListItem,
-  ListItemAvatar,
-  ListItemText,
-  TextField,
   Grid,
+  Stack,
 } from "@mui/material";
 import PeopleIcon from "@mui/icons-material/People";
-import MessageIcon from "@mui/icons-material/Message";
 import ShowChartIcon from "@mui/icons-material/ShowChart";
-import AssessmentIcon from "@mui/icons-material/Assessment";
-import {
-  PieChart,
-  Pie,
-  Cell,
-  Tooltip,
-  ResponsiveContainer,
-  Legend,
-} from "recharts";
-import api from "../../services/api";
+import EmojiEventsRoundedIcon from "@mui/icons-material/EmojiEventsRounded";
+import GpsFixedRoundedIcon from "@mui/icons-material/GpsFixedRounded";
+import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from "recharts";
 import { useTeacher } from "../../context/TeacherContext";
-import type { Domain, Student } from "../../types";
+import type { Period } from "../../types";
 import { useAuth } from "../../context/AuthContext";
-import { assessmentRefreshScheduler } from "../../hooks/assessmentRefresh";
-interface DashboardStats {
-  totalStudents: string | number;
-  unreadMessages: string | number;
-  eccdProgress: string;
-}
-interface Message {
-  id: number;
-  read: boolean;
-  name: string;
-  time: string;
-  preview: string;
-}
-interface PieData {
-  name: string;
-  value: number;
-  color: string;
-}
-interface DashboardResponse {
-  stats: DashboardStats;
-  messages: Message[];
-  criticalDomain: CriticalDomainSummary;
-}
-interface CriticalDomainSummary {
-  domainName: string | null;
-  totalDiKaya: number;
-  completedStudents: number;
-}
-interface DashboardFilters {
-  sections: string[];
-  domains: string[];
-}
-interface GenderDistribution {
-  male: number;
-  female: number;
-}
-const emptyStats: DashboardStats = {
-  totalStudents: "0",
-  unreadMessages: "0",
-  eccdProgress: "0%",
-};
+import { useTeacherDashboard } from "../../hooks/useTeacherDashboard";
+import type { DashboardStatCardProps } from "../../components/teacher/DashboardStatCard";
+import { ASSESSMENT_PERIOD_LABELS } from "../../components/chairman/dashboardFilters";
+import { PERIODS } from "../../types";
+import { PendingEvaluations } from "../../components/teacher/PendingEvaluations";
+
 const Dashboard: React.FC = () => {
   const { settings } = useContext(SettingsContext);
   const { user } = useAuth();
   const { section } = useTeacher();
-  const navigate = useNavigate();
-  const filterSection = section?.section_name || "";
-  const [filterDomain, setFilterDomain] = useState("All");
-  const [filterPeriod, setFilterPeriod] = useState("PRE");
-  const [pieData, setPieData] = useState<PieData[]>([]);
-  const [domains, setDomains] = useState<string[]>([]);
-  const [dashboardStats, setDashboardStats] =
-    useState<DashboardStats>(emptyStats);
-  const [distribution, setDistribution] = useState<GenderDistribution>({
-    male: 0,
-    female: 0,
-  });
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [criticalDomain, setCriticalDomain] =
-    useState<CriticalDomainSummary | null>(null);
-  const [criticalDomainError, setCriticalDomainError] = useState(false);
-  useEffect(() => {
-    let current = true;
-    let controller: AbortController | null = null;
-    setDashboardStats(emptyStats);
-    setMessages([]);
-    setDistribution({ male: 0, female: 0 });
-    setCriticalDomain(null);
-    setCriticalDomainError(false);
-    const load = () => {
-      controller?.abort();
-      const request = new AbortController();
-      controller = request;
-      const signal = request.signal;
-      const activeRequest = () => current && !signal.aborted;
-      void api
-        .get<DashboardFilters>("/api/teachers/dashboard-filters", { signal })
-        .then(({ data }) => {
-          if (!activeRequest()) return;
-          setDomains(data.domains || []);
-          setFilterDomain((previous) =>
-            previous === "All" || data.domains.includes(previous)
-              ? previous
-              : data.domains[0] || "All",
-          );
-        })
-        .catch(() => {
-          if (activeRequest()) setDomains([]);
-        });
-      if (!section) return;
-
-      let roster: Student[] | undefined;
-      let questionCount: number | undefined;
-      let submitted: number | undefined;
-      let progress: string | undefined;
-      const updateProgress = () => {
-        if (
-          !activeRequest() ||
-          !roster ||
-          questionCount === undefined ||
-          submitted === undefined
-        )
-          return;
-        const required = roster.length * questionCount * 3;
-        progress = required
-          ? Math.min(100, (submitted / required) * 100).toFixed(1) + "%"
-          : "0%";
-        setDashboardStats((previous) => ({
-          ...previous,
-          eccdProgress: progress!,
-        }));
-      };
-      // Each response publishes its own fields. Reference/progress failures
-      // must not hide an already available roster, summary or recent feed.
-      void api
-        .get<DashboardResponse>("/api/teachers/dashboard-stats", {
-          params: { section: section.section_name },
-          signal,
-        })
-        .then(({ data }) => {
-          if (!activeRequest()) return;
-          setDashboardStats((previous) => ({
-            ...emptyStats,
-            ...data.stats,
-            totalStudents: roster ? roster.length : data.stats.totalStudents,
-            eccdProgress: progress ?? previous.eccdProgress,
-          }));
-          setMessages(data.messages || []);
-          setCriticalDomain(data.criticalDomain);
-          setCriticalDomainError(false);
-        })
-        .catch(() => {
-          if (!activeRequest()) return;
-          setDashboardStats((previous) => ({
-            ...previous,
-            unreadMessages: 0,
-          }));
-          setCriticalDomain(null);
-          setCriticalDomainError(true);
-          setMessages([]);
-        });
-      void api
-        .get<Student[]>("/api/students/section/" + section.section_id, {
-          signal,
-        })
-        .then(({ data }) => {
-          if (!activeRequest()) return;
-          const active = data.filter(
-            (s) => s.is_active && s.section_id === section.section_id,
-          );
-          roster = active;
-          setDashboardStats((previous) => ({
-            ...previous,
-            totalStudents: active.length,
-          }));
-          setDistribution({
-            male: active.filter((s) => s.gender?.toLowerCase() === "male")
-              .length,
-            female: active.filter((s) => s.gender?.toLowerCase() === "female")
-              .length,
-          });
-          updateProgress();
-        })
-        .catch(() => {
-          // Keep independently loaded summary data when roster/detail fails.
-        });
-      void api
-        .get<Domain[]>("/api/eccd/domains-progress", { signal })
-        .then(({ data }) => {
-          if (!activeRequest()) return;
-          questionCount = data.reduce(
-            (sum, domain) => sum + domain.questions.length,
-            0,
-          );
-          updateProgress();
-        })
-        .catch(() => {
-          // Keep other cards available; only completion needs the denominator.
-        });
-      void api
-        .get<PieData[]>("/api/teachers/dashboard-pie", {
-          params: {
-            section: section.section_name,
-            domain: "All",
-            period: "All",
-          },
-          signal,
-        })
-        .then(({ data }) => {
-          if (!activeRequest()) return;
-          submitted = data.reduce(
-            (sum, slice) => sum + Number(slice.value || 0),
-            0,
-          );
-          updateProgress();
-        })
-        .catch(() => {
-          // The selected-period chart has its own request and failure state.
-        });
-    };
-    load();
-    const reload = () => void load();
-    const scheduler = assessmentRefreshScheduler(user?.id || 0, async () =>
-      load(),
-    );
-    window.addEventListener("online", reload);
-    window.addEventListener("focus", reload);
-    window.addEventListener("ames-record-synced", scheduler.schedule);
-    return () => {
-      current = false;
-      controller?.abort();
-      scheduler.cancel();
-      window.removeEventListener("online", reload);
-      window.removeEventListener("focus", reload);
-      window.removeEventListener("ames-record-synced", scheduler.schedule);
-    };
-  }, [section?.section_id, section?.section_name, user?.id]);
-  useEffect(() => {
-    let current = true;
-    let controller: AbortController | null = null;
-    setPieData([]);
-    const load = async () => {
-      if (!filterSection) return;
-      controller?.abort();
-      const request = new AbortController();
-      controller = request;
-      try {
-        const response = await api.get<PieData[]>(
-          "/api/teachers/dashboard-pie",
-          {
-            params: {
-              section: filterSection,
-              domain: filterDomain,
-              period: filterPeriod,
-            },
-            signal: request.signal,
-          },
-        );
-        if (current && !request.signal.aborted) setPieData(response.data || []);
-      } catch {
-        if (current && !request.signal.aborted) setPieData([]);
-      }
-    };
-    void load();
-    const reload = () => void load();
-    const scheduler = assessmentRefreshScheduler(user?.id || 0, load);
-    window.addEventListener("online", reload);
-    window.addEventListener("focus", reload);
-    window.addEventListener("ames-record-synced", scheduler.schedule);
-    return () => {
-      current = false;
-      controller?.abort();
-      scheduler.cancel();
-      window.removeEventListener("online", reload);
-      window.removeEventListener("focus", reload);
-      window.removeEventListener("ames-record-synced", scheduler.schedule);
-    };
-  }, [filterSection, filterDomain, filterPeriod, user?.id]);
-  const stats = [
+  const [filterDomain, setFilterDomain] = useState<string>("All");
+  const [selectedPeriod, setSelectedPeriod] = useState<Period>("PRE");
+  const { filters, summary, chart } = useTeacherDashboard(
+    section?.section_id,
+    selectedPeriod,
+    filterDomain,
+    user?.id || 0,
+  );
+  const domains = filters.data?.domains || [];
+  const schoolYear =
+    settings.current_school_year || filters.data?.currentSchoolYear || "";
+  const teacherName =
+    user?.full_name?.trim() ||
+    [user?.first_name, user?.last_name].filter(Boolean).join(" ") ||
+    "Teacher";
+  const insights = summary.data?.teacherInsights;
+  const pieData = chart.data || [];
+  const totalItems = pieData.reduce((sum, item) => sum + item.value, 0);
+  const excellence = insights?.excellingDomain;
+  const critical = insights?.criticalDomain;
+  const hasRecords = Boolean(insights?.domains.length);
+  const summaryPlaceholder = !section
+    ? "No section assigned"
+    : summary.status === "error"
+      ? "Summary unavailable"
+      : "Loading...";
+  const emptySubtitle = insights ? "No period data" : summaryPlaceholder;
+  const selectedDomain = insights?.domains.find(
+    (domain) => domain.domainName === filterDomain,
+  );
+  const formatDomainName = (name: string) => name.replace(/ Domain$/, "");
+  const stats: DashboardStatCardProps[] = [
     {
-      title: "Total Student",
-      value: dashboardStats.totalStudents,
-      icon: <PeopleIcon sx={{ fontSize: 32, color: "#3b82f6" }} />,
-      bg: "#eff6ff",
+      title: "Total Students",
+      value: insights ? insights.totalStudents : "—",
+      subtitle: "Active Enrollees",
+      icon: <PeopleIcon className="w-4! h-4!" />,
+      iconClassName: "bg-blue-50 text-blue-600",
     },
     {
-      title: "Unread Messages",
-      value: dashboardStats.unreadMessages,
-      icon: <MessageIcon sx={{ fontSize: 32, color: "#ef4444" }} />,
-      bg: "#fef2f2",
+      title: "Assessment Progress",
+      value: insights
+        ? `${insights.completedStudents} / ${insights.totalStudents}`
+        : "—",
+      subtitle: "Evaluations Completed",
+      icon: <ShowChartIcon className="w-4! h-4!" />,
+      iconClassName: "bg-blue-50 text-blue-600",
     },
     {
-      title: "Overall ECCD Progress",
-      value: dashboardStats.eccdProgress,
-      icon: <ShowChartIcon sx={{ fontSize: 32, color: "#10b981" }} />,
-      bg: "#ecfdf5",
+      title: "Domain of Excellence",
+      value: excellence
+        ? formatDomainName(excellence.domainName)
+        : insights
+          ? "No Data"
+          : "—",
+      subtitle: excellence ? `${excellence.masteryRate}% Kaya` : emptySubtitle,
+      icon: <EmojiEventsRoundedIcon className="w-4! h-4!" />,
+      iconClassName: "bg-emerald-50 text-emerald-600",
+      badgeClassName: excellence
+        ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+        : undefined,
+      muted: !excellence,
     },
     {
-      title: "Most Critical Domain",
-      value:
-        criticalDomain?.domainName ||
-        (criticalDomain?.completedStudents ? "All Skills Mastered" : "No Data"),
-      subtitle: criticalDomainError
-        ? "Summary unavailable"
-        : !section
-          ? "No section assigned"
-          : !criticalDomain
-            ? "Loading..."
-            : criticalDomain.completedStudents
-              ? `${criticalDomain.totalDiKaya} Di-Kaya items · latest completed assessments`
-              : "No completed assessments yet",
-      icon: <AssessmentIcon sx={{ fontSize: 32, color: "#f59e0b" }} />,
-      bg: "#fffbeb",
+      title: "Critical Domain Focus",
+      value: critical
+        ? formatDomainName(critical.domainName)
+        : hasRecords
+          ? "No Di-Kaya Recorded"
+          : insights
+            ? "No Data"
+            : "—",
+      subtitle: critical
+        ? `${Math.round((critical.totalDiKaya * 10000) / critical.totalItems) / 100}% Di-Kaya`
+        : hasRecords
+          ? "No Di-Kaya"
+          : emptySubtitle,
+      icon: <GpsFixedRoundedIcon className="w-4! h-4!" />,
+      iconClassName: "bg-rose-50 text-rose-600",
+      badgeClassName: critical
+        ? "bg-rose-50 text-rose-700 border border-rose-200"
+        : undefined,
+      muted: !critical,
     },
   ];
   return (
@@ -339,432 +123,304 @@ const Dashboard: React.FC = () => {
         justifyContent: "center",
         py: { xs: 2, sm: 3, md: 4 },
         px: { xs: 1, sm: 2, md: 3 },
-        maxWidth: "1440px",
+        maxWidth: "90rem",
         mx: "auto",
         width: "100%",
         boxSizing: "border-box",
       }}
     >
-      {/* STATISTICS GRID */}
-      <Box
+      <Stack
+        component="header"
+        direction={{ xs: "column", lg: "row" }}
         sx={{
-          display: "flex",
           justifyContent: "space-between",
-          alignItems: "center",
+          alignItems: { xs: "stretch", lg: "center" },
           mb: 2.5,
-          flexWrap: "wrap",
-          gap: 1.5,
+          gap: 3,
+          minWidth: 0,
         }}
       >
-        <Typography
-          variant="h5"
-          sx={{
-            fontWeight: "bold",
-            color: "#1f2937",
-            fontSize: { xs: "1.2rem", sm: "1.4rem" },
-          }}
-        >
-          Educational Overview
-        </Typography>
-        <Box sx={{ display: "flex", gap: 1.5, flexWrap: "wrap" }}>
+        <Box sx={{ minWidth: 0 }}>
           <Typography
-            variant="subtitle2"
+            component="h1"
+            variant="h5"
             sx={{
               fontWeight: "bold",
-              color: "#10b981",
-              bgcolor: "#ecfdf5",
-              px: 2,
-              py: 0.8,
-              borderRadius: 2,
+              color: "#1f2937",
+              fontSize: { xs: "1.2rem", sm: "1.4rem" },
             }}
           >
-            SY {settings.current_school_year || "Loading..."}
+            Educational Overview
           </Typography>
           <Typography
-            variant="subtitle2"
-            sx={{
-              fontWeight: "bold",
-              color: "#3b82f6",
-              bgcolor: "#eff6ff",
-              px: 2,
-              py: 0.8,
-              borderRadius: 2,
-            }}
+            variant="body2"
+            sx={{ mt: 0.5, color: "text.secondary", overflowWrap: "anywhere" }}
           >
-            Section: {filterSection || "Loading..."}
+            Welcome, Tr. {teacherName}
           </Typography>
         </Box>
-      </Box>
-      <Grid container spacing={2.5} sx={{ mb: 3.5 }}>
-        {stats.map((stat, idx) => (
-          <Grid size={{ xs: 12, sm: 6, md: 3 }} key={idx}>
-            <Card
-              aria-label={
-                stat.title === "Total Student"
-                  ? `Total students: ${dashboardStats.totalStudents}; Male: ${distribution.male}; Female: ${distribution.female}`
-                  : undefined
-              }
-              sx={{
-                borderRadius: 4,
-                boxShadow: "0 4px 20px rgba(0,0,0,0.03)",
-                height: "100%",
-                display: "flex",
-                flexDirection: "column",
-                justifyContent: "center",
-              }}
-            >
-              <CardContent
-                sx={{
-                  display: "flex",
-                  alignItems: "center",
-                  p: 2.5,
-                  pb: "20px !important",
-                }}
+        <Grid
+          container
+          component="section"
+          aria-label="Dashboard filters"
+          spacing={1.5}
+          sx={{ width: "100%", maxWidth: { lg: "42rem" }, minWidth: 0 }}
+        >
+          <Grid size={{ xs: 12, sm: 4 }} sx={{ minWidth: 0 }}>
+            <FormControl fullWidth size="small" disabled={!schoolYear}>
+              <InputLabel id="teacher-school-year-label">
+                School Year
+              </InputLabel>
+              <Select
+                labelId="teacher-school-year-label"
+                label="School Year"
+                value={schoolYear}
+                sx={{ borderRadius: 3 }}
               >
-                <Box
-                  sx={{
-                    p: 1.5,
-                    borderRadius: 3,
-                    bgcolor: stat.bg,
-                    mr: 2,
-                    display: "flex",
-                  }}
-                >
-                  {stat.icon}
-                </Box>
-                <Box sx={{ minWidth: 0, overflowWrap: "anywhere" }}>
-                  <Typography
-                    variant="caption"
-                    sx={{
-                      color: "#6b7280",
-                      fontWeight: "bold",
-                      display: "block",
-                      lineHeight: 1.2,
-                    }}
-                  >
-                    {stat.title}
-                  </Typography>
-                  <Typography
-                    variant="h6"
-                    sx={{ fontWeight: "900", color: "#111827", mt: 0.5 }}
-                  >
-                    {stat.value}
-                  </Typography>
-                  {stat.subtitle && (
-                    <Typography
-                      variant="caption"
-                      sx={{
-                        color: "text.secondary",
-                        display: "block",
-                        mt: 0.5,
-                      }}
-                    >
-                      {stat.subtitle}
-                    </Typography>
-                  )}
-                </Box>
-              </CardContent>
-            </Card>
+                {schoolYear && (
+                  <MenuItem value={schoolYear}>{schoolYear}</MenuItem>
+                )}
+              </Select>
+            </FormControl>
           </Grid>
-        ))}
-      </Grid>
-
-      {/* PRIMARY SECTIONS */}
-      <Grid container spacing={3}>
-        {/* Left Section: ECCD Progress Overview */}
-        <Grid size={{ xs: 12, md: 8 }}>
-          <Card
-            sx={{
-              borderRadius: 4,
-              boxShadow: "0 4px 20px rgba(0,0,0,0.03)",
-              p: { xs: 2.5, sm: 3 },
-              height: "100%",
-            }}
-          >
-            <Box sx={{ mb: 3 }}>
-              <Typography
-                variant="h6"
-                sx={{ fontWeight: "bold", color: "#1f2937", mb: 2 }}
-              >
-                ECCD Development
-              </Typography>
-
-              <Box sx={{ display: "flex", gap: 2, flexWrap: "wrap" }}>
-                <FormControl
-                  size="small"
-                  sx={{ minWidth: 140, flex: { xs: "1 1 100%", sm: "none" } }}
-                >
-                  <TextField
-                    size="small"
-                    label="Section"
-                    value={filterSection || "Loading..."}
-                    sx={{ bgcolor: "#f9fafb" }}
-                    slotProps={{
-                      input: { readOnly: true },
-                    }}
-                  />
-                </FormControl>
-
-                <FormControl
-                  size="small"
-                  sx={{
-                    minWidth: 180,
-                    flex: { xs: "1 1 calc(50% - 8px)", sm: "none" },
-                  }}
-                >
-                  <InputLabel id="teacher-chart-domain-label">
-                    Domain
-                  </InputLabel>
-                  <Select
-                    labelId="teacher-chart-domain-label"
-                    value={filterDomain}
-                    label="Domain"
-                    onChange={(e) => setFilterDomain(e.target.value)}
-                  >
-                    <MenuItem value="All">All</MenuItem>
-                    {domains.length === 0 && (
-                      <MenuItem disabled>No Domains</MenuItem>
-                    )}
-                    {domains.map((dom) => (
-                      <MenuItem key={dom} value={dom}>
-                        {dom}
-                      </MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
-
-                <FormControl
-                  size="small"
-                  sx={{
-                    minWidth: 140,
-                    flex: { xs: "1 1 calc(50% - 8px)", sm: "none" },
-                  }}
-                >
-                  <InputLabel id="teacher-chart-period-label">
-                    Testing Period
-                  </InputLabel>
-                  <Select
-                    labelId="teacher-chart-period-label"
-                    value={filterPeriod}
-                    label="Testing Period"
-                    onChange={(e) => setFilterPeriod(e.target.value)}
-                  >
-                    <MenuItem value="All">All</MenuItem>
-                    <MenuItem value="PRE">Pre-Test</MenuItem>
-                    <MenuItem value="MID">Mid-Test</MenuItem>
-                    <MenuItem value="POST">Post-Test</MenuItem>
-                  </Select>
-                </FormControl>
-              </Box>
-            </Box>
-
-            <Divider sx={{ mb: 3 }} />
-
-            <Box sx={{ height: { xs: 280, sm: 320, md: 350 }, width: "100%" }}>
-              {pieData.reduce((sum, item) => sum + (item.value || 0), 0) > 0 ? (
-                <ResponsiveContainer
-                  width="100%"
-                  height="100%"
-                  initialDimension={{ width: 300, height: 300 }}
-                >
-                  <PieChart>
-                    <Pie
-                      data={pieData}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={80}
-                      outerRadius={120}
-                      paddingAngle={5}
-                      dataKey="value"
-                      label={({ name, percent }) =>
-                        `${name} ${((percent ?? 0) * 100).toFixed(0)}%`
-                      }
-                    >
-                      {pieData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={entry.color} />
-                      ))}
-                    </Pie>
-                    <Tooltip />
-                    <Legend verticalAlign="bottom" height={36} />
-                  </PieChart>
-                </ResponsiveContainer>
-              ) : (
-                <Box
-                  sx={{
-                    height: "100%",
-                    display: "flex",
-                    flexDirection: "column",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    opacity: 0.6,
-                  }}
-                >
-                  <ShowChartIcon
-                    sx={{ fontSize: 48, color: "#9ca3af", mb: 2 }}
-                  />
-                  <Typography
-                    variant="body1"
-                    sx={{ color: "#6b7280", fontWeight: "500" }}
-                  >
-                    No ECCD assessment data available yet.
-                  </Typography>
-                  <Typography variant="caption" sx={{ color: "#9ca3af" }}>
-                    Try selecting a different domain or testing period.
-                  </Typography>
-                </Box>
-              )}
-            </Box>
-          </Card>
-        </Grid>
-
-        {/* Right Section: Unread Messages Feed */}
-        <Grid size={{ xs: 12, md: 4 }}>
-          <Card
-            sx={{
-              borderRadius: 4,
-              boxShadow: "0 4px 20px rgba(0,0,0,0.03)",
-              p: { xs: 2.5, sm: 3 },
-              height: "100%",
-              display: "flex",
-              flexDirection: "column",
-            }}
-          >
-            <Box
-              sx={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                mb: 2,
-              }}
-            >
-              <Typography
-                variant="h6"
-                sx={{ fontWeight: "bold", color: "#1f2937" }}
-              >
-                Unread Messages
-              </Typography>
-              {messages.filter((m) => !m.read).length > 0 && (
-                <Box
-                  sx={{
-                    bgcolor: "#ef4444",
-                    color: "white",
-                    px: 1.5,
-                    py: 0.5,
-                    borderRadius: 5,
-                  }}
-                >
-                  <Typography variant="caption" sx={{ fontWeight: "bold" }}>
-                    {messages.filter((m) => !m.read).length} New
-                  </Typography>
-                </Box>
-              )}
-            </Box>
-
-            {messages.filter((m) => !m.read).length > 0 ? (
-              <List
-                sx={{
-                  width: "100%",
-                  bgcolor: "background.paper",
-                  flexGrow: 1,
-                  overflowY: "auto",
+          <Grid size={{ xs: 12, sm: 4 }} sx={{ minWidth: 0 }}>
+            <FormControl fullWidth size="small">
+              <InputLabel id="teacher-period-label">
+                Assessment Period
+              </InputLabel>
+              <Select
+                labelId="teacher-period-label"
+                label="Assessment Period"
+                value={selectedPeriod}
+                sx={{ borderRadius: 3 }}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  if (value === "PRE" || value === "MID" || value === "POST")
+                    setSelectedPeriod(value);
                 }}
               >
-                {messages
-                  .filter((m) => !m.read)
-                  .map((msg, index, arr) => (
-                    <React.Fragment key={msg.id}>
-                      <ListItem alignItems="flex-start" sx={{ px: 0, py: 2 }}>
-                        <ListItemAvatar>
-                          <Avatar
-                            sx={{ bgcolor: "primary.main", fontWeight: "bold" }}
-                          >
-                            {msg.name.charAt(0)}
-                          </Avatar>
-                        </ListItemAvatar>
-                        <ListItemText
-                          primary={
-                            <Box
-                              sx={{
-                                display: "flex",
-                                justifyContent: "space-between",
-                              }}
-                            >
-                              <Typography
-                                component="span"
-                                variant="subtitle2"
-                                sx={{ fontWeight: "bold", color: "#111827" }}
-                              >
-                                {msg.name}
-                              </Typography>
-                              <Typography
-                                component="span"
-                                variant="caption"
-                                sx={{ color: "#6b7280", fontWeight: "bold" }}
-                              >
-                                {msg.time}
-                              </Typography>
-                            </Box>
-                          }
-                          secondary={
-                            <Typography
-                              component="span"
-                              variant="body2"
-                              sx={{
-                                color: "#4b5563",
-                                display: "-webkit-box",
-                                WebkitLineClamp: 2,
-                                WebkitBoxOrient: "vertical",
-                                overflow: "hidden",
-                              }}
-                            >
-                              {msg.preview}
-                            </Typography>
-                          }
-                        />
-                      </ListItem>
-                      {index < arr.length - 1 && <Divider component="li" />}
-                    </React.Fragment>
-                  ))}
-              </List>
+                {PERIODS.map((period) => (
+                  <MenuItem key={period} value={period}>
+                    {ASSESSMENT_PERIOD_LABELS[period]}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </Grid>
+          <Grid
+            size={{ xs: 12, sm: 4 }}
+            sx={{ minWidth: 0, display: "flex", alignItems: "center" }}
+          >
+            <Typography
+              variant="subtitle2"
+              sx={{
+                fontWeight: "bold",
+                color: "#3b82f6",
+                bgcolor: "#eff6ff",
+                px: 2,
+                minHeight: "2.5rem",
+                display: "flex",
+                alignItems: "center",
+                borderRadius: 2,
+                width: "100%",
+                overflowWrap: "anywhere",
+              }}
+            >
+              Section: {section?.section_name || "No section assigned"}
+            </Typography>
+          </Grid>
+        </Grid>
+      </Stack>
+      <Box
+        component="section"
+        aria-label="Section statistics"
+        aria-busy={summary.status === "loading"}
+        className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 items-stretch auto-rows-fr"
+        sx={{ mb: 3.5 }}
+      >
+        {stats.map((stat) => (
+          <article
+            key={stat.title}
+            aria-label={stat.title}
+            className="min-w-0 flex flex-col justify-between p-4 sm:p-5 lg:px-3 xl:px-5 rounded-2xl bg-white border border-slate-100 shadow-sm"
+          >
+            <div className="flex items-center justify-center gap-2">
+              <div
+                aria-hidden="true"
+                className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${stat.iconClassName}`}
+              >
+                {stat.icon}
+              </div>
+              <h2
+                title={stat.title}
+                className="min-w-0 line-clamp-2 text-xs font-semibold text-slate-600 text-center leading-tight"
+              >
+                {stat.title}
+              </h2>
+            </div>
+            <div
+              title={typeof stat.value === "string" ? stat.value : undefined}
+              className={`my-1 min-w-0 text-center tracking-tight ${stat.muted ? "truncate text-[11px] font-normal text-slate-400" : `line-clamp-2 break-words text-xl sm:text-2xl font-bold text-slate-900 leading-6 sm:leading-6 ${stat.title === "Assessment Progress" ? "" : "lg:text-base lg:leading-[1.125rem] xl:text-2xl xl:leading-6"}`}`}
+            >
+              {stat.value}
+            </div>
+            <div className="h-6 flex min-w-0 shrink-0 items-center justify-center text-center">
+              <span
+                title={stat.subtitle}
+                className={`min-w-0 max-w-full leading-3 ${stat.muted ? "text-[11px] font-normal text-slate-400" : "text-xs font-medium"} ${stat.badgeClassName ? `rounded-full px-2 py-0.5 lg:px-1 lg:text-[11px] xl:px-2 xl:text-xs ${stat.badgeClassName}` : stat.muted ? "" : "text-slate-500"}`}
+              >
+                {stat.subtitle}
+              </span>
+            </div>
+          </article>
+        ))}
+      </Box>
+      {(!section || summary.status === "error") && (
+        <Typography role="status" sx={{ mb: 3, color: "text.secondary" }}>
+          {summaryPlaceholder}
+        </Typography>
+      )}
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
+        <section
+          aria-labelledby="eccd-development-title"
+          className="min-w-0 flex flex-col p-5 rounded-2xl bg-white border border-slate-100 shadow-sm"
+        >
+          <Box sx={{ mb: 3 }}>
+            <Typography
+              id="eccd-development-title"
+              component="h2"
+              variant="h6"
+              sx={{ fontWeight: "bold", color: "#1f2937", mb: 2 }}
+            >
+              ECCD Development
+            </Typography>
+
+            <FormControl size="small" sx={{ width: "100%", minWidth: 0 }}>
+              <InputLabel id="teacher-chart-domain-label">Domain</InputLabel>
+              <Select
+                labelId="teacher-chart-domain-label"
+                value={filterDomain}
+                label="Domain"
+                sx={{ borderRadius: 3 }}
+                onChange={(e) => setFilterDomain(e.target.value)}
+              >
+                <MenuItem value="All">All Domains</MenuItem>
+                {domains.length === 0 && (
+                  <MenuItem disabled>No Domains</MenuItem>
+                )}
+                {domains.map((dom) => (
+                  <MenuItem key={dom} value={dom}>
+                    {dom}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </Box>
+
+          <Divider sx={{ mb: 3 }} />
+
+          <Box
+            aria-label="ECCD development chart"
+            aria-busy={chart.status === "loading"}
+            sx={{
+              width: "100%",
+              maxWidth: "24rem",
+              aspectRatio: "1 / 1",
+              flexShrink: 0,
+              mx: "auto",
+            }}
+          >
+            {totalItems > 0 ? (
+              <ResponsiveContainer
+                width="100%"
+                aspect={1}
+                minWidth={0}
+                initialDimension={{ width: 300, height: 300 }}
+              >
+                <PieChart margin={{ top: 8, right: 8, bottom: 8, left: 8 }}>
+                  <Pie
+                    data={pieData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius="50%"
+                    outerRadius="70%"
+                    paddingAngle={5}
+                    dataKey="value"
+                  >
+                    {pieData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.color} />
+                    ))}
+                  </Pie>
+                  <Tooltip />
+                </PieChart>
+              </ResponsiveContainer>
             ) : (
               <Box
                 sx={{
+                  height: "100%",
                   display: "flex",
                   flexDirection: "column",
                   alignItems: "center",
                   justifyContent: "center",
-                  height: "200px",
                   opacity: 0.6,
-                  flexGrow: 1,
                 }}
               >
-                <MessageIcon sx={{ fontSize: 48, color: "#9ca3af", mb: 1 }} />
+                <ShowChartIcon sx={{ fontSize: 48, color: "#9ca3af", mb: 2 }} />
                 <Typography
                   variant="body1"
                   sx={{ color: "#6b7280", fontWeight: "500" }}
                 >
-                  No unread messages
+                  {!section
+                    ? "No section assigned"
+                    : chart.status === "loading"
+                      ? "Loading assessment data..."
+                      : chart.status === "error"
+                        ? "Assessment data unavailable"
+                        : "No ECCD assessment data for this selection."}
+                </Typography>
+                <Typography variant="caption" sx={{ color: "#9ca3af" }}>
+                  Try selecting a different domain or testing period.
                 </Typography>
               </Box>
             )}
-
-            <Box sx={{ textAlign: "center", mt: "auto", pt: 2 }}>
-              <Typography
-                variant="body2"
-                onClick={() => navigate("/teacher/messages")}
-                sx={{
-                  color: "primary.main",
-                  cursor: "pointer",
-                  fontWeight: "bold",
-                  "&:hover": { textDecoration: "underline" },
-                }}
-              >
-                View All Messages
+          </Box>
+          <Stack sx={{ gap: 1, mt: 2, textAlign: "center" }} aria-live="polite">
+            {chart.status === "ready" && (
+              <>
+                <div
+                  aria-label="Assessment item totals"
+                  className="flex flex-wrap items-center justify-center gap-2"
+                >
+                  <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs px-3 py-1 rounded-lg font-medium">
+                    Total Kaya:{" "}
+                    {pieData.find((item) => item.name === "KAYA")?.value || 0}
+                  </span>
+                  <span className="bg-rose-50 text-rose-700 border border-rose-200 text-xs px-3 py-1 rounded-lg font-medium">
+                    Total Di-Kaya:{" "}
+                    {pieData.find((item) => item.name === "DI-KAYA")?.value ||
+                      0}
+                  </span>
+                </div>
+                <Typography variant="body2" sx={{ color: "text.secondary" }}>
+                  {totalItems} recorded items
+                </Typography>
+              </>
+            )}
+            {selectedDomain && (
+              <Typography variant="body2" sx={{ color: "text.secondary" }}>
+                {formatDomainName(selectedDomain.domainName)}:{" "}
+                {selectedDomain.masteryRate}% Kaya
               </Typography>
-            </Box>
-          </Card>
-        </Grid>
-      </Grid>
+            )}
+          </Stack>
+        </section>
+        <PendingEvaluations
+          section={section}
+          period={selectedPeriod}
+          ownerId={user?.id || 0}
+        />
+      </div>
     </Box>
   );
 };

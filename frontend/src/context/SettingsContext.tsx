@@ -7,7 +7,8 @@ import {
   useState,
 } from "react";
 import type { ReactNode } from "react";
-import API, { errorMessage } from "../services/api";
+import { errorMessage } from "../services/api";
+import { sharedGet } from "../services/sharedGet";
 export interface SystemSettings {
   system_title: string;
   school_name: string;
@@ -62,12 +63,12 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const fetchGlobalSettings = useCallback(async () => {
     const request = ++requestId.current;
     try {
-      const response = await API.get<SystemSettings>("/api/settings");
+      const data = await sharedGet<SystemSettings>("/api/settings");
       if (request !== requestId.current) return;
-      const month = Number(response.data.school_year_start_month);
+      const month = Number(data.school_year_start_month);
       setSettings({
         ...defaults,
-        ...response.data,
+        ...data,
         school_year_start_month:
           Number.isInteger(month) && month >= 1 && month <= 12 ? month : 8,
       });

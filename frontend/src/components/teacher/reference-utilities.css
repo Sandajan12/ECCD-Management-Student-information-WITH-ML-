@@ -180,9 +180,6 @@
 .teacher-portal .select-none {
   user-select: none;
 }
-.teacher-portal .grid-cols-1 {
-  grid-template-columns: repeat(1, minmax(0, 1fr));
-}
 .teacher-portal .flex-col {
   flex-direction: column;
 }

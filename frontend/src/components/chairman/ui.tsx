@@ -35,7 +35,7 @@ export function Button({
 }: ButtonProps) {
   const colors = {
     primary:
-      "bg-[#4543c0] text-white shadow-[0px_3px_1px_-2px_rgba(0,0,0,.2),0px_2px_2px_0px_rgba(0,0,0,.14),0px_1px_5px_0px_rgba(0,0,0,.12)] hover:bg-[#363599] hover:shadow-[0px_2px_4px_-1px_rgba(0,0,0,.2),0px_4px_5px_0px_rgba(0,0,0,.14),0px_1px_10px_0px_rgba(0,0,0,.12)] disabled:bg-black/[.12] disabled:shadow-none",
+      "bg-brand text-white shadow-sm hover:brightness-95 disabled:bg-black/[.12] disabled:shadow-none",
     secondary:
       "border border-[#4543c0]/50 text-[#4543c0] hover:border-[#4543c0] hover:bg-[#4543c0]/[.04] disabled:border-black/[.12]",
     danger:
@@ -54,7 +54,7 @@ export function Button({
     <button
       {...props}
       type={type}
-      className={`relative inline-flex min-w-16 shrink-0 items-center justify-center rounded-lg align-middle leading-[1.75] tracking-normal normal-case transition-[background-color,box-shadow,border-color] duration-250 outline-none! focus-visible:shadow-[0_0_0_3px_color-mix(in_srgb,var(--primary-color)_25%,transparent)] disabled:pointer-events-none disabled:text-black/[.26] ${small ? (variant === "secondary" ? "px-[9px] py-[3px] text-[13px]" : "px-2 py-1 text-[13px]") : variant === "secondary" ? "px-[15px] py-[5px] text-sm" : "px-4 py-1.5 text-sm"} ${className.includes("font-") ? "" : "font-medium"} ${resolvedColors} ${className}`}
+      className={`relative inline-flex min-w-16 shrink-0 items-center justify-center rounded-lg align-middle leading-[1.75] tracking-normal normal-case transition-[background-color,box-shadow,border-color] duration-250 outline-none! focus-visible:ring-2 focus-visible:ring-brand/25 disabled:pointer-events-none disabled:text-black/[.26] ${small ? (variant === "secondary" ? "px-[9px] py-[3px] text-[13px]" : "px-2 py-1 text-[13px]") : variant === "secondary" ? "px-[15px] py-[5px] text-sm" : "px-4 py-1.5 text-sm"} ${className.includes("font-") ? "" : "font-medium"} ${resolvedColors} ${className}`}
     >
       {startIcon && (
         <span
@@ -173,25 +173,27 @@ function Outline({
   htmlFor,
   shrunk = true,
   small = true,
+  brand = false,
 }: {
   label?: string;
   htmlFor?: string;
   shrunk?: boolean;
   small?: boolean;
+  brand?: boolean;
 }) {
   return (
     <>
       {label && (
         <label
           htmlFor={htmlFor}
-          className={`pointer-events-none absolute left-3.5 origin-top-left text-black/60 transition-[top,font-size] duration-200 group-focus-within:text-[#4543c0] ${shrunk ? "-top-[9px] text-base leading-[1.4375] scale-75" : small ? "top-[8.5px] text-base leading-[1.4375]" : "top-[16.5px] text-base leading-[1.4375]"}`}
+          className={`pointer-events-none absolute left-3.5 origin-top-left text-black/60 transition-[top,font-size] duration-200 ${brand ? "group-focus-within:text-brand" : "group-focus-within:text-[#4543c0]"} ${shrunk ? "-top-[9px] text-base leading-[1.4375] scale-75" : small ? "top-[8.5px] text-base leading-[1.4375]" : "top-[16.5px] text-base leading-[1.4375]"}`}
         >
           {label}
         </label>
       )}
       <fieldset
         aria-hidden="true"
-        className="pointer-events-none absolute inset-x-0 -top-[5px] bottom-0 min-w-0 rounded-[inherit] border border-black/[.23] px-2 group-hover:border-[#333] group-focus-within:border-2 group-focus-within:border-[#4543c0]"
+        className={`pointer-events-none absolute inset-x-0 -top-[5px] bottom-0 min-w-0 rounded-[inherit] border border-black/[.23] px-2 group-focus-within:border-2 ${brand ? "group-hover:border-brand/60 group-focus-within:border-brand" : "group-hover:border-[#333] group-focus-within:border-[#4543c0]"}`}
       >
         <legend
           className={`h-[11px] overflow-hidden text-[.75em] leading-[11px] ${label && shrunk ? "max-w-full px-[5px]" : "max-w-0 p-0"}`}
@@ -214,6 +216,8 @@ interface SelectProps extends Omit<
   value?: string | number;
   onChange?: (event: { target: { value: string } }) => void;
   optionAction?: (value: string, closeMenu: () => void) => ReactNode;
+  constrainMenu?: boolean;
+  brand?: boolean;
 }
 interface OptionProps {
   value?: string | number;
@@ -233,6 +237,8 @@ export function Select({
   onChange,
   disabled,
   optionAction,
+  constrainMenu = false,
+  brand = false,
   ...props
 }: SelectProps) {
   const generated = useId();
@@ -264,6 +270,7 @@ export function Select({
     const menuHeight = Math.min(
       options.length * (window.innerWidth < 600 ? 48 : 36) + 16,
       window.innerHeight - 96,
+      constrainMenu ? 192 : Infinity,
     );
     setPortalHost(ref.current?.closest("dialog") || document.body);
     setPosition({
@@ -305,7 +312,9 @@ export function Select({
           )}
         </label>
       )}
-      <div className={`group relative rounded-[4px] ${className}`}>
+      <div
+        className={`group relative rounded-[4px] ${brand ? "transition-shadow focus-within:ring-2 focus-within:ring-brand/20" : ""} ${className}`}
+      >
         <button
           ref={ref}
           id={fieldId}
@@ -333,7 +342,11 @@ export function Select({
             className="pointer-events-none absolute right-[7px] top-[calc(50%-12px)] size-6 text-black/54"
           />
         </button>
-        <Outline label={floating ? label : undefined} htmlFor={fieldId} />
+        <Outline
+          label={floating ? label : undefined}
+          htmlFor={fieldId}
+          brand={brand}
+        />
       </div>
       {position &&
         createPortal(
@@ -399,7 +412,7 @@ export function Select({
               id={listId}
               role="listbox"
               aria-label={label || props["aria-label"]}
-              className="absolute max-h-[calc(100dvh-96px)] min-w-0 overflow-y-auto rounded-[4px] bg-white py-2 text-[#333] shadow-[0px_5px_5px_-3px_rgba(0,0,0,.2),0px_8px_10px_1px_rgba(0,0,0,.14),0px_3px_14px_2px_rgba(0,0,0,.12)]"
+              className={`absolute ${constrainMenu ? "max-h-48 max-w-[calc(100vw-2rem)] [scrollbar-width:thin]" : "max-h-[calc(100dvh-96px)]"} min-w-0 overflow-y-auto overscroll-contain rounded-[4px] bg-white py-2 text-[#333] shadow-[0px_5px_5px_-3px_rgba(0,0,0,.2),0px_8px_10px_1px_rgba(0,0,0,.14),0px_3px_14px_2px_rgba(0,0,0,.12)]`}
               style={{
                 left: position.left,
                 top: position.top,
@@ -417,7 +430,7 @@ export function Select({
                     role="option"
                     aria-selected={option.value === String(value)}
                     disabled={option.disabled}
-                    className={`relative flex min-h-12 min-w-0 grow items-center px-4 py-1.5 text-left text-base leading-[1.5] whitespace-nowrap outline-none! hover:bg-black/[.04] focus:bg-black/[.12] disabled:opacity-38 legacy-sm:min-h-0 ${option.value === String(value) ? "bg-[#4543c0]/[.08] hover:bg-[#4543c0]/[.12] focus:bg-[#4543c0]/[.20]" : ""}`}
+                    className={`relative flex min-h-12 min-w-0 grow items-center px-4 py-1.5 text-left text-base leading-[1.5] ${constrainMenu ? "whitespace-normal break-words" : "whitespace-nowrap"} outline-none! hover:bg-black/[.04] focus:bg-black/[.12] disabled:opacity-38 legacy-sm:min-h-0 ${option.value === String(value) ? (brand ? "bg-brand/10 hover:bg-brand/15 focus:bg-brand/20" : "bg-[#4543c0]/[.08] hover:bg-[#4543c0]/[.12] focus:bg-[#4543c0]/[.20]") : ""}`}
                     onClick={() => {
                       onChange?.({ target: { value: option.value } });
                       close();

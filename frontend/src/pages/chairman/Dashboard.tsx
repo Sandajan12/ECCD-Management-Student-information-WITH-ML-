@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import EmojiEventsRounded from "@mui/icons-material/EmojiEventsRounded";
 import {
   Cell,
   Legend,
@@ -9,16 +10,24 @@ import {
 } from "recharts";
 import { useSettings } from "../../context/SettingsContext";
 import { chairmanDisplayName } from "../../utils/displayName";
-import API, { errorMessage } from "../../services/api";
+import { errorMessage } from "../../services/api";
+import { sharedGet } from "../../services/sharedGet";
 import { Notice, Select } from "../../components/chairman/ui";
 import Icon from "../../components/chairman/Icon";
 import LegacyIcon from "../../components/LegacyIcon";
 import DelaySummary from "../../components/chairman/DelaySummary";
 import type { DelaySummaryData } from "../../components/chairman/DelaySummary";
+import type { Period } from "../../types";
+import { PERIODS } from "../../types";
+import {
+  ASSESSMENT_PERIOD_LABELS,
+  type DevelopmentalInterpretation,
+} from "../../components/chairman/dashboardFilters";
 interface Filters {
-  sections: string[];
+  sectionOptions: { section_id: number; section_name: string }[];
   domains: string[];
   schoolYears: string[];
+  currentSchoolYear: string | null;
 }
 interface Slice {
   name: string;
@@ -28,39 +37,47 @@ interface Slice {
 interface Stats {
   stats: Record<string, string>;
   functionalMastery?: { kaya: number; dikaya: number };
+  criticalDomainDiKayaRate?: number | null;
   delaySummary?: DelaySummaryData;
-}
-interface Selection {
-  section: string;
-  domain: string;
-  period: string;
-  schoolYear: string;
-}
-interface DomainPerformance {
-  name: string;
-  percentage: number;
+  excellingDomain?: {
+    domainName: string | null;
+    masteryRate: number | null;
+    totalKaya: number;
+    totalItems: number;
+    completedStudents: number;
+  };
 }
 interface RequestState {
   loading: boolean;
   error: string;
 }
+function formatDomainRate(
+  rate: number | null | undefined,
+  label: "Kaya" | "Di-Kaya",
+): string | null {
+  return rate != null && Number.isFinite(rate)
+    ? `${rate.toLocaleString(undefined, { maximumFractionDigits: 2 })}% ${label}`
+    : null;
+}
 export default function Dashboard() {
-  const { settings } = useSettings();
+  const { settings, isLoaded: settingsLoaded, settingsError } = useSettings();
   const displayName = chairmanDisplayName(settings);
+  const [selectedSchoolYear, setSelectedSchoolYear] = useState<string>("");
+  const [selectedPeriod, setSelectedPeriod] = useState<Period>("PRE");
+  const [interpretation, setInterpretation] =
+    useState<DevelopmentalInterpretation>("Average");
+  const [selectedSectionId, setSelectedSectionId] = useState<number | null>(
+    null,
+  );
   const [filters, setFilters] = useState<Filters>({
-    sections: [],
+    sectionOptions: [],
     domains: [],
     schoolYears: [],
+    currentSchoolYear: null,
   });
-  const [selection, setSelection] = useState<Selection>({
-    section: "All",
-    domain: "All",
-    period: "All",
-    schoolYear: "All",
-  });
+  const [domain, setDomain] = useState<string>("All");
   const [stats, setStats] = useState<Stats | null>(null);
   const [pie, setPie] = useState<Slice[]>([]);
-  const [performance, setPerformance] = useState<DomainPerformance[]>([]);
   const [filterRequest, setFilterRequest] = useState<RequestState>({
     loading: true,
     error: "",
@@ -73,17 +90,30 @@ export default function Dashboard() {
     loading: true,
     error: "",
   });
-  const [performanceRequest, setPerformanceRequest] = useState<RequestState>({
-    loading: true,
-    error: "",
-  });
-  const { section, domain, period, schoolYear } = selection;
+  const schoolYear =
+    selectedSchoolYear ||
+    filters.currentSchoolYear ||
+    (!filterRequest.loading ? settings.current_school_year || "All" : "");
+  const filtersReady =
+    !filterRequest.loading &&
+    !filterRequest.error &&
+    (Boolean(filters.currentSchoolYear) ||
+      settingsLoaded ||
+      Boolean(settingsError));
+  const schoolYears = [
+    ...new Set([
+      ...(schoolYear && schoolYear !== "All" ? [schoolYear] : []),
+      ...filters.schoolYears,
+    ]),
+  ]
+    .sort()
+    .reverse();
   useEffect(() => {
     let current = true;
-    void API.get<Filters>("/api/analytics/filters")
-      .then((res) => {
+    void sharedGet<Filters>("/api/analytics/filters")
+      .then((data) => {
         if (current) {
-          setFilters(res.data);
+          setFilters(data);
           setFilterRequest({ loading: false, error: "" });
         }
       })
@@ -96,14 +126,19 @@ export default function Dashboard() {
     };
   }, []);
   useEffect(() => {
+    if (!filtersReady || !schoolYear) return;
     let current = true;
     setStatsRequest({ loading: true, error: "" });
-    void API.get<Stats>("/api/analytics/stats", {
-      params: { section, schoolYear },
+    setStats(null);
+    void sharedGet<Stats>("/api/analytics/stats", {
+      section_id: selectedSectionId ?? undefined,
+      schoolYear,
+      period: selectedPeriod,
+      interpretation,
     })
-      .then((res) => {
+      .then((data) => {
         if (current) {
-          setStats(res.data);
+          setStats(data);
           setStatsRequest({ loading: false, error: "" });
         }
       })
@@ -114,16 +149,27 @@ export default function Dashboard() {
     return () => {
       current = false;
     };
-  }, [section, schoolYear]);
+  }, [
+    filtersReady,
+    selectedSectionId,
+    schoolYear,
+    selectedPeriod,
+    interpretation,
+  ]);
   useEffect(() => {
+    if (!filtersReady || !schoolYear) return;
     let current = true;
     setPieRequest({ loading: true, error: "" });
-    void API.get<Slice[]>("/api/analytics/pie-data", {
-      params: { section, domain, period, schoolYear },
+    setPie([]);
+    void sharedGet<Slice[]>("/api/analytics/pie-data", {
+      section_id: selectedSectionId ?? undefined,
+      domain,
+      period: selectedPeriod,
+      schoolYear,
     })
-      .then((res) => {
+      .then((data) => {
         if (current) {
-          setPie(res.data);
+          setPie(data);
           setPieRequest({ loading: false, error: "" });
         }
       })
@@ -134,155 +180,237 @@ export default function Dashboard() {
     return () => {
       current = false;
     };
-  }, [section, domain, period, schoolYear]);
-  useEffect(() => {
-    let current = true;
-    setPerformanceRequest({ loading: filters.domains.length > 0, error: "" });
-    const load = async () => {
-      try {
-        const domains = await Promise.all(
-          filters.domains.map(async (domain) => {
-            const data = (
-              await API.get<Slice[]>("/api/analytics/pie-data", {
-                params: { section, period, schoolYear, domain },
-              })
-            ).data;
-            const kaya = data.find((row) => row.name === "KAYA")?.value || 0;
-            const dikaya =
-              data.find((row) => row.name === "DI-KAYA")?.value || 0;
-            const sum = kaya + dikaya;
-            return {
-              name: domain.replace(" Domain", ""),
-              percentage: sum ? Math.round((kaya * 100) / sum) : 0,
-            };
-          }),
-        );
-        if (current) {
-          setPerformance(domains.sort((a, b) => b.percentage - a.percentage));
-          setPerformanceRequest({ loading: false, error: "" });
-        }
-      } catch (err) {
-        if (current)
-          setPerformanceRequest({ loading: false, error: errorMessage(err) });
-      }
-    };
-    void load();
-    return () => {
-      current = false;
-    };
-  }, [section, period, schoolYear, filters.domains]);
+  }, [filtersReady, selectedSectionId, domain, selectedPeriod, schoolYear]);
   const s = stats?.stats || {};
   const hasData =
     Number(s.totalStudents) > 0 &&
     (stats?.functionalMastery?.kaya || 0) +
       (stats?.functionalMastery?.dikaya || 0) >
       0;
+  const excellenceRate = formatDomainRate(
+    stats?.excellingDomain?.masteryRate,
+    "Kaya",
+  );
+  const criticalRate = formatDomainRate(
+    stats?.criticalDomainDiKayaRate,
+    "Di-Kaya",
+  );
   const cards = [
     {
       title: "Total Students",
       value: s.totalStudents || "0",
-      icon: <LegacyIcon name="People" className="size-8 text-[#3b82f6]" />,
-      bg: "bg-[#eff6ff]",
+      subtitle: "Active Enrollees",
+      centered: true,
+      tone: "text-slate-500",
+      icon: <LegacyIcon name="People" className="size-8 text-brand" />,
+      bg: "bg-brand/10",
     },
     {
       title: "Total Teachers",
       value: s.totalTeachers || "0",
-      icon: <Icon name="School" className="size-8 text-[#a855f7]" />,
-      bg: "bg-[#f3e8ff]",
+      subtitle: "Assigned Advisers",
+      centered: true,
+      tone: "text-slate-500",
+      icon: <Icon name="School" className="size-8 text-brand" />,
+      bg: "bg-brand/10",
+    },
+    {
+      title: "Domain of Excellence",
+      value: stats?.excellingDomain?.domainName || "N/A",
+      subtitle: excellenceRate ?? "No completed assessments yet",
+      icon: <EmojiEventsRounded className="size-8! text-emerald-600" />,
+      bg: "bg-emerald-50",
+      tone: "text-emerald-700",
+      badgeClassName: excellenceRate
+        ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+        : undefined,
+    },
+    {
+      title: "Critical Domain Focus",
+      value: hasData ? s.criticalDomain : "N/A",
+      subtitle: hasData
+        ? (criticalRate ?? s.criticalDomainSubtitle)
+        : "No assessments yet",
+      icon: hasData ? (
+        <Icon name="GpsFixed" className="size-8 text-rose-600" />
+      ) : (
+        <LegacyIcon name="InfoOutlined" className="size-8 text-[#9ca3af]" />
+      ),
+      bg: hasData ? "bg-rose-50" : "bg-slate-100",
+      tone: hasData ? "text-rose-700" : "text-slate-400",
+      badgeClassName:
+        hasData && criticalRate
+          ? "border-rose-200 bg-rose-50 text-rose-700"
+          : undefined,
     },
     {
       title: "Priority Intervention",
       value: hasData ? s.priorityIntervention : "N/A",
       subtitle: hasData ? s.priorityInterventionSubtitle : "No assessments yet",
       icon: hasData ? (
-        <LegacyIcon name="WarningAmber" className="size-8 text-[#f59e0b]" />
+        <LegacyIcon name="WarningAmber" className="size-8 text-amber-600" />
       ) : (
         <LegacyIcon name="InfoOutlined" className="size-8 text-[#9ca3af]" />
       ),
-      bg: hasData ? "bg-[#fffbeb]" : "bg-[#f3f4f6]",
-      tone: hasData ? "text-[#f59e0b]" : "text-[#9ca3af]",
-    },
-    {
-      title: "Critical Domain Focus",
-      value: hasData ? s.criticalDomain : "N/A",
-      subtitle: hasData ? s.criticalDomainSubtitle : "No assessments yet",
-      icon: hasData ? (
-        <Icon name="GpsFixed" className="size-8 text-[#ef4444]" />
-      ) : (
-        <LegacyIcon name="InfoOutlined" className="size-8 text-[#9ca3af]" />
-      ),
-      bg: hasData ? "bg-[#fef2f2]" : "bg-[#f3f4f6]",
-      tone: hasData ? "text-[#ef4444]" : "text-[#9ca3af]",
+      bg: hasData ? "bg-amber-50" : "bg-slate-100",
+      tone: hasData ? "text-amber-600" : "text-slate-400",
     },
   ];
   return (
-    <div className="grow">
-      <div className="mb-2 flex items-start justify-between">
-        <div>
+    <div className="w-full min-w-0 bg-slate-50">
+      <header className="mb-6 flex min-w-0 flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+        <div className="min-w-0">
           <h1 className="text-xl font-bold leading-[1.6] text-[#1f2937]">
             Educational Overview
           </h1>
           <p className="mt-1 break-words text-sm text-[#6b7280] [overflow-wrap:anywhere]">
             Welcome, {displayName}
           </p>
-          <div className="mt-2 flex gap-4">
-            <span className="inline-block rounded-lg bg-[#ecfdf5] px-4 py-1 text-base font-bold leading-[1.75] text-[#10b981]">
-              SY {settings.current_school_year || "Loading..."}
-            </span>
-            <span className="inline-block rounded-lg bg-[#eff6ff] px-4 py-1 text-base font-bold leading-[1.75] text-[#3b82f6]">
-              {selection.section === "All"
-                ? "All Sections"
-                : `Section: ${selection.section}`}
-            </span>
-          </div>
         </div>
-      </div>
+        <section
+          aria-label="Dashboard filters"
+          aria-busy={filterRequest.loading}
+          className="grid w-full min-w-0 grid-cols-1 items-center gap-3 sm:grid-cols-3 xl:max-w-2xl xl:flex-1 [&_label]:whitespace-nowrap"
+        >
+          <Select
+            brand
+            label="School Year"
+            constrainMenu
+            containerClassName="min-w-0 flex-1"
+            className="rounded-xl!"
+            value={schoolYear}
+            disabled={!schoolYear}
+            onChange={(event) => setSelectedSchoolYear(event.target.value)}
+          >
+            {!schoolYear && <option value="">Loading school years...</option>}
+            <option value="All">All Years</option>
+            {schoolYears.map((year) => (
+              <option key={year} value={year}>
+                {year}
+              </option>
+            ))}
+          </Select>
+          <Select
+            brand
+            label="Section"
+            constrainMenu
+            containerClassName="min-w-0 flex-1"
+            className="rounded-xl!"
+            value={selectedSectionId ?? "All"}
+            disabled={filterRequest.loading}
+            onChange={(event) =>
+              setSelectedSectionId(
+                event.target.value === "All"
+                  ? null
+                  : Number(event.target.value),
+              )
+            }
+          >
+            <option value="All">All Sections</option>
+            {filters.sectionOptions.map((option) => (
+              <option key={option.section_id} value={option.section_id}>
+                {option.section_name}
+              </option>
+            ))}
+          </Select>
+          <Select
+            brand
+            label="Assessment Period"
+            constrainMenu
+            containerClassName="min-w-0"
+            className="rounded-xl!"
+            value={selectedPeriod}
+            onChange={(event) =>
+              setSelectedPeriod(event.target.value as Period)
+            }
+          >
+            {PERIODS.map((value) => (
+              <option key={value} value={value}>
+                {ASSESSMENT_PERIOD_LABELS[value]}
+              </option>
+            ))}
+          </Select>
+        </section>
+      </header>
+      <Notice tone="error">
+        {filterRequest.error && `Filters: ${filterRequest.error}`}
+      </Notice>
       <Notice tone="error">
         {statsRequest.error && `Statistics: ${statsRequest.error}`}
       </Notice>
-      <div
+      <section
+        className="mt-4 mb-8 grid grid-cols-1 items-stretch gap-4 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-5"
         aria-label="Summary statistics"
         aria-busy={statsRequest.loading}
-        className="mt-2 mb-8 grid gap-6 legacy-sm:grid-cols-2 legacy-md:grid-cols-4"
       >
         {cards.map((card) => (
           <section
             key={card.title}
-            className="flex h-full flex-col justify-center overflow-hidden rounded-2xl bg-white shadow-[0_4px_20px_rgba(0,0,0,.03)]"
+            className={`flex h-full w-full min-w-0 flex-col justify-between gap-1 rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm [overflow-wrap:anywhere] sm:p-5 ${card.centered ? "border-t-2 border-t-brand" : ""}`}
           >
-            <div className="flex items-center p-6 legacy-md:max-legacy-lg:flex-col legacy-md:max-legacy-lg:items-start legacy-md:max-legacy-lg:gap-4">
-              <div className={`mr-4 flex shrink-0 rounded-xl p-3 ${card.bg}`}>
+            <div
+              className={`flex items-center gap-2 ${card.centered ? "justify-center" : ""}`}
+            >
+              <div
+                aria-hidden="true"
+                className={`flex shrink-0 rounded-lg p-1 [&>svg]:size-4! ${card.bg}`}
+              >
                 {card.icon}
               </div>
-              <div className="min-w-0 max-w-full [overflow-wrap:anywhere]">
-                <p className="text-xs font-bold leading-[1.2] text-[#6b7280]">
-                  {card.title}
-                </p>
-                <p className="mt-1 text-xl font-black leading-[1.1] text-[#111827]">
-                  {card.value}
-                </p>
-                {card.subtitle && (
-                  <p
-                    className={`mt-1 text-xs font-bold leading-[1.1] ${card.tone}`}
+              <h2 className="text-xs font-bold leading-tight text-slate-500">
+                {card.title}
+              </h2>
+            </div>
+            <div>
+              <p
+                className={`text-xl font-bold leading-6 text-slate-900 ${card.centered ? "text-center" : ""}`}
+              >
+                {statsRequest.loading
+                  ? "..."
+                  : statsRequest.error
+                    ? "Unavailable"
+                    : card.value}
+              </p>
+            </div>
+            <div
+              className={`mt-auto flex min-h-6 items-center text-xs leading-tight ${card.centered ? "justify-center" : ""}`}
+            >
+              {card.subtitle && !statsRequest.loading && !statsRequest.error ? (
+                <p
+                  className={`${card.centered || card.title === "Priority Intervention" ? "font-medium" : "font-bold"} ${card.tone}`}
+                >
+                  <span
+                    className={
+                      card.badgeClassName
+                        ? `inline-block rounded-full border px-2 py-0.5 ${card.badgeClassName}`
+                        : ""
+                    }
                   >
                     {card.subtitle}
-                  </p>
-                )}
-              </div>
+                  </span>
+                </p>
+              ) : (
+                <p aria-hidden="true" className="invisible">
+                  Assessment status
+                </p>
+              )}
             </div>
           </section>
         ))}
-      </div>
-      <DelaySummary
-        summary={stats?.delaySummary}
-        loading={statsRequest.loading}
-        failed={Boolean(statsRequest.error)}
-      />
-      <div className="grid gap-6 legacy-md:grid-cols-12">
+      </section>
+      <div className="grid grid-cols-1 items-stretch gap-6 lg:grid-cols-2">
+        <DelaySummary
+          interpretation={interpretation}
+          onInterpretationChange={setInterpretation}
+          period={selectedPeriod}
+          summary={stats?.delaySummary}
+          loading={statsRequest.loading}
+          failed={Boolean(statsRequest.error)}
+        />
         <section
           aria-labelledby="chairman-progress-title"
           aria-busy={pieRequest.loading}
-          className="flex min-w-0 flex-col overflow-hidden rounded-2xl bg-white p-6 shadow-[0_4px_20px_rgba(0,0,0,.03)] legacy-md:col-span-8"
+          className="flex h-full min-w-0 flex-col rounded-2xl border border-slate-200/80 bg-white p-6 shadow-sm"
         >
           <div className="mb-6">
             <h2
@@ -291,162 +419,100 @@ export default function Dashboard() {
             >
               ECCD Progress Overview
             </h2>
-            <Notice tone="error">
-              {filterRequest.error && `Filters: ${filterRequest.error}`}
-            </Notice>
-            <div
-              aria-busy={filterRequest.loading}
-              className="flex flex-nowrap gap-4 overflow-x-auto py-2"
-            >
-              {(["schoolYear", "section", "domain", "period"] as const).map(
-                (key) => (
-                  <Select
-                    key={key}
-                    containerClassName="min-w-[130px] flex-1"
-                    label={
-                      {
-                        schoolYear: "School Year",
-                        section: "Section",
-                        domain: "Domain",
-                        period: "Period",
-                      }[key]
-                    }
-                    value={selection[key]}
-                    onChange={(e) =>
-                      setSelection({ ...selection, [key]: e.target.value })
-                    }
-                  >
-                    <option value="All">
-                      {
-                        {
-                          schoolYear: "All Years",
-                          section: "All Sections",
-                          domain: "All Domains",
-                          period: "All Periods",
-                        }[key]
-                      }
-                    </option>
-                    {(key === "schoolYear"
-                      ? filters.schoolYears
-                      : key === "section"
-                        ? filters.sections
-                        : key === "domain"
-                          ? filters.domains
-                          : ["PRE", "MID", "POST"]
-                    ).map((value) => (
-                      <option key={value}>{value}</option>
-                    ))}
-                  </Select>
-                ),
-              )}
+            <div className="py-1">
+              <Select
+                brand
+                constrainMenu
+                className="rounded-xl!"
+                label="Domain"
+                value={domain}
+                onChange={(event) => setDomain(event.target.value)}
+              >
+                <option value="All">All Domains</option>
+                {filters.domains.map((value) => (
+                  <option key={value}>{value}</option>
+                ))}
+              </Select>
             </div>
           </div>
           <Notice tone="error">
             {pieRequest.error && `ECCD progress: ${pieRequest.error}`}
           </Notice>
-          <div className="flex min-h-[300px] grow items-center justify-center">
-            {pie.reduce((sum, item) => sum + item.value, 0) > 0 ? (
-              <ResponsiveContainer
-                width="100%"
-                height="100%"
-                initialDimension={{ width: 300, height: 300 }}
-              >
-                <PieChart>
-                  <Pie
-                    data={pie}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={80}
-                    outerRadius={120}
-                    paddingAngle={5}
-                    dataKey="value"
-                    label={({ name, percent }) =>
-                      `${name} ${((percent || 0) * 100).toFixed(0)}%`
-                    }
+          <div className="flex flex-1 flex-col gap-4">
+            <div className="flex flex-1 items-center justify-center">
+              {pie.reduce((sum, item) => sum + item.value, 0) > 0 ? (
+                <div className="aspect-square w-full min-w-0 max-w-sm">
+                  <ResponsiveContainer
+                    width="100%"
+                    height="100%"
+                    initialDimension={{ width: 300, height: 300 }}
                   >
-                    {pie.map((slice, i) => (
-                      <Cell key={i} fill={slice.color} />
-                    ))}
-                  </Pie>
-                  <Tooltip />
-                  <Legend verticalAlign="bottom" height={36} />
-                </PieChart>
-              </ResponsiveContainer>
-            ) : pieRequest.loading ? (
-              <p role="status" className="text-sm text-[#777]">
-                Loading ECCD progress...
-              </p>
-            ) : (
-              <div className="flex h-full flex-col items-center justify-center opacity-60">
-                <Icon
-                  name="ShowChart"
-                  className="mb-4 size-12 text-[#9ca3af]"
-                />
-                <p className="text-base font-medium leading-[1.5] text-[#6b7280]">
-                  No ECCD assessment data available yet.
+                    <PieChart>
+                      <Pie
+                        data={pie}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius="45%"
+                        outerRadius="68%"
+                        paddingAngle={5}
+                        dataKey="value"
+                        fontSize={11}
+                        label={({ percent }) =>
+                          `${((percent || 0) * 100).toFixed(0)}%`
+                        }
+                      >
+                        {pie.map((slice, i) => (
+                          <Cell key={i} fill={slice.color} />
+                        ))}
+                      </Pie>
+                      <Tooltip />
+                      <Legend verticalAlign="bottom" height={36} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+              ) : pieRequest.loading ? (
+                <p role="status" className="text-sm text-[#777]">
+                  Loading ECCD progress...
                 </p>
-                <p className="text-xs leading-[1.66] text-[#9ca3af]">
-                  Try selecting a different section.
+              ) : (
+                <div className="flex h-full flex-col items-center justify-center opacity-60">
+                  <Icon
+                    name="ShowChart"
+                    className="mb-4 size-12 text-[#9ca3af]"
+                  />
+                  <p className="text-base font-medium leading-[1.5] text-[#6b7280]">
+                    No ECCD assessment data available yet.
+                  </p>
+                  <p className="text-xs leading-[1.66] text-[#9ca3af]">
+                    Try selecting a different section.
+                  </p>
+                </div>
+              )}
+            </div>
+            {!pieRequest.loading && !pieRequest.error && (
+              <div>
+                <dl
+                  aria-label="Assessment item totals"
+                  className="grid grid-cols-2 gap-3 text-center text-sm"
+                >
+                  {pie.map((slice) => (
+                    <div
+                      key={slice.name}
+                      className={`rounded-xl px-3 py-2 ${slice.name === "KAYA" ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"}`}
+                    >
+                      <dt className="text-xs font-medium">
+                        {slice.name === "KAYA" ? "Total Kaya" : "Total Di-Kaya"}
+                      </dt>
+                      <dd className="font-bold tabular-nums">
+                        {slice.value.toLocaleString()}
+                      </dd>
+                    </div>
+                  ))}
+                </dl>
+                <p className="mt-2 text-center text-xs text-slate-500">
+                  Recorded checklist items for the selected filters.
                 </p>
               </div>
-            )}
-          </div>
-        </section>
-        <section
-          aria-labelledby="chairman-performance-title"
-          aria-busy={performanceRequest.loading}
-          className="flex min-w-0 flex-col overflow-hidden rounded-2xl bg-white p-6 shadow-[0_4px_20px_rgba(0,0,0,.03)] legacy-md:col-span-4"
-        >
-          <div className="mb-6">
-            <h2
-              id="chairman-performance-title"
-              className="text-xl font-bold leading-[1.6]"
-            >
-              Domain Performance Breakdown
-            </h2>
-            <span className="text-xs font-bold leading-[1.66] tracking-[.5px] text-[#3b82f6] uppercase">
-              {selection.section === "All"
-                ? "Showing: All Sections"
-                : `Showing: Section ${selection.section}`}
-            </span>
-          </div>
-          <Notice tone="error">
-            {performanceRequest.error &&
-              `Domain performance: ${performanceRequest.error}`}
-          </Notice>
-          <div className="flex grow flex-col gap-6 overflow-y-auto">
-            {performance.length ? (
-              performance.map((domain) => (
-                <div key={domain.name}>
-                  <div className="mb-3 flex justify-between text-sm font-bold leading-[1.43]">
-                    <span className="text-[#777]">{domain.name}</span>
-                    <span>{domain.percentage}% KAYA</span>
-                  </div>
-                  <div
-                    role="progressbar"
-                    aria-label={domain.name}
-                    aria-valuenow={domain.percentage}
-                    aria-valuemin={0}
-                    aria-valuemax={100}
-                    className="relative z-0 block h-2.5 overflow-hidden rounded-[20px] bg-[#f3f4f6]"
-                  >
-                    <div
-                      className="absolute inset-y-0 left-0 w-full origin-left bg-[#3b82f6] transition-transform duration-400 ease-linear"
-                      style={{
-                        transform: `translateX(${domain.percentage - 100}%)`,
-                      }}
-                    />
-                  </div>
-                </div>
-              ))
-            ) : (
-              <p className="mt-8 text-center text-sm leading-[1.43] text-[#777]">
-                {performanceRequest.loading || filterRequest.loading
-                  ? "Loading domain data..."
-                  : performanceRequest.error || filterRequest.error
-                    ? "Domain data is unavailable."
-                    : "No domain data available."}
-              </p>
             )}
           </div>
         </section>

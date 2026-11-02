@@ -7,7 +7,10 @@ const errors: string[] = [];
 
 async function chooseSection(page: Page, name: string) {
   await page.getByRole("combobox", { name: "Class Name / Section" }).click();
-  await page.getByRole("option", { name, exact: true }).click();
+  await page
+    .getByRole("dialog", { name: "Select a Section", exact: true })
+    .getByRole("button", { name, exact: true })
+    .click();
 }
 async function fillNew(page: Page) {
   await page.getByRole("button", { name: "Add New Teacher" }).click();
@@ -54,6 +57,216 @@ test.afterEach(async ({ page }) => {
   // Playwright disposes the request context during page teardown.
   await page.unrouteAll({ behavior: "wait" });
   expect(errors).toEqual([]);
+});
+
+test("section picker pins header and footer, scrolls long lists, and isolates rename/delete actions", async ({
+  page,
+  request,
+}, info) => {
+  const token = await page.evaluate(() => localStorage.getItem("token"));
+  for (let index = 1; index <= 12; index++) {
+    const created = await request.post(`${backend}/api/chairman/sections`, {
+      headers: { Authorization: `Bearer ${token}` },
+      data: { section_name: `Extra ${String(index).padStart(2, "0")}` },
+    });
+    expect(created.status()).toBe(201);
+  }
+  await page.reload();
+  await page.getByRole("button", { name: "Add New Teacher" }).click();
+  const selector = page.getByRole("combobox", {
+    name: "Class Name / Section",
+    includeHidden: true,
+  });
+  await selector.click();
+  const picker = page.getByRole("dialog", {
+    name: "Select a Section",
+    exact: true,
+  });
+  const list = picker.getByRole("group", { name: "Sections", exact: true });
+  const header = picker.getByRole("heading", { name: "Select a Section" });
+  const add = picker.getByRole("button", {
+    name: "+ Add New Section",
+    exact: true,
+  });
+  await expect(list).toHaveCSS("overflow-y", "auto");
+  await expect(list).toHaveCSS("overscroll-behavior-y", "contain");
+  const before = {
+    header: await header.boundingBox(),
+    add: await add.boundingBox(),
+  };
+  expect(
+    await list.evaluate((element) => element.clientHeight),
+  ).toBeLessThanOrEqual(224);
+  await page.keyboard.press("End");
+  await expect(
+    picker.getByRole("button", { name: "Test B", exact: true }),
+  ).toBeFocused();
+  expect(await list.evaluate((element) => element.scrollTop)).toBeGreaterThan(
+    0,
+  );
+  expect((await header.boundingBox())!.y).toBeCloseTo(before.header!.y, 0);
+  expect((await add.boundingBox())!.y).toBeCloseTo(before.add!.y, 0);
+  await page.keyboard.press("Home");
+  await expect(
+    picker.getByRole("button", { name: "Extra 01", exact: true }),
+  ).toBeFocused();
+  await page.setViewportSize({
+    width: page.viewportSize()!.width,
+    height: 600,
+  });
+  await expect(header).toBeInViewport({ ratio: 1 });
+  await expect(add).toBeInViewport({ ratio: 1 });
+  const bounds = await picker.boundingBox();
+  expect(bounds!.x).toBeGreaterThanOrEqual(0);
+  expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(
+    page.viewportSize()!.width,
+  );
+  await picker.screenshot({
+    path: info.outputPath("scrollable-section-picker.png"),
+  });
+  await picker
+    .getByRole("button", { name: "Edit section Extra 01", exact: true })
+    .click();
+  const input = picker.getByRole("textbox", {
+    name: "Section name for Extra 01",
+  });
+  await expect(input).toBeFocused();
+  await expect(selector).toHaveText(/Select a Section/);
+  await input.fill("   ");
+  await input.press("Enter");
+  await expect(picker.getByRole("alert")).toContainText(
+    "Enter a section name.",
+  );
+  await input.fill(" test b ");
+  await picker.getByRole("button", { name: "Save section name" }).click();
+  await expect(picker.getByRole("alert")).toContainText("already exists");
+  await input.fill("  Acacia  ");
+  const release = await pauseWrite(page, "/api/sections/3");
+  await input.press("Enter");
+  await expect(
+    picker.getByRole("status", { name: "Saving section name" }),
+  ).toBeVisible();
+  await expect(
+    picker.getByRole("button", { name: "Cancel section rename" }),
+  ).toBeDisabled();
+  await expect(
+    page.locator('button[form="chairman-teacher-form"]'),
+  ).toBeDisabled();
+  release();
+  await expect(
+    picker.getByRole("button", { name: "Acacia", exact: true }),
+  ).toBeVisible();
+  await expect(selector).toHaveText(/Select a Section/);
+  const rows = (await (
+    await request.get(`${backend}/api/chairman/sections`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+  ).json()) as Section[];
+  expect(rows.find((row) => row.section_id === 3)!.section_name).toBe("Acacia");
+  await picker
+    .getByRole("button", { name: "Edit section Acacia", exact: true })
+    .click();
+  const renamedInput = picker.getByRole("textbox");
+  await renamedInput.fill("Do not save");
+  await renamedInput.press("Escape");
+  await expect(picker).toBeVisible();
+  await expect(
+    picker.getByRole("button", { name: "Acacia", exact: true }),
+  ).toBeFocused();
+  await expect(selector).toHaveText(/Select a Section/);
+  await picker
+    .getByRole("button", { name: "Delete section Acacia", exact: true })
+    .click();
+  const confirmation = page.getByRole("dialog", {
+    name: "Delete section?",
+    exact: true,
+  });
+  await expect(confirmation).toBeVisible();
+  await confirmation
+    .getByRole("button", { name: "Cancel", exact: true })
+    .click();
+  await expect(selector).toHaveText(/Select a Section/);
+  await selector.click();
+  await picker.getByRole("button", { name: "Acacia", exact: true }).click();
+  await expect(selector).toHaveText(/Acacia/);
+  await selector.click();
+  await expect(
+    picker.getByRole("button", { name: "Acacia", exact: true }),
+  ).toBeFocused();
+  await expect(
+    picker.getByRole("button", { name: "Acacia", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await add.click();
+  await expect(
+    page.getByRole("dialog", { name: "Create New Section", exact: true }),
+  ).toBeVisible();
+});
+
+test("section rename handles server conflicts and retains drafts through reload and offline sync", async ({
+  page,
+  request,
+}) => {
+  await page.getByRole("button", { name: "Add New Teacher" }).click();
+  const selector = page.getByRole("combobox", {
+    name: "Class Name / Section",
+    includeHidden: true,
+  });
+  await selector.click();
+  const picker = page.getByRole("dialog", {
+    name: "Select a Section",
+    exact: true,
+  });
+  await picker
+    .getByRole("button", { name: "Edit section Test A", exact: true })
+    .click();
+  let input = picker.getByRole("textbox");
+  await input.fill("Recovered section");
+  await page.route("**/api/sections/1", (route) =>
+    route.fulfill({
+      status: 409,
+      json: { detail: "Section name already exists." },
+    }),
+  );
+  await input.press("Enter");
+  await expect(picker.getByRole("alert")).toContainText("already exists");
+  await expect(input).toHaveValue("Recovered section");
+  await page.unroute("**/api/sections/1");
+  await page.reload();
+  await page.getByRole("button", { name: "Add New Teacher" }).click();
+  await selector.click();
+  await picker
+    .getByRole("button", { name: "Edit section Test A", exact: true })
+    .click();
+  input = picker.getByRole("textbox");
+  await expect(input).toHaveValue("Recovered section");
+  await page.context().setOffline(true);
+  await input.press("Enter");
+  await expect(picker.getByRole("alert")).toContainText("after reconnection");
+  const draftKey = "ames_draft_1_section_rename_1";
+  expect(
+    await page.evaluate(
+      (key) => JSON.parse(localStorage.getItem(key)!).is_pending_sync,
+      draftKey,
+    ),
+  ).toBe(true);
+  await page.context().setOffline(false);
+  await page.evaluate(() => window.dispatchEvent(new Event("online")));
+  await expect(
+    picker.getByRole("button", { name: "Recovered section", exact: true }),
+  ).toBeVisible();
+  expect(
+    await page.evaluate((key) => localStorage.getItem(key), draftKey),
+  ).toBeNull();
+  const token = await page.evaluate(() => localStorage.getItem("token"));
+  const rows = (await (
+    await request.get(`${backend}/api/chairman/sections`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+  ).json()) as Section[];
+  expect(rows.find((row) => row.section_id === 1)!.section_name).toBe(
+    "Recovered section",
+  );
+  await expect(selector).toHaveText(/Select a Section/);
 });
 
 test("balanced forms, real creation handover and archive restore refresh both tables", async ({

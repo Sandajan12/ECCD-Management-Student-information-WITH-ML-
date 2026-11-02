@@ -22,6 +22,7 @@ import {
   Switch,
 } from "../../components/chairman/ui";
 import Icon from "../../components/chairman/Icon";
+import SectionPicker from "../../components/chairman/SectionPicker";
 import { IconButton } from "../../components/chairman/ui";
 const temporaryPasswordValid = (value: string): boolean =>
   value.length >= 8 &&
@@ -30,6 +31,7 @@ const temporaryPasswordValid = (value: string): boolean =>
 interface TeacherFormProps {
   onSection: () => void;
   onDeleteSection: (section: Section) => void;
+  onRenameSection: (sectionId: number, name: string) => void;
   onBusyChange: (busy: boolean) => void;
   createdSection?: Section;
   teacher?: Teacher;
@@ -128,6 +130,7 @@ function TeacherForm({
   onSaved,
   onSection,
   onDeleteSection,
+  onRenameSection,
   onBusyChange,
   createdSection,
 }: TeacherFormProps) {
@@ -294,49 +297,16 @@ function TeacherForm({
               />
             ),
           )}
-          <Select
-            label="Class Name / Section"
-            containerClassName="col-span-full"
-            captionLabel
-            floating={false}
-            className={`bg-[#f9f9f9] ${values.section_id ? "" : "[&_button>span]:text-[#aaa]"}`}
+          <SectionPicker
+            sections={sections}
             value={values.section_id}
             disabled={busy}
-            optionAction={(value, closeMenu) => {
-              const section = sections.find(
-                (item) => String(item.section_id) === value,
-              );
-              return section ? (
-                <IconButton
-                  small
-                  aria-label={`Delete section ${section.section_name}`}
-                  className="mr-4 p-0.5! text-[#d32f2f]"
-                  onMouseDown={(event) => event.stopPropagation()}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onDeleteSection(section);
-                    closeMenu();
-                  }}
-                >
-                  <Icon name="Delete" className="size-5" />
-                </IconButton>
-              ) : null;
-            }}
-            onChange={(e) => {
-              if (e.target.value === "ADD_NEW") onSection();
-              else change({ ...values, section_id: e.target.value });
-            }}
-          >
-            <option value="" disabled>
-              Select a Section
-            </option>
-            {sections.map((section) => (
-              <option key={section.section_id} value={section.section_id}>
-                {section.section_name}
-              </option>
-            ))}
-            <option value="ADD_NEW">+ Add New Section</option>
-          </Select>
+            onChange={(section_id) => change({ ...values, section_id })}
+            onAdd={onSection}
+            onDelete={onDeleteSection}
+            onRenamed={onRenameSection}
+            onBusyChange={onBusyChange}
+          />
           {!teacher && (
             <Field
               containerClassName="col-span-full"
@@ -508,6 +478,7 @@ function ManageAccess({
         <div className="mt-4 space-y-4">
           <Select
             label="Section"
+            constrainMenu
             value={values.section_id}
             disabled={busy}
             onChange={(e) => change({ ...values, section_id: e.target.value })}
@@ -975,6 +946,23 @@ export default function TeacherManagement() {
           <TeacherForm
             key={form === "new" ? "new" : form.user_id}
             onSection={() => setSectionOpen(true)}
+            onRenameSection={(sectionId, name) => {
+              setSections((current) =>
+                current.map((section) =>
+                  section.section_id === sectionId
+                    ? { ...section, section_name: name }
+                    : section,
+                ),
+              );
+              setActiveTeachers((current) =>
+                current.map((teacher) =>
+                  teacher.section_id === sectionId
+                    ? { ...teacher, class_name: name, section_name: name }
+                    : teacher,
+                ),
+              );
+              void refresh();
+            }}
             onDeleteSection={(section) => {
               setError("");
               setConfirmation({

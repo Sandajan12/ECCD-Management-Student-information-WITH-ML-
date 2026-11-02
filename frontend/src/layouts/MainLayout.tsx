@@ -4,7 +4,6 @@ import { NavLink, Outlet } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useSettings } from "../context/SettingsContext";
 import { MessagingProvider, useMessaging } from "../context/MessagingContext";
-import API from "../services/api";
 import SyncStatus from "../components/SyncStatus";
 import LegacyRipple from "../components/LegacyRipple";
 import LegacyIcon from "../components/LegacyIcon";
@@ -28,7 +27,7 @@ export default function MainLayout({ children }: MainLayoutProps) {
   );
 }
 function MainLayoutContent({ children }: MainLayoutProps) {
-  const { user, token, login, logout } = useAuth();
+  const { user, logout } = useAuth();
   const { settings } = useSettings();
   const [open, setOpen] = useState(false);
   const drawerRef = useRef<HTMLElement>(null);
@@ -80,46 +79,6 @@ function MainLayoutContent({ children }: MainLayoutProps) {
   }, [open, mobile]);
   const { unread } = useMessaging();
   const role = user?.role;
-  useEffect(() => {
-    if (role !== "admin" || !user || !token) return;
-    let mounted = true;
-    const refreshAccess = () => {
-      void API.get<{
-        allow_eccd_question_management: boolean;
-        section_id: number | null;
-        section_name: string | null;
-      }>("/api/teachers/access-controls")
-        .then(({ data }) => {
-          if (
-            mounted &&
-            (user.allow_eccd_question_management !==
-              data.allow_eccd_question_management ||
-              user.section_id !== data.section_id ||
-              user.section_name !== data.section_name)
-          )
-            login({
-              success: true,
-              requireOtp: false,
-              requiresPasswordChange: false,
-              token,
-              user: {
-                ...user,
-                allow_eccd_question_management:
-                  data.allow_eccd_question_management,
-                section_id: data.section_id,
-                section_name: data.section_name,
-              },
-            });
-        })
-        .catch(() => {});
-    };
-    refreshAccess();
-    window.addEventListener("focus", refreshAccess);
-    return () => {
-      mounted = false;
-      window.removeEventListener("focus", refreshAccess);
-    };
-  }, [user, role, token, login]);
   const items: NavItem[] =
     role === "super-admin"
       ? [
@@ -218,7 +177,7 @@ function MainLayoutContent({ children }: MainLayoutProps) {
       aria-label="Main navigation"
       role={open && mobile ? "dialog" : undefined}
       aria-modal={open && mobile ? true : undefined}
-      className={`fixed inset-y-0 left-0 z-[1200] flex w-64 max-w-[80vw] flex-col overflow-y-auto bg-[#111827] p-4 text-white transition-transform duration-225 legacy-md:visible legacy-md:max-w-none legacy-md:translate-x-0 legacy-md:border-r legacy-md:border-black/12 ${mobile && open ? "visible translate-x-0 shadow-[0px_8px_10px_-5px_rgba(0,0,0,0.2),0px_16px_24px_2px_rgba(0,0,0,0.14),0px_6px_30px_5px_rgba(0,0,0,0.12)]" : "invisible -translate-x-full"}`}
+      className={`fixed inset-y-0 left-0 z-[1200] flex w-60 max-w-[80vw] flex-col overflow-y-auto bg-[#111827] p-4 text-white transition-transform duration-225 legacy-md:visible legacy-md:max-w-none legacy-md:translate-x-0 legacy-md:border-r legacy-md:border-black/12 ${mobile && open ? "visible translate-x-0 shadow-[0px_8px_10px_-5px_rgba(0,0,0,0.2),0px_16px_24px_2px_rgba(0,0,0,0.14),0px_6px_30px_5px_rgba(0,0,0,0.12)]" : "invisible -translate-x-full"}`}
     >
       <div>
         <div className="mb-3 flex flex-col items-center border-b border-white/10 pb-3 text-center">
@@ -226,10 +185,10 @@ function MainLayoutContent({ children }: MainLayoutProps) {
             <img
               src={settings.logo_url}
               alt="System Logo"
-              className="mb-2 size-9 rounded-full border-2 border-white/20 bg-white object-cover shadow-[0_2px_8px_rgba(0,0,0,0.25)] legacy-sm:size-10"
+              className="mb-2 h-10 w-10 rounded-full border-2 border-white/20 bg-white object-cover shadow-[0_2px_8px_rgba(0,0,0,0.25)]"
             />
           )}
-          <p className="line-clamp-2 w-full text-xs leading-[1.35] font-semibold tracking-[-0.02em] break-words text-white/90">
+          <p className="line-clamp-2 w-full text-xs font-bold leading-tight tracking-[-0.02em] break-words text-white/90">
             {settings.school_name || "ECCD Management System"}
           </p>
           <p className="mt-1 text-[11px] leading-[1.5] tracking-[0.1px] text-[#94a3b8]">
@@ -247,18 +206,21 @@ function MainLayoutContent({ children }: MainLayoutProps) {
                 to={item.path}
                 onClick={() => setOpen(false)}
                 className={({ isActive }) =>
-                  `relative group my-0.5 flex w-full items-center gap-3 rounded-xl px-3.5 py-2 text-sm leading-[1.25] outline-none transition-all duration-150 focus-visible:outline-none ${isActive ? "bg-[#2563eb] focus-visible:bg-[#2563eb] font-semibold text-white shadow-[0_1px_2px_rgba(0,0,0,0.05)] hover:bg-[#2563eb]" : "font-medium text-[#94a3b8] hover:bg-white/8 focus-visible:bg-black/12"}`
+                  `relative group my-0.5 flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium leading-[1.25] outline-none transition-all duration-150 focus-visible:outline-none ${isActive ? `${role === "super-admin" ? "bg-brand hover:bg-brand focus-visible:bg-brand" : "bg-[#2563eb] hover:bg-[#2563eb] focus-visible:bg-[#2563eb]"} text-white shadow-sm` : "text-[#94a3b8] hover:bg-white/8 focus-visible:bg-black/12"}`
                 }
               >
                 {({ isActive }) => (
                   <>
                     <span
-                      className={`relative mr-2 inline-flex min-w-6 ${isActive ? "text-white" : "text-[#9ca3af]"}`}
+                      className={`relative inline-flex shrink-0 ${isActive ? "text-white" : "text-[#9ca3af]"}`}
                     >
                       {item.icon === "Sparkles" ? (
-                        <AutoAwesomeRounded sx={{ fontSize: "1.25rem" }} />
+                        <AutoAwesomeRounded className="size-[18px]! shrink-0" />
                       ) : (
-                        <LegacyIcon name={item.icon} className="size-5" />
+                        <LegacyIcon
+                          name={item.icon}
+                          className="h-[18px] w-[18px] shrink-0"
+                        />
                       )}
                       {badge(item)}
                     </span>
@@ -278,12 +240,12 @@ function MainLayoutContent({ children }: MainLayoutProps) {
       <div className="mt-auto pt-4">
         <button
           onClick={() => void logout()}
-          className="relative flex w-full items-center justify-center gap-2 rounded-xl bg-[#dc2626] px-3 py-2 text-sm leading-[1.75] font-semibold text-white outline-none hover:bg-[#b91c1c] focus-visible:bg-[#b91c1c] focus-visible:outline-none"
+          className="relative flex w-full items-center justify-center gap-2 rounded-xl bg-[#dc2626] px-3 py-2 text-sm leading-[1.75] font-medium text-white outline-none hover:bg-[#b91c1c] focus-visible:bg-[#b91c1c] focus-visible:outline-none"
         >
-          <span className="relative left-1 -ml-1 mr-2 inline-flex">
-            <LegacyIcon name="Logout" className="size-5" />
+          <span className="inline-flex shrink-0">
+            <LegacyIcon name="Logout" className="h-[18px] w-[18px] shrink-0" />
           </span>
-          <span className="relative left-1">Logout</span>
+          <span>Logout</span>
           <LegacyRipple />
         </button>
       </div>
@@ -348,7 +310,7 @@ function MainLayoutContent({ children }: MainLayoutProps) {
         <main
           data-layout-content
           aria-hidden={mobile && open ? true : undefined}
-          className={`min-w-0 flex-1 bg-[#f9fafb] p-3 legacy-sm:p-4 legacy-md:ml-64 legacy-md:h-screen legacy-md:p-6 ${role === "user" ? "overflow-x-clip overflow-y-visible legacy-md:overflow-x-hidden legacy-md:overflow-y-auto pb-[4.75rem] legacy-sm:pb-4 legacy-md:pb-6" : "overflow-x-hidden overflow-y-auto pb-4 legacy-md:pb-6"}`}
+          className={`min-w-0 flex-1 p-3 legacy-sm:p-4 legacy-md:ml-60 legacy-md:p-6 ${role === "super-admin" ? "bg-slate-50 overflow-x-clip pb-4 legacy-md:pb-6" : role === "user" ? "bg-[#f9fafb] overflow-x-clip overflow-y-visible legacy-md:h-screen legacy-md:overflow-x-hidden legacy-md:overflow-y-auto pb-[4.75rem] legacy-sm:pb-4 legacy-md:pb-6" : "bg-[#f9fafb] overflow-x-hidden overflow-y-auto pb-4 legacy-md:h-screen legacy-md:pb-6"}`}
         >
           <SyncStatus />
           {children || <Outlet />}

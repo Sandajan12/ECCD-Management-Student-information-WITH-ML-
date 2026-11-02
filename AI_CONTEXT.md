@@ -29,6 +29,393 @@ requirement remains unresolved.
 
 ## 1. Purpose and implementation status
 
+Shared dashboard requests (2026-11-01): `TeacherProvider` owns teacher access
+controls, section inventory and dashboard filters, exposes their cached state
+and a shared `refresh`, and updates session assignment/permission fields without
+restarting its loading effect. Teacher dashboard filters reuse that context.
+Analytics wait for validated assignment/filter initialization even when an old
+section is cached locally. The super-admin dashboard remains in
+`pages/chairman/Dashboard.tsx`; its analytics wait for filters and, when needed,
+the settings school-year fallback. Both dashboards keep explicit PRE defaults.
+
+`services/sharedGet.ts` coalesces concurrent GETs by session token, path and
+parameters, including Strict Mode effect replay. Providers retain loaded data;
+the helper evicts settled requests (including failures), so later refreshes
+reach the server. Consumers independently ignore superseded responses instead
+of cancelling a shared request. `SettingsContext` remains the single global
+settings owner and keeps its existing explicit refresh contract. Backend paths,
+response shapes, scoring, component props and durable drafts are unchanged.
+Request-count regressions live in the existing teacher/chairman dashboard
+browser suites and cover delayed filters, cached assignment changes, session
+updates, overlapping focus/online refreshes and a delayed settings fallback.
+Verification: both frontend TypeScript projects, full lint, production build,
+formatting and whitespace checks pass. All 24 teacher/chairman dashboard browser
+cases pass across desktop and 320px phone runs using mocked APIs. Existing
+transient Recharts zero-size warnings remain; no live database was used.
+
+Teacher dashboard cards and period insights (2026-11-01): the dashboard now has
+four centered, equal-height cards: Total Students, Assessment Progress, Domain
+of Excellence and Critical Domain Focus. Priority Intervention is removed from
+this view; its existing API field remains compatible. Shared Tailwind
+card utilities use a 1/2/4-column grid at base/sm/lg; the redundant unlayered
+teacher grid-cols-1 rule was removed because it overrode responsive utilities.
+The duplicate unread-message KPI and read-only Section filter are removed.
+The header owns the PRE/MID/POST selector; ECCD Development retains only Domain.
+School Year shows the configured current year; historical year filtering is not
+supported by the teacher dashboard hook. Requests send the assigned section ID;
+owner/section/period/domain keys and request guards prevent stale responses from
+crossing selections.
+
+Teacher dashboard polish (2026-11-01): the two domain badges share percentage
+formatting, borders and padding: excellence shows masteryRate% Kaya; critical
+shows totalDiKaya / totalItems as a percentage rounded to two decimal places.
+Both use existing exact-period teacher insight fields without changing backend
+schemas or ranking. ECCD Development reserves a non-shrinking responsive square
+for the donut, with chart margins and an aspect-based ResponsiveContainer.
+Separate Total Kaya / Total Di-Kaya pills replace the in-chart legend and use
+the existing selected-section/domain/period chart counts. Confirmed empty chart
+responses show zero totals; loading and errors do not show confirmed count pills.
+
+Polish verification: both frontend TypeScript projects, standalone browser-test
+typing, full lint, production build and changed-file formatting pass. All 40
+mocked-API teacher dashboard browser cases pass at 320/640/768/1024/1440px,
+including four-card sizing, percentage badges, donut sector bounds, reactive
+count pills, all three completion subtitles and existing scope/draft guards.
+Desktop, laptop and mobile screenshots were inspected. No live records or
+backend/schema changes were needed.
+
+Teacher dashboard pending evaluations (2026-11-01): `PendingEvaluations.tsx`
+replaces the lower unread-message feed. The two lower panels share equal-width,
+equal-height columns at lg and stack below it. The section badge matches the
+40px header controls, and empty KPI captions use "No period data". Compact footers wrap without ellipses;
+semantic badges use smaller type at narrow desktop widths.
+`usePendingEvaluations.ts` reads the existing `/api/eccd/students`,
+`/api/eccd/domains-progress` and `/api/eccd/student/{student_id}` contracts;
+there are no backend or database changes. It waits for assignment initialization,
+filters active students to the assigned section, and requires a teacher date on
+every configured question, matching the progress KPI. Partial and parent-only
+records remain pending. All three periods are derived from the same records;
+period and domain changes do not refetch the pending roster. Student reads use
+at most four concurrent workers, coalesce overlapping GETs, and ignore superseded
+owner/section responses. Focus, reconnection and confirmed draft sync revalidate.
+Loading, failed reads, no students, no configured questions and all-complete
+states remain distinct. Nonempty rosters with all configured questions
+teacher-confirmed show a centered check-circle, "All Evaluations Completed"
+and a subtitle naming the selected period; empty rosters never claim completion.
+The max-h-64 scrolling list displays masked LRNs only.
+Assess links pass student ID, period and the first incomplete domain to
+`EccdAssessment.tsx`; it validates the student against the current roster before
+opening the sheet once. Existing draft loading/saving and manual selection are
+preserved.
+
+Verification: both frontend TypeScript projects, browser-test typing, full lint,
+production build, formatting and whitespace checks pass. Browser coverage uses
+mocked APIs at 320/640/768/1024/1440px: 30 status/scope/request/scrolling cases
+passed, and all 10 layout/navigation cases passed after the compact-caption
+adjustment. Checks include partial and parent-only work, exact-period links,
+empty/error/loading states, bounded concurrent reads, section reassignment,
+equal panel dimensions, unclipped captions and draft preservation. Desktop,
+laptop and mobile screenshots were inspected. No live school records were used.
+
+The existing teacher stats aliases add optional typed `teacherInsights` when
+`period` is supplied. Queries reuse the current ECCD evaluation/question/domain
+joins, restrict active students to active Primary Adviser assignments and the
+requested section, and never fall back to another period. Progress counts
+students with every configured question teacher-dated in that period, divided
+by active enrollees. Domain mastery uses Kaya / recorded items (including partial
+and parent observations, matching the existing pie query); critical focus ranks
+recorded Di-Kaya counts. Domain ties resolve alphabetically, then by domain ID.
+Priority selects the student with the most recorded Di-Kaya items, with stable
+surname/first-name/ID ties; it is a checklist support indicator, not an official
+developmental interpretation. Empty periods and zero Di-Kaya states are distinct.
+Existing legacy stats/critical-domain fields and omitted-period behavior remain
+compatible. No database fields, migrations, official scores or drafts changed.
+
+Verification: 40 isolated SQLite ORM/HTTP/scoring-asset checks and 20 mocked-API
+browser checks pass across 320/640/768/1024/1440px, including active assignment
+and section gates, period isolation, completion/date requirements, rankings,
+filter changes, stale/error protection, equal cards and draft preservation.
+Both frontend TypeScript projects, full lint and production build pass. Browser
+sources/config are `frontend/tests/teacher-dashboard.spec.ts` and
+`frontend/playwright.teacher-dashboard.config.ts`; screenshots are in ignored
+`frontend/test-results/teacher-dashboard/`. No live PostgreSQL or school records
+were used for verification.
+
+Chairman dashboard personalization (2026-11-01): branding reuses the existing
+Tailwind `brand` token (`--primary-color`, fallback #2563eb). System Personalization
+continues saving `primary_color` through `/api/settings/update` and refreshing
+SettingsContext, which updates the root CSS variable. Count-card icons/tints/top
+borders, all five dashboard selects, the Section Totals header and active Chairman
+navigation now follow that color. Shared Chairman primary buttons also use brand;
+select branding is opt-in so unrelated form appearances remain compatible.
+Tailwind opacity utilities supply theme tints/rings without new inline styles.
+The Chairman canvas is slate-50; dashboard cards retain white surfaces with
+slate-200/80 borders, rounded-2xl corners and soft shadows. Excellence/Kaya stay
+emerald, critical/Di-Kaya stay rose/red and intervention stays amber. Analytics,
+filter state, settings persistence and scoring formulas are unchanged.
+Verification: both frontend TypeScript projects, standalone browser-test typing,
+lint, production build, formatting and whitespace checks pass. Eight existing
+mocked-API desktop/mobile dashboard cases pass; two new theme cases pass after
+correcting test locators and browser color normalization. They cover live color
+updates, settings reloads, fallback, selector focus/selected states, navigation,
+table tint and stable semantic colors. Desktop/mobile screenshots were inspected.
+No live school data or backend changes were needed for this presentation work.
+
+Teacher section picker (2026-11-01): Add/Edit Teacher uses the extracted
+`components/chairman/SectionPicker.tsx`. Its popover keeps Select a Section
+and + Add New Section outside a max-h-56 scrolling list, with viewport bounds,
+thin scrollbar, keyboard navigation and selected-item highlighting. Per-row
+Edit/Delete actions do not select the section. Inline name editing supports
+Save/Cancel, Enter/Escape, focus restoration and a saving lock. Owner/section
+scoped `section_rename_{id}` durable drafts retain failed/offline inputs and use
+the existing reconnection queue; newer revisions survive older confirmations.
+Manage Access retains its assignment selector with bounded scrolling.
+
+New super-admin-only `PUT /api/sections/{section_id}` accepts a name-only
+`SectionRename` payload, trims whitespace, requires 1–100 characters and rejects
+case-insensitive existing names with HTTP 409. It updates the section and cached
+student/current-adviser labels and records UPDATE_SECTION in the same transaction.
+Section IDs, assignments, students, assessments and editing windows stay intact;
+there are no schema or scoring changes. Teacher/section directories refresh only
+after confirmation. Existing create/delete/assignment paths remain unchanged.
+Verification: both frontend TypeScript projects, standalone browser-test typing,
+full lint, production build, formatting and whitespace checks pass. Three new
+real-API backend tests and all 22 teacher-management browser cases pass against
+disposable PostgreSQL schemas at desktop/mobile sizes. Coverage includes a
+14-section list with a 600px viewport, pinned header/footer, keyboard selection,
+rename validation/conflicts, loading isolation, reload/offline draft recovery,
+real reconnection persistence and existing account/handover regressions. Desktop
+and mobile popup screenshots were inspected. No school records or migrations
+were changed.
+
+
+Chairman unified assessment filters (2026-11-01): the header now owns the
+School Year, Section and Assessment Period (PRE default, MID, POST) selectors.
+Both stats and pie requests send the same period; card-level period controls
+and Latest Completed are removed from this view. Only Interpretation remains
+on Developmental Summary and Domain on ECCD Progress Overview. Header filters
+stack on narrow phones, share three columns from sm, and share the title row
+from xl so labels do not collide at laptop widths.
+
+The stats API adds optional validated `period` using TestingPeriod. When supplied,
+all Chairman assessment KPIs and the developmental summary use that period,
+active students and the selected year/section. Total Students counts active
+enrollees with any recorded assessment in that period; no assessment means no
+contribution. Teacher counts retain active-account/section-assignment semantics.
+Domain of Excellence keeps its full teacher-confirmed completion rule, limited
+to the chosen period, without falling back. Critical/priority KPIs and the donut
+retain recorded-item aggregation, limited to the selected period. Omitted
+`period` preserves existing behavior and `delay_period` compatibility; an explicit
+global period takes precedence. Teacher dashboard behavior is unchanged.
+
+Summary interpretation tiers (2026-11-01 follow-up) now use the five official
+`eccd_scoring_data.json` keys: Delay, Slight Delay, Average (default), Slight
+Advance and Highly Advance. A shared frontend constants map displays the last
+two as Slight Advancement and Highly Advancement while sending the exact JSON
+keys. The API matches each tier separately in the existing scoring pass; the
+advancement bands are no longer combined in this view. Existing query aliases
+(including Average Development, Significant Delay, Advanced Development and
+Delayed / Needs Support) remain compatible; the two Advancement display names
+are also accepted aliases. Canonical values are case-sensitive and invalid
+casing is rejected by query validation. No scoring formula, database field or
+migration changes. Both All Sections and selected-section views show the
+same Section Name/Male/Female table, including zero rows, filtered count summary
+and bounded max-h-72 scrolling. The selected-student response remains compatible
+but is no longer rendered here. The redundant scope helper note is removed.
+All five dashboard selects opt into the shared Select's constrained menu mode:
+max-h-48, vertical scrolling, thin scrollbar, viewport width cap and wrapped long
+options. Existing keyboard navigation, focus restoration and selected highlighting
+remain; other Chairman views retain their previous menu size behavior.
+Five-tier follow-up verification: both frontend TypeScript projects, standalone
+browser-test typing, lint, production build and formatting pass. All 34 isolated
+dashboard/scoring-asset tests pass, covering JSON tier parity, exact/alias query
+validation, disjoint advancement bands, gender totals and period/year/section
+scope. Eight distinct mocked-API browser cases pass across desktop/mobile
+runs, including every tier's request key and count, default Average, global
+filters, stale/error protection and keyboard-visible selections in bounded
+menus. Default desktop/mobile screenshots were inspected. No live database or
+migration was used.
+Verification: both frontend TypeScript projects, standalone browser-test typing,
+full lint, production build, formatting and whitespace checks pass. All 32
+isolated SQLite dashboard regressions and all 20 mocked-API browser cases pass
+at 320/640/768/1024/1440px. Coverage includes global period/year/section requests,
+period-specific KPI cohorts, completion/no-fallback rules, grouped delay labels,
+single-section gender rows, stale/error protection and bounded keyboard-operated
+menus. Desktop, laptop, mobile and scrolled-menu screenshots were inspected.
+Existing transient Recharts zero-size warnings remain; final geometry checks
+pass. No live PostgreSQL verification or migrations were needed.
+
+
+Chairman dashboard filters (2026-11-01): School Year and Section controls now
+live in the dashboard header and scope every statistics/chart request and the
+delay summary. The year defaults to the active setting; All Years remains
+available. Analytics filters preserve the existing name lists and add typed
+`sectionOptions` (ID/name) and `currentSchoolYear`. Stats and pie routes accept
+an optional positive `section_id`, taking precedence over the compatibility
+section name; teacher assignment restrictions still apply. Section has no
+active-status or grade column, so the dropdown uses the current section inventory.
+
+The fifth card, Domain of Excellence, reads typed `excellingDomain` from the
+existing analytics stats endpoint. It ranks domains by KAYA items / total items
+across active, assigned students' latest completed teacher-confirmed assessments
+(POST > MID > PRE), reusing `latest_completed_periods` in dashboard_analytics.py.
+Section/year filters apply, ties resolve alphabetically, and no completed data
+returns no domain/rate; genuine zero mastery remains 0%. The five cards use a
+responsive 1/2/3/5-column Tailwind grid (base/sm/md/xl), with equal-height cards
+and shared header, metric and footer slots, including hidden count-card footers.
+Delay counts retain official scoring and replace
+the section card list with a scrollable, keyboard-accessible table. Failed or
+superseded requests cannot display prior-scope metrics. No migration is needed.
+Regression sources: `backend/tests/test_dashboard_analytics.py`,
+`frontend/tests/chairman-dashboard.spec.ts`, and the explicit
+`frontend/playwright.chairman-dashboard.config.ts` (mocked API, three viewports).
+Verification: 18 isolated SQLite ORM/route/scoring regressions and all six
+mocked-API browser checks pass at 320/768/1440px. Both frontend TypeScript
+projects, standalone browser-test typing, full lint, production build and Git
+whitespace checks pass. No live PostgreSQL integration run was performed.
+
+Chairman dashboard layout follow-up (2026-11-01): the domain performance
+breakdown, its types/state and per-domain fan-out requests are removed. Delay
+summary and ECCD progress share equal-width, equal-height columns at lg and
+stack below it. Delay gender badges stay in two columns; the keyboard-accessible
+section table is bounded by max-h-56 with smooth vertical scrolling. The donut
+uses a responsive square wrapper centered in the remaining progress-card area.
+Layout rules use Tailwind utilities; analytics calculations and API contracts
+are unchanged. Browser regressions cover all four stat-column counts and the
+lg two-panel breakpoint using mocked responses.
+Follow-up verification: both frontend TypeScript projects, standalone browser
+test typing, full lint, production build and all ten browser checks pass at
+320/640/768/1024/1440px. Browser captures use reduced motion. The run emits
+Recharts zero-size warnings during updates; final chart size/centering checks
+and screenshots pass. No backend changes were required for this layout work.
+
+Chairman stat-card follow-up (2026-11-01): cards now appear as Total Students,
+Total Teachers, Domain of Excellence, Critical Domain Focus, Priority Intervention.
+The two domain badges share percentage formatting and compact border/padding;
+green shows Kaya and rose shows Di-Kaya. The optional calculated analytics field
+`criticalDomainDiKayaRate` uses the existing critical-domain selection and its
+domain-specific total, with the same section/year/period scope as that selection.
+It does not change the existing critical ranking or the excellence calculation.
+No critical domain returns no percentage rather than a fabricated zero. Card
+footers reserve a compact shared slot; no schema migration is required.
+Verification: 20 isolated SQLite analytics regressions and ten mocked-API browser
+checks pass at 320/640/768/1024/1440px, including badge symmetry, card order,
+section/year updates, empty results and stale/error handling. Both frontend
+TypeScript projects, full lint and production build pass. No live database
+verification was performed.
+
+Chairman presentation polish (2026-11-01): the global School Year/Section pair
+shares the heading row on desktop and remains side-by-side below the heading
+on smaller screens. Student/teacher count cards center their content and show
+Active Enrollees/Assigned Advisers captions. The centered ECCD donut now displays
+exact recorded checklist-item counts from the existing pie response; these are
+items, not unique-student counts. With explicit approval to extend the existing
+summary API, `delaySummary.students` contains student ID, name, assessment-date
+decimal age and official delay interpretation for a selected section; All
+Sections returns an empty detail list and retains the compact section totals.
+Details reuse the exact existing scoring/count loop and latest completed,
+teacher-confirmed period selection, with no extra requests or database fields.
+The UI labels the official `Delay` interpretation as Significant Delay. Empty,
+unavailable and loading states remain distinct. No migration is required.
+Verification: 22 isolated SQLite analytics tests and ten mocked-API browser
+checks pass at 320/640/768/1024/1440px, including the context-sensitive student
+list, empty results, header placement, captions and exact item totals. Both
+frontend TypeScript projects, full lint, production build and whitespace checks
+pass. No live PostgreSQL verification was performed.
+
+Chairman delay-period selector (2026-11-01): Developmental Delay Summary defaults
+to Pre-Test (BoSY), with Mid-Test (MoSY), Post-Test (EoSY) and Latest Completed
+options. The existing stats endpoint accepts optional `delay_period`, validated
+with the existing TestingPeriod enum. Explicit periods use the summary export's
+recorded-answer scoring, official teacher date and assessment-date decimal age;
+partial recorded periods can be scored, while absent periods, missing birth
+dates and parent-only dates are excluded. Counts and selected-section student
+details share the same scoring loop. Omitting the parameter retains the existing
+latest completed, teacher-confirmed POST > MID > PRE behavior for compatibility.
+The parameter affects only delaySummary; other cards and the donut keep their
+existing scopes. Section/year filters always apply and inactive students remain
+excluded from delays. The shared MainLayout sidebar and desktop content offset
+now use w-60/ml-60 with compact navigation, 18px icons and a 40px logo; the
+existing 900px desktop breakpoint and mobile drawer behavior remain in place.
+No database fields or migration are required.
+Verification: 26 isolated SQLite analytics regressions pass, including direct
+PRE/MID/POST comparisons with the actual summary workbook, missing/partial
+periods, scope preservation and enum rejection. Fifteen mocked-API browser
+checks pass at 320/640/768/1024/1440px, covering sidebar geometry/mobile drawer,
+default PRE, period-specific totals/details, independent donut filters, stale
+responses and failed requests. Both frontend TypeScript projects, full lint,
+production build and whitespace checks pass. Desktop/mobile screenshots were
+reviewed. No live PostgreSQL integration run was performed.
+
+Chairman interpretation selector (2026-11-01): the card is now Developmental
+Summary and defaults to PRE + Average Development. Its four interpretation
+options are Average Development, Slight Delay, Significant Delay and Advanced
+Development; there are no combined/all options. The optional validated
+`interpretation` query parameter on the existing stats API filters the scored
+cohort, gender counts, zero-inclusive section rows and selected-section student
+details in the same aggregation pass. Display categories map to the unchanged
+official scoring labels: Average, Slight Delay, Delay, and both Slight Advance
+and Highly Advance (including the export's Advanced aliases), respectively.
+Explicit period export scoring and latest-completed selection remain unchanged.
+School year/section and active-student scope still apply. Only delaySummary is
+affected; other cards and donut calculations/requests are independent.
+`totalMatched` is additive and counts the selected category; `totalDelayed`
+continues to count actual matching delay results and is zero for development
+categories. Selected students retain official labels in the compatibility
+`delayStatus` response field, now a string as in the evaluation schema. Omitted
+interpretation preserves the previous delay-only API behavior. UI labels,
+subtitle, summary text and emerald/rose badge tones follow the selected category.
+The section table retains max-h-56 scrolling. No tables, formulas or migrations
+changed.
+Verification: 28 isolated SQLite analytics tests pass, including category/period
+comparisons with the actual export workbook, official-label mapping, scope
+preservation and invalid interpretation rejection. All 20 mocked-API browser
+cases pass across the initial run and a focused rerun after correcting a test's
+ambiguous Males/Females locator. Coverage spans 320/640/768/1024/1440px, the four
+options/defaults, paired filters, section details, independent donut requests,
+late/error handling, bounded tables and responsive symmetry. Both TypeScript
+projects, full lint, production build, formatting and whitespace checks pass.
+Desktop/mobile default-state screenshots were inspected. The existing transient
+Recharts zero-size warnings remain; final chart checks pass. No live PostgreSQL
+integration run was performed.
+
+Chairman section gender breakdown (2026-11-01): Developmental Summary's
+All Sections table now shows Section Name, Male and Female, replacing Student
+Count. The existing stats API's `delaySummary.bySection` maps each section name
+to a typed `{male, female}` object instead of a scalar total. Both counts use
+the existing Student.gender enum (Male/Female), accumulated in the same scoring
+pass as the overall badges after period/interpretation matching; no additional
+queries, scoring calls or frontend student-data fetches are required. Zero-count
+sections remain present. Unknown genders are not guessed into either column;
+`totalMatched` still counts all matched students, so the summary text remains
+accurate. School year, section, active-student scope, official scoring and the
+selected-section student list remain unchanged. The table retains max-h-56
+scrolling and uses aligned numeric columns with subtle uppercase headers. No
+database schemas or scoring formulas changed.
+Verification: 29 isolated SQLite analytics tests and all 20 mocked-API dashboard
+browser cases pass. After applying Tailwind typography to the header cells to
+override inherited shared-table styling, all five focused interpretation/table
+cases also pass at 320/640/768/1024/1440px, covering per-section gender values,
+zero rows, sums matching badges, paired filters, header typography/alignment and
+responsive bounds. Both TypeScript projects, full lint, production build,
+formatting and whitespace checks pass. Desktop/mobile screenshots were reviewed.
+The existing transient Recharts size warnings remain; no live PostgreSQL
+integration run was performed.
+
+Chairman summary presentation (2026-11-01): the standalone Males/Females
+badges are removed. Section Totals (or Matching Students for a selected section)
+now follows the dynamic subtitle directly, retaining the filtered count summary
+and using max-h-72 vertical scrolling. The shared equal-height two-column layout
+with ECCD Progress Overview remains. Badge-only background tone logic and its
+redundant layout wrapper are removed; selected-student interpretation colors,
+API payloads, filters, gender aggregation and backend queries are unchanged.
+Verification: both frontend TypeScript projects, full lint, production build,
+formatting and whitespace checks pass. All 20 mocked-API browser cases pass at
+320/640/768/1024/1440px, including badge absence, bounded table scrolling,
+filtered counts/details and equal desktop panel heights. Desktop/mobile
+screenshots were inspected. Existing transient Recharts size warnings remain;
+no backend changes or live database verification were needed for this UI work.
+
 Batch 4 (2026-10-31): Parent Overview now ends with a unified Home-Based
 Assessment form. It groups every configured home item by domain, repeats a
 domain badge per question, and submits the selected open period through the
@@ -929,9 +1316,15 @@ files and production data were not changed.
   Responses include totalKaya/totalDiKaya, overallStatus, domainCards/publication.
 - Staff analytics filter by section/domain/period/school year. schoolYear=All
   generally uses active students; a specified year permits historical cohorts.
-  Teacher queries stay within active assignments. Teacher critical-domain and
-  Chairman delay summaries always use active students and their latest completed,
-  teacher-confirmed periods (see Batch 2 above). Completion still divides submitted
+  Teacher queries stay within active assignments. Teacher critical-domain uses
+  active students' latest completed, teacher-confirmed periods. Chairman developmental summaries
+  always use active students: explicit delay_period uses export-equivalent
+  period scoring; omitted delay_period uses latest completed (see selector note
+  above). Optional interpretation selects a single display category (Average,
+  Slight Delay, Significant Delay or Advanced); omitted interpretation retains
+  delay-only aggregation. `delaySummary.bySection` contains per-section male and
+  female counts; the overall `totalMatched` includes students without a recorded
+  gender. Completion still divides submitted
   rows by students × questions × three periods. Other Chairman summary cards
   aggregate answer counts. These percentages are distinct from scaled/standard scores.
 - frontend/src/utils/teacherMetrics.ts calculates selected-section domain

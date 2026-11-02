@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   Box,
   Typography,
@@ -56,6 +57,8 @@ interface Domain extends AssessmentDomain, DomainProgress {}
 const EccdAssessment: React.FC = () => {
   const { user } = useAuth();
   const { section } = useTeacher();
+  const [searchParams] = useSearchParams();
+  const openedAssessment = useRef<string>("");
   const [students, setStudents] = useState<Student[]>([]);
   const [selectedLrn, setSelectedLrn] = useState("");
   const [domains, setDomains] = useState<Domain[]>([]);
@@ -237,6 +240,7 @@ const EccdAssessment: React.FC = () => {
     };
   };
   useEffect(() => {
+    openedAssessment.current = "";
     setSelectedLrn("");
     setActiveDomain(null);
     setDomains([]);
@@ -314,6 +318,31 @@ const EccdAssessment: React.FC = () => {
       window.removeEventListener("ames-record-synced", synced);
     };
   }, [section?.section_id, user?.id, fetchDomainsProgress]);
+  useEffect(() => {
+    const studentId = Number(searchParams.get("student_id"));
+    const period = searchParams.get("period");
+    const domainId = Number(searchParams.get("domain_id"));
+    const key = `${progressScope}_${searchParams.toString()}`;
+    if (
+      openedAssessment.current === key ||
+      !students.some(
+        (student) =>
+          student.student_id === studentId &&
+          student.section_id === section?.section_id,
+      ) ||
+      !domains.length ||
+      (period !== "PRE" && period !== "MID" && period !== "POST")
+    )
+      return;
+    // Open dashboard links only after the active section's roster is validated.
+    // Draft loading and saving remain owned by useTeacherAssessment.
+    openedAssessment.current = key;
+    setActiveDomain(
+      domains.find((domain) => domain.domain_id === domainId) || domains[0],
+    );
+    setSelectedLrn(String(studentId));
+    setActivePeriod(period);
+  }, [students, domains, searchParams, section?.section_id, progressScope]);
   const handleDomainClick = (domain: Domain) => {
     setActiveDomain(domain);
     setSelectedLrn("");
