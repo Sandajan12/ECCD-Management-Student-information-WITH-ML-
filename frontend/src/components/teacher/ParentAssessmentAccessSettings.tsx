@@ -1,12 +1,19 @@
 import { useEffect, useRef, useState } from "react";
-import { Alert, Box, Grid, Paper, Switch, Typography } from "@mui/material";
+import {
+  Alert,
+  Box,
+  Button,
+  Grid,
+  Paper,
+  Switch,
+  Typography,
+} from "@mui/material";
 import { useAuth } from "../../context/AuthContext";
 import api, { errorMessage, isNetworkError } from "../../services/api";
 import {
   confirmDraft,
   readDraft,
   storeDraft,
-  syncDrafts,
   type Draft,
 } from "../../utils/drafts";
 import type {
@@ -94,32 +101,19 @@ export default function ParentAssessmentAccessSettings({
         if (mounted.current) onFeedback(errorMessage(error), "error");
       }
     };
-    const online = () => {
-      void syncDrafts(owner);
-      void load();
-    };
-    const synced = (event: Event) => {
-      if ((event as CustomEvent<string>).detail === key) {
-        void load();
-        onFeedback("Parent access settings saved successfully!", "success");
-      }
-    };
     void load();
-    window.addEventListener("online", online);
+    window.addEventListener("online", load);
     window.addEventListener("focus", load);
-    window.addEventListener("ames-record-synced", synced);
     return () => {
       mounted.current = false;
-      window.removeEventListener("online", online);
+      window.removeEventListener("online", load);
       window.removeEventListener("focus", load);
-      window.removeEventListener("ames-record-synced", synced);
     };
   }, [key, owner, path, sectionId, onFeedback]);
-  const change = (field: keyof ParentAssessmentAccess, checked: boolean) => {
+  const save = (next: ParentAssessmentAccess) => {
     if (!ready || disabled || saving || sectionId === null) return;
     onFeedback("", "success");
     const version = ++generation.current;
-    const next = { ...desired.current, [field]: checked };
     desired.current = next;
     setValues(next);
     const draft: Draft<ParentAssessmentAccess> = {
@@ -152,7 +146,7 @@ export default function ParentAssessmentAccessSettings({
         if (mounted.current)
           onFeedback(
             pending
-              ? "Saved locally on device. Will automatically sync once reconnected."
+              ? "Your draft is saved on this device. Reconnect and submit again."
               : errorMessage(error),
             pending ? "success" : "error",
           );
@@ -161,6 +155,8 @@ export default function ParentAssessmentAccessSettings({
       }
     });
   };
+  const change = (field: keyof ParentAssessmentAccess, checked: boolean) =>
+    save({ ...desired.current, [field]: checked });
   return (
     <>
       <Typography
@@ -171,8 +167,17 @@ export default function ParentAssessmentAccessSettings({
       </Typography>
       <Typography variant="body2" sx={{ color: "text.secondary", mb: 2 }}>
         Enable Home-Based Checklist Edit, then choose which assessment periods
-        parents can edit. Changes save automatically.
+        parents can edit. Changes save when you change a switch while online.
       </Typography>
+      {readDraft(key) && (
+        <Button
+          sx={{ borderRadius: 3, mb: 2 }}
+          disabled={!ready || disabled || saving}
+          onClick={() => save(desired.current)}
+        >
+          Retry period settings
+        </Button>
+      )}
       {sectionId === null && (
         <Alert severity="info" sx={{ mb: 2 }}>
           Select an active assigned section to manage home-based assessment

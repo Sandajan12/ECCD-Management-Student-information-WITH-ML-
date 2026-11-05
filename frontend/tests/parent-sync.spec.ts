@@ -13,10 +13,16 @@ interface PortalState {
   linked: boolean;
   failLink: boolean;
   rosterReads: number;
+  submissions: number;
 }
 
 async function portal(page: Page, status: ParentLinkResponse["status"]) {
-  const state: PortalState = { linked: false, failLink: false, rosterReads: 0 };
+  const state: PortalState = {
+    linked: false,
+    failLink: false,
+    rosterReads: 0,
+    submissions: 0,
+  };
   const user: SessionUser = {
     id: 7,
     first_name: "Sample",
@@ -67,6 +73,7 @@ async function portal(page: Page, status: ParentLinkResponse["status"]) {
       state.rosterReads++;
       await route.fulfill({ json: state.linked ? [child] : [] });
     } else if (path === "/api/parents/children/link") {
+      state.submissions++;
       expect(route.request().postDataJSON()).toEqual({ lrn_number: lrn });
       if (state.failLink) {
         await route.abort("failed");
@@ -128,7 +135,7 @@ for (const status of ["SYNCED", "PENDING"] as const) {
     ).toBeTruthy();
   });
 
-  test(`${status} queued link survives network failure and reload before reconnecting`, async ({
+  test(`${status} link draft survives network failure and reload until manual submission`, async ({
     page,
   }) => {
     const state = await portal(page, status);
@@ -136,9 +143,11 @@ for (const status of ["SYNCED", "PENDING"] as const) {
     await page.getByPlaceholder("Enter 12-digit LRN").fill(lrn);
     await page.getByRole("button", { name: "Connect", exact: true }).click();
     await expect(
-      page.getByText(
-        "Saved on this device. Linking is queued for synchronization.",
-      ),
+      page
+        .getByText(
+          "Your draft is saved on this device. Reconnect and submit again.",
+        )
+        .first(),
     ).toBeVisible();
     await page.reload();
     await expect(page.getByPlaceholder("Enter 12-digit LRN")).toHaveValue(lrn);
@@ -151,19 +160,12 @@ for (const status of ["SYNCED", "PENDING"] as const) {
         return draft;
       }, draftKey),
     ).toMatchObject({ values: lrn, is_pending_sync: true });
-    // Wait for the reload replay to finish before requesting another sync.
-    await expect
-      .poll(() =>
-        page.evaluate((key) => {
-          const draft = JSON.parse(localStorage.getItem(key) || "null") as {
-            error?: string;
-          } | null;
-          return draft?.error;
-        }, draftKey),
-      )
-      .toBeTruthy();
+    expect(state.submissions).toBe(1);
     state.failLink = false;
     await page.evaluate(() => window.dispatchEvent(new Event("online")));
+    await expect(page.getByPlaceholder("Enter 12-digit LRN")).toHaveValue(lrn);
+    expect(state.submissions).toBe(1);
+    await page.getByRole("button", { name: "Connect", exact: true }).click();
     await expect(
       page.getByText(status === "SYNCED" ? connected : pending),
     ).toBeVisible();

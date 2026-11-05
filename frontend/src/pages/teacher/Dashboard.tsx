@@ -66,7 +66,7 @@ const Dashboard: React.FC = () => {
       value: insights ? insights.totalStudents : "—",
       subtitle: "Active Enrollees",
       icon: <PeopleIcon className="w-4! h-4!" />,
-      iconClassName: "bg-blue-50 text-blue-600",
+      iconClassName: "bg-[var(--primary)]/10 text-[var(--primary)]",
     },
     {
       title: "Assessment Progress",
@@ -75,7 +75,7 @@ const Dashboard: React.FC = () => {
         : "—",
       subtitle: "Evaluations Completed",
       icon: <ShowChartIcon className="w-4! h-4!" />,
-      iconClassName: "bg-blue-50 text-blue-600",
+      iconClassName: "bg-[var(--primary)]/10 text-[var(--primary)]",
     },
     {
       title: "Domain of Excellence",
@@ -116,6 +116,7 @@ const Dashboard: React.FC = () => {
   ];
   return (
     <Box
+      className="bg-slate-50 [--primary:var(--primary-color,#2563eb)]"
       sx={{
         minHeight: "calc(100vh - 4.5rem)",
         display: "flex",
@@ -175,6 +176,7 @@ const Dashboard: React.FC = () => {
                 labelId="teacher-school-year-label"
                 label="School Year"
                 value={schoolYear}
+                className="[&:hover_.MuiOutlinedInput-notchedOutline]:border-[var(--primary)]/50! [&.Mui-focused_.MuiOutlinedInput-notchedOutline]:border-[var(--primary)]! [&.Mui-focused]:ring-2 [&.Mui-focused]:ring-[var(--primary)]/20"
                 sx={{ borderRadius: 3 }}
               >
                 {schoolYear && (
@@ -192,6 +194,7 @@ const Dashboard: React.FC = () => {
                 labelId="teacher-period-label"
                 label="Assessment Period"
                 value={selectedPeriod}
+                className="[&:hover_.MuiOutlinedInput-notchedOutline]:border-[var(--primary)]/50! [&.Mui-focused_.MuiOutlinedInput-notchedOutline]:border-[var(--primary)]! [&.Mui-focused]:ring-2 [&.Mui-focused]:ring-[var(--primary)]/20"
                 sx={{ borderRadius: 3 }}
                 onChange={(event) => {
                   const value = event.target.value;
@@ -213,10 +216,9 @@ const Dashboard: React.FC = () => {
           >
             <Typography
               variant="subtitle2"
+              className="bg-[var(--primary)]/10 text-[var(--primary)] border-[var(--primary)]/20"
               sx={{
                 fontWeight: "bold",
-                color: "#3b82f6",
-                bgcolor: "#eff6ff",
                 px: 2,
                 minHeight: "2.5rem",
                 display: "flex",
@@ -242,7 +244,7 @@ const Dashboard: React.FC = () => {
           <article
             key={stat.title}
             aria-label={stat.title}
-            className="min-w-0 flex flex-col justify-between p-4 sm:p-5 lg:px-3 xl:px-5 rounded-2xl bg-white border border-slate-100 shadow-sm"
+            className="min-w-0 flex flex-col justify-between p-4 sm:p-5 lg:px-3 xl:px-5 rounded-2xl bg-white border border-slate-200/80 shadow-sm"
           >
             <div className="flex items-center justify-center gap-2">
               <div
@@ -281,10 +283,10 @@ const Dashboard: React.FC = () => {
         </Typography>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch [&>section]:border-slate-200/80">
         <section
           aria-labelledby="eccd-development-title"
-          className="min-w-0 flex flex-col p-5 rounded-2xl bg-white border border-slate-100 shadow-sm"
+          className="min-w-0 flex flex-col p-5 rounded-2xl bg-white border border-slate-200/80 shadow-sm"
         >
           <Box sx={{ mb: 3 }}>
             <Typography
@@ -302,6 +304,7 @@ const Dashboard: React.FC = () => {
                 labelId="teacher-chart-domain-label"
                 value={filterDomain}
                 label="Domain"
+                className="[&:hover_.MuiOutlinedInput-notchedOutline]:border-[var(--primary)]/50! [&.Mui-focused_.MuiOutlinedInput-notchedOutline]:border-[var(--primary)]! [&.Mui-focused]:ring-2 [&.Mui-focused]:ring-[var(--primary)]/20"
                 sx={{ borderRadius: 3 }}
                 onChange={(e) => setFilterDomain(e.target.value)}
               >

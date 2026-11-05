@@ -132,7 +132,7 @@ test("multiple synced children can switch while a prediction is in flight", asyn
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy();
 });
 
-test("teacher prediction preference survives offline reload and syncs on reconnect", async ({ page, context }) => {
+test("teacher prediction preference survives offline reload and requires manual retry", async ({ page, context, request }) => {
   await login(page, teacher, "/teacher/settings");
   const toggle = page.getByRole("switch", { name: "Student Prediction", exact: true });
   await expect(toggle).toBeEnabled();
@@ -140,12 +140,18 @@ test("teacher prediction preference survives offline reload and syncs on reconne
   await page.evaluate(() => Object.defineProperty(navigator, "onLine", { configurable: true, get: () => false }));
   await context.route("**/api/teachers/me/access", route => route.request().method() === "PUT" ? route.abort("internetdisconnected") : route.continue());
   await toggle.check();
-  await expect(page.getByText(/Saved locally on device/).first()).toBeVisible();
+  await expect(page.getByText("Your draft is saved on this device. Reconnect and submit again.").first()).toBeVisible();
   await page.reload();
   await expect(toggle).toBeChecked();
   expect(await page.evaluate(() => JSON.parse(localStorage.getItem("ames_draft_2_teacher_access") || "null")?.is_pending_sync)).toBe(true);
   await context.unroute("**/api/teachers/me/access");
   await page.evaluate(() => window.dispatchEvent(new Event("online")));
+  const retry = page.getByRole("button", { name: "Retry parent access settings" });
+  await expect(retry).toBeEnabled();
+  const beforeRetry = await request.get(`${backend}/api/teachers/me/access`, { headers: headers() });
+  expect((await beforeRetry.json()).allow_parent_predictions).toBe(false);
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem("ames_draft_2_teacher_access") || "null")?.is_pending_sync)).toBe(true);
+  await retry.click();
   await expect.poll(async () => page.evaluate(() => localStorage.getItem("ames_draft_2_teacher_access"))).toBeNull();
   await page.reload();
   await expect(toggle).toBeChecked();

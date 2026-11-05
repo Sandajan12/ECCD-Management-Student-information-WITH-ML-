@@ -201,7 +201,10 @@ function TeacherForm({
           data,
         );
         if (result === "saved") onSaved();
-        else setError("Draft saved. We will retry after reconnection.");
+        else
+          setError(
+            "Your draft is saved on this device. Reconnect and submit again.",
+          );
       } else {
         const version = readDraft<unknown>(key)?.revision;
         const payload: TeacherCreatePayload = {
@@ -349,20 +352,12 @@ function SectionForm({
   onSaved: (sectionName: string) => void;
   onBusyChange: (busy: boolean) => void;
 }) {
-  const { values, change, save, key } = useDurableForm("section_new", {
+  const { values, change, save } = useDurableForm("section_new", {
     section_name: "",
   });
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const submitting = useRef(false);
-  useEffect(() => {
-    const synced = (event: Event) => {
-      if ((event as CustomEvent<string>).detail === key)
-        onSaved(values.section_name.trim());
-    };
-    window.addEventListener("ames-record-synced", synced);
-    return () => window.removeEventListener("ames-record-synced", synced);
-  }, [key, values.section_name, onSaved]);
   return (
     <form
       id="chairman-section-form"
@@ -384,7 +379,10 @@ function SectionForm({
           };
           const result = await save("/api/chairman/sections", "post", payload);
           if (result === "saved") onSaved(payload.section_name);
-          else setError("Saved for reconnection.");
+          else
+            setError(
+              "Your draft is saved on this device. Reconnect and submit again.",
+            );
         } catch (err) {
           setError(errorMessage(err));
         } finally {
@@ -435,6 +433,38 @@ function ManageAccess({
   const [busy, setBusy] = useState(false);
   const submitting = useRef(false);
   const [handover, setHandover] = useState<Section | null>(null);
+  const savePermission = async (next: typeof permissionForm.values) => {
+    if (submitting.current) return;
+    submitting.current = true;
+    permissionForm.change(next);
+    setBusy(true);
+    onBusyChange(true);
+    setError("");
+    setMessage("");
+    try {
+      const payload: TeacherPermissionPayload = {
+        allow_eccd_question_management: next.permission,
+      };
+      const result = await permissionForm.save(
+        `/api/chairman/teachers/${teacher.teacher_id}/permissions`,
+        "put",
+        payload,
+        next,
+      );
+      setMessage(
+        result === "saved"
+          ? `ECCD Question Management permission ${next.permission ? "enabled" : "disabled"} successfully.`
+          : "Your draft is saved on this device. Reconnect and submit again.",
+      );
+      if (result === "saved") onSaved();
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      submitting.current = false;
+      setBusy(false);
+      onBusyChange(false);
+    }
+  };
   const assign = async () => {
     if (submitting.current || !values.section_id) return;
     submitting.current = true;
@@ -455,7 +485,7 @@ function ManageAccess({
       setMessage(
         result === "saved"
           ? "Section assignment saved."
-          : "Section assignment saved for reconnection.",
+          : "Your draft is saved on this device. Reconnect and submit again.",
       );
       if (result === "saved") onSaved();
     } catch (err) {
@@ -534,41 +564,20 @@ function ManageAccess({
             aria-label="Enable ECCD Question Management"
             checked={permissionForm.values.permission}
             disabled={busy}
-            onChange={async (event) => {
-              if (submitting.current) return;
-              submitting.current = true;
-              const next = { permission: event.target.checked };
-              permissionForm.change(next);
-              setBusy(true);
-              onBusyChange(true);
-              setError("");
-              setMessage("");
-              try {
-                const payload: TeacherPermissionPayload = {
-                  allow_eccd_question_management: next.permission,
-                };
-                const result = await permissionForm.save(
-                  `/api/chairman/teachers/${teacher.teacher_id}/permissions`,
-                  "put",
-                  payload,
-                  next,
-                );
-                setMessage(
-                  result === "saved"
-                    ? `ECCD Question Management permission ${next.permission ? "enabled" : "disabled"} successfully.`
-                    : "Saved for reconnection.",
-                );
-                if (result === "saved") onSaved();
-              } catch (err) {
-                setError(errorMessage(err));
-              } finally {
-                submitting.current = false;
-                setBusy(false);
-                onBusyChange(false);
-              }
-            }}
+            onChange={(event) =>
+              void savePermission({ permission: event.target.checked })
+            }
           />
         </div>
+        {readDraft(permissionForm.key) && (
+          <Button
+            disabled={busy}
+            variant="text"
+            onClick={() => void savePermission(permissionForm.values)}
+          >
+            Retry ECCD question permission
+          </Button>
+        )}
       </div>
       {handover && (
         <SectionHandover
@@ -632,9 +641,6 @@ export default function TeacherManagement() {
   }, []);
   useEffect(() => {
     void refresh();
-    const handler = () => void refresh();
-    window.addEventListener("ames-record-synced", handler);
-    return () => window.removeEventListener("ames-record-synced", handler);
   }, [refresh, archived]);
   const confirmAction = async () => {
     if (!confirmation || confirmationSubmitting.current) return;

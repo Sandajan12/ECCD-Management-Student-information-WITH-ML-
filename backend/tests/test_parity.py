@@ -200,7 +200,7 @@ class ParityTests(unittest.TestCase):
             self.assertEqual(db.query(StudentEccdEvaluation).filter_by(student_id=1).count(), 1)
         profile = self.call("GET", f"/api/students/{replacement}", 2)
         self.assertEqual(profile.status_code, 200)
-        self.assertNotIn(replacement, profile.text)
+        self.assertEqual(profile.json()["lrn_number"], replacement)
         self.assertEqual(profile.json()["student_id"], 1)
         self.assertTrue(profile.json()["masked_lrn"].endswith("7654"))
         duplicate = self.call("PUT", "/api/students/1", 2, json={"lrn_number": "001111111111", "first_name": "Must Roll Back"})

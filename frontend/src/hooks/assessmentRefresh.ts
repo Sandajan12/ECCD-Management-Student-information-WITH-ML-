@@ -1,4 +1,4 @@
-import { listPending } from "../utils/drafts";
+import { isTeacherEccdDraft, listPending } from "../utils/drafts";
 
 // Sync confirms records sequentially. Wait for the queue to settle so a batch
 // causes one revalidation, even when confirmations arrive several requests apart.
@@ -21,8 +21,7 @@ export function assessmentRefreshScheduler(
     if (
       navigator.onLine &&
       listPending(owner).some(
-        ({ draft }) =>
-          draft.request?.path === "/api/eccd/evaluate" && !draft.error,
+        ({ key, draft }) => isTeacherEccdDraft(key, draft) && !draft.error,
       )
     ) {
       schedule();

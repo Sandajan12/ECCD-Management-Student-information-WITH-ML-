@@ -10,7 +10,7 @@ import { useAuth } from "../context/AuthContext";
 import { useMessaging } from "../context/MessagingContext";
 import API, { errorMessage, isNetworkError } from "../services/api";
 import { confirmDraft, readDraft, storeDraft } from "../utils/drafts";
-import type { Draft, RecordSyncedEvent } from "../utils/drafts";
+import type { Draft } from "../utils/drafts";
 import type { ChatMessage, Contact } from "../types";
 import { Notice } from "./ui";
 import {
@@ -79,17 +79,8 @@ function Composer({ teacherId, parentId, onSaved }: ComposerProps) {
       const draft = readDraft<MessageDraft>(key);
       if (draft?.error) setError(draft.error);
     };
-    const confirmed = (event: Event) => {
-      if (
-        (event as CustomEvent<string>).detail === key &&
-        !readDraft<MessageDraft>(key)
-      )
-        setBody("");
-    };
-    window.addEventListener("ames-record-synced", confirmed);
     window.addEventListener("ames-drafts-changed", failed);
     return () => {
-      window.removeEventListener("ames-record-synced", confirmed);
       window.removeEventListener("ames-drafts-changed", failed);
     };
   }, [key]);
@@ -131,6 +122,12 @@ function Composer({ teacherId, parentId, onSaved }: ComposerProps) {
         };
         storeDraft(key, draft);
         try {
+          if (!navigator.onLine) {
+            setError(
+              "Your draft is saved on this device. Reconnect and submit again.",
+            );
+            return;
+          }
           const res = await API.post<ChatMessage>(
             "/api/messages/send",
             draft.request!.data,
@@ -147,7 +144,11 @@ function Composer({ teacherId, parentId, onSaved }: ComposerProps) {
             readDraft<MessageDraft>(key)?.revision === version
           )
             storeDraft(key, { ...draft, is_pending_sync: false });
-          setError(errorMessage(err));
+          setError(
+            isNetworkError(err)
+              ? "Your draft is saved on this device. Reconnect and submit again."
+              : errorMessage(err),
+          );
         } finally {
           setBusy(false);
         }
@@ -207,7 +208,6 @@ export default function ChatInterface({
   currentUserRole,
   preferredContactName,
 }: ChatInterfaceProps) {
-  const { user } = useAuth();
   const { client, ready } = useMessaging();
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [active, setActive] = useState<Contact | null>(null);
@@ -368,18 +368,6 @@ export default function ChatInterface({
       }),
     [client],
   );
-  useEffect(() => {
-    const synced = (event: Event) => {
-      const { detail, response } = event as RecordSyncedEvent<ChatMessage>;
-      if (
-        detail?.startsWith(`ames_draft_${user?.id}_message_`) &&
-        response?.message_id
-      )
-        client.receive(response);
-    };
-    window.addEventListener("ames-record-synced", synced);
-    return () => window.removeEventListener("ames-record-synced", synced);
-  }, [client, user?.id]);
   useEffect(() => {
     if (!teacherId || !parentId) return;
     const unread = messages.filter(

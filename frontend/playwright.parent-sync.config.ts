@@ -7,6 +7,8 @@ export default defineConfig({
     "parent-sync.spec.ts",
     "parent-profile.spec.ts",
     "teacher-import.spec.ts",
+    "offline-scope.spec.ts",
+    "offline-settings.spec.ts",
   ],
   outputDir: "./test-results/parent-sync",
   workers: 1,
@@ -21,7 +23,7 @@ export default defineConfig({
     { name: "mobile", use: { viewport: { width: 320, height: 700 } } },
   ],
   webServer: {
-    command: `${process.platform === "win32" ? "corepack.cmd pnpm" : "pnpm"} dev --host 127.0.0.1 --port 5190 --strictPort`,
+    command: `${process.platform === "win32" ? "pnpm.cmd" : "pnpm"} dev --host 127.0.0.1 --port 5190 --strictPort`,
     cwd: import.meta.dirname,
     env: {
       VITE_API_URL: "http://127.0.0.1:5190",

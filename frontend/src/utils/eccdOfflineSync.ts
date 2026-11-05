@@ -1,2 +1,2 @@
-// ID-based drafts and confirmation-safe synchronization are shared by all forms.
+// Compatibility exports for teacher ECCD's owner-scoped offline submissions.
 export { confirmDraft, readDraft, storeDraft, syncDrafts } from "./drafts";

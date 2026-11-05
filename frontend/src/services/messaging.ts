@@ -3,7 +3,6 @@ import { io } from "socket.io-client";
 import type { Socket } from "socket.io-client";
 import API from "./api";
 import type { ChatMessage } from "../types";
-import type { RecordSyncFailedEvent } from "../utils/drafts";
 
 export interface MessagesReadEvent {
   teacher_id: number;
@@ -41,15 +40,9 @@ export class MessagingClient {
 
   private token: string | null;
   private enabled: boolean;
-  private owner: number | undefined;
-  constructor(
-    token: string | null,
-    enabled: boolean,
-    owner: number | undefined,
-  ) {
+  constructor(token: string | null, enabled: boolean) {
     this.token = token;
     this.enabled = enabled;
-    this.owner = owner;
   }
 
   subscribe = (listener: () => void) => {
@@ -283,12 +276,6 @@ export class MessagingClient {
     document.addEventListener("visibilitychange", this.schedule);
     window.addEventListener("online", this.schedule);
     window.addEventListener("offline", this.schedule);
-    const syncFailed = (event: Event) => {
-      const failure = event as RecordSyncFailedEvent;
-      if (failure.detail?.startsWith(`ames_draft_${this.owner}_message_`))
-        this.failure(failure.error);
-    };
-    window.addEventListener("ames-record-sync-failed", syncFailed);
     return () => {
       this.closed = true;
       clearTimeout(boot);
@@ -302,7 +289,6 @@ export class MessagingClient {
       document.removeEventListener("visibilitychange", this.schedule);
       window.removeEventListener("online", this.schedule);
       window.removeEventListener("offline", this.schedule);
-      window.removeEventListener("ames-record-sync-failed", syncFailed);
     };
   }
 }

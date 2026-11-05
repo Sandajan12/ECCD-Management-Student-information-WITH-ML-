@@ -40,7 +40,7 @@ interface TransferProps {
   onSaved: () => void;
 }
 function TransferStudents({ ids, sections, onClose, onSaved }: TransferProps) {
-  const { values, change, save, key } = useDurableForm(
+  const { values, change, save } = useDurableForm(
     `student_transfer_${[...ids].sort((a, b) => a - b).join("_")}`,
     { new_section_id: String(sections[0]?.section_id || "") },
   );
@@ -50,13 +50,6 @@ function TransferStudents({ ids, sections, onClose, onSaved }: TransferProps) {
     null,
   );
   const dismiss = useCallback(() => setNotification(null), []);
-  useEffect(() => {
-    const synced = (event: Event) => {
-      if ((event as CustomEvent<string>).detail === key) onSaved();
-    };
-    window.addEventListener("ames-record-synced", synced);
-    return () => window.removeEventListener("ames-record-synced", synced);
-  }, [key, onSaved]);
   const submit = async () => {
     if (
       saving.current ||
@@ -76,7 +69,7 @@ function TransferStudents({ ids, sections, onClose, onSaved }: TransferProps) {
         setNotification({
           severity: "info",
           message:
-            "Transfer saved on this device. It will synchronize after reconnection.",
+            "Your draft is saved on this device. Reconnect and submit again.",
         });
     } catch (err) {
       setNotification({ severity: "error", message: errorMessage(err) });
@@ -193,9 +186,6 @@ export default function StudentRecords() {
   }, []);
   useEffect(() => {
     void refresh();
-    const synced = () => void refresh();
-    window.addEventListener("ames-record-synced", synced);
-    return () => window.removeEventListener("ames-record-synced", synced);
   }, [refresh]);
   const visible = students.filter(
     (s) =>
@@ -329,13 +319,17 @@ export default function StudentRecords() {
                   onChange={(e) => toggleAll(e.target.checked)}
                 />
               </th>
-              {["LRN ID", "Full Name", "Class Name", "Adviser", "School Year"].map(
-                (label) => (
-                  <th key={label} className="font-bold! text-[#4b5563]!">
-                    {label}
-                  </th>
-                ),
-              )}
+              {[
+                "LRN ID",
+                "Full Name",
+                "Class Name",
+                "Adviser",
+                "School Year",
+              ].map((label) => (
+                <th key={label} className="font-bold! text-[#4b5563]!">
+                  {label}
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody>

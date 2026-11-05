@@ -941,11 +941,6 @@ function SandboxSimulator() {
   }
   const invalid = Object.keys(fieldErrors).length > 0;
   useEffect(() => {
-    const online = () => setRetry((previous) => previous + 1);
-    window.addEventListener("online", online);
-    return () => window.removeEventListener("online", online);
-  }, []);
-  useEffect(() => {
     const controller = new AbortController();
     const version = ++requestVersion.current;
     const currentRequest = () =>
@@ -960,10 +955,17 @@ function SandboxSimulator() {
         if (draft && current?.revision === draft.revision)
           storeDraft(key, { ...current, is_pending_sync: pending });
       };
+      if (draft?.is_pending_sync && retry === 0) {
+        setError(
+          "Your draft is saved on this device. Reconnect and submit again.",
+        );
+        setRunning(false);
+        return;
+      }
       if (!navigator.onLine) {
         markPending(true);
         setError(
-          "You’re offline. Your inputs are kept on this device and will be tested when you reconnect.",
+          "Your draft is saved on this device. Reconnect and submit again.",
         );
         setRunning(false);
         return;
@@ -1017,8 +1019,12 @@ function SandboxSimulator() {
         })
         .catch((err: unknown) => {
           if (currentRequest()) {
-            markPending(isNetworkError(err));
-            setError(errorMessage(err));
+            markPending(true);
+            setError(
+              isNetworkError(err)
+                ? "Your draft is saved on this device. Reconnect and submit again."
+                : errorMessage(err),
+            );
           }
         })
         .finally(() => {
@@ -1372,13 +1378,13 @@ export default function MlInsights() {
             <p className="mt-2 font-medium">Understand the evaluation limits</p>
             <p className="mt-2">
               The evaluation report records 92.81% accuracy on 459 mixed
-              real/synthetic holdout records, but only 37.5% accuracy on its eight
-              real holdout learners. All 29 real learners had Average Post-Test
-              outcomes, and all contributed to synthetic generation anchors.
-              Household details are excluded from prediction. The synthetic
-              generator uses simulation assumptions rather than causal findings.
-              Model probabilities and activity suggestions do not demonstrate
-              diagnostic validity or intervention effectiveness.
+              real/synthetic holdout records, but only 37.5% accuracy on its
+              eight real holdout learners. All 29 real learners had Average
+              Post-Test outcomes, and all contributed to synthetic generation
+              anchors. Household details are excluded from prediction. The
+              synthetic generator uses simulation assumptions rather than causal
+              findings. Model probabilities and activity suggestions do not
+              demonstrate diagnostic validity or intervention effectiveness.
             </p>
           </details>
           <Stack

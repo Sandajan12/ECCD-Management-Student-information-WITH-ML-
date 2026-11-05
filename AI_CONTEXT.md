@@ -1,6 +1,6 @@
 # AMES System: Current Codebase Context
 
-Updated: **2026-10-31**. This document describes the active working tree in
+Updated: **2026-11-05**. This document describes the active working tree in
 `backend/` and `frontend/`, including existing uncommitted changes. Local
 configuration observations are a snapshot, not deployment defaults or a claim
 that every workflow has passed testing. This refresh checked active source,
@@ -16,6 +16,9 @@ experiments and test counts describe earlier work and do not override sections
 Dated delivery notes and test counts anywhere in this document describe their
 recorded runs; they are not fresh verification of the current working tree.
 
+The 2026-11-05 branch review and current verification outcomes are recorded in
+`MERGE_READINESS_AUDIT.md`. Earlier results below remain historical observations.
+
 The Node.js-to-Python and JavaScript-to-TypeScript migration is complete.
 The legacy reference folders (`_legacy_reference/` and `AMES-SYSTEM-LEGACY/`)
 have been removed. For feature work, maintenance, and code analysis, inspect the
@@ -28,6 +31,93 @@ active codebase first; ask only when required current information or a material
 requirement remains unresolved.
 
 ## 1. Purpose and implementation status
+
+Staff LRN parity follow-up (2026-11-05): the staff correction regression now
+asserts that authorized student-detail responses return the corrected
+`lrn_number`, matching the documented staff-only plaintext exception. The
+requested `backend/tests/test_parity.py` run passes all 11 tests and 90 subtests
+with two dependency deprecation warnings. No application behavior changed.
+
+Teacher-to-parent ACL repair (2026-11-04): Teacher Settings hydrates from the
+server response and overlays only explicitly present boolean fields from a
+matching-owner draft. New drafts and PUT payloads contain accumulated pending
+permission changes; legacy full/partial drafts remain readable. Missing fields
+preserve server values, explicit false remains false, and revision/owner guards
+preserve newer work across stale responses and account changes. Manual retries
+remain required after failures or reconnection; only HTTP 200/201 can confirm a
+matching revision. `ChildPublicResponse` now includes `allow_parent_predictions`
+with default false, matching the existing enrolled-section adviser resolver.
+Regressions cover draft hydration, partial saves, unconfirmed responses, all eight
+persisted flags, child-response parity, transfers, handovers and unchanged
+assessment history. Layouts, markup, database models, routes, score formulas and
+Philippine-time rules are unchanged.
+
+ACL verification: both frontend TypeScript projects, standalone typing of the
+changed browser tests, full lint and production build pass. The parent-sync suite
+passes 94 cases and parent-assessment passes 33. Parent-ML passes 10 initially;
+two inference/test-timeout cases pass on a focused rerun, including all 12 unique
+ML cases overall. The updated manual-retry case passes on desktop and mobile in
+the initial run. Full `backend/tests` finishes with 499 passed, 655 subtests
+passed and the previously documented
+`test_staff_lrn_correction_retains_student_links_and_masking` failure. Its staff
+LRN response is outside this ACL repair. Database-backed tests use disposable
+schemas; no live school records or migrations were changed.
+
+Home assessment locks and dates (2026-11-04): parent home answers are immutable
+per question/period for all linked parents. Identical retries are no-ops;
+conflicts return 409 before writes. Separate batches retain separate server save
+timestamps. Parent confirmation cancellation and failures retain device drafts;
+reconnection never submits parent work automatically. The Overview shows neutral
+locks even when another parent's mark is masked. Teacher saves compare final
+marks with database records: equal marks confirm officially while retaining
+parent provenance; changed marks require explicit `edited_question_ids` when
+parent history exists, and record `teacher_marked_at`. Later equal saves do not
+change that timestamp. Parent history remains in `parent_submitted_at`.
+Timestamps and parent-only grading fallback dates use Philippine time; official
+teacher dates still take priority and age/scoring/mastery formulas are unchanged.
+Migration 016 is the sole automatic additive startup migration (nullable
+TIMESTAMPTZ); bootstrap also registers it. Other migrations remain explicit.
+Backups accept the optional timestamp and checklist exports include timestamps
+as answer-cell comments without changing official cells. Imported equal marks
+preserve attribution; imported corrections record actual server save time.
+This supersedes the older overwrite/startup descriptions below.
+
+Verification for this change: both frontend TypeScript projects, standalone
+typing of the changed browser suites, full lint, production build and formatting
+pass. The 33 parent browser cases and 22 teacher/replay cases pass, with parent
+coverage and teacher attribution checks at desktop/tablet/mobile sizes.
+Seven new PostgreSQL regressions pass, including actual startup migration,
+immutable dates/locks, stale requests, permission masking and backup/workbook
+provenance. The full 497-case backend run completed with 493 passes and four
+failures; after updating three obsolete audit/startup/retry assertions, the
+failed-case rerun passed eight cases and retained only the previously documented
+`test_staff_lrn_correction_retains_student_links_and_masking` failure. No live
+school records were changed; PostgreSQL checks use disposable schemas and
+browser checks mock APIs.
+
+Offline submission scope (2026-11-04): automatic replay is restricted inside
+`utils/drafts.ts` to authenticated teacher sessions (`admin`) and owner-scoped
+teacher ECCD keys targeting exactly `POST /api/eccd/evaluate`. Key owner, student
+and period must match the stored request. Parent/chairman sessions, home
+observations, other forms and uploads never replay on login or reconnection.
+Existing records remain untouched in localStorage/IndexedDB and require manual
+review and submission. Non-ECCD failures show "Your draft is saved on this device.
+Reconnect and submit again." Teacher access/period settings expose explicit retry
+buttons while retaining immediate saves for deliberate online switch changes.
+Sandbox failures also wait for explicit retry, including after reload. The shared
+status banner reserves automatic-sync wording and its sync button for eligible
+teacher ECCD submissions. Teacher answers, dates, student switching, reload
+recovery, revision-safe confirmation and the online/offline pill are preserved.
+No backend routes, schemas or database changes are part of this scope restriction.
+This scope supersedes earlier reconnect-sync descriptions for non-ECCD forms.
+
+Scope verification: both frontend TypeScript projects, standalone browser-test
+typing, lint and production build pass. All 110 relevant browser checks pass,
+including teacher offline recovery/replay, non-ECCD manual retries, retained
+legacy queues/files, parent permission guards and newer-revision preservation.
+Root pytest collection encounters duplicate archived ML test modules; active
+`backend/tests` completes with 489 passing and the previously documented staff
+LRN masking test failure. No backend source was changed for this scope task.
 
 Shared dashboard requests (2026-11-01): `TeacherProvider` owns teacher access
 controls, section inventory and dashboard filters, exposes their cached state
@@ -445,6 +535,31 @@ are in `frontend/playwright.parent-assessment.config.ts` and
 `frontend/tests/parent-assessment.spec.ts`; screenshots are under
 `frontend/test-results/parent-assessment/`.
 
+ECCD card preview framing (2026-11-03): `EccdCardPreviewDialog.tsx` uses
+`w-[92vw] max-w-6xl max-h-[92vh]` with a compact `h-8` student selector and
+Previous/Next buttons in the header beside the dismiss button. Navigation uses
+the existing roster order and student-ID selection state, disables both buttons
+without an eligible selection and stops at the first/last student. The toolbar
+wraps below the title on phones; the separate body selector and helper text are
+removed to expand the document viewport. The slate viewer is the sole scrolling
+container around a `w-fit min-w-[980px]` white sheet. The extracted
+`EccdCardPreviewDocument.tsx` applies isolated compiled Tailwind utilities inside
+the existing iframe. Its dimensions fit the loaded document, and `zoom-50`
+frames the wide workbook within desktop dialog bounds. The sandbox grants only
+same-origin document access for measurement; scripts remain disabled and the
+server CSP stays intact. Compact headers, workbook content, merged spans,
+colgroup values, saved-record reads, request cancellation, scoring and durable
+drafts are preserved. Small screens scroll the complete sheet in the outer
+viewer. The browser login fixture runs only in the top-level page so iframe
+loads do not reset its mock session.
+
+Header-navigation verification: app/tooling and browser-test TypeScript, lint,
+build, all 30 mocked-API browser cases and official-template framing checks at
+320/768/1280/1920px pass. Full backend pytest reports 489 passed and one unrelated
+failure in `test_staff_lrn_correction_retains_student_links_and_masking`: the
+existing staff student-detail response includes a raw `lrn_number`. This UI task
+does not modify that response or backend source.
+
 Batch 3 (2026-10-31): Teacher ECCD Assessment adds **Preview ECCD Card** with
 student selection, loading/error/retry states and a responsive, scrollable dialog.
 Staff-only `GET /api/eccd/card-preview/{student_id}` authorizes section ownership
@@ -566,7 +681,7 @@ and instructional planning; official ECCD scores remain deterministic (section 1
 | Workspace | Root `pnpm-workspace.yaml` includes frontend and retains separate lockfiles; frontend has matching pnpm 12 YAML overrides and its own package-manager pin for isolated installs; automatic dependency verification before scripts is disabled |
 | Spreadsheets | openpyxl handles active workbook import/export; pandas is installed |
 | ML | V1 sigmoid-calibrated RF/HistGradientBoosting ensemble, joblib artifact, 18 PRE/demographic inputs, three supported POST outcomes; shared teacher/parent inference |
-| Migrations | Explicit Python migrations 001–015, including production query indexes, email-only identity and credential revocation versioning; no active Alembic setup, pyproject.toml, or uv.lock |
+| Migrations | Python migrations 001–016; only the nullable teacher timestamp (016) is applied automatically at startup. Other required upgrades are explicit; no active Alembic setup, pyproject.toml, or uv.lock |
 
 Observed on this Windows checkout on **2026-10-25**:
 
@@ -673,8 +788,12 @@ parent predictions (010), parent linking (005), credential revocation version
 (012), email-only identity (013), Phase 2 (002), and deployment
 hardening (004, which also checks 003) in the connection's current schema.
 Migration 011 is an explicit ownership-data cleanup; lifespan does not call its
-checker or apply it. Missing or incompatible schema stops startup; it never
-applies migrations automatically.
+checker or apply it. Startup checks optional-LRN schema (015) and transactionally
+applies only migration 016 (`teacher_marked_at`) after checking evaluator
+provenance. This adds a nullable timestamp without a default or historical
+backfill and serializes concurrent workers on the migration ledger. Other
+missing or incompatible required schema stops startup; those upgrades remain
+explicit. Migration 014 remains optional for startup.
 It then seeds `assets/reference/eccd.json` (7 domains, 109 questions) only if
 **both** reference tables are empty and warms the cached V1 model and guides.
 Unavailable/incompatible ML artifacts log a sanitized error and leave ordinary
@@ -683,7 +802,7 @@ call create_all or provision users.
 
 For a fresh PostgreSQL/Supabase database, explicitly run
 `backend.scripts.seed_supabase --apply` as a module before API startup. It applies
-pending migrations 001–014 in order and seeds the tracked 7-domain/109-question
+pending migrations 001–016 in order and seeds the tracked 7-domain/109-question
 ECCD fixture plus an environment-configured Chairman (`INITIAL_CHAIRMAN_EMAIL`,
 `INITIAL_CHAIRMAN_PASSWORD`, `INITIAL_CHAIRMAN_NAME`). The name is stored in
 `system_settings.chairman_name`. Repeated runs preserve existing accounts/reference rows;
@@ -944,6 +1063,7 @@ add the newer feature columns. The explicit migration inventory is:
 | 013 | email_only_identity | Move Chairman name to settings, remove username, normalize emails and enforce case-insensitive uniqueness |
 | 014 | production_performance | Add 18 supporting B-tree indexes; explicit transactional maintenance-window upgrade, included in fresh bootstrap |
 | 015 | optional_student_lrn | Allow null protected LRNs while preserving assigned-LRN uniqueness and existing student data |
+| 016 | teacher_marked_at | Nullable teacher save timestamp; additive startup/bootstrap migration with no historical backfill |
 
 Migration 013 was applied and checked on the configured local `ames_parity_dev`
 database on 2026-10-25. Uvicorn startup, `/ready` and `/api/settings` pass with
@@ -974,6 +1094,8 @@ uv run --no-project --python .venv312 python -m backend.migrations.section_owner
 uv run --no-project --python .venv312 python -m backend.migrations.auth_security_version --apply
 uv run --no-project --python .venv312 python -m backend.migrations.email_only_identity --apply
 uv run --no-project --python .venv312 python -m backend.migrations.production_performance --apply
+uv run --no-project --python .venv312 python -m backend.migrations.optional_student_lrn --apply
+uv run --no-project --python .venv312 python -m backend.migrations.teacher_marked_at --apply
 
 # Final checks after the feature upgrades; each module also supports --check.
 uv run --no-project --python .venv312 python -m backend.migrations.phase2 --check
@@ -988,6 +1110,8 @@ uv run --no-project --python .venv312 python -m backend.migrations.section_owner
 uv run --no-project --python .venv312 python -m backend.migrations.auth_security_version --check
 uv run --no-project --python .venv312 python -m backend.migrations.email_only_identity --check
 uv run --no-project --python .venv312 python -m backend.migrations.production_performance --check
+uv run --no-project --python .venv312 python -m backend.migrations.optional_student_lrn --check
+uv run --no-project --python .venv312 python -m backend.migrations.teacher_marked_at --check
 ```
 
 Migration 014 uses transactional index creation and needs a maintenance window;
@@ -1041,6 +1165,7 @@ the complete method/path/query inventory.
 | Analytics/audit | /api/analytics/filters, /pie-data, /stats, /logs; /api/logs aliases | `routes/analytics.py` |
 | Import/checklists | POST /api/teachers/import-students; GET /download/{lrn}, /download-all | `routes/teachers.py` |
 | Summary exports | /api/chairman/export-eccd, /sections/{section_id}/export-summary; /api/eccd/section/{section_id}/export, /export-all | `routes/chairman.py`, `eccd.py` |
+| Year-scoped ECCD exports | GET /api/eccd/export/cards-zip, /card-single, /section-summary; required school_year plus section_id or student_id | `routes/eccd.py`, `schemas/eccd.py`, `utils/excel.py` |
 | Messaging | /api/messages/contacts, /history, /send, POST /, /notify-student, /unread-count, /unread, /read, /mark-read; /link-lrn linking alias | `routes/messages.py`, `students.py` |
 | Settings/year | /api/settings, /update, /upload-background, /rollover, /undo-rollover, /revert-school-year; /api/chairman/rollover-year, /undo-rollover | `routes/settings.py` |
 | Chairman account | /api/chairman/verify-password, /account | `routes/chairman.py` |
@@ -1403,6 +1528,39 @@ year**, split into batches of at most **30 children**, and produce ZIPs for
 multiple workbooks/all sections. Never silently discard children beyond 30.
 Compatibility export endpoints accept testing_period but currently generate the
 workbook with all three period sheets.
+
+School-year downloads (2026-11-02): `EccdAssessment.tsx` uses the extracted
+`components/teacher/EccdDownloadDialog.tsx` for both ECCD Records and Section
+Summary Record. School Year defaults to the teacher filters' current year, with
+the existing global settings fallback; historical choices reuse the teacher
+filters, which include inactive cohorts. Current-year individual choices require
+an active student in the selected section/year. Other years hide individual
+selection, display the Archived Cohort notice and download a section ZIP.
+Summary downloads also prompt for School Year. Failed downloads show an
+accessible error inside the dialog and retain selections for retry.
+
+The three `/api/eccd/export/` routes validate identifiers and consecutive school
+years with Pydantic query schemas and reuse the existing checklist, ZIP and
+summary generators. Explicit section/year cohorts include both active and
+inactive students (`is_active=False` represents archives; there is no
+`is_archived` column). Section ownership is checked before cohort queries,
+including empty sections. Missing cohorts return HTTP 404 naming the year;
+ZIP names are `ECCD_[SECTION]_[SchoolYear].zip`. The new individual route allows
+only active current-year records; historical individual requests return HTTP
+400 directing staff to the section ZIP. Existing teacher download aliases keep
+their compatibility behavior, while `/api/eccd/section/{section_id}/export`
+also accepts optional `school_year`. Summary batching beyond 30 students and
+all PRE/MID/POST sheets remain intact. No schema migration, assessment write or
+draft-storage change is required.
+
+Verification: both frontend TypeScript projects, full lint and production build
+pass. All 12 isolated SQLite export tests and 39 dashboard analytics tests pass
+with Python 3.12's unittest runner (pytest was not installed for that recorded run). All 15 download
+browser cases pass with mocked APIs at 320/768/1280px, covering current-year
+individual/ZIP requests, archived ZIP-only selection, year-scoped summaries,
+error retention/retry, roster filtering and existing draft preservation.
+Desktop/mobile dialog screenshots were inspected. No live school database or
+records were used for these checks.
 
 ## 9. Messaging, settings, rollover, and backups
 
@@ -1881,11 +2039,15 @@ fixtures prepare disposable schemas on the configured PostgreSQL server;
 `backend/tests/serve_phase3.py` wraps those fixtures as a loopback-only browser
 API, with reset/import helper routes and a default port of 8767. Never deploy
 that test server or direct reset operations at school data.
-`backend/tests/test_dev_otp.py` additionally contains a rollback-contained check
-restricted to the local development database. SMTP diagnostic scripts can send
-real mail and are not ordinary read-only checks.
+`backend/tests/test_dev_otp.py` uses the disposable `BackendTests` fixture for
+its login/challenge check and mocks email delivery. SMTP diagnostic scripts can
+send real mail and are not ordinary read-only checks.
 
-The following ten tracked Playwright configurations in `frontend/` support
+For current pytest verification, target only active modules:
+`uv run --no-project --python .venv312 python -m pytest backend/tests -q`.
+Do not collect from the repository root, which also contains archived modules.
+
+The following fourteen tracked Playwright configurations in `frontend/` support
 targeted checks, selecting the listed specs in `frontend/tests/`:
 
 | Configuration | Spec | UI origin | Test API | Server management |
@@ -1896,14 +2058,20 @@ targeted checks, selecting the listed specs in `frontend/tests/`:
 | `playwright.ml-sandbox.config.ts` | `ml-sandbox.spec.ts` | http://127.0.0.1:5186 | 8774 | Starts disposable API and Vite; desktop/mobile |
 | `playwright.terms-privacy.config.ts` | `terms-privacy.spec.ts` | http://127.0.0.1:5188 | 8775 | Starts disposable API and Vite; desktop/tablet/mobile |
 | `playwright.ml-insights.config.ts` | `ml-insights.spec.ts` | http://localhost:5173 | 8769, started separately | Starts/reuses Vite only; Desktop Chrome project, spec adjusts viewport |
-| `playwright.parent-sync.config.ts` | `parent-sync.spec.ts`, `parent-profile.spec.ts`, `teacher-import.spec.ts` | http://127.0.0.1:5190 | Mocked API | Starts Vite; desktop/mobile, no school database |
+| `playwright.parent-sync.config.ts` | `parent-sync.spec.ts`, `parent-profile.spec.ts`, `teacher-import.spec.ts`, `offline-scope.spec.ts`, `offline-settings.spec.ts` | http://127.0.0.1:5190 | Mocked API | Starts Vite; desktop/mobile, no school database |
 | `playwright.auth-security.config.ts` | `auth-security.spec.ts`, `terms-privacy.spec.ts` | http://127.0.0.1:5188 | 8775 | Starts disposable auth-security API and Vite; desktop/mobile |
 | `playwright.messaging.config.ts` | `messaging.spec.ts` | http://127.0.0.1:5191 | 8768 | Starts disposable API and Vite; desktop/mobile |
 | `playwright.performance.config.ts` | `performance.spec.ts` | http://127.0.0.1:5190 | Mocked API | Starts Vite preview of an existing production build; desktop/mobile |
+| `playwright.parent-assessment.config.ts` | `parent-assessment.spec.ts` | http://127.0.0.1:5192 | Mocked API | Starts/reuses Vite; desktop/tablet/mobile |
+| `playwright.eccd-exports.config.ts` | `teacher-eccd-exports.spec.ts` | http://127.0.0.1:5191 | Mocked API | Starts Vite; desktop/tablet/mobile |
+| `playwright.teacher-dashboard.config.ts` | `teacher-dashboard.spec.ts` | http://127.0.0.1:5194 | Mocked API | Starts/reuses Vite; desktop/laptop/tablet/small-tablet/mobile |
+| `playwright.chairman-dashboard.config.ts` | `chairman-dashboard.spec.ts` | http://127.0.0.1:5193 | Mocked API | Starts/reuses Vite; desktop/laptop/tablet/small-tablet/mobile |
 
-Run configurations separately when they share ports. The messaging configuration
-expects a disposable PostgreSQL server at 127.0.0.1:55432 and, on Windows, uv at
-`%TEMP%/ames-uv/uv.exe`; verify these local harness prerequisites before running it.
+Run configurations separately when they share ports, including messaging and
+ECCD exports on 5191. Messaging uses `uv` on PATH with `.venv312` and the
+configured backend PostgreSQL connection; its fixture creates isolated schemas.
+It no longer hardcodes port 55432 or a temporary uv executable. Verify fixture
+isolation before running any database-backed browser suite.
 
 Parent-sync/Excel verification on **2026-10-27**: 10 database-free backend
 checks passed, including all three link response contracts and acceptance of

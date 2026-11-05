@@ -1,0 +1,5 @@
+/* No preflight or app styles: preserve the workbook renderer's own styling. */
+@layer theme, utilities;
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities) source(none);
+@source inline("p-0! table-auto! min-w-full! text-[10px]! sm:text-[11px]! leading-tight! text-center! py-1! px-1! whitespace-nowrap! w-8! sm:w-10! min-w-8!");

@@ -167,3 +167,6 @@ backend/tests/test_ml_model.py
 
 # Workspace-local verification tools
 .tools/
+
+graphify-out/
+computation of grades of each decimal bracket.pdf

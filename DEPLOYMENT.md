@@ -12,7 +12,7 @@ files. Keep all real credentials in provider environment settings.
    uv run --no-project --python 3.12 python -m backend.scripts.seed_supabase --apply
    ```
 
-   This applies migrations 001–014 and seeds the exact tracked 7 domains and
+   This applies migrations 001–016 and seeds the exact tracked 7 domains and
    109 questions plus an initial Chairman. Repeated runs preserve existing
    Chairmen and matching data; no default password or local account export is
    included. Remove the three initial credentials after provisioning. See the
@@ -29,6 +29,10 @@ files. Keep all real credentials in provider environment settings.
    uv run --no-project --python 3.12 python -m backend.migrations.email_only_identity --check
    uv run --no-project --python 3.12 python -m backend.migrations.production_performance --apply
    uv run --no-project --python 3.12 python -m backend.migrations.production_performance --check
+   uv run --no-project --python 3.12 python -m backend.migrations.optional_student_lrn --apply
+   uv run --no-project --python 3.12 python -m backend.migrations.optional_student_lrn --check
+   uv run --no-project --python 3.12 python -m backend.migrations.teacher_marked_at --apply
+   uv run --no-project --python 3.12 python -m backend.migrations.teacher_marked_at --check
    ```
 
    Migration 012 adds `users.security_version` with default zero and verifies
@@ -38,8 +42,11 @@ files. Keep all real credentials in provider environment settings.
 2. Create the Render service from root `render.yaml`. Keep the repository root
    as the working directory so `backend.main:app` and the tracked templates/model
    resolve. The blueprint pins Python 3.12.13, installs `backend/requirements.txt`,
-   starts the Socket.IO wrapper, and checks `/ready`. Migrations run separately
-   before starting the new API, not on each application startup. The root
+   starts the Socket.IO wrapper, and checks `/ready`. Apply required upgrades
+   separately before starting the new API. The sole startup exception is migration
+   016: it adds nullable `teacher_marked_at` transactionally without a default or
+   historical backfill, with concurrent workers serialized on the migration
+   ledger. In particular, startup checks 015 but does not apply it. The root
    `pnpm run start:prod` script is an equivalent POSIX-shell launch command;
    Windows local development should use the explicit uv command in AI_CONTEXT.
 

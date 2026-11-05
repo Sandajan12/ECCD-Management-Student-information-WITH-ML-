@@ -225,7 +225,7 @@ test("failed registration and reload retain acceptance and inputs until confirme
   await termsBox(page).check();
   await page.getByRole("button", { name: "Sign Up" }).click();
   await expect(page.getByRole("alert")).toContainText(
-    "Your draft has been kept",
+    "Your draft is saved on this device. Reconnect and submit again.",
   );
   await page.reload();
   await expect(termsBox(page)).toBeChecked();

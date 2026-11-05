@@ -184,6 +184,9 @@ export interface Question {
   sequence_order: number;
   is_home_based?: boolean;
   evaluator_roles?: Partial<Record<Period, "teacher" | "parent" | null>>;
+  parent_submitted_at?: Partial<Record<Period, string | null>>;
+  teacher_marked_at?: Partial<Record<Period, string | null>>;
+  parent_locked?: Partial<Record<Period, boolean>>;
   answers: Record<Period, Answer | null>;
 }
 export interface Domain {

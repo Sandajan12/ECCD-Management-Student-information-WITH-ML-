@@ -11,6 +11,7 @@ interface StoredProfile {
   revision: string;
   is_pending_sync: boolean;
   error?: string;
+  request?: { data: unknown };
 }
 interface PortalState {
   child: Student;
@@ -209,7 +210,7 @@ for (const status of [400, 403, 422]) {
 }
 
 for (const mode of ["network", "server", "offline"] as const) {
-  test(`${mode} save stays pending and reconnect confirms the stored request`, async ({
+  test(`${mode} save retains the draft and requires manual submission after reconnect`, async ({
     page,
   }) => {
     const state = await portal(page);
@@ -231,17 +232,19 @@ for (const mode of ["network", "server", "offline"] as const) {
       .poll(async () => (await stored(page))?.is_pending_sync)
       .toBe(true);
     await expect(
-      page.getByText(
-        "Changes are saved on this device and awaiting server confirmation.",
-      ),
+      page
+        .getByText(
+          "Your draft is saved on this device. Reconnect and submit again.",
+        )
+        .first(),
     ).toBeVisible();
     if (mode !== "offline") {
       await page.reload();
       await expect(address(page)).toHaveValue("Pending address");
-      await expect.poll(async () => (await stored(page))?.error).toBeTruthy();
     }
     state.network = false;
     state.status = 200;
+    const submissions = state.requests.length;
     await page.evaluate(() => {
       Object.defineProperty(navigator, "onLine", {
         configurable: true,
@@ -249,6 +252,10 @@ for (const mode of ["network", "server", "offline"] as const) {
       });
       window.dispatchEvent(new Event("online"));
     });
+    await expect(address(page)).toHaveValue("Pending address");
+    expect(await stored(page)).not.toBeNull();
+    expect(state.requests).toHaveLength(submissions);
+    await save(page);
     await expect.poll(() => stored(page)).toBeNull();
     await expect(address(page)).toHaveValue("Pending address");
     expect(state.child.address).toBe("Pending address");
@@ -306,7 +313,7 @@ test("guardian age-only edit excludes other fields and a required name stays in 
   await expect(page.locator('input[name="mother_name"]')).toHaveValue("");
 });
 
-test("legacy drafts remain readable and queued payloads are replayed unchanged", async ({
+test("legacy drafts remain readable and queued payloads wait for manual review", async ({
   page,
 }) => {
   const state = await portal(page);
@@ -352,8 +359,12 @@ test("legacy drafts remain readable and queued payloads are replayed unchanged",
     { k: key, request: queued },
   );
   await page.reload();
+  await expect(address(page)).toHaveValue("Queued address");
+  expect(state.requests).toHaveLength(1);
+  expect((await stored(page))?.request?.data).toEqual(queued);
+  await save(page);
   await expect.poll(() => state.requests.length).toBe(2);
-  expect(state.requests[1]).toEqual(queued);
+  expect(state.requests[1]).toEqual({ address: "Queued address" });
   await expect.poll(() => stored(page)).toBeNull();
 });
 

@@ -3,6 +3,7 @@ import type { Answer, Period, Question } from "../types.ts";
 
 export interface TeacherAssessmentDraft {
   answers: Record<string, Answer>;
+  original_answers?: Record<string, Answer | null>;
   evaluation_date: string;
 }
 

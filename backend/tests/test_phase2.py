@@ -435,7 +435,7 @@ class BackendTests(unittest.TestCase):
             record.evaluation_date=date(2026,8,1)
             db.commit()
         self.assertEqual(self.call('POST','/api/eccd/parent/evaluate',5,json=payload).status_code,200)
-        with self.sessions() as db: self.assertEqual(db.query(StudentEccdEvaluation).filter_by(student_id=1,question_id=self.home).one().evaluation_date,date.today())
+        with self.sessions() as db: self.assertEqual(db.query(StudentEccdEvaluation).filter_by(student_id=1,question_id=self.home).one().evaluation_date,date(2026,8,1))
         payload['evaluations'][0]['question_id']=self.nonhome
         self.assertEqual(self.call('POST','/api/eccd/parent/evaluate',5,json=payload).status_code,403)
         self.assertEqual(self.call('PUT','/api/teachers/access-controls',2,json={'allow_parent_view':True}).status_code,422)

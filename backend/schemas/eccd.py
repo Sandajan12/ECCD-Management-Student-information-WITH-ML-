@@ -3,10 +3,25 @@ from typing import Literal, Optional
 
 from backend.models.eccd import EccdAnswer, TestingPeriod
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, model_validator
-from .common import ApiModel, PositiveId
+from .common import ApiModel, PositiveId, SchoolYear
 from .common import ParentPermissions
 from .student import StudentPublicResponse
 from .assessment_access import ParentAssessmentAccess
+
+
+class EccdExportYearQuery(ApiModel):
+    school_year: SchoolYear | None = None
+    testing_period: TestingPeriod = TestingPeriod.PRE
+
+
+class EccdSectionExportQuery(EccdExportYearQuery):
+    section_id: PositiveId
+    school_year: SchoolYear
+
+
+class EccdStudentExportQuery(ApiModel):
+    student_id: PositiveId
+    school_year: SchoolYear
 
 
 # --- DOMAIN SCHEMAS ---
@@ -38,6 +53,7 @@ class EvaluationProvenance(BaseModel):
     evaluator_role: Literal["teacher", "parent"] = "teacher"
     teacher_evaluation_date: Optional[date] = None
     parent_submitted_at: Optional[datetime] = None
+    teacher_marked_at: Optional[datetime] = None
 
 
 class EvaluationBase(BaseModel):
@@ -98,6 +114,7 @@ class AssessmentSaveRequest(ApiModel):
 
 
 class EvaluationBatch(ApiModel):
+    edited_question_ids: list[PositiveId] = Field(default_factory=list, max_length=1000)
     student_lrn: str | int = Field(validation_alias=AliasChoices("student_id", "student_lrn"))
     testing_period: TestingPeriod = Field(validation_alias=AliasChoices("testing_period", "period"))
     assessment_date: date = Field(default_factory=date.today, validation_alias=AliasChoices("assessment_date", "evaluation_date"))
@@ -131,6 +148,8 @@ class EvaluationBatch(ApiModel):
         keys = [row.question_id for row in self.evaluations]
         if len(keys) != len(set(keys)) or any(row.testing_period != self.testing_period for row in self.evaluations):
             raise ValueError("Assessment questions must be unique and use the selected period")
+        if not set(self.edited_question_ids).issubset(keys):
+            raise ValueError("Edited questions must be included in the assessment")
         return self
 
 
@@ -174,6 +193,9 @@ class ChecklistQuestion(ApiModel):
     is_home_based: bool
     evaluator_roles: dict[TestingPeriod, Literal["teacher", "parent"] | None]
     answers: dict[TestingPeriod, EccdAnswer | None]
+    parent_submitted_at: dict[TestingPeriod, datetime | None] = Field(default_factory=dict)
+    teacher_marked_at: dict[TestingPeriod, datetime | None] = Field(default_factory=dict)
+    parent_locked: dict[TestingPeriod, bool] = Field(default_factory=dict)
 
 
 class ChecklistDomain(ApiModel):

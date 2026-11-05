@@ -3,9 +3,10 @@ from calendar import monthrange
 from pathlib import Path
 import openpyxl
 from openpyxl.cell.cell import MergedCell
+from openpyxl.comments import Comment
 from openpyxl.styles import Font
 from backend.utils.eccd_scorer import calculate_decimal_age, calculate_scores
-from backend.utils.eccd_dates import get_official_testing_date
+from backend.utils.eccd_dates import get_official_testing_date, PHT
 
 DOMAIN_CODES = {1:'GM', 2:'FM', 3:'SH', 4:'RL', 5:'EL', 6:'C', 7:'SE'}
 
@@ -73,6 +74,13 @@ def generate_student_workbook(student, teacher, parents, evaluations, questions,
         if mapping:
             column=mapping[record.testing_period.value][0 if record.answer.value=='KAYA' else 1]
             write(f"{column}{mapping['row']}",'ü',check_font)
+            provenance = {
+                'parent_submitted_at': record.parent_submitted_at,
+                'teacher_marked_at': record.teacher_marked_at,
+            }
+            timestamps = [f'{name}: {value.astimezone(PHT).isoformat()}' for name, value in provenance.items() if value is not None]
+            if timestamps:
+                ws[f"{column}{mapping['row']}"].comment = Comment('\n'.join(timestamps), 'AMES')
     totals={1:(49,'D F H'),2:(63,'D F H'),3:(59,'N P R'),4:(67,'N P R'),5:(44,'X Z AB'),6:(68,'X Z AB'),7:(28,'D F H')}
     for index,(period,raw,scaled) in enumerate((('PRE','N','O'),('MID','P','Q'),('POST','R','S'))):
         for row in range(9,18):

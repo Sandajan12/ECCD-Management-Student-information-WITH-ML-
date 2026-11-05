@@ -67,6 +67,13 @@ export function errorMessage(error: unknown): string {
       detail?: string | { msg: string }[];
     }>(error)
   ) {
+    if (
+      !error.response &&
+      ["post", "put", "patch", "delete"].includes(
+        error.config?.method?.toLowerCase() || "",
+      )
+    )
+      return "Your draft is saved on this device. Reconnect and submit again.";
     const data = error.response?.data;
     if (Array.isArray(data?.detail))
       return data.detail.map((item) => item.msg).join(" ");

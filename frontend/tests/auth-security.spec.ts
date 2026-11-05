@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 import type { AxiosInstance, InternalAxiosRequestConfig } from "axios";
+import type { SessionResponse } from "../src/types";
 
 const backend = "http://127.0.0.1:8775";
 
@@ -172,26 +173,34 @@ test("Axios timeout and actual interceptor isolate bearer destinations", async (
   ]);
 });
 
-test("queue rejects hostile paths and methods and retains every unconfirmed draft", async ({
+test("queue retains non-ECCD drafts and replays only confirmed teacher ECCD work", async ({
   page,
+  request,
 }) => {
+  const login = await request.post(`${backend}/api/auth/login`, {
+    data: { email: "adviser@example.com", password: "Example123" },
+  });
+  expect(login.status()).toBe(200);
+  const session = (await login.json()) as SessionResponse;
+  expect(session.user.role).toBe("admin");
   await page.goto("/login");
-  const result = await page.evaluate(async () => {
+  const result = await page.evaluate(async (account) => {
     const apiPath = "/src/services/api.ts";
     const draftsPath = "/src/utils/drafts.ts";
     const { default: api } = (await import(apiPath)) as {
       default: AxiosInstance;
     };
-    const { syncDrafts } = (await import(draftsPath)) as {
-      syncDrafts: (owner: number) => Promise<void>;
-    };
-    localStorage.setItem("token", "synthetic-session");
-    localStorage.setItem("user", JSON.stringify({ id: 77 }));
+    const { isDraftRequest, syncDrafts } = (await import(draftsPath)) as
+      typeof import("../src/utils/drafts");
+    const owner = account.user.id;
+    localStorage.setItem("token", account.token);
+    localStorage.setItem("user", JSON.stringify(account.user));
     const attempted: string[] = [];
+    let status = 202;
     api.defaults.adapter = async (config) => {
       attempted.push(`${config.method}:${config.url}`);
       return {
-        status: config.url?.endsWith("unconfirmed") ? 202 : 200,
+        status,
         statusText: "OK",
         headers: {},
         config,
@@ -216,9 +225,9 @@ test("queue rejects hostile paths and methods and retains every unconfirmed draf
     ];
     requests.forEach((request, index) =>
       localStorage.setItem(
-        `ames_draft_77_security_${index}`,
+        `ames_draft_${owner}_security_${index}`,
         JSON.stringify({
-          owner_id: 77,
+          owner_id: owner,
           revision: String(index),
           values: { text: "keep input" },
           is_pending_sync: true,
@@ -236,32 +245,67 @@ test("queue rejects hostile paths and methods and retains every unconfirmed draf
         request: { path: "/api/other", method: "post", data: {} },
       }),
     );
-    await syncDrafts(77);
+    await syncDrafts(owner);
+    const nonEccdAttempts = [...attempted];
+    const teacherKey = `eccd_draft_1_PRE_1_${owner}`;
+    localStorage.setItem(
+      teacherKey,
+      JSON.stringify({
+        owner_id: owner,
+        revision: "teacher-revision",
+        values: { answers: { 11: "KAYA" } },
+        is_pending_sync: true,
+        request: {
+          path: "/api/eccd/evaluate",
+          method: "post",
+          data: {
+            student_id: 1,
+            testing_period: "PRE",
+            assessment_date: "2026-11-05",
+            evaluations: [
+              { question_id: 11, testing_period: "PRE", answer: "KAYA" },
+            ],
+            edited_question_ids: [],
+          },
+        },
+      }),
+    );
+    const teacherRetained: boolean[] = [];
+    for (const responseStatus of [202, 204, 200]) {
+      status = responseStatus;
+      await syncDrafts(owner);
+      teacherRetained.push(localStorage.getItem(teacherKey) !== null);
+    }
     const retained = requests.map(
       (_, index) =>
         JSON.parse(
-          localStorage.getItem(`ames_draft_77_security_${index}`) || "null",
-        ) as { values: { text: string }; error?: string } | null,
+          localStorage.getItem(`ames_draft_${owner}_security_${index}`) || "null",
+        ) as { values: { text: string }; is_pending_sync: boolean } | null,
     );
     return {
+      nonEccdAttempts,
+      validRequests: requests.map(isDraftRequest),
       attempted,
       retained,
+      teacherRetained,
       other: localStorage.getItem("ames_draft_88_other"),
     };
-  });
-  expect(result.attempted.sort()).toEqual([
-    "delete:/api/delete",
-    "patch:/api/patch",
-    "post:/api/save",
-    "post:/api/unconfirmed",
-    "put:/api/update",
+  }, session);
+  expect(result.nonEccdAttempts).toEqual([]);
+  expect(result.validRequests).toEqual([
+    ...Array<boolean>(9).fill(false),
+    ...Array<boolean>(5).fill(true),
+  ]);
+  expect(result.attempted).toEqual([
+    "post:/api/eccd/evaluate",
+    "post:/api/eccd/evaluate",
+    "post:/api/eccd/evaluate",
   ]);
   expect(
-    result.retained
-      .slice(0, 9)
-      .every((draft) => draft?.values.text === "keep input" && draft.error),
+    result.retained.every(
+      (draft) => draft?.values.text === "keep input" && draft.is_pending_sync,
+    ),
   ).toBe(true);
-  expect(result.retained.slice(9, 13)).toEqual([null, null, null, null]);
-  expect(result.retained[13]?.values.text).toBe("keep input");
+  expect(result.teacherRetained).toEqual([true, true, false]);
   expect(result.other).toContain("other input");
 });

@@ -1,5 +1,6 @@
 import math
 from collections import defaultdict
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response
 from sqlalchemy import select
@@ -19,6 +20,9 @@ from backend.models.section_teacher import SectionTeacher
 from backend.schemas.eccd import (
     DomainProgress,
     EccdCardPreviewResponse,
+    EccdExportYearQuery,
+    EccdSectionExportQuery,
+    EccdStudentExportQuery,
     EvaluationBatch,
     EvaluationPublicResponse,
     EvaluationSaved,
@@ -30,6 +34,7 @@ from backend.schemas.eccd import (
 )
 from backend.schemas.operations import DomainProgressResult, ParentProgressPeriod, SectionSummaryItem
 from backend.schemas.student import StudentPublicResponse
+from backend.schemas.common import PositiveId
 from backend.utils.deps import verify_role
 from backend.utils.eccd_scorer import calculate_decimal_age, calculate_scores
 from backend.utils.eccd_dates import get_grading_date, get_official_testing_date
@@ -290,13 +295,40 @@ def get_section_summary(
     return summary
 
 
-@router.get("/section/{section_id}/export")
-def export_section_summary(section_id: int, testing_period: TestingPeriod = Query(TestingPeriod.PRE), db: Session = Depends(get_db), current_user=Depends(verify_role(["super-admin", "admin"]))):
-    from backend.utils.access import current_teacher, teacher_sections
+@router.get("/export/cards-zip")
+def export_eccd_cards(
+    query: Annotated[EccdSectionExportQuery, Query()],
+    db: Session = Depends(get_db),
+    current_user=Depends(verify_role(["super-admin", "admin"])),
+):
+    from backend.utils.excel import bulk_checklist_response
+    return bulk_checklist_response(db, current_user, section_id=query.section_id, school_year=query.school_year)
+
+
+@router.get("/export/card-single")
+def export_eccd_card(
+    query: Annotated[EccdStudentExportQuery, Query()],
+    db: Session = Depends(get_db),
+    current_user=Depends(verify_role(["super-admin", "admin"])),
+):
+    from backend.utils.excel import checklist_response
+    return checklist_response(db, current_user, query.student_id, school_year=query.school_year)
+
+
+@router.get("/export/section-summary")
+def export_eccd_section_summary(
+    query: Annotated[EccdSectionExportQuery, Query()],
+    db: Session = Depends(get_db),
+    current_user=Depends(verify_role(["super-admin", "admin"])),
+):
     from backend.utils.excel import summary_response
-    if current_user.role.value == "admin" and section_id not in teacher_sections(db, current_teacher(db, current_user)):
-        raise HTTPException(403, "Section is not assigned to you.")
-    return summary_response(db, current_user, section_filter=section_id)
+    return summary_response(db, current_user, section_filter=query.section_id, school_year=query.school_year)
+
+
+@router.get("/section/{section_id}/export")
+def export_section_summary(section_id: PositiveId, query: Annotated[EccdExportYearQuery, Query()], db: Session = Depends(get_db), current_user=Depends(verify_role(["super-admin", "admin"]))):
+    from backend.utils.excel import summary_response
+    return summary_response(db, current_user, section_filter=section_id, school_year=query.school_year)
 
 @router.get("/export-all")
 def export_all_eccd(testing_period: TestingPeriod = Query(TestingPeriod.PRE), db: Session = Depends(get_db), current_user=Depends(verify_role(["super-admin"]))):

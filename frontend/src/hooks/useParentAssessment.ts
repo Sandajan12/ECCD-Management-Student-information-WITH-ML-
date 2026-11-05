@@ -57,6 +57,7 @@ export function useParentAssessment(child?: Student, readOnly = false) {
   const [, updateDrafts] = useState(0);
   const memoryDrafts = useRef(new Map<string, Draft<HomeValues>>());
   const [saving, setSaving] = useState(false);
+  const [confirmation, setConfirmation] = useState<string | null>(null);
   const saveLock = useRef(false);
   const identity = `${owner}_${id}`;
   const currentChild = useRef(identity);
@@ -183,6 +184,15 @@ export function useParentAssessment(child?: Student, readOnly = false) {
       return null;
     return question?.answers[period] || null;
   };
+  const isQuestionLocked = (questionId: number, period: Period): boolean => {
+    const question = checklistDomains
+      .flatMap((domain) => domain.questions)
+      .find((item) => item.question_id === questionId);
+    return (
+      question?.parent_locked?.[period] === true ||
+      Boolean(question?.answers[period])
+    );
+  };
   const getAnswer = (questionId: number, period: string): Answer | null => {
     if (!PERIODS.includes(period as Period)) return null;
     const p = period as Period;
@@ -203,8 +213,10 @@ export function useParentAssessment(child?: Student, readOnly = false) {
       // masked intermediate period or expose a hidden source as carry-over.
       if (!canViewMarks && !canEditPeriod(current)) source = null;
       const saved = serverAnswer(questionId, current);
+      const locked = isQuestionLocked(questionId, current);
+      if (locked && !saved) source = null;
       const local =
-        canEditHomeBased || isPeriodReleased(current)
+        !locked && (canEditHomeBased || isPeriodReleased(current))
           ? draftFor(domain.domain_id, current)?.values.answers[questionId]
           : null;
       if (saved) {
@@ -212,7 +224,8 @@ export function useParentAssessment(child?: Student, readOnly = false) {
         blocked = false;
       }
       const inherited = canEditPeriod(current) && !blocked && source === "KAYA";
-      if (current === p) return local || saved || (inherited ? "KAYA" : null);
+      if (current === p)
+        return locked ? saved : local || saved || (inherited ? "KAYA" : null);
       if (local === "DI-KAYA") blocked = true;
     }
     return null;
@@ -224,6 +237,7 @@ export function useParentAssessment(child?: Student, readOnly = false) {
   ) => {
     if (
       !canEditPeriod(period as Period) ||
+      isQuestionLocked(questionId, period as Period) ||
       period !== selectedPeriod ||
       saving ||
       !PERIODS.includes(period as Period) ||
@@ -253,7 +267,7 @@ export function useParentAssessment(child?: Student, readOnly = false) {
     });
     setFeedback({ scope: identity, error: "", success: "" });
   };
-  const handleSaveChecklist = async () => {
+  const handleSaveChecklist = async (confirmed = false) => {
     if (
       !selectedPeriod ||
       !canEditPeriod(selectedPeriod) ||
@@ -265,7 +279,11 @@ export function useParentAssessment(child?: Student, readOnly = false) {
     const snapshots = checklistDomains.flatMap((domain) => {
       const evaluations: HomeEvaluation[] = domain.questions.flatMap(
         (question) => {
-          if (question.is_home_based !== true) return [];
+          if (
+            question.is_home_based !== true ||
+            isQuestionLocked(question.question_id, period)
+          )
+            return [];
           const answer = getAnswer(question.question_id, period);
           return answer === "KAYA" || answer === "DI-KAYA"
             ? [
@@ -283,9 +301,12 @@ export function useParentAssessment(child?: Student, readOnly = false) {
       const draft: Draft<HomeValues> = {
         owner_id: owner,
         values: {
-          answers: Object.fromEntries(
-            evaluations.map((row) => [row.question_id, row.answer]),
-          ),
+          answers: {
+            ...draftFor(domain.domain_id, period)?.values.answers,
+            ...Object.fromEntries(
+              evaluations.map((row) => [row.question_id, row.answer]),
+            ),
+          },
         },
         revision: crypto.randomUUID(),
         is_pending_sync: true,
@@ -305,6 +326,12 @@ export function useParentAssessment(child?: Student, readOnly = false) {
       });
       return;
     }
+    if (!confirmed) {
+      setConfirmation(`${identity}_${period}`);
+      return;
+    }
+    if (confirmation !== `${identity}_${period}`) return;
+    setConfirmation(null);
     saveLock.current = true;
     setSaving(true);
     setFeedback({ scope: identity, error: "", success: "" });
@@ -315,12 +342,12 @@ export function useParentAssessment(child?: Student, readOnly = false) {
           scope: identity,
           error: "",
           success:
-            "Saved on this device. Observations will sync when your connection returns.",
+            "Your draft is saved on this device. Reconnect and submit again.",
         });
         return {
           severity: "success" as const,
           message:
-            "Saved on this device. Observations will sync when your connection returns.",
+            "Your draft is saved on this device. Reconnect and submit again.",
         };
       }
       const response = await API.post("/api/eccd/parent/evaluate", {
@@ -331,6 +358,28 @@ export function useParentAssessment(child?: Student, readOnly = false) {
       if (response.status !== 200 && response.status !== 201)
         throw new Error("The server did not confirm this save.");
       for (const snapshot of snapshots) {
+        const persisted = readDraft<HomeValues>(snapshot.key);
+        if (persisted && persisted.revision !== snapshot.draft.revision)
+          continue;
+        const current = memoryDrafts.current.get(snapshot.key) || persisted;
+        if (current?.revision !== snapshot.draft.revision) continue;
+        const submittedIds = new Set(
+          snapshot.evaluations.map((row) => String(row.question_id)),
+        );
+        const remaining = Object.fromEntries(
+          Object.entries(current.values.answers).filter(
+            ([questionId]) => !submittedIds.has(questionId),
+          ),
+        );
+        if (Object.keys(remaining).length) {
+          write(snapshot.key, {
+            owner_id: owner,
+            values: { ...current.values, answers: remaining },
+            revision: crypto.randomUUID(),
+            is_pending_sync: false,
+          });
+          continue;
+        }
         confirmDraft(snapshot.key, snapshot.draft.revision);
         if (
           memoryDrafts.current.get(snapshot.key)?.revision ===
@@ -361,7 +410,7 @@ export function useParentAssessment(child?: Student, readOnly = false) {
           scope: identity,
           error: "",
           success:
-            "Saved on this device. Observations are queued for synchronization.",
+            "Your draft is saved on this device. Reconnect and submit again.",
         });
       else {
         for (const snapshot of snapshots) {
@@ -380,14 +429,14 @@ export function useParentAssessment(child?: Student, readOnly = false) {
         setFeedback({ scope: identity, error: errorMessage(err), success: "" });
         if (currentChild.current === identity) void assessment.refresh();
       }
-      const queued =
+      const retained =
         isNetworkError(err) ||
         (isAxiosError(err) && (err.response?.status || 0) >= 500);
       if (currentChild.current !== identity) return;
       return {
-        severity: (queued ? "success" : "error") as "success" | "error",
-        message: queued
-          ? "Saved on this device. Observations are queued for synchronization."
+        severity: (retained ? "success" : "error") as "success" | "error",
+        message: retained
+          ? "Your draft is saved on this device. Reconnect and submit again."
           : errorMessage(err),
       };
     } finally {
@@ -421,6 +470,9 @@ export function useParentAssessment(child?: Student, readOnly = false) {
     getAnswer,
     handleAnswerChange,
     handleSaveChecklist,
+    isQuestionLocked,
+    confirmationOpen: confirmation === `${identity}_${selectedPeriod}`,
+    cancelConfirmation: () => setConfirmation(null),
     saving,
     loading: assessment.loading,
     error:

@@ -4,11 +4,16 @@ Callers must pass records for one student, across all of that student's domains.
 Compatibility dates are a preview fallback only; they never confirm a school test.
 """
 from collections.abc import Iterable, Mapping
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from backend.models.eccd import StudentEccdEvaluation, TestingPeriod
 
 EvaluationRecord = StudentEccdEvaluation | Mapping[str, object]
+PHT = timezone(timedelta(hours=8))
+
+
+def now_pht() -> datetime:
+    return datetime.now(PHT)
 
 
 def _field(record: EvaluationRecord, name: str) -> object:
@@ -18,7 +23,7 @@ def _field(record: EvaluationRecord, name: str) -> object:
 def _date_only(value: object) -> date | None:
     if isinstance(value, datetime):
         # PostgreSQL can return TIMESTAMPTZ in the session's time zone.
-        return (value.astimezone(timezone.utc) if value.tzinfo else value).date()
+        return (value.astimezone(PHT) if value.tzinfo else value).date()
     if isinstance(value, date):
         return value
     return None

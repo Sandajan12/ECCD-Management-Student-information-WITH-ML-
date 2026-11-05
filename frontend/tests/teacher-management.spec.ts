@@ -202,7 +202,7 @@ test("section picker pins header and footer, scrolls long lists, and isolates re
   ).toBeVisible();
 });
 
-test("section rename handles server conflicts and retains drafts through reload and offline sync", async ({
+test("section rename retains drafts through offline reload and requires manual retry", async ({
   page,
   request,
 }) => {
@@ -241,7 +241,9 @@ test("section rename handles server conflicts and retains drafts through reload 
   await expect(input).toHaveValue("Recovered section");
   await page.context().setOffline(true);
   await input.press("Enter");
-  await expect(picker.getByRole("alert")).toContainText("after reconnection");
+  await expect(picker.getByRole("alert")).toContainText(
+    "Reconnect and submit again.",
+  );
   const draftKey = "ames_draft_1_section_rename_1";
   expect(
     await page.evaluate(
@@ -251,6 +253,11 @@ test("section rename handles server conflicts and retains drafts through reload 
   ).toBe(true);
   await page.context().setOffline(false);
   await page.evaluate(() => window.dispatchEvent(new Event("online")));
+  await expect(input).toHaveValue("Recovered section");
+  expect(
+    await page.evaluate((key) => localStorage.getItem(key), draftKey),
+  ).not.toBeNull();
+  await input.press("Enter");
   await expect(
     picker.getByRole("button", { name: "Recovered section", exact: true }),
   ).toBeVisible();

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import API, { errorMessage } from "../../services/api";
-import { useDurableForm } from "../../utils/drafts";
+import { readDraft, useDurableForm } from "../../utils/drafts";
 import type { Domain, Question } from "../../types";
 import {
   Button,
@@ -18,13 +18,38 @@ function HomeBasedToggle({
   question: Question;
   onSaved: () => void;
 }) {
-  const { values, change, save } = useDurableForm(
+  const { values, change, save, key } = useDurableForm(
     `question_home_${question.question_id}`,
     { is_home_based: question.is_home_based || false },
   );
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const submitting = useRef(false);
+  const persist = async (next: typeof values) => {
+    if (submitting.current) return;
+    submitting.current = true;
+    setBusy(true);
+    change(next);
+    setError("");
+    try {
+      const result = await save(
+        `/api/eccd-config/questions/${question.question_id}/home-based`,
+        "put",
+        next,
+        next,
+      );
+      if (result === "saved") onSaved();
+      else
+        setError(
+          "Your draft is saved on this device. Reconnect and submit again.",
+        );
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      submitting.current = false;
+      setBusy(false);
+    }
+  };
   return (
     <div>
       <IconButton
@@ -35,33 +60,20 @@ function HomeBasedToggle({
         aria-pressed={values.is_home_based}
         disabled={busy}
         className={values.is_home_based ? "text-[#2e7d32]" : "text-black/54"}
-        onClick={async () => {
-          if (submitting.current) return;
-          submitting.current = true;
-          setBusy(true);
-          const next = { is_home_based: !values.is_home_based };
-          change(next);
-          setError("");
-          try {
-            const result = await save(
-              `/api/eccd-config/questions/${question.question_id}/home-based`,
-              "put",
-              next,
-              next,
-            );
-            if (result === "saved") onSaved();
-            else setError("Saved for reconnection.");
-          } catch (err) {
-            setError(errorMessage(err));
-          } finally {
-            submitting.current = false;
-            setBusy(false);
-          }
-        }}
+        onClick={() => void persist({ is_home_based: !values.is_home_based })}
       >
         <Icon name={values.is_home_based ? "Home" : "HomeOutlined"} />
       </IconButton>
       <Notice tone="error">{error}</Notice>
+      {readDraft(key) && (
+        <Button
+          disabled={busy}
+          variant="text"
+          onClick={() => void persist(values)}
+        >
+          Retry home-based setting
+        </Button>
+      )}
     </div>
   );
 }
@@ -117,7 +129,10 @@ function ConfigForm({
                 },
           );
           if (result === "saved") onSaved();
-          else setError("Saved on this device for reconnection.");
+          else
+            setError(
+              "Your draft is saved on this device. Reconnect and submit again.",
+            );
         } catch (err) {
           setError(errorMessage(err));
         } finally {
@@ -204,10 +219,7 @@ export default function EccdQuestionsManagement() {
   }, []);
   useEffect(() => {
     void refresh();
-    const handler = () => void refresh();
-    window.addEventListener("ames-record-synced", handler);
     return () => {
-      window.removeEventListener("ames-record-synced", handler);
       refreshRevision.current++;
     };
   }, [refresh]);

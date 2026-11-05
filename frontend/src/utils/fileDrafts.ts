@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "../context/AuthContext";
-import API, { errorMessage, isNetworkError } from "../services/api";
+import API, { isNetworkError } from "../services/api";
 interface StoredFile {
   file: File;
   revision: string;
@@ -92,55 +92,6 @@ function multipart(record: StoredFile): FormData {
     data.append(key, value);
   return data;
 }
-let syncingFiles = false;
-export async function syncFiles(owner: number): Promise<void> {
-  if (syncingFiles || !navigator.onLine) return;
-  syncingFiles = true;
-  try {
-    for (const { key, record } of await pendingFiles(owner)) {
-      const user = JSON.parse(localStorage.getItem("user") || "null") as {
-        id?: number;
-      } | null;
-      if (user?.id !== owner || !localStorage.getItem("token")) break;
-      if (
-        !record.request ||
-        ![
-          "/api/teachers/import-students",
-          "/api/settings/upload-background",
-        ].includes(record.request.path)
-      )
-        continue;
-      if ((await readFile(key))?.revision !== record.revision) continue;
-      try {
-        const res = await API.post<{ failedCount?: number }>(
-          record.request.path,
-          multipart(record),
-          { timeout: 120000 },
-        );
-        if (res.status === 200 || res.status === 201) {
-          if (res.data.failedCount)
-            await writeFile(key, {
-              ...record,
-              is_pending_sync: false,
-              error:
-                "Some spreadsheet rows need correction. Open Import Excel to review and retry.",
-            });
-          else await confirmStoredFile(key, record.revision);
-          window.dispatchEvent(
-            new CustomEvent("ames-record-synced", { detail: key }),
-          );
-        }
-      } catch (error) {
-        if ((await readFile(key))?.revision === record.revision)
-          await writeFile(key, { ...record, error: errorMessage(error) });
-        if (isNetworkError(error)) break;
-      }
-    }
-  } finally {
-    syncingFiles = false;
-    window.dispatchEvent(new Event("ames-drafts-changed"));
-  }
-}
 export function useDurableFile(resource: string) {
   const { user } = useAuth();
   const key = `ames_file_${user?.id}_${resource}`;
@@ -148,6 +99,8 @@ export function useDurableFile(resource: string) {
   const revision = useRef("");
   useEffect(() => {
     let active = true;
+    revision.current = "";
+    setFile(null);
     void readFile(key)
       .then((record) => {
         if (active && record && !revision.current) {
@@ -187,19 +140,6 @@ export function useDurableFile(resource: string) {
     },
     [key],
   );
-  useEffect(() => {
-    const synced = (event: Event) => {
-      if ((event as CustomEvent<string>).detail === key)
-        void readFile(key).then((record) => {
-          if (!record) {
-            revision.current = "";
-            setFile(null);
-          }
-        });
-    };
-    window.addEventListener("ames-record-synced", synced);
-    return () => window.removeEventListener("ames-record-synced", synced);
-  }, [key]);
   const upload = async <T>(
     path: string,
     fields: Record<string, string> = {},
@@ -213,22 +153,28 @@ export function useDurableFile(resource: string) {
       request: { path, fields },
     };
     await writeFile(key, record);
+    window.dispatchEvent(new Event("ames-drafts-changed"));
     try {
+      if (!navigator.onLine) return null;
       const res = await API.post<T>(path, multipart(record), {
         timeout: 120000,
       });
-      if ((res.data as { failedCount?: number }).failedCount)
-        await writeFile(key, { ...record, is_pending_sync: false });
-      else await confirm(version);
+      if (res.status !== 200 && res.status !== 201)
+        throw new Error("The server did not confirm this upload.");
+      if ((res.data as { failedCount?: number }).failedCount) {
+        if ((await readFile(key))?.revision === version)
+          await writeFile(key, { ...record, is_pending_sync: false });
+      } else await confirm(version);
       return res.data;
     } catch (error) {
       if (isNetworkError(error)) {
-        window.dispatchEvent(new Event("ames-drafts-changed"));
         return null;
       }
       if ((await readFile(key))?.revision === version)
         await writeFile(key, { ...record, is_pending_sync: false });
       throw error;
+    } finally {
+      window.dispatchEvent(new Event("ames-drafts-changed"));
     }
   };
   return { file, choose, confirm, revision, upload };

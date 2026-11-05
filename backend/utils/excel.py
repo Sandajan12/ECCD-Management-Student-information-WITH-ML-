@@ -24,7 +24,7 @@ from backend.schemas.operations import SectionMismatchResponse
 from backend.schemas.common import validate_person_name
 from backend.utils.access import authorize_student, current_teacher, get_active_adviser_for_student, resolve_student, teacher_sections
 from backend.utils.eccd_scorer import calculate_decimal_age, calculate_scores
-from backend.utils.eccd_dates import get_official_testing_date
+from backend.utils.eccd_dates import get_official_testing_date, now_pht
 from backend.utils.lrn import hash_lrn
 from backend.utils.rollover import settings_record
 from backend.utils.students import upsert_guardian
@@ -210,20 +210,41 @@ def student_workbook(db: Session, student: Student, *, batch: ChecklistData | No
     return generate_student_workbook(student, teacher, parents, batch.evaluations.get(student.student_id, []), batch.questions, batch.setting)
 
 
-def checklist_response(db: Session, user: User, identifier: str) -> StreamingResponse:
+def checklist_response(db: Session, user: User, identifier: str | int, school_year: str | None = None) -> StreamingResponse:
     student = resolve_student(db, identifier)
     authorize_student(db, user, student)
+    if school_year is not None:
+        if school_year != settings_record(db).current_school_year:
+            raise HTTPException(400, "Archived school year records must be downloaded as a section ZIP.")
+        if student.school_year != school_year or not student.is_active:
+            raise HTTPException(404, f"No active student record found in School Year {school_year}.")
     filename = f"{safe_filename(student.last_name or 'STUDENT').upper()}_{safe_filename(student.school_year or 'RECORD')}.xlsx"
     return stream_bytes(workbook_bytes(student_workbook(db, student)), filename)
 
 
-def bulk_checklist_response(db: Session, user: User) -> StreamingResponse:
-    query = db.query(Student).filter_by(is_active=True)
+def authorize_export_section(db: Session, user: User, section_id: int) -> None:
+    """Check ownership before reading a cohort, including empty sections."""
+    if user.role.value == "admin" and section_id not in teacher_sections(db, current_teacher(db, user)):
+        raise HTTPException(403, "Section is not assigned to you.")
+
+
+def bulk_checklist_response(db: Session, user: User, section_id: int | None = None, school_year: str | None = None) -> StreamingResponse:
+    query = db.query(Student)
+    if section_id is not None:
+        authorize_export_section(db, user, section_id)
+        query = query.filter(Student.section_id == section_id)
+    if school_year is not None:
+        # Archiving toggles is_active; the stored section/year retain the cohort.
+        query = query.filter(Student.school_year == school_year)
+    else:
+        query = query.filter(Student.is_active.is_(True))
     teacher = current_teacher(db, user) if user.role.value == "admin" else None
     if teacher:
         query = query.filter(Student.section_id.in_(teacher_sections(db, teacher)))
     students = query.options(joinedload(Student.section)).order_by(Student.last_name, Student.student_id).all()
     if not students:
+        if section_id is not None and school_year is not None:
+            raise HTTPException(404, f"No assessment records found for this section in School Year {school_year}.")
         raise HTTPException(404, "No students found for export.")
     output = BytesIO()
     used = set()
@@ -239,7 +260,8 @@ def bulk_checklist_response(db: Session, user: User) -> StreamingResponse:
     years = {student.school_year or 'RECORD' for student in students}
     section = next(iter(sections)) if len(sections) == 1 else "ALL_SECTIONS"
     year = next(iter(years)) if len(years) == 1 else "ALL_YEARS"
-    filename = f"{safe_filename(section).upper()}_{safe_filename(year)}.zip"
+    prefix = "ECCD_" if section_id is not None else ""
+    filename = f"{prefix}{safe_filename(section).upper()}_{safe_filename(year)}.zip"
     return stream_bytes(output.getvalue(), filename, "application/zip")
 
 
@@ -302,11 +324,14 @@ def summary_response(db: Session, user: User, section_filter: str | int | None =
     specific = section_filter is not None and str(section_filter) not in ("all", "All", "All Sections")
     if specific:
         if str(section_filter).isdigit():
+            authorize_export_section(db, user, int(section_filter))
             query = query.filter(Student.section_id == int(section_filter))
         else:
             query = query.join(Section).filter(Section.section_name == section_filter)
     students = query.order_by(Student.section_id, Student.school_year, Student.last_name, Student.student_id).all()
     if not students:
+        if specific and school_year and school_year != "All":
+            raise HTTPException(404, f"No assessment records found for this section in School Year {school_year}.")
         raise HTTPException(404, "No students found for export.")
     cohorts = defaultdict(list)
     for student in students:
@@ -525,9 +550,12 @@ def import_workbook(db: Session, user: User, teacher: Teacher, section: Section,
                         db.add(evaluation)
                         evaluations.append(evaluation)
                         by_question_period[(question.question_id, period)] = evaluation
+                    unchanged = evaluation.answer == answer
+                    if not unchanged:
+                        evaluation.evaluator_role = "teacher"
+                        evaluation.teacher_marked_at = now_pht()
                     evaluation.answer = answer
                     evaluation.teacher_id = teacher.teacher_id
-                    evaluation.evaluator_role = "teacher"
                     evaluation.teacher_evaluation_date = dates[period]
                     evaluation.evaluation_date = dates[period]
                     # Parent identity and submission time remain historical provenance.

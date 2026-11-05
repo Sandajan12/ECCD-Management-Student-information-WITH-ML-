@@ -120,17 +120,20 @@ function MainLayoutContent({ children }: MainLayoutProps) {
               path: "/teacher/dashboard",
               icon: "BarChart",
             },
-            { title: "My Students", path: "/teacher/students", icon: "People" },
-            {
-              title: "ML Insights",
-              path: "/teacher/ml-insights",
-              icon: "Sparkles",
-            },
+            { title: "My Students",
+              path: "/teacher/students",
+              icon: "People" },
             {
               title: "Assessments",
               path: "/teacher/eccdassessment",
               icon: "Assignment",
             },
+            {
+              title: "ML Insights",
+              path: "/teacher/ml-insights",
+              icon: "Sparkles",
+            },
+
             ...(user?.allow_eccd_question_management
               ? [
                   {

@@ -39,8 +39,7 @@ class EccdPhase2LifecycleTests(unittest.TestCase):
 
     def parent_save(self, period="PRE", answer="KAYA", when=None):
         when = when or datetime(2026, 8, 20, 12, tzinfo=timezone.utc)
-        with patch("backend.utils.assessments.datetime") as clock:
-            clock.now.return_value = when
+        with patch("backend.utils.assessments.now_pht", return_value=when):
             response = self.call("POST", "/api/eccd/parent/evaluate", 5, json={
                 "student_id": 1, "evaluations": [{"question_id": self.fixture.home,
                     "testing_period": period, "answer": answer}]})
@@ -142,7 +141,7 @@ class EccdPhase2LifecycleTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.text)
         return response.json()
 
-    def test_parent_teacher_parent_teacher_transition_preserves_both_histories(self):
+    def test_parent_confirmation_correction_and_handover_preserve_both_histories(self):
         submitted = self.parent_save()
         row = self.home_row()
         self.assertEqual((row["evaluator_role"], row["parent_id"], row["parent_submitted_at"]),
@@ -163,19 +162,29 @@ class EccdPhase2LifecycleTests(unittest.TestCase):
         self.teacher_save(questions=[self.fixture.home, *self.school_questions])
         row = self.home_row()
         self.assertEqual((row["evaluator_role"], row["teacher_id"], row["teacher_evaluation_date"]),
-                         ("teacher", 1, date(2026, 8, 10)))
+                         ("parent", 1, date(2026, 8, 10)))
         self.assertEqual((row["parent_id"], row["parent_submitted_at"]), (1, submitted))
-        self.assertEqual(self.teacher_home_question()["evaluator_roles"]["PRE"], "teacher")
+        self.assertEqual(self.teacher_home_question()["evaluator_roles"]["PRE"], "parent")
+        self.assertIsNone(row["teacher_marked_at"])
         self.assertTrue(all(r["teacher_evaluation_date"] == date(2026, 8, 10) for r in self.rows()))
         self.assert_export_date(date(2026, 8, 10))
 
         school_before = [r for r in self.rows() if r["question_id"] != self.fixture.home]
-        corrected = self.parent_save(answer="DI-KAYA", when=datetime(2026, 8, 30, 12, tzinfo=timezone.utc))
+        self.assertEqual(self.call("POST", "/api/eccd/parent/evaluate", 5, json={
+            "student_id": 1, "evaluations": [{"question_id": self.fixture.home,
+            "testing_period": "PRE", "answer": "DI-KAYA"}]}).status_code, 409)
+        corrected = datetime(2026, 8, 30, 12, tzinfo=timezone.utc)
+        with patch("backend.utils.assessments.now_pht", return_value=corrected):
+            response = self.call("POST", "/api/eccd/evaluate", 2, json={
+                "student_id": 1, "period": "PRE", "evaluation_date": "2026-08-10",
+                "edited_question_ids": [self.fixture.home],
+                "answers": {str(self.fixture.home): 0}})
+        self.assertEqual(response.status_code, 200, response.text)
         row = self.home_row()
-        self.assertEqual((row["evaluator_role"], row["answer"], row["parent_submitted_at"]),
-                         ("parent", "DI-KAYA", corrected))
+        self.assertEqual((row["evaluator_role"], row["answer"], row["teacher_marked_at"]),
+                         ("teacher", "DI-KAYA", corrected))
         self.assertGreater(corrected, submitted)
-        self.assertEqual(self.teacher_home_question()["evaluator_roles"]["PRE"], "parent")
+        self.assertEqual(self.teacher_home_question()["evaluator_roles"]["PRE"], "teacher")
         self.assertEqual((row["teacher_id"], row["teacher_evaluation_date"], row["evaluation_date"]),
                          (1, date(2026, 8, 10), date(2026, 8, 10)))
         self.assertEqual(school_before, [r for r in self.rows() if r["question_id"] != self.fixture.home])
@@ -186,10 +195,14 @@ class EccdPhase2LifecycleTests(unittest.TestCase):
 
         self.assertEqual(self.call("POST", "/api/chairman/sections/1/assign-teacher", json={"teacher_id": 3}).status_code, 200)
         self.adviser_actor = 4
-        self.teacher_save(when="2026-08-11", actor=4)
+        response = self.call("POST", "/api/eccd/evaluate", 4, json={
+            "student_id": 1, "period": "PRE", "evaluation_date": "2026-08-11",
+            "answers": {str(self.fixture.home): 0}})
+        self.assertEqual(response.status_code, 200, response.text)
         row = self.home_row()
         self.assertEqual((row["evaluator_role"], row["teacher_id"]), ("teacher", 3))
-        self.assertEqual((row["parent_id"], row["parent_submitted_at"]), (1, corrected))
+        self.assertEqual((row["parent_id"], row["parent_submitted_at"]), (1, submitted))
+        self.assertEqual(row["teacher_marked_at"], corrected)
         self.assertEqual(self.teacher_home_question()["evaluator_roles"]["PRE"], "teacher")
         self.assert_export_date(date(2026, 8, 11))
 
@@ -215,7 +228,7 @@ class EccdPhase2LifecycleTests(unittest.TestCase):
         home, school = questions[self.fixture.home], questions[self.fixture.nonhome]
         self.assertIs(home["is_home_based"], True)
         self.assertIs(school["is_home_based"], False)
-        self.assertEqual(home["evaluator_roles"], {"PRE": "parent", "MID": "teacher", "POST": None})
+        self.assertEqual(home["evaluator_roles"], {"PRE": "parent", "MID": "parent", "POST": None})
         self.assertEqual(home["answers"], {"PRE": "KAYA", "MID": "KAYA", "POST": None})
         self.assertEqual(school["evaluator_roles"], {"PRE": None, "MID": None, "POST": "teacher"})
         self.assertEqual(assessment["periodDates"], {"PRE": None, "MID": "2026-09-10", "POST": "2026-10-10"})

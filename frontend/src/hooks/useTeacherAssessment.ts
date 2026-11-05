@@ -2,8 +2,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { useAssessment } from "./useAssessment";
 import API, { errorMessage, isNetworkError } from "../services/api";
+import { isAxiosError } from "axios";
 import {
   confirmDraft,
+  isTeacherEccdDraft,
   listPending,
   readDraft,
   storeDraft,
@@ -20,6 +22,7 @@ import { PERIODS } from "../types";
 import type { Answer, Domain, Period } from "../types";
 
 interface AssessmentPayload {
+  edited_question_ids: number[];
   student_id: number;
   testing_period: Period;
   assessment_date: string;
@@ -149,7 +152,15 @@ export function useTeacherAssessment(
       return;
     // Read the latest revision so rapid edits cannot replace another selection.
     const draft = readDraft<AssessmentDraft>(keyFor(period));
+    const previous = draft?.owner_id === owner ? draft.values : undefined;
     persist(period, {
+      original_answers: {
+        ...previous?.original_answers,
+        [questionId]:
+          questions.find((q) => q.question_id === questionId)?.answers[
+            period
+          ] || null,
+      },
       answers: {
         ...(draft?.owner_id === owner ? draft.values.answers : {}),
         [questionId]: answer,
@@ -161,6 +172,8 @@ export function useTeacherAssessment(
     if (!data || loading || !domain) return;
     const draft = readDraft<AssessmentDraft>(keyFor(period));
     persist(period, {
+      original_answers:
+        draft?.owner_id === owner ? draft.values.original_answers : undefined,
       answers: draft?.owner_id === owner ? draft.values.answers : {},
       evaluation_date: date,
     });
@@ -250,6 +263,15 @@ export function useTeacherAssessment(
     }
     const key = keyFor(period);
     const payload: AssessmentPayload = {
+      edited_question_ids: questions
+        .filter((q) => {
+          const original = drafts[period]?.original_answers?.[q.question_id];
+          return (
+            original != null &&
+            original !== resolved[period].answers[q.question_id]
+          );
+        })
+        .map((q) => q.question_id),
       student_id: studentId,
       testing_period: period,
       assessment_date: assessmentDate,
@@ -259,6 +281,7 @@ export function useTeacherAssessment(
       owner_id: owner,
       // Explicit Save confirms the displayed answers for this period only.
       values: {
+        original_answers: drafts[period]?.original_answers,
         answers: resolved[period].answers,
         evaluation_date: assessmentDate,
       },
@@ -311,6 +334,7 @@ export function useTeacherAssessment(
           message: errorMessage(err),
           severity: "error",
         });
+        if (isAxiosError(err) && err.response?.status === 409) await refresh();
       }
     } finally {
       submissionLock.current = false;
@@ -331,10 +355,8 @@ export function useTeacherAssessment(
   useEffect(() => {
     const update = () => {
       setPendingDraftsCount(
-        listPending(owner).filter(
-          (item) =>
-            item.key.startsWith("eccd_draft_") &&
-            item.draft.request?.path === "/api/eccd/evaluate",
+        listPending(owner).filter(({ key, draft }) =>
+          isTeacherEccdDraft(key, draft),
         ).length,
       );
       rerender((v) => v + 1);

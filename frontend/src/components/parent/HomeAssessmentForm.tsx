@@ -5,6 +5,11 @@ import {
   CardContent,
   Chip,
   CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogContentText,
+  DialogTitle,
   MenuItem,
   Stack,
   TextField,
@@ -159,6 +164,21 @@ export default function HomeAssessmentForm({
                           >
                             {question.question_text}
                           </Typography>
+                          {period &&
+                            assessment.isQuestionLocked(
+                              question.question_id,
+                              period,
+                            ) && (
+                              <Typography
+                                variant="caption"
+                                sx={{
+                                  color: "text.secondary",
+                                  fontWeight: 500,
+                                }}
+                              >
+                                Saved · Locked
+                              </Typography>
+                            )}
                         </Stack>
                         <ToggleButtonGroup
                           exclusive
@@ -171,7 +191,16 @@ export default function HomeAssessmentForm({
                                 )
                               : null
                           }
-                          disabled={disabled}
+                          disabled={
+                            disabled ||
+                            Boolean(
+                              period &&
+                              assessment.isQuestionLocked(
+                                question.question_id,
+                                period,
+                              ),
+                            )
+                          }
                           aria-labelledby={`home-question-${question.question_id}`}
                           onChange={(_, answer: Answer | null) => {
                             if (period && answer)
@@ -229,6 +258,37 @@ export default function HomeAssessmentForm({
           )}
         </Stack>
       </CardContent>
+      <Dialog
+        open={assessment.confirmationOpen}
+        onClose={assessment.cancelConfirmation}
+        fullWidth
+        maxWidth="xs"
+        slotProps={{ paper: { sx: { borderRadius: 3 } } }}
+        aria-labelledby="home-submit-title"
+      >
+        <DialogTitle id="home-submit-title">Submit Answers</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            Submitted evaluations cannot be changed. Any unanswered questions
+            can still be completed later.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions sx={{ p: 2, gap: 1 }}>
+          <Button
+            onClick={assessment.cancelConfirmation}
+            sx={{ borderRadius: 3 }}
+          >
+            Cancel
+          </Button>
+          <Button
+            variant="contained"
+            onClick={() => void assessment.handleSaveChecklist(true)}
+            sx={{ borderRadius: 3 }}
+          >
+            Submit Answers
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Card>
   );
 }

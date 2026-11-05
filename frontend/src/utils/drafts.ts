@@ -50,12 +50,6 @@ export interface Draft<T> {
   request?: DraftRequest;
   error?: string;
 }
-export interface RecordSyncedEvent<T = unknown> extends CustomEvent<string> {
-  response?: T;
-}
-export interface RecordSyncFailedEvent extends CustomEvent<string> {
-  error: unknown;
-}
 export function readDraft<T>(key: string): Draft<T> | null {
   try {
     return JSON.parse(localStorage.getItem(key) || "null") as Draft<T> | null;
@@ -99,32 +93,55 @@ export function listPending(
   }
   return items;
 }
+export function isTeacherEccdDraft(
+  key: string,
+  draft: Draft<unknown>,
+): boolean {
+  const match =
+    /^eccd_draft_([1-9]\d*)_(PRE|MID|POST)_([1-9]\d*)_([1-9]\d*)$/.exec(key);
+  if (
+    !match ||
+    Number(match[4]) !== draft.owner_id ||
+    !isDraftRequest(draft.request) ||
+    draft.request.path !== "/api/eccd/evaluate" ||
+    draft.request.method.toLowerCase() !== "post"
+  )
+    return false;
+  const data = draft.request.data;
+  return (
+    typeof data === "object" &&
+    data !== null &&
+    "student_id" in data &&
+    data.student_id === Number(match[1]) &&
+    "testing_period" in data &&
+    data.testing_period === match[2]
+  );
+}
 let syncing = false;
 export async function syncDrafts(owner: number): Promise<void> {
   if (syncing || !navigator.onLine) return;
   syncing = true;
   try {
     for (const { key, draft } of listPending(owner)) {
-      let session: { id?: number } | null;
+      let session: { id?: number; role?: string } | null;
       try {
         session = JSON.parse(localStorage.getItem("user") || "null") as {
           id?: number;
+          role?: string;
         } | null;
       } catch {
         break;
       }
-      if (session?.id !== owner || !localStorage.getItem("token")) break;
+      // Teachers use the admin role. Parent and chairman sessions never replay.
+      if (
+        session?.id !== owner ||
+        session.role !== "admin" ||
+        !localStorage.getItem("token")
+      )
+        break;
       if (readDraft<unknown>(key)?.revision !== draft.revision) continue;
-      if (!isDraftRequest(draft.request)) {
-        // Keep inputs for review. Persisted browser storage is untrusted and
-        // must never turn replay into a cross-origin or arbitrary-method call.
-        storeDraft(key, {
-          ...draft,
-          error:
-            "This queued save has an invalid API path or method. Open the form and save it again.",
-        });
-        continue;
-      }
+      // Leave every other saved form intact for manual review and submission.
+      if (!isTeacherEccdDraft(key, draft)) continue;
       try {
         const res = await API.request<unknown>({
           url: draft.request!.path,
@@ -143,23 +160,13 @@ export async function syncDrafts(owner: number): Promise<void> {
           );
         }
       } catch (error) {
-        const rejectedMessage =
-          /^\/api\/messages\/(send)?$/.test(draft.request!.path) &&
-          !isNetworkError(error);
         if (readDraft<unknown>(key)?.revision === draft.revision)
           storeDraft(key, {
             ...draft,
-            is_pending_sync: rejectedMessage ? false : draft.is_pending_sync,
-            error: errorMessage(error),
+            error: isNetworkError(error)
+              ? "Cannot reach the server. Your teacher ECCD submission is still saved on this device."
+              : errorMessage(error),
           });
-        window.dispatchEvent(
-          Object.assign(
-            new CustomEvent("ames-record-sync-failed", { detail: key }),
-            {
-              error,
-            },
-          ),
-        );
         if (isNetworkError(error)) break;
       }
     }
@@ -210,6 +217,7 @@ export function useDurableForm<T>(resource: string, initial: T) {
     try {
       if (!isDraftRequest(draft.request))
         throw new Error("This save has an invalid API path or method.");
+      if (!navigator.onLine) return "pending";
       const res = await API.request({ url: path, method, data });
       if (res.status !== 200 && res.status !== 201)
         throw new Error("The server did not confirm this save.");

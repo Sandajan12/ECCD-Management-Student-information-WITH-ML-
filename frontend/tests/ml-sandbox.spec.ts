@@ -343,7 +343,12 @@ test("legacy drafts remain intact and raw edits survive failures, reload and rec
     .getByLabel("Age at PRE (completed months)", { exact: true })
     .fill("61");
   await expect(score(page)).toHaveValue("48");
-  await expect(page.getByRole("alert")).toContainText("offline");
+  await expect(
+    page
+      .getByRole("alert")
+      .filter({ hasText: "Reconnect and submit again." })
+      .first(),
+  ).toBeVisible();
   const draft = await page.evaluate(
     (key) => JSON.parse(localStorage.getItem(key) || "null") as SandboxDraft,
     draftKey,
@@ -355,6 +360,8 @@ test("legacy drafts remain intact and raw edits survive failures, reload and rec
     (features) => features.age_months_pre === 61,
   );
   await context.setOffline(false);
+  await expect(result(page)).toHaveCount(0);
+  await page.getByRole("button", { name: "Retry prediction" }).click();
   await reconnected;
   await expect(result(page)).toBeVisible();
   await page.route("**/api/ml/predict/sandbox", (route) =>
@@ -385,7 +392,7 @@ test("legacy drafts remain intact and raw edits survive failures, reload and rec
     await page.evaluate(() => localStorage.getItem("unrelated-draft-check")),
   ).toBe("keep");
   await expect(page.getByRole("alert")).toContainText(
-    "Prediction temporarily unavailable",
+    "Reconnect and submit again.",
   );
   await page.unroute("**/api/ml/predict/sandbox");
   const retried = responseFor(

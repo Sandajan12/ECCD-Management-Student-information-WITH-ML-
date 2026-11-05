@@ -86,11 +86,12 @@ class EvaluatorReadinessTests(unittest.TestCase):
             inspection.return_value.has_table.return_value = False
             with self.assertLogs("uvicorn.error", level="ERROR"), self.assertRaises(MigrationError):
                 asyncio.run(start())
-            statements = startup_engine.connect.return_value.__enter__.return_value.execute.call_args_list
+            statements = startup_engine.begin.return_value.__enter__.return_value.execute.call_args_list
             self.assertEqual([str(call.args[0]) for call in statements], ["SELECT current_schema()"])
             generic_check.assert_not_called()
             sessions.assert_not_called()
             seed.assert_not_called()
+            startup_engine.connect.assert_not_called()
 
 
 class EvaluatorMigrationTests(unittest.TestCase):

@@ -3,7 +3,6 @@ import Popover from "@mui/material/Popover";
 import type { Section, SectionCreatePayload } from "../../types";
 import { errorMessage } from "../../services/api";
 import { readDraft, useDurableForm } from "../../utils/drafts";
-import type { RecordSyncedEvent } from "../../utils/drafts";
 import Icon from "./Icon";
 import { IconButton, Notice } from "./ui";
 
@@ -45,17 +44,6 @@ function SectionNameEditor({
     input.current?.focus();
     input.current?.select();
   }, []);
-  useEffect(() => {
-    const synced = (event: Event) => {
-      const syncedEvent = event as RecordSyncedEvent<SectionCreatePayload>;
-      if (syncedEvent.detail !== key || !syncedEvent.response) return;
-      onRenamed(section.section_id, syncedEvent.response.section_name);
-      // A completed older revision must not discard newer unsaved input.
-      if (!readDraft(key)) onDone();
-    };
-    window.addEventListener("ames-record-synced", synced);
-    return () => window.removeEventListener("ames-record-synced", synced);
-  }, [key, section.section_id, onRenamed, onDone]);
   const submit = async () => {
     if (submitting.current) return;
     const name = values.section_name.trim();
@@ -84,9 +72,11 @@ function SectionNameEditor({
       });
       if (result === "saved") {
         onRenamed(section.section_id, name);
-        onDone();
+        if (!readDraft(key)) onDone();
       } else
-        setError("Draft saved. The section will update after reconnection.");
+        setError(
+          "Your draft is saved on this device. Reconnect and submit again.",
+        );
     } catch (err) {
       setError(errorMessage(err));
     } finally {

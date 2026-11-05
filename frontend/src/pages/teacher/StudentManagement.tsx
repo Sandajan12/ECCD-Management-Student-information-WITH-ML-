@@ -362,19 +362,6 @@ const StudentManagement: React.FC = () => {
     };
   }, [fetchActiveStudents, fetchArchivedStudents]);
   useEffect(() => {
-    const confirmed = (event: Event) => {
-      const key = (event as CustomEvent<string>).detail;
-      if (key === createForm.key && !readDraft(key)) {
-        createForm.change(emptyForm);
-        setOpen(false);
-      }
-      if (key === editKey(editingId.current) && !readDraft(key))
-        setEditOpen(false);
-    };
-    window.addEventListener("ames-record-synced", confirmed);
-    return () => window.removeEventListener("ames-record-synced", confirmed);
-  }, [createForm.key, createForm.change, owner]);
-  useEffect(() => {
     ++editVersion.current;
     editingId.current = 0;
     setEditOpen(false);
@@ -424,7 +411,7 @@ const StudentManagement: React.FC = () => {
           request: { path: "/api/students/", method: "post", data: payload },
         });
         setError(
-          "Saved locally on device. Will automatically sync once reconnected.",
+          "Your draft is saved on this device. Reconnect and submit again.",
         );
         return;
       }
@@ -437,7 +424,7 @@ const StudentManagement: React.FC = () => {
         void fetchActiveStudents();
       } else
         setError(
-          "Saved locally on device. Will automatically sync once reconnected.",
+          "Your draft is saved on this device. Reconnect and submit again.",
         );
     } catch (err) {
       setError(errorMessage(err));
@@ -558,7 +545,7 @@ const StudentManagement: React.FC = () => {
     try {
       if (!navigator.onLine) {
         setEditError(
-          "Saved locally on device. Will automatically sync once reconnected.",
+          "Your draft is saved on this device. Reconnect and submit again.",
         );
         return;
       }
@@ -575,7 +562,7 @@ const StudentManagement: React.FC = () => {
     } catch (err) {
       if (isNetworkError(err))
         setEditError(
-          "Saved locally on device. Will automatically sync once reconnected.",
+          "Your draft is saved on this device. Reconnect and submit again.",
         );
       else {
         if (readDraft(key)?.revision === draft.revision)
@@ -687,7 +674,9 @@ const StudentManagement: React.FC = () => {
         void fetchActiveStudents();
       } else {
         setSectionMismatch(null);
-        setImportError("Workbook saved locally and queued for reconnection.");
+        setImportError(
+          "Your draft is saved on this device. Reconnect and submit again.",
+        );
       }
     } catch (err) {
       if (
@@ -730,7 +719,10 @@ const StudentManagement: React.FC = () => {
       ].some((value) => value?.toLocaleLowerCase().includes(query)),
   );
   return (
-    <Box sx={{ p: 1, minHeight: "100vh", position: "relative" }}>
+    <Box
+      className="bg-slate-50 [--primary:var(--primary-color,#2563eb)]"
+      sx={{ p: 1, minHeight: "100vh", position: "relative" }}
+    >
       {/* Header Section */}
       <Box
         sx={{
@@ -743,23 +735,21 @@ const StudentManagement: React.FC = () => {
         }}
       >
         <Box>
-          <Typography
-            variant="h4"
-            sx={{ fontWeight: "800", color: "#1e1e2f", mb: 0.5 }}
-          >
+          <h1 className="text-2xl font-bold text-slate-900 tracking-tight">
             Manage Students
-          </Typography>
-          <Typography variant="body1" color="textSecondary">
-            View and manage detailed students profile.
-          </Typography>
+          </h1>
+          <p className="text-sm text-slate-500 mt-0.5">
+            View and manage detailed student profiles.
+          </p>
         </Box>
         <Box
           sx={{
             display: "flex",
             flexDirection: "column",
             gap: 2,
-            width: { xs: "100%", md: "500px" },
-            maxWidth: "100%",
+            width: "100%",
+            flex: { md: 1 },
+            maxWidth: { xs: "100%", md: "42rem" },
           }}
         >
           <Box
@@ -768,76 +758,49 @@ const StudentManagement: React.FC = () => {
               gridTemplateColumns: {
                 xs: "repeat(2, minmax(0, 1fr))",
                 sm: "repeat(4, minmax(0, 1fr))",
+                md: "repeat(2, minmax(0, 1fr))",
+                lg: "repeat(4, minmax(0, 1fr))",
               },
               gap: 2,
               width: "100%",
             }}
           >
-            <Button
-              variant="outlined"
-              sx={{
-                flex: 1,
-                borderRadius: 2,
-                textTransform: "none",
-                fontWeight: "bold",
-                py: 1,
-              }}
+            <button
+              type="button"
+              className="h-10 px-4 inline-flex items-center justify-center gap-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition shadow-sm bg-white border border-slate-200/80 text-slate-700 hover:bg-slate-50"
               onClick={handleOpenArchive}
             >
               View Archive
-            </Button>
-            <Button
-              variant="contained"
-              color="warning"
-              startIcon={<ArchiveIcon />}
+            </button>
+            <button
+              type="button"
+              className="h-10 px-4 inline-flex items-center justify-center gap-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition shadow-sm bg-white border border-amber-300 text-amber-700 hover:bg-amber-50"
               onClick={handleArchiveAll}
-              sx={{
-                flex: 1,
-                borderRadius: 2,
-                textTransform: "none",
-                fontWeight: "bold",
-                boxShadow: "none",
-                py: 1,
-              }}
             >
+              <ArchiveIcon fontSize="small" />
               Archive All
-            </Button>
-            <Button
-              variant="contained"
-              startIcon={<AddIcon />}
+            </button>
+            <button
+              type="button"
+              className="h-10 px-4 inline-flex items-center justify-center gap-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition shadow-sm bg-[var(--primary)] text-white hover:opacity-90"
               onClick={() => {
                 setError("");
                 setOpen(true);
               }}
-              sx={{
-                flex: 1,
-                borderRadius: 2,
-                textTransform: "none",
-                fontWeight: "bold",
-                boxShadow: "none",
-                py: 1,
-              }}
             >
+              <AddIcon fontSize="small" />
               Add Student
-            </Button>
-            <Button
-              variant="contained"
-              color="secondary"
+            </button>
+            <button
+              type="button"
+              className="h-10 px-4 inline-flex items-center justify-center gap-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition shadow-sm bg-white border border-slate-200/80 text-slate-700 hover:bg-slate-50"
               onClick={() => {
                 setImportError("");
                 setImportOpen(true);
               }}
-              sx={{
-                flex: 1,
-                borderRadius: 2,
-                textTransform: "none",
-                fontWeight: "bold",
-                boxShadow: "none",
-                py: 1,
-              }}
             >
               Import Info Sheet
-            </Button>
+            </button>
           </Box>
           <TextField
             placeholder="Search Students"
@@ -848,6 +811,8 @@ const StudentManagement: React.FC = () => {
             sx={{ bgcolor: "white", borderRadius: 2, width: "100%" }}
             slotProps={{
               input: {
+                className:
+                  "[&.Mui-focused_.MuiOutlinedInput-notchedOutline]:border-[var(--primary)]! [&.Mui-focused]:ring-2 [&.Mui-focused]:ring-[var(--primary)]/20",
                 startAdornment: (
                   <InputAdornment position="start">
                     <SearchIcon color="action" />
@@ -862,6 +827,7 @@ const StudentManagement: React.FC = () => {
 
       {/* Main Table Card */}
       <Paper
+        className="bg-white border-slate-200/80"
         sx={{
           borderRadius: 4,
           overflow: "hidden",
@@ -871,7 +837,7 @@ const StudentManagement: React.FC = () => {
       >
         <TableContainer>
           <Table>
-            <TableHead sx={{ bgcolor: "#fbfbfb" }}>
+            <TableHead className="bg-[var(--primary)]/5 [&_.MuiTableCell-root]:border-[var(--primary)]/15! [&_.MuiTableCell-root]:text-slate-700!">
               <TableRow>
                 <TableCell
                   sx={{ fontWeight: "bold", color: "text.secondary", py: 2 }}
@@ -910,10 +876,9 @@ const StudentManagement: React.FC = () => {
                       }}
                     >
                       <Avatar
+                        className="bg-[var(--primary)]/10! text-[var(--primary)]! border-slate-200/80!"
                         sx={{
-                          bgcolor: "transparent",
                           border: "1px solid #ccc",
-                          color: "#555",
                           width: 40,
                           height: 40,
                         }}
@@ -1043,20 +1008,24 @@ const StudentManagement: React.FC = () => {
                             No Parent
                           </Typography>
                         )}
-                        <IconButton
+                        <button
+                          type="button"
+                          className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-slate-100 text-brand transition"
                           onClick={() => handleEditClick(student)}
-                          color="primary"
                           title="Edit Student"
+                          aria-label="Edit Student"
                         >
                           <EditIcon />
-                        </IconButton>
-                        <IconButton
+                        </button>
+                        <button
+                          type="button"
+                          className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-slate-100 text-amber-700 transition"
                           onClick={() => handleArchiveStudent(studentId)}
-                          color="warning"
                           title="Archive Student"
+                          aria-label="Archive Student"
                         >
                           <ArchiveIcon />
-                        </IconButton>
+                        </button>
                       </Stack>
                     </TableCell>
                   </TableRow>

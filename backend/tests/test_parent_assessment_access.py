@@ -10,7 +10,9 @@ from backend.migrations.parent_eccd_marks import apply_parent_eccd_marks, check_
 from backend.utils.backups import cipher, export_backup, restore_backup
 from backend.schemas.backup import BackupDocument
 from backend.schemas.eccd import ParentEvaluationBatch
+from backend.schemas.common import ParentPermissions
 from backend.utils.assessments import save_home_evaluation
+from backend.utils.eccd_dates import now_pht
 
 PATH = "/api/teacher/settings/parent-assessment-access"
 FLAGS = {"pre_test_parent_editable": True, "mid_test_parent_editable": False, "post_test_parent_editable": False}
@@ -56,17 +58,17 @@ class ParentAssessmentAccessTests(unittest.TestCase):
             self.assertLessEqual(before, row.parent_submitted_at)
             self.assertLessEqual(row.parent_submitted_at, datetime.now(timezone.utc))
             self.assertIsNotNone(row.parent_submitted_at.utcoffset())
-            self.assertEqual(row.evaluation_date, date.today())
+            self.assertEqual(row.evaluation_date, now_pht().date())
             self.assertIsNone(row.teacher_id)
             self.assertIsNone(row.teacher_evaluation_date)
-            # A different approved parent must be attributed to their own account.
+            # A linked parent's identical retry cannot steal the attribution.
             db.add(FamilyAccess(parent_id=2, student_id=1, status="SYNCED"))
             db.commit()
         self.assertEqual(self.save(actor=6).status_code, 200)
         with self.sessions() as db:
-            self.assertEqual(db.query(StudentEccdEvaluation).one().parent_id, 2)
+            self.assertEqual(db.query(StudentEccdEvaluation).one().parent_id, 1)
 
-    def test_unchanged_parent_answer_refreshes_provenance_and_parent_only_date(self):
+    def test_unchanged_parent_answer_preserves_provenance_and_parent_only_date(self):
         self.assertEqual(self.save().status_code, 200)
         old = datetime.now(timezone.utc) - timedelta(days=30)
         with self.sessions() as db:
@@ -74,16 +76,15 @@ class ParentAssessmentAccessTests(unittest.TestCase):
             row.parent_submitted_at = old
             row.evaluation_date = old.date()
             db.commit()
-        before = datetime.now(timezone.utc)
         self.assertEqual(self.save().status_code, 200)
         with self.sessions() as db:
             row = db.query(StudentEccdEvaluation).one()
-            self.assertEqual(row.evaluation_date, date.today())
-            self.assertGreaterEqual(row.parent_submitted_at, before)
+            self.assertEqual(row.evaluation_date, old.date())
+            self.assertEqual(row.parent_submitted_at, old)
             self.assertIsNone(row.teacher_evaluation_date)
             self.assertEqual(row.evaluator_role, "parent")
 
-    def test_parent_updates_and_unchanged_answers_preserve_teacher_history(self):
+    def test_teacher_first_answers_lock_parents_and_preserve_teacher_history(self):
         teacher_date, compatibility_date = date(2026, 8, 10), date(2026, 8, 9)
         with self.sessions() as db:
             db.add(StudentEccdEvaluation(student_id=1, teacher_id=3,
@@ -92,17 +93,16 @@ class ParentAssessmentAccessTests(unittest.TestCase):
             db.commit()
         for answer in ("KAYA", "DI-KAYA"):
             with self.subTest(answer=answer):
-                before = datetime.now(timezone.utc)
-                self.assertEqual(self.save(answer=answer).status_code, 200)
+                self.assertEqual(self.save(answer=answer).status_code, 200 if answer == "KAYA" else 409)
                 with self.sessions() as db:
                     row = db.query(StudentEccdEvaluation).one()
-                    self.assertEqual(row.answer.value, answer)
+                    self.assertEqual(row.answer.value, "KAYA")
                     self.assertEqual(row.teacher_id, 3)
                     self.assertEqual(row.teacher_evaluation_date, teacher_date)
                     self.assertEqual(row.evaluation_date, compatibility_date)
-                    self.assertEqual(row.parent_id, 1)
-                    self.assertEqual(row.evaluator_role, "parent")
-                    self.assertGreaterEqual(row.parent_submitted_at, before)
+                    self.assertIsNone(row.parent_id)
+                    self.assertEqual(row.evaluator_role, "teacher")
+                    self.assertIsNone(row.parent_submitted_at)
 
     def test_non_home_questions_return_exact_403_without_partial_writes(self):
         self.assertEqual(self.save(answer="DI-KAYA").status_code, 200)
@@ -145,18 +145,10 @@ class ParentAssessmentAccessTests(unittest.TestCase):
                 evaluation_date=date(2026, 8, 10)))
             db.commit()
         before = self.evaluation_rows()
-        self.assertEqual(self.save().status_code, 200)
-        after = self.evaluation_rows()
-        self.assertEqual(len(before), len(after))
-        for original, saved in zip(before, after):
-            if original["student_id"] == 1 and original["question_id"] == self.fixture.home and original["testing_period"] == "PRE":
-                self.assertEqual(saved["answer"].value, "KAYA")
-                self.assertEqual(saved["parent_id"], 1)
-                self.assertEqual(saved["teacher_id"], original["teacher_id"])
-                self.assertEqual(saved["teacher_evaluation_date"], original["teacher_evaluation_date"])
-                self.assertEqual(saved["evaluation_date"], original["evaluation_date"])
-            else:
-                self.assertEqual(saved, original)
+        self.assertEqual(self.save(answer="DI-KAYA").status_code, 200)
+        self.assertEqual(self.evaluation_rows(), before)
+        self.assertEqual(self.save().status_code, 409)
+        self.assertEqual(self.evaluation_rows(), before)
 
     def test_save_helper_enforces_synced_parent_identity_including_super_admin(self):
         payload = ParentEvaluationBatch(student_id=1, evaluations=[{
@@ -189,7 +181,7 @@ class ParentAssessmentAccessTests(unittest.TestCase):
         self.assertEqual(home["answers"]["PRE"], "KAYA")
         self.assertFalse(data["allow_parent_view_eccd_marks"])
 
-    def test_every_period_rejects_disabled_and_accepts_enabled_create_and_update(self):
+    def test_every_period_rejects_disabled_and_locks_answers_after_enabled_create(self):
         for period, flag, label in (("PRE", "pre_test_parent_editable", "Pre-Test"), ("MID", "mid_test_parent_editable", "Mid-Test"), ("POST", "post_test_parent_editable", "Post-Test")):
             with self.subTest(period=period):
                 flags = {name: False for name in FLAGS}
@@ -200,12 +192,12 @@ class ParentAssessmentAccessTests(unittest.TestCase):
                 flags[flag] = True
                 self.assertEqual(self.update(flags).status_code, 200)
                 self.assertEqual(self.save(period).status_code, 200)
-                self.assertEqual(self.save(period, "DI-KAYA").status_code, 200)
+                self.assertEqual(self.save(period, "DI-KAYA").status_code, 409)
                 flags[flag] = False
                 self.assertEqual(self.update(flags).status_code, 200)
                 self.assertEqual(self.save(period, "KAYA").status_code, 403)
                 with self.sessions() as db:
-                    self.assertEqual(db.query(StudentEccdEvaluation).filter_by(student_id=1, testing_period=period).one().answer.value, "DI-KAYA")
+                    self.assertEqual(db.query(StudentEccdEvaluation).filter_by(student_id=1, testing_period=period).one().answer.value, "KAYA")
 
     def test_mixed_period_request_is_rejected_even_when_all_windows_are_open(self):
         self.assertEqual(self.save(answer="DI-KAYA").status_code, 200)
@@ -402,6 +394,36 @@ class ParentAssessmentAccessTests(unittest.TestCase):
             self.assertTrue(document.sections[0].pre_test_parent_editable)
             self.assertFalse(document.sections[0].post_test_parent_editable)
 
+    def test_all_acl_toggles_persist_through_aliases_without_changing_assessments(self):
+        self.assertEqual(self.save().status_code, 200)
+        for period, when in (("PRE", "2026-08-10"), ("MID", "2026-09-10"), ("POST", "2026-10-10")):
+            self.assertEqual(self.fixture.evaluate(period=period, when=when).status_code, 200)
+        before = self.evaluation_rows()
+        paths = ("/api/teachers/settings", "/api/teachers/me/access", "/api/teachers/access-controls")
+        for path in paths:
+            for enabled in (True, False):
+                with self.subTest(path=path, enabled=enabled):
+                    flags = {key: enabled for key in ParentPermissions.model_fields}
+                    response = self.call("PUT", path, 2, json=flags)
+                    self.assertEqual(response.status_code, 200, response.text)
+                    with self.sessions() as db:
+                        teacher = db.get(Teacher, 1)
+                        self.assertEqual({key: getattr(teacher, key) for key in flags}, flags)
+                    for get_path in paths:
+                        response = self.call("GET", get_path, 2)
+                        self.assertEqual(response.status_code, 200, response.text)
+                        self.assertEqual({key: response.json()[key] for key in flags}, flags)
+                    self.assertEqual(self.evaluation_rows(), before)
+        response = self.call("PUT", paths[0], 2, json={
+            "allow_parent_view_eccd_marks": True, "allow_parent_predictions": True})
+        self.assertEqual(response.status_code, 200, response.text)
+        response = self.call("PUT", paths[1], 2, json={"allow_parent_view_eccd_pre": True})
+        self.assertEqual(response.status_code, 200, response.text)
+        data = self.call("GET", paths[2], 2).json()
+        self.assertTrue(data["allow_parent_view_eccd_marks"])
+        self.assertTrue(data["allow_parent_predictions"])
+        self.assertEqual(self.evaluation_rows(), before)
+
     def test_marks_settings_aliases_persist_and_old_payload_preserves_toggle(self):
         for path in ("/api/teachers/settings", "/api/teachers/me/access", "/api/teachers/access-controls"):
             response = self.call("GET", path, 2)
@@ -420,6 +442,92 @@ class ParentAssessmentAccessTests(unittest.TestCase):
             self.assertEqual(self.call("PUT", "/api/teachers/settings", actor, json={"allow_parent_view_eccd_marks": True}).status_code, 403)
         self.assertEqual(self.call("PUT", "/api/teachers/settings", 2, json={"allow_parent_view_eccd_marks": None}).status_code, 422)
         self.assertTrue(self.call("GET", "/api/teachers/settings", 2).json()["allow_parent_view_eccd_marks"])
+
+    def test_marks_settings_survive_linked_child_serialization_by_student_section(self):
+        other_windows = {
+            "pre_test_parent_editable": False,
+            "mid_test_parent_editable": True,
+            "post_test_parent_editable": True,
+        }
+        with self.sessions() as db:
+            db.add(FamilyAccess(parent_id=1, student_id=3, status="SYNCED"))
+            db.commit()
+        for actor, section_id, windows in ((2, 1, FLAGS), (3, 2, other_windows)):
+            response = self.call("PUT", PATH, actor, params={"section_id": section_id}, json=windows)
+            self.assertEqual(response.status_code, 200, response.text)
+
+        for first_marks, other_marks in ((True, False), (False, True)):
+            with self.subTest(first_marks=first_marks, other_marks=other_marks):
+                for actor, teacher_id, marks in ((2, 1, first_marks), (3, 2, other_marks)):
+                    response = self.call("PUT", "/api/teachers/me/access", actor,
+                                         json={"allow_parent_view_eccd_marks": marks})
+                    self.assertEqual(response.status_code, 200, response.text)
+                    with self.sessions() as db:
+                        self.assertEqual(db.get(Teacher, teacher_id).allow_parent_view_eccd_marks, marks)
+
+                for path in ("/api/students/my-child", "/api/students/linked"):
+                    response = self.call("GET", path, 5)
+                    self.assertEqual(response.status_code, 200, response.text)
+                    children = {child["student_id"]: child for child in response.json()}
+                    self.assertEqual(set(children), {1, 3})
+                    for student_id, section_id, marks in ((1, 1, first_marks), (3, 2, other_marks)):
+                        self.assertEqual(children[student_id]["section_id"], section_id)
+                        self.assertEqual(children[student_id]["allow_parent_view_eccd_marks"], marks)
+
+                for student_id, marks, windows in ((1, first_marks, FLAGS), (3, other_marks, other_windows)):
+                    response = self.call("GET", f"/api/eccd/parent/assessment/{student_id}", 5)
+                    self.assertEqual(response.status_code, 200, response.text)
+                    data = response.json()
+                    self.assertEqual(data["allow_parent_view_eccd_marks"], marks)
+                    self.assertEqual(data["permissions"]["allow_parent_view_eccd_marks"], marks)
+                    self.assertEqual(data["parent_assessment_access"], windows)
+                    self.assertEqual(data["can_edit_home_based"], student_id == 1)
+                    for period in ("PRE", "MID", "POST"):
+                        self.assertFalse(data["summary"][period]["is_published"])
+                        self.assertIsNone(data["summary"][period]["standardScore"])
+
+    def test_child_acl_parity_follows_enrolled_section_and_adviser_handovers(self):
+        flags = {key: index % 2 == 0 for index, key in enumerate(ParentPermissions.model_fields)}
+        other_flags = {key: not value for key, value in flags.items()}
+        with self.sessions() as db:
+            db.add(FamilyAccess(parent_id=1, student_id=3, status="SYNCED"))
+            db.commit()
+        for actor, values in ((2, flags), (3, other_flags)):
+            response = self.call("PUT", "/api/teachers/me/access", actor, json=values)
+            self.assertEqual(response.status_code, 200, response.text)
+
+        def assert_parity(expected):
+            for path in ("/api/students/my-child", "/api/students/linked", "/api/parents/children"):
+                response = self.call("GET", path, 5)
+                self.assertEqual(response.status_code, 200, response.text)
+                children = {row["student_id"]: row for row in response.json()}
+                self.assertEqual(set(children), set(expected))
+                for student_id, values in expected.items():
+                    self.assertEqual({key: children[student_id][key] for key in values}, values)
+            for student_id, values in expected.items():
+                detail = self.call("GET", f"/api/students/{student_id}", 5)
+                self.assertEqual(detail.status_code, 200, detail.text)
+                self.assertEqual({key: detail.json()[key] for key in values}, values)
+                assessment = self.call("GET", f"/api/eccd/parent/assessment/{student_id}", 5)
+                self.assertEqual(assessment.status_code, 200, assessment.text)
+                self.assertEqual(assessment.json()["permissions"], values)
+                readiness = self.call("GET", f"/api/ml/parent/readiness/{student_id}", 5)
+                self.assertEqual(readiness.status_code, 200, readiness.text)
+                self.assertEqual(readiness.json()["allow_parent_predictions"], values["allow_parent_predictions"])
+
+        assert_parity({1: flags, 3: other_flags})
+        response = self.call("PUT", "/api/chairman/students/transfer", json={
+            "student_ids": [1], "new_section_id": 2})
+        self.assertEqual(response.status_code, 200, response.text)
+        assert_parity({1: other_flags, 3: other_flags})
+        response = self.call("POST", "/api/chairman/sections/2/assign-teacher", json={"teacher_id": 1})
+        self.assertEqual(response.status_code, 200, response.text)
+        assert_parity({1: flags, 3: flags})
+        with self.sessions() as db:
+            db.get(User, 2).is_active = False
+            db.commit()
+        self.assertEqual(self.call("GET", "/api/students/my-child", 5).json(), [])
+        self.assertEqual(self.call("GET", "/api/students/1", 5).status_code, 403)
 
     def test_marks_and_official_score_release_are_independent_across_all_domains(self):
         with self.sessions() as db:

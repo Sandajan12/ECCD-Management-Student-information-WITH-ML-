@@ -22,7 +22,6 @@ function SessionMessaging({ children }: MessagingProviderProps) {
       new MessagingClient(
         token,
         user?.role === "admin" || user?.role === "user",
-        user?.id,
       ),
   );
   useEffect(() => {
@@ -30,7 +29,6 @@ function SessionMessaging({ children }: MessagingProviderProps) {
     const connection = new MessagingClient(
       token,
       user?.role === "admin" || user?.role === "user",
-      user?.id,
     );
     setClient(connection);
     return connection.start();

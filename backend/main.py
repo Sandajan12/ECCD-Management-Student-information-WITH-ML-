@@ -33,6 +33,7 @@ from backend.migrations.parent_predictions import check_parent_predictions
 from backend.migrations.auth_security_version import check_auth_security_version
 from backend.migrations.email_only_identity import check_email_only_identity
 from backend.migrations.phase1 import MigrationError
+from backend.migrations.teacher_marked_at import apply_teacher_marked_at
 
 access_logger = logging.getLogger("uvicorn.access")
 if not any(isinstance(item, UnreadPollingFilter) for item in access_logger.filters):
@@ -62,11 +63,12 @@ def check_evaluator_tracking_readiness(connection, schema):
 
 
 def initialize_runtime():
-    # Upgrades are explicit, transactional commands; startup never changes an
-    # existing table layout or provisions accounts.
-    with engine.connect() as connection:
+    # The nullable teacher timestamp is the only automatic additive upgrade.
+    # Other upgrades remain explicit; startup never provisions accounts.
+    with engine.begin() as connection:
         schema = connection.execute(text("SELECT current_schema()")).scalar_one()
         check_evaluator_tracking_readiness(connection, schema)
+        apply_teacher_marked_at(connection, schema)
         check_adviser_takeover(connection, schema)
         check_parent_assessment_access(connection, schema)
         check_parent_eccd_marks(connection, schema)

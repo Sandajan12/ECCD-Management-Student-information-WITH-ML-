@@ -334,7 +334,7 @@ test("partial imports show row errors and retain the workbook for correction", a
   });
 });
 
-test("confirmed offline retry retains its exact section and flag through reload and reconnect", async ({
+test("offline import retains its workbook through reload and reconnect until manual confirmation", async ({
   page,
 }) => {
   const state = await portal(page);
@@ -344,11 +344,10 @@ test("confirmed offline retry retains its exact section and flag through reload 
     .getByRole("button", { name: "Overwrite & Import" })
     .click();
   await expect(
-    page
-      .getByRole("alert")
-      .filter({
-        hasText: "Workbook saved locally and queued for reconnection.",
-      }),
+    page.getByRole("alert").filter({
+      hasText:
+        "Your draft is saved on this device. Reconnect and submit again.",
+    }),
   ).toBeVisible();
   expect(await storedWorkbook(page)).toMatchObject({
     name: "students.xlsx",
@@ -357,14 +356,24 @@ test("confirmed offline retry retains its exact section and flag through reload 
   });
   await page.reload();
   await expect
-    .poll(async () => (await storedWorkbook(page))?.error)
-    .toBeTruthy();
+    .poll(async () => (await storedWorkbook(page))?.name)
+    .toBe("students.xlsx");
+  const submissions = state.requests.length;
   state.mode = "success";
   await page.evaluate(() => window.dispatchEvent(new Event("online")));
+  expect(await storedWorkbook(page)).not.toBeNull();
+  expect(state.requests).toHaveLength(submissions);
+  await page
+    .getByRole("button", { name: "Import Info Sheet", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Import", exact: true }).click();
+  await confirmation(page)
+    .getByRole("button", { name: "Overwrite & Import" })
+    .click();
   await expect.poll(() => storedWorkbook(page)).toBeNull();
   expect(
     state.requests
-      .slice(1)
+      .filter((request) => request.overwrite)
       .every(
         (request) =>
           request.overwrite &&

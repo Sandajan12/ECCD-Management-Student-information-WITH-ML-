@@ -371,7 +371,7 @@ function SchoolBranding({
             setMessage(
               result === "saved"
                 ? "School settings saved."
-                : "Saved for reconnection.",
+                : "Your draft is saved on this device. Reconnect and submit again.",
             );
             if (result === "saved") {
               if (monthRevision) onOpeningMonthSaved(monthRevision);

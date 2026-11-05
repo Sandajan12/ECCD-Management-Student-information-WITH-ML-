@@ -173,6 +173,7 @@ class EvaluationBackupRow(BackupRow):
     evaluator_role: Literal["teacher", "parent"] = "teacher"
     teacher_evaluation_date: Optional[date] = None
     parent_submitted_at: Optional[datetime] = None
+    teacher_marked_at: Optional[datetime] = None
 
 
 BackupStudentEccdEvaluation = EvaluationBackupRow

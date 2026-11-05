@@ -1,7 +1,7 @@
 # Feature migrations: Phase 2 is the current backend schema
 
 For a fresh PostgreSQL/Supabase database, the explicit
-[bootstrap command](../scripts/README.md) applies pending migrations 001–015 and
+[bootstrap command](../scripts/README.md) applies pending migrations 001–016 and
 seeds the exact tracked 7-domain/109-question ECCD baseline plus an
 environment-configured Chairman in one transaction:
 
@@ -11,6 +11,26 @@ uv run --no-project --python 3.12 python -m backend.scripts.seed_supabase --appl
 
 Repeated runs preserve existing accounts and matching reference data. Existing
 school/account exports are not embedded in the seed fixture.
+
+## Teacher correction timestamps (016)
+
+`teacher_marked_at` adds a nullable TIMESTAMPTZ to individual ECCD evaluations.
+Startup applies this one additive migration transactionally before validating the
+current schema; bootstrap registers it as `016_teacher_marked_at`. Concurrent
+workers serialize on the migration ledger. Repeated runs preserve all records;
+historical teacher timestamps remain NULL. Other migrations still require
+explicit application. The runtime database role needs ALTER TABLE permission.
+
+```powershell
+uv run --no-project --python .venv312 python -m backend.migrations.teacher_marked_at --apply
+uv run --no-project --python .venv312 python -m backend.migrations.teacher_marked_at --check
+```
+
+Encrypted backups include the field and default older documents to NULL.
+Checklist workbooks retain their existing cells and official testing dates;
+answer-cell comments carry the parent and teacher save timestamps. Workbook
+imports preserve parent attribution on equal marks and stamp actual teacher
+changes with the server save time, independently of imported testing dates.
 
 ## Optional student LRN (015)
 
@@ -305,7 +325,7 @@ everything back. Repeated applies validate the schema and return without writes.
 `--check` validates without applying upgrades. Rollback requires the retained
 backup and matching older application release; dropped usernames are not rebuilt.
 
-Fresh bootstrap runs migrations 001–014 before seeding. Historical Phase 1 keeps
+Fresh bootstrap runs migrations 001–016 before seeding. Historical Phase 1 keeps
 username and excludes the new expression index and Chairman name. Phase 2 uses
 the migration ledger to distinguish its historical and post-013 column contracts,
 and fingerprints actual intermediate columns rather than the evolving ORM.

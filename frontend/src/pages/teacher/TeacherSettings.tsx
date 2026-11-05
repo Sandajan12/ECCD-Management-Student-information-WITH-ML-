@@ -17,12 +17,7 @@ import {
 import PasswordValidator from "../../components/teacher/PasswordValidator";
 import api, { errorMessage, isNetworkError } from "../../services/api";
 import { useAuth } from "../../context/AuthContext";
-import {
-  confirmDraft,
-  readDraft,
-  storeDraft,
-  syncDrafts,
-} from "../../utils/drafts";
+import { confirmDraft, readDraft, storeDraft } from "../../utils/drafts";
 import type { Draft } from "../../utils/drafts";
 import { useSessionField } from "../../utils/sessionDrafts";
 import type { Permissions, SessionResponse } from "../../types";
@@ -57,28 +52,28 @@ const initialPermissions: Permissions = {
   allow_parent_edit_student_info: true,
   allow_parent_edit_home_based_eccd: false,
 };
-const parentPermissions = (source: Permissions): Permissions => ({
-  allow_parent_predictions: source.allow_parent_predictions === true,
-  allow_parent_view_student_info: source.allow_parent_view_student_info,
-  allow_parent_view_eccd_pre: source.allow_parent_view_eccd_pre,
-  allow_parent_view_eccd_mid: source.allow_parent_view_eccd_mid,
-  allow_parent_view_eccd_post: source.allow_parent_view_eccd_post,
-  allow_parent_view_eccd_marks: source.allow_parent_view_eccd_marks === true,
-  allow_parent_edit_student_info: source.allow_parent_edit_student_info,
-  allow_parent_edit_home_based_eccd: source.allow_parent_edit_home_based_eccd,
-});
+const parentPermissions = (
+  source: Partial<Permissions> | undefined,
+): Partial<Permissions> => {
+  const permissions: Partial<Permissions> = {};
+  for (const key of Object.keys(initialPermissions) as (keyof Permissions)[]) {
+    if (
+      source &&
+      Object.hasOwn(source, key) &&
+      typeof source[key] === "boolean"
+    )
+      permissions[key] = source[key];
+  }
+  return permissions;
+};
 const TeacherSettings: React.FC = () => {
   const { section, loading: sectionsLoading } = useTeacher();
   const { user, login } = useAuth();
   const owner = user?.id || 0;
   const accessKey = "ames_draft_" + owner + "_teacher_access";
-  const [access, setAccess] = useState<Permissions>(() =>
-    parentPermissions(
-      readDraft<Permissions>(accessKey)?.values || initialPermissions,
-    ),
-  );
+  const [access, setAccess] = useState<Permissions>(initialPermissions);
   const desiredAccess = useRef(access);
-  const accessReady = useRef(!!readDraft<Permissions>(accessKey));
+  const accessReady = useRef(false);
   const accessGeneration = useRef(0);
   const accessQueue = useRef<Promise<void>>(Promise.resolve());
   const [accessLoaded, setAccessLoaded] = useState(false);
@@ -137,14 +132,23 @@ const TeacherSettings: React.FC = () => {
     );
   useEffect(() => {
     let current = true;
+    accessGeneration.current++;
+    accessReady.current = false;
+    setAccessLoaded(false);
+    setAccessSaving(false);
     const load = async () => {
       const generation = accessGeneration.current;
       try {
         const response = await api.get<Permissions>("/api/teachers/me/access");
         if (!current || generation !== accessGeneration.current) return;
         accessReady.current = true;
-        const draft = readDraft<Permissions>(accessKey);
-        const next = parentPermissions(draft?.values || response.data);
+        const draft = readDraft<Partial<Permissions>>(accessKey);
+        const next: Permissions = {
+          ...response.data,
+          ...parentPermissions(
+            draft?.owner_id === owner ? draft.values : undefined,
+          ),
+        };
         desiredAccess.current = next;
         setAccess(next);
         setAccessLoaded(true);
@@ -158,26 +162,12 @@ const TeacherSettings: React.FC = () => {
       }
     };
     void load();
-    const online = () => {
-      void syncDrafts(owner);
-      void load();
-    };
-    const synced = (event: Event) => {
-      if ((event as CustomEvent<string>).detail === accessKey) {
-        void load();
-        setAccessSnackbar({
-          open: true,
-          message: "Parent access settings saved successfully!",
-          severity: "success",
-        });
-      }
-    };
-    window.addEventListener("online", online);
-    window.addEventListener("ames-record-synced", synced);
+    window.addEventListener("online", load);
     return () => {
       current = false;
-      window.removeEventListener("online", online);
-      window.removeEventListener("ames-record-synced", synced);
+      accessGeneration.current++;
+      accessReady.current = false;
+      window.removeEventListener("online", load);
     };
   }, [accessKey, owner]);
   const persistSettingChange = (updates: Partial<Permissions>) => {
@@ -194,30 +184,46 @@ const TeacherSettings: React.FC = () => {
     const values = { ...desiredAccess.current, ...updates };
     desiredAccess.current = values;
     setAccess(values);
-    const draft: Draft<Permissions> = {
+    const previous = readDraft<Partial<Permissions>>(accessKey);
+    const pending: Partial<Permissions> = {
+      ...parentPermissions(
+        previous?.owner_id === owner ? previous.values : undefined,
+      ),
+      ...updates,
+    };
+    const draft: Draft<Partial<Permissions>> = {
       owner_id: owner,
-      values,
+      values: pending,
       revision: crypto.randomUUID(),
       is_pending_sync: true,
-      request: { path: "/api/teachers/me/access", method: "put", data: values },
+      request: {
+        path: "/api/teachers/me/access",
+        method: "put",
+        data: pending,
+      },
     };
     storeDraft(accessKey, draft);
     setAccessSaving(true);
     accessQueue.current = accessQueue.current.then(async () => {
-      if (readDraft(accessKey)?.revision !== draft.revision) return;
+      if (
+        accessGeneration.current !== version ||
+        readDraft(accessKey)?.revision !== draft.revision
+      )
+        return;
       try {
         if (!navigator.onLine) {
           setAccessSnackbar({
             open: true,
             message:
-              "Saved locally on device. Will automatically sync once reconnected.",
+              "Your draft is saved on this device. Reconnect and submit again.",
             severity: "success",
           });
           return;
         }
-        const response = await api.put("/api/teachers/me/access", values);
+        const response = await api.put("/api/teachers/me/access", pending);
         if (response.status !== 200 && response.status !== 201)
           throw new Error("The server did not confirm this save.");
+        if (accessGeneration.current !== version) return;
         confirmDraft(accessKey, draft.revision);
         setAccessSnackbar({
           open: true,
@@ -225,11 +231,12 @@ const TeacherSettings: React.FC = () => {
           severity: "success",
         });
       } catch (err) {
+        if (accessGeneration.current !== version) return;
         if (isNetworkError(err))
           setAccessSnackbar({
             open: true,
             message:
-              "Saved locally on device. Will automatically sync once reconnected.",
+              "Your draft is saved on this device. Reconnect and submit again.",
             severity: "success",
           });
         else {
@@ -250,6 +257,7 @@ const TeacherSettings: React.FC = () => {
       }
     });
   };
+  const retryAccess = () => persistSettingChange({});
   const validatePasswords = () => {
     if (!oldPassword || !newPassword || !confirmPassword)
       return "Please fill in all password fields.";
@@ -378,34 +386,37 @@ const TeacherSettings: React.FC = () => {
   return (
     <Box sx={{ p: 3, minHeight: "85vh" }}>
       <Box sx={{ mb: 4, maxWidth: 900, mx: "auto" }}>
-        <Typography
-          variant="h4"
-          sx={{ fontWeight: "800", color: "#111827", mb: 0.5 }}
-        >
+        <h1 className="text-2xl font-bold text-slate-900 tracking-tight">
           Settings
-        </Typography>
-        <Typography variant="body1" color="textSecondary">
+        </h1>
+        <p className="text-sm text-slate-500 mt-0.5">
           Manage teacher and parent access settings.
-        </Typography>
+        </p>
       </Box>
 
       {/* === GLOBAL PARENT ACCESS SETTINGS PANEL === */}
-      <Box sx={{ mb: 4, maxWidth: 900, mx: "auto", mt: 6 }}>
-        <Typography
-          variant="h5"
-          sx={{ fontWeight: "800", color: "#111827", mb: 0.5 }}
-        >
+      <Box sx={{ mb: 4, maxWidth: 900, mx: "auto" }}>
+        <h2 className="text-lg font-bold text-slate-800 mt-6 mb-1">
           Global Parent Access
-        </Typography>
-        <Typography variant="body1" color="textSecondary" sx={{ mb: 3 }}>
+        </h2>
+        <p className="text-sm text-slate-500 mb-3">
           Control what information parents can see or change across all your
           students.
-        </Typography>
+        </p>
 
         {accessSnackbar.open && (
           <Alert severity={accessSnackbar.severity} sx={{ mb: 3 }}>
             {accessSnackbar.message}
           </Alert>
+        )}
+        {readDraft(accessKey) && (
+          <Button
+            sx={{ borderRadius: 3, mb: 2 }}
+            disabled={accessDisabled}
+            onClick={retryAccess}
+          >
+            Retry parent access settings
+          </Button>
         )}
 
         <Paper
@@ -415,141 +426,110 @@ const TeacherSettings: React.FC = () => {
             boxShadow: "0 4px 20px rgba(0,0,0,0.05)",
           }}
         >
-          <Typography
-            variant="subtitle1"
-            sx={{
-              mb: 2,
-              color: "#374151",
-              fontWeight: "bold",
-            }}
-          >
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-3">
             Student Record Permissions
-          </Typography>
-          <Grid container spacing={3} sx={{ mb: 3 }}>
-            <Grid size={{ xs: 12, sm: 6 }}>
-              <Paper variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
-                <Box
-                  sx={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    gap: 2,
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-3">
+            <div className="rounded-xl bg-white p-4 shadow-sm border border-slate-100">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="min-w-0 flex-1 basis-32">
+                  <Typography variant="body2" sx={{ fontWeight: "bold" }}>
+                    Student Prediction
+                  </Typography>
+                  <Typography
+                    variant="caption"
+                    sx={{ color: "text.secondary" }}
+                  >
+                    Allow parents to view early developmental predictions and
+                    intervention guides for their child.
+                  </Typography>
+                </div>
+                <Switch
+                  disabled={accessDisabled}
+                  slotProps={{
+                    input: { "aria-label": "Student Prediction" },
                   }}
-                >
-                  <Box>
-                    <Typography variant="body2" sx={{ fontWeight: "bold" }}>
-                      Student Prediction
-                    </Typography>
-                    <Typography
-                      variant="caption"
-                      sx={{ color: "text.secondary" }}
-                    >
-                      Allow parents to view early developmental predictions and intervention guides for their child.
-                    </Typography>
-                  </Box>
-                  <Switch
-                    disabled={accessDisabled}
-                    slotProps={{
-                      input: { "aria-label": "Student Prediction" },
+                  checked={access.allow_parent_predictions === true}
+                  onChange={(e) =>
+                    persistSettingChange({
+                      allow_parent_predictions: e.target.checked,
+                    })
+                  }
+                  color="primary"
+                />
+              </div>
+            </div>
+            <div className="rounded-xl bg-white p-4 shadow-sm border border-slate-100">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="min-w-0 flex-1 basis-32">
+                  <Typography
+                    variant="body2"
+                    sx={{
+                      fontWeight: "bold",
                     }}
-                    checked={access.allow_parent_predictions === true}
-                    onChange={(e) =>
-                      persistSettingChange({
-                        allow_parent_predictions: e.target.checked,
-                      })
-                    }
-                    color="primary"
-                  />
-                </Box>
-              </Paper>
-            </Grid>
-            <Grid size={{ xs: 12, sm: 6 }}>
-              <Paper variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
-                <Box
-                  sx={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
+                  >
+                    Student Profile Viewing
+                  </Typography>
+                  <Typography
+                    variant="caption"
+                    sx={{
+                      color: "text.secondary",
+                    }}
+                  >
+                    Allow parents to view student information
+                  </Typography>
+                </div>
+                <Switch
+                  disabled={accessDisabled}
+                  slotProps={{
+                    input: { "aria-label": "Student Profile Viewing" },
                   }}
-                >
-                  <Box>
-                    <Typography
-                      variant="body2"
-                      sx={{
-                        fontWeight: "bold",
-                      }}
-                    >
-                      Student Profile Viewing
-                    </Typography>
-                    <Typography
-                      variant="caption"
-                      sx={{
-                        color: "text.secondary",
-                      }}
-                    >
-                      Allow parents to view student information
-                    </Typography>
-                  </Box>
-                  <Switch
-                    disabled={accessDisabled}
-                    slotProps={{
-                      input: { "aria-label": "Student Profile Viewing" },
+                  checked={access.allow_parent_view_student_info}
+                  onChange={(e) =>
+                    persistSettingChange({
+                      allow_parent_view_student_info: e.target.checked,
+                    })
+                  }
+                  color="primary"
+                />
+              </div>
+            </div>
+            <div className="rounded-xl bg-white p-4 shadow-sm border border-slate-100">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="min-w-0 flex-1 basis-32">
+                  <Typography
+                    variant="body2"
+                    sx={{
+                      fontWeight: "bold",
                     }}
-                    checked={access.allow_parent_view_student_info}
-                    onChange={(e) =>
-                      persistSettingChange({
-                        allow_parent_view_student_info: e.target.checked,
-                      })
-                    }
-                    color="primary"
-                  />
-                </Box>
-              </Paper>
-            </Grid>
-            <Grid size={{ xs: 12, sm: 6 }}>
-              <Paper variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
-                <Box
-                  sx={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
+                  >
+                    Student Profile Editing
+                  </Typography>
+                  <Typography
+                    variant="caption"
+                    sx={{
+                      color: "text.secondary",
+                    }}
+                  >
+                    Allow parents to update child information
+                  </Typography>
+                </div>
+                <Switch
+                  disabled={accessDisabled}
+                  slotProps={{
+                    input: { "aria-label": "Student Profile Editing" },
                   }}
-                >
-                  <Box>
-                    <Typography
-                      variant="body2"
-                      sx={{
-                        fontWeight: "bold",
-                      }}
-                    >
-                      Student Profile Editing
-                    </Typography>
-                    <Typography
-                      variant="caption"
-                      sx={{
-                        color: "text.secondary",
-                      }}
-                    >
-                      Allow parents to update child information
-                    </Typography>
-                  </Box>
-                  <Switch
-                    disabled={accessDisabled}
-                    slotProps={{
-                      input: { "aria-label": "Student Profile Editing" },
-                    }}
-                    checked={access.allow_parent_edit_student_info}
-                    onChange={(e) =>
-                      persistSettingChange({
-                        allow_parent_edit_student_info: e.target.checked,
-                      })
-                    }
-                    color="secondary"
-                  />
-                </Box>
-              </Paper>
-            </Grid>
-          </Grid>
+                  checked={access.allow_parent_edit_student_info}
+                  onChange={(e) =>
+                    persistSettingChange({
+                      allow_parent_edit_student_info: e.target.checked,
+                    })
+                  }
+                  color="secondary"
+                />
+              </div>
+            </div>
+          </div>
 
           <Divider sx={{ my: 2 }} />
 

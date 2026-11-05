@@ -146,6 +146,9 @@ async function portal(page: Page, path = "/parent/dashboard", marks = false) {
             ? ("parent" as const)
             : ("teacher" as const),
         },
+        parent_locked: {
+          PRE: state.saved.has(`${id}_PRE_${question.question_id}`),
+        },
       })),
     }));
     return {
@@ -196,6 +199,23 @@ async function portal(page: Page, path = "/parent/dashboard", marks = false) {
         });
         return;
       }
+      if (
+        payload.evaluations.some((row) => {
+          const saved = state.saved.get(
+            `${payload.student_id}_${row.testing_period}_${row.question_id}`,
+          );
+          return saved && saved !== row.answer;
+        })
+      ) {
+        await route.fulfill({
+          status: 409,
+          json: {
+            detail:
+              "Submitted answers cannot be changed. Refresh to view the saved answers.",
+          },
+        });
+        return;
+      }
       state.submissions.push(payload);
       for (const row of payload.evaluations)
         state.saved.set(
@@ -225,6 +245,109 @@ const homeAnswer = (page: Page, name: string, answer: Answer) =>
     .getByRole("group", { name, exact: true })
     .getByRole("button", { name: answer, exact: true });
 
+async function submitHome(page: Page) {
+  await homeForm(page)
+    .getByRole("button", { name: "Save Home Observations" })
+    .click();
+  await page
+    .getByRole("dialog", { name: "Submit Answers" })
+    .getByRole("button", { name: "Submit Answers", exact: true })
+    .click();
+}
+
+test("confirmation cancellation retains selections and saved questions lock across reloads", async ({
+  page,
+}) => {
+  const state = await portal(page);
+  await homeAnswer(page, "Plays safely at home", "KAYA").click();
+  const before = await page.evaluate(
+    (key) => localStorage.getItem(key),
+    draftKey,
+  );
+  await homeForm(page)
+    .getByRole("button", { name: "Save Home Observations" })
+    .click();
+  const dialog = page.getByRole("dialog", { name: "Submit Answers" });
+  await expect(
+    dialog.getByText(
+      "Submitted evaluations cannot be changed. Any unanswered questions can still be completed later.",
+    ),
+  ).toBeVisible();
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  expect(state.submissions).toHaveLength(0);
+  expect(
+    await page.evaluate((key) => localStorage.getItem(key), draftKey),
+  ).toBe(before);
+  await expect(
+    homeAnswer(page, "Plays safely at home", "KAYA"),
+  ).toHaveAttribute("aria-pressed", "true");
+  await submitHome(page);
+  await expect(homeAnswer(page, "Plays safely at home", "KAYA")).toBeDisabled();
+  await page.reload();
+  await expect(homeAnswer(page, "Plays safely at home", "KAYA")).toBeDisabled();
+  await homeAnswer(page, "Draws at home", "DI-KAYA").click();
+  await submitHome(page);
+  await expect.poll(() => state.submissions.length).toBe(2);
+  expect(state.submissions[1].evaluations).toEqual([
+    { question_id: 21, testing_period: "PRE", answer: "DI-KAYA" },
+  ]);
+});
+
+test("offline parent submissions retain drafts and require manual online confirmation", async ({
+  page,
+}) => {
+  const state = await portal(page);
+  await homeAnswer(page, "Plays safely at home", "KAYA").click();
+  await page.evaluate(() =>
+    Object.defineProperty(navigator, "onLine", {
+      configurable: true,
+      value: false,
+    }),
+  );
+  await submitHome(page);
+  await expect(
+    homeForm(page).getByText(
+      "Your draft is saved on this device. Reconnect and submit again.",
+    ),
+  ).toBeVisible();
+  expect(state.submissions).toHaveLength(0);
+  await page.evaluate(() => {
+    Object.defineProperty(navigator, "onLine", {
+      configurable: true,
+      value: true,
+    });
+    window.dispatchEvent(new Event("online"));
+  });
+  await expect(
+    homeAnswer(page, "Plays safely at home", "KAYA"),
+  ).toHaveAttribute("aria-pressed", "true");
+  expect(state.submissions).toHaveLength(0);
+  await submitHome(page);
+  await expect.poll(() => state.submissions.length).toBe(1);
+});
+
+test("a conflicting linked-parent save refreshes locks and preserves the local draft", async ({
+  page,
+}) => {
+  const state = await portal(page);
+  await homeAnswer(page, "Plays safely at home", "KAYA").click();
+  // Another linked parent submits while this parent's checklist is still open.
+  state.saved.set("3_PRE_11", "DI-KAYA");
+  await submitHome(page);
+  await expect(
+    homeForm(page).getByText(
+      "Submitted answers cannot be changed. Refresh to view the saved answers.",
+    ),
+  ).toBeVisible();
+  await expect(
+    homeAnswer(page, "Plays safely at home", "DI-KAYA"),
+  ).toBeDisabled();
+  expect(
+    await page.evaluate((key) => localStorage.getItem(key), draftKey),
+  ).toContain('"11":"KAYA"');
+  expect(state.submissions).toHaveLength(0);
+});
+
 test("Overview shows domain-tagged home questions and saves one batch without school items", async ({
   page,
 }, testInfo) => {
@@ -235,7 +358,7 @@ test("Overview shows domain-tagged home questions and saves one batch without sc
   await expect(form.getByText("Walks in class")).toHaveCount(0);
   await homeAnswer(page, "Plays safely at home", "KAYA").click();
   await homeAnswer(page, "Draws at home", "DI-KAYA").click();
-  await form.getByRole("button", { name: "Save Home Observations" }).click();
+  await submitHome(page);
   await expect(
     form.getByText("Assessment evaluations saved successfully!"),
   ).toBeVisible();
@@ -287,18 +410,27 @@ test("drafts survive reload, failed saves and reconnect, and remain isolated bet
     homeAnswer(page, "Plays safely at home", "DI-KAYA"),
   ).toHaveAttribute("aria-pressed", "true");
   state.failSave = true;
-  await homeForm(page)
-    .getByRole("button", { name: "Save Home Observations" })
-    .click();
+  await submitHome(page);
   await expect(
-    homeForm(page).getByText(/Observations are queued/),
+    homeForm(page).getByText(
+      "Your draft is saved on this device. Reconnect and submit again.",
+    ),
   ).toBeVisible();
   await page.reload();
   await expect(
     homeAnswer(page, "Plays safely at home", "DI-KAYA"),
   ).toHaveAttribute("aria-pressed", "true");
   state.failSave = false;
+  const submissions = state.submissions.length;
   await page.evaluate(() => window.dispatchEvent(new Event("online")));
+  await expect(
+    homeAnswer(page, "Plays safely at home", "DI-KAYA"),
+  ).toHaveAttribute("aria-pressed", "true");
+  expect(state.submissions).toHaveLength(submissions);
+  expect(
+    await page.evaluate((key) => localStorage.getItem(key), draftKey),
+  ).not.toBeNull();
+  await submitHome(page);
   await expect.poll(() => state.saved.get("3_PRE_11")).toBe("DI-KAYA");
   await expect
     .poll(() => page.evaluate((key) => localStorage.getItem(key), draftKey))
@@ -389,9 +521,7 @@ test("a rejected save retains the exact home answers for later review", async ({
   const state = await portal(page);
   await homeAnswer(page, "Plays safely at home", "DI-KAYA").click();
   state.editing = false;
-  await homeForm(page)
-    .getByRole("button", { name: "Save Home Observations" })
-    .click();
+  await submitHome(page);
   await expect(
     homeForm(page).getByText(
       "Editing is currently locked by the Class Adviser.",
@@ -419,9 +549,7 @@ test("an older confirmed save cannot clear a newer draft revision", async ({
   });
   try {
     await homeAnswer(page, "Plays safely at home", "KAYA").click();
-    await homeForm(page)
-      .getByRole("button", { name: "Save Home Observations" })
-      .click();
+    await submitHome(page);
     await expect.poll(() => state.submissions.length).toBe(1);
     await page.evaluate((key) => {
       localStorage.setItem(
@@ -442,8 +570,9 @@ test("an older confirmed save cannot clear a newer draft revision", async ({
     homeForm(page).getByText("Assessment evaluations saved successfully!"),
   ).toBeVisible();
   await expect(
-    homeAnswer(page, "Plays safely at home", "DI-KAYA"),
+    homeAnswer(page, "Plays safely at home", "KAYA"),
   ).toHaveAttribute("aria-pressed", "true");
+  await expect(homeAnswer(page, "Plays safely at home", "KAYA")).toBeDisabled();
   expect(
     await page.evaluate((key) => localStorage.getItem(key), draftKey),
   ).toContain("newer-edit");

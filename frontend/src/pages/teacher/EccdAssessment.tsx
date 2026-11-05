@@ -5,16 +5,9 @@ import {
   Typography,
   Button,
   MenuItem,
-  Select,
-  FormControl,
-  InputLabel,
   CircularProgress,
   Alert,
   Menu,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
   Tooltip,
   Snackbar,
   Chip,
@@ -33,6 +26,7 @@ import api, {
 } from "../../services/api";
 import { useAuth } from "../../context/AuthContext";
 import { useTeacher } from "../../context/TeacherContext";
+import { useSettings } from "../../context/SettingsContext";
 import {
   localToday,
   useTeacherAssessment,
@@ -46,6 +40,8 @@ import {
 import type { TeacherAssessmentDraft } from "../../utils/eccdDrafts";
 import { assessmentRefreshScheduler } from "../../hooks/assessmentRefresh";
 import EccdCardPreviewDialog from "../../components/teacher/EccdCardPreviewDialog";
+import EccdDownloadDialog from "../../components/teacher/EccdDownloadDialog";
+import type { EccdDownloadKind } from "../../components/teacher/EccdDownloadDialog";
 import type {
   Domain as AssessmentDomain,
   DomainProgress,
@@ -53,10 +49,21 @@ import type {
   Period,
   Student,
 } from "../../types";
+
+const attributionDate = (value: string | null | undefined): string => {
+  if (!value || Number.isNaN(Date.parse(value))) return "Date unavailable";
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Manila",
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  }).format(new Date(value));
+};
 interface Domain extends AssessmentDomain, DomainProgress {}
 const EccdAssessment: React.FC = () => {
   const { user } = useAuth();
-  const { section } = useTeacher();
+  const { section, dashboardFilters } = useTeacher();
+  const { settings } = useSettings();
   const [searchParams] = useSearchParams();
   const openedAssessment = useRef<string>("");
   const [students, setStudents] = useState<Student[]>([]);
@@ -67,8 +74,9 @@ const EccdAssessment: React.FC = () => {
   const [downloading, setDownloading] = useState(false);
   const [downloadMenuAnchor, setDownloadMenuAnchor] =
     useState<HTMLElement | null>(null);
-  const [singleDownloadModalOpen, setSingleDownloadModalOpen] = useState(false);
-  const [downloadStudentId, setDownloadStudentId] = useState<string>("");
+  const [downloadKind, setDownloadKind] = useState<EccdDownloadKind | null>(
+    null,
+  );
   const [previewScope, setPreviewScope] = useState<string | null>(null);
   const [activePeriod, setActivePeriod] = useState<Period>("PRE");
   const requestVersion = useRef(0);
@@ -246,8 +254,7 @@ const EccdAssessment: React.FC = () => {
     setDomains([]);
     setClassAssessments(null);
     setLoading(false);
-    setDownloadStudentId("");
-    setSingleDownloadModalOpen(false);
+    setDownloadKind(null);
     setDownloadMenuAnchor(null);
     setPreviewScope(null);
     const version = ++requestVersion.current;
@@ -351,8 +358,8 @@ const EccdAssessment: React.FC = () => {
     path: string,
     fallback: string,
     message: string,
-  ) => {
-    if (downloading) return;
+  ): Promise<string | null> => {
+    if (downloading) return "A download is already in progress.";
     setDownloading(true);
     try {
       await downloadFile(path, fallback);
@@ -361,12 +368,9 @@ const EccdAssessment: React.FC = () => {
         message,
         severity: "success",
       });
+      return null;
     } catch (err) {
-      setSnackbar({
-        open: true,
-        message: errorMessage(err),
-        severity: "error",
-      });
+      return errorMessage(err);
     } finally {
       setDownloading(false);
     }
@@ -509,8 +513,7 @@ const EccdAssessment: React.FC = () => {
         <MenuItem
           onClick={() => {
             setDownloadMenuAnchor(null);
-            setDownloadStudentId(selectedLrn);
-            setSingleDownloadModalOpen(true);
+            setDownloadKind("records");
           }}
         >
           ECCD Records
@@ -518,102 +521,29 @@ const EccdAssessment: React.FC = () => {
         <MenuItem
           onClick={() => {
             setDownloadMenuAnchor(null);
-            if (section) {
-              void handleDownload(
-                `/api/eccd/section/${section.section_id}/export`,
-                "Section_ECCD_Summary.xlsx",
-                "Section summary record downloaded successfully!",
-              );
-            }
+            setDownloadKind("summary");
           }}
         >
           Section Summary Record
         </MenuItem>
       </Menu>
 
-      <Dialog
-        open={singleDownloadModalOpen}
-        onClose={() => setSingleDownloadModalOpen(false)}
-        fullWidth
-        maxWidth="sm"
-        aria-labelledby="eccd-records-download-title"
-        slotProps={{ paper: { sx: { borderRadius: 3 } } }}
-      >
-        <DialogTitle id="eccd-records-download-title">
-          Download ECCD Records
-        </DialogTitle>
-        <DialogContent sx={{ pt: 2 }}>
-          <Typography variant="body2" sx={{ color: "text.secondary", mb: 2 }}>
-            Select one student's checklist or download all active students'
-            records as a ZIP.
-          </Typography>
-          <FormControl fullWidth size="small" sx={{ mt: 1 }}>
-            <InputLabel id="teacher-export-student-label">
-              Select Student
-            </InputLabel>
-            <Select
-              labelId="teacher-export-student-label"
-              value={downloadStudentId}
-              label="Select Student"
-              onChange={(e) => setDownloadStudentId(e.target.value)}
-              sx={{ borderRadius: 3 }}
-            >
-              <MenuItem value="all">All Students (ZIP)</MenuItem>
-              {students.map((s) => {
-                const idVal = String(s.student_id);
-                return (
-                  <MenuItem key={idVal} value={idVal}>
-                    {s.first_name} {s.last_name} ({s.masked_lrn})
-                  </MenuItem>
-                );
-              })}
-            </Select>
-          </FormControl>
-        </DialogContent>
-        <DialogActions sx={{ p: 2 }}>
-          <Button
-            onClick={() => setSingleDownloadModalOpen(false)}
-            color="inherit"
-            sx={{ borderRadius: 3 }}
-          >
-            Cancel
-          </Button>
-          <Button
-            variant="contained"
-            onClick={() => {
-              if (downloadStudentId === "all") {
-                void handleDownload(
-                  "/api/teachers/download-all",
-                  "Class_ECCD_Assessments.zip",
-                  "All section assessments downloaded successfully!",
-                );
-              } else if (
-                students.some(
-                  (student) => String(student.student_id) === downloadStudentId,
-                )
-              ) {
-                void handleDownload(
-                  `/api/teachers/download/${downloadStudentId}`,
-                  "ECCD_Assessment.xlsx",
-                  "Assessment checklist downloaded successfully!",
-                );
-              }
-              setSingleDownloadModalOpen(false);
-            }}
-            disabled={
-              !singleDownloadModalOpen ||
-              downloading ||
-              (downloadStudentId !== "all" &&
-                !students.some(
-                  (student) => String(student.student_id) === downloadStudentId,
-                ))
-            }
-            sx={{ borderRadius: 3 }}
-          >
-            {downloading ? "Downloading..." : "Download"}
-          </Button>
-        </DialogActions>
-      </Dialog>
+      {downloadKind && section && (
+        <EccdDownloadDialog
+          key={progressScope}
+          kind={downloadKind}
+          section={section}
+          students={students}
+          currentSchoolYear={
+            dashboardFilters?.currentSchoolYear || settings.current_school_year
+          }
+          schoolYears={dashboardFilters?.schoolYears || []}
+          initialStudentId={selectedLrn}
+          downloading={downloading}
+          onClose={() => setDownloadKind(null)}
+          onDownload={handleDownload}
+        />
+      )}
 
       {error && (
         <Alert severity="error" sx={{ mb: 3 }}>
@@ -1021,10 +951,22 @@ const EccdAssessment: React.FC = () => {
                                 Home-Based
                               </span>
                             )}
-                            {q.evaluator_roles?.[activePeriod] === "parent" && (
-                              <span className="inline-flex rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
-                                Parent Assessed
-                              </span>
+                            {q.evaluator_roles?.[activePeriod] && (
+                              <Tooltip
+                                title={
+                                  q.evaluator_roles[activePeriod] ===
+                                    "teacher" &&
+                                  q.parent_submitted_at?.[activePeriod]
+                                    ? `Parent submitted · ${attributionDate(q.parent_submitted_at[activePeriod])}`
+                                    : ""
+                                }
+                              >
+                                <span className="text-xs text-slate-500 font-medium">
+                                  {q.evaluator_roles[activePeriod] === "parent"
+                                    ? `Parent Assessed · ${attributionDate(q.parent_submitted_at?.[activePeriod])}`
+                                    : `Teacher Assessed · ${attributionDate(q.teacher_marked_at?.[activePeriod])}`}
+                                </span>
+                              </Tooltip>
                             )}
                           </div>
                         )}

@@ -180,3 +180,91 @@ class EccdCardExportTests(TestCase):
         self.assertIn("&lt;img", html)
         self.assertNotIn("<img", html)
         self.assertNotIn('data-cell="B2"', html)
+
+    def add_historical_cohort(self):
+        self.db.add_all([
+            Student(student_id=4, first_name="Past", last_name="Archived", section_id=1, school_year="2025-2026", is_active=False),
+            Student(student_id=5, first_name="Past", last_name="Active", section_id=1, school_year="2025-2026", is_active=True),
+            Student(student_id=6, first_name="Past", last_name="Foreign", section_id=2, school_year="2025-2026", is_active=False),
+        ])
+        self.db.add(StudentEccdEvaluation(student_id=4, question_id=1, teacher_id=1, testing_period=TestingPeriod.PRE, answer=EccdAnswer.KAYA, evaluation_date=date(2025, 8, 1), teacher_evaluation_date=date(2025, 8, 1), evaluator_role="teacher"))
+        self.db.commit()
+
+    def test_year_scoped_zip_includes_archived_and_active_cohort_only(self):
+        self.add_historical_cohort()
+        response = self.client.get("/api/eccd/export/cards-zip?section_id=1&school_year=2025-2026")
+        self.assertEqual(response.status_code, 200, response.text if response.status_code != 200 else "")
+        self.assertEqual(response.headers["content-type"], "application/zip")
+        self.assertIn("ECCD_DIAMOND_2025-2026.zip", response.headers["content-disposition"])
+        with ZipFile(BytesIO(response.content)) as archive:
+            self.assertEqual(set(archive.namelist()), {"ARCHIVED_2025-2026.xlsx", "ACTIVE_2025-2026.xlsx"})
+            workbook = openpyxl.load_workbook(BytesIO(archive.read("ARCHIVED_2025-2026.xlsx")))
+            self.addCleanup(workbook.close)
+            self.assertEqual(workbook["CHECKLIST"]["D36"].value, chr(252))
+            self.assertEqual(workbook["CHECKLIST"]["D36"].font.name, "Wingdings")
+        self.assertEqual(self.db.query(StudentEccdEvaluation).filter_by(student_id=4).count(), 1)
+        self.assertFalse(self.db.get(Student, 4).is_active)
+
+    def test_year_scoped_current_downloads_and_individual_archive_gate(self):
+        self.add_historical_cohort()
+        single = self.client.get("/api/eccd/export/card-single?student_id=1&school_year=2026-2027")
+        self.assertEqual(single.status_code, 200)
+        workbook = openpyxl.load_workbook(BytesIO(single.content))
+        self.addCleanup(workbook.close)
+        self.assertEqual(workbook["CHECKLIST"]["D36"].value, chr(252))
+        current = self.client.get("/api/eccd/export/cards-zip?section_id=1&school_year=2026-2027")
+        self.assertEqual(current.status_code, 200)
+        with ZipFile(BytesIO(current.content)) as archive:
+            # Explicit cohorts include inactive students without mixing years.
+            self.assertEqual(len(archive.namelist()), 2)
+            self.assertTrue(all("2026-2027" in name for name in archive.namelist()))
+        self.assertEqual(self.client.get("/api/eccd/export/card-single?student_id=4&school_year=2025-2026").status_code, 400)
+        for student_id in (3, 4, 999):
+            self.assertEqual(self.client.get(f"/api/eccd/export/card-single?student_id={student_id}&school_year=2026-2027").status_code, 404)
+
+    def test_historical_summary_and_compatibility_route_filter_year(self):
+        self.add_historical_cohort()
+        for path in ("/api/eccd/export/section-summary?section_id=1&", "/api/eccd/section/1/export?"):
+            response = self.client.get(path + "school_year=2025-2026")
+            self.assertEqual(response.status_code, 200)
+            workbook = openpyxl.load_workbook(BytesIO(response.content))
+            self.addCleanup(workbook.close)
+            for sheet in workbook:
+                self.assertEqual(sheet["J8"].value, "SCHOOL YEAR: 2025-2026")
+                self.assertEqual({sheet["D14"].value, sheet["D15"].value}, {"ACTIVE, PAST", "ARCHIVED, PAST"})
+                self.assertIsNone(sheet["D16"].value)
+
+    def test_year_scoped_exports_handle_empty_cohorts_and_validate_queries(self):
+        for endpoint in ("cards-zip", "section-summary"):
+            path = f"/api/eccd/export/{endpoint}?section_id=1&school_year="
+            response = self.client.get(path + "2020-2021")
+            self.assertEqual(response.status_code, 404)
+            self.assertEqual(response.json()["detail"], "No assessment records found for this section in School Year 2020-2021.")
+            for year in ("All", "2025-2027", "2025"):
+                self.assertEqual(self.client.get(path + year).status_code, 422)
+        self.assertEqual(self.client.get("/api/eccd/export/card-single?student_id=1&school_year=2025-2027").status_code, 422)
+        self.assertEqual(self.client.get("/api/eccd/export/cards-zip?section_id=1").status_code, 422)
+        self.assertEqual(self.client.get("/api/eccd/export/card-single?student_id=1").status_code, 422)
+
+    def test_year_scoped_exports_enforce_section_role_and_assignment_access(self):
+        self.add_historical_cohort()
+        paths = [
+            "/api/eccd/export/cards-zip?section_id=1&school_year=2025-2026",
+            "/api/eccd/export/section-summary?section_id=1&school_year=2025-2026",
+            "/api/eccd/export/card-single?student_id=1&school_year=2026-2027",
+        ]
+        for endpoint in ("cards-zip", "section-summary"):
+            for section_id in (2, 3):
+                self.assertEqual(self.client.get(f"/api/eccd/export/{endpoint}?section_id={section_id}&school_year=2025-2026").status_code, 403)
+        self.assertEqual(self.client.get("/api/eccd/export/card-single?student_id=2&school_year=2026-2027").status_code, 403)
+        self.user = self.db.get(User, 3)
+        for path in paths:
+            self.assertEqual(self.client.get(path).status_code, 403)
+        self.user = self.db.get(User, 1)
+        self.db.query(SectionTeacher).one().status = "Inactive"
+        self.db.commit()
+        for path in paths:
+            self.assertEqual(self.client.get(path).status_code, 403)
+        self.user = self.db.get(User, 2)
+        for path in paths:
+            self.assertEqual(self.client.get(path).status_code, 200)

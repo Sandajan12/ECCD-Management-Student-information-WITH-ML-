@@ -1,4 +1,3 @@
-from datetime import date, datetime, timezone
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 from backend.models import EccdDomain, EccdQuestion, FamilyAccess, Parent, Section, Student, StudentEccdEvaluation, User
@@ -8,7 +7,7 @@ from backend.schemas.common import ParentPermissions
 from backend.schemas.eccd import EvaluationBatch, ParentEvaluationBatch
 from backend.utils.access import authorize_student, current_teacher, get_active_adviser_for_student, permissions_for_student, resolve_student, require_parent_visible_student
 from backend.utils.eccd_scorer import calculate_decimal_age, calculate_scores
-from backend.utils.eccd_dates import get_grading_date, get_official_testing_date
+from backend.utils.eccd_dates import get_grading_date, get_official_testing_date, now_pht
 from backend.utils.students import public_student
 from backend.utils.mastery import completed_pre_kaya, guard_pre_mastery
 from backend.utils.audit import person_name, record_audit, teacher_name
@@ -40,20 +39,30 @@ def save_evaluation(db: Session, user: User, payload: EvaluationBatch) -> dict:
         if (previous and record.teacher_evaluation_date >= payload.assessment_date) or (not previous and record.teacher_evaluation_date <= payload.assessment_date):
             raise HTTPException(400, "Assessment dates must follow PRE < MID < POST.")
     teacher = current_teacher(db, user) if user.role.value == "admin" else get_active_adviser_for_student(student, db)
+    by_question = {record.question_id: record for record in existing if record.testing_period == payload.testing_period}
+    edited = set(payload.edited_question_ids)
+    for answer in payload.evaluations:
+        record = by_question.get(answer.question_id)
+        if (record is not None and record.parent_submitted_at is not None
+                and record.answer != answer.answer and answer.question_id not in edited):
+            raise HTTPException(409, "Saved home answers have changed. Refresh and review before correcting them.")
+    marked_at = now_pht()
     for record in existing:
         # Normalize the teacher session without dating untouched parent-only rows.
         if record.testing_period == payload.testing_period and record.teacher_evaluation_date is not None:
             record.teacher_evaluation_date = payload.assessment_date
             record.evaluation_date = payload.assessment_date
-    by_question = {record.question_id: record for record in existing if record.testing_period == payload.testing_period}
     for answer in payload.evaluations:
         record = by_question.get(answer.question_id)
+        unchanged = record is not None and record.answer == answer.answer
         if record is None:
             record = StudentEccdEvaluation(student_id=student.student_id, teacher_id=teacher.teacher_id if teacher else None, question_id=answer.question_id, testing_period=payload.testing_period, evaluation_date=payload.assessment_date)
             db.add(record)
         record.answer = answer.answer
         record.teacher_id = teacher.teacher_id if teacher else None
-        record.evaluator_role = "teacher"
+        if not unchanged:
+            record.evaluator_role = "teacher"
+            record.teacher_marked_at = marked_at
         record.teacher_evaluation_date = payload.assessment_date
         record.evaluation_date = payload.assessment_date
         # Keep parent_id and parent_submitted_at as historical provenance.
@@ -89,14 +98,22 @@ def save_home_evaluation(db: Session, user: User, payload: ParentEvaluationBatch
     if not permissions.allow_parent_edit_home_based_eccd:
         raise HTTPException(403, "Editing is currently locked by the Class Adviser.")
     existing = db.query(StudentEccdEvaluation).filter_by(student_id=student.student_id).all()
-    guard_pre_mastery(db, existing, payload.evaluations)
-    submitted_at = datetime.now(timezone.utc)
-    compatibility_date = date.today()
+    by_question_period = {(record.question_id, record.testing_period): record for record in existing}
+    # Validate the whole batch before adding any rows or changing provenance.
     for answer in payload.evaluations:
-        record = db.query(StudentEccdEvaluation).filter_by(student_id=student.student_id, question_id=answer.question_id, testing_period=answer.testing_period).first()
-        if record is None:
-            record = StudentEccdEvaluation(student_id=student.student_id, question_id=answer.question_id, testing_period=answer.testing_period)
-            db.add(record)
+        record = by_question_period.get((answer.question_id, answer.testing_period))
+        if record is not None and record.answer != answer.answer:
+            raise HTTPException(409, "Submitted answers cannot be changed. Refresh to view the saved answers.")
+    new_answers = [answer for answer in payload.evaluations
+                   if (answer.question_id, answer.testing_period) not in by_question_period]
+    guard_pre_mastery(db, existing, new_answers)
+    if not new_answers:
+        return {"message": "Assessment saved successfully!", "testing_period": payload.testing_period}
+    submitted_at = now_pht()
+    compatibility_date = submitted_at.date()
+    for answer in new_answers:
+        record = StudentEccdEvaluation(student_id=student.student_id, question_id=answer.question_id, testing_period=answer.testing_period)
+        db.add(record)
         record.answer = answer.answer
         record.parent_id = current_parent.parent_id
         record.evaluator_role = "parent"
@@ -144,9 +161,14 @@ def assessment_data(db: Session, user: User, identifier: str, parent_view: bool 
         for period in PERIODS:
             ages[str(domain.domain_id)][period] = summaries[period]["decimalAge"]
         for question in domain_questions:
-            answers, evaluator_roles = {}, {}
+            answers, evaluator_roles, parent_dates, teacher_dates, parent_locked = {}, {}, {}, {}, {}
             for period in PERIODS:
                 record = evaluations_by_question_period.get((question.question_id, period))
+                # A neutral lock reveals no mark, author, or date to other parents.
+                parent_locked[period] = bool(question.is_home_based and record is not None and (
+                    not parent_view or permissions.allow_parent_view_eccd_marks
+                    or (permissions.allow_parent_edit_home_based_eccd and windows[PERIOD_FLAGS[period.value]])
+                ))
                 if parent_view and not permissions.allow_parent_view_eccd_marks:
                     # Score release does not release checklist marks. Only the
                     # authenticated parent's own editable observations survive.
@@ -161,8 +183,11 @@ def assessment_data(db: Session, user: User, identifier: str, parent_view: bool 
                         record = None
                 answers[period] = record.answer if record is not None else None
                 evaluator_roles[period] = record.evaluator_role if record is not None else None
+                parent_dates[period] = record.parent_submitted_at if record is not None else None
+                teacher_dates[period] = record.teacher_marked_at if record is not None else None
             rows.append({"question_id": question.question_id, "domain_id": question.domain_id, "domain_name": domain.domain_name.replace(" Domain", ""), "question_text": question.question_text, "sequence_order": question.sequence_order,
-                         "is_home_based": bool(question.is_home_based), "evaluator_roles": evaluator_roles, "answers": answers})
+                         "is_home_based": bool(question.is_home_based), "evaluator_roles": evaluator_roles, "answers": answers,
+                         "parent_submitted_at": parent_dates, "teacher_marked_at": teacher_dates, "parent_locked": parent_locked})
         formatted.append({"domain_id": domain.domain_id, "domain_name": domain.domain_name, "questions": rows})
         # Retain the home-only compatibility projection for older consumers.
         checklist.extend(row for row in rows if row["is_home_based"])

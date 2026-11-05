@@ -2,7 +2,7 @@
 import json
 import unittest
 
-from backend.models import Section, SystemLog, Teacher
+from backend.models import EccdQuestion, Section, SystemLog, Teacher
 from backend.tests import test_phase2
 
 
@@ -65,8 +65,11 @@ class AuditLogTests(unittest.TestCase):
         self.assertEqual(self.fixture.evaluate().status_code, 200)
         with self.sessions() as db:
             db.get(Teacher, 1).allow_parent_edit_home_based_eccd = True
+            unanswered_home = db.query(EccdQuestion).filter(
+                EccdQuestion.is_home_based.is_(True),
+                EccdQuestion.question_id != self.fixture.home).first().question_id
             db.commit()
-        payload = {"student_id": 1, "evaluations": [{"question_id": self.fixture.home, "testing_period": "PRE", "answer": "KAYA"}]}
+        payload = {"student_id": 1, "evaluations": [{"question_id": unanswered_home, "testing_period": "PRE", "answer": "KAYA"}]}
         response = self.call("POST", "/api/eccd/parent/evaluate", 5, json=payload)
         self.assertEqual(response.status_code, 200, response.text)
         logs = self.logs()
@@ -75,6 +78,10 @@ class AuditLogTests(unittest.TestCase):
         self.assertIn('Student "Test Middle Student"', parent["details"])
         teacher = next(row for row in logs if row["action"] == "STUDENT_EVALUATION_SAVED")
         self.assertEqual((teacher["actor_name"], teacher["role"]), ("Test Adviser", "Teacher"))
+        self.assertEqual(self.call("POST", "/api/eccd/parent/evaluate", 5, json=payload).status_code, 200)
+        self.assertEqual(len(self.logs()), 2)
+        payload["evaluations"][0]["answer"] = "DI-KAYA"
+        self.assertEqual(self.call("POST", "/api/eccd/parent/evaluate", 5, json=payload).status_code, 409)
         self.assertEqual(self.call("POST", "/api/eccd/parent/evaluate", 6, json=payload).status_code, 403)
         self.assertEqual(len(self.logs()), 2)
         for user in (2, 5):

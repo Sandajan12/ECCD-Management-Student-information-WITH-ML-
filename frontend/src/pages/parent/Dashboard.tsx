@@ -29,7 +29,6 @@ import TimelineIcon from "@mui/icons-material/Timeline";
 import { useNavigate } from "react-router-dom";
 import api, { errorMessage, isNetworkError } from "../../services/api";
 import type { ParentLinkResponse } from "../../types";
-import type { RecordSyncedEvent } from "../../utils/drafts";
 import { useChildren } from "../../hooks/useChildren";
 import { useParentAssessment } from "../../hooks/useParentAssessment";
 import HomeAssessmentForm from "../../components/parent/HomeAssessmentForm";
@@ -170,17 +169,6 @@ const Dashboard: React.FC = () => {
   };
   useEffect(() => {
     setLrnValue(readDraft<string>(linkKey)?.values ?? "");
-    const synced = (event: Event) => {
-      const confirmation = event as RecordSyncedEvent<ParentLinkResponse>;
-      if (confirmation.detail === linkKey && !readDraft<string>(linkKey)) {
-        setLrnValue("");
-        setLrnModalOpen(false);
-        setError("");
-        setLinkNotice(linkFeedback(confirmation.response?.status));
-      }
-    };
-    window.addEventListener("ames-record-synced", synced);
-    return () => window.removeEventListener("ames-record-synced", synced);
   }, [linkKey]);
   useEffect(() => {
     if (!roster.loading && !roster.children.length) {
@@ -288,7 +276,7 @@ const Dashboard: React.FC = () => {
     try {
       if (!navigator.onLine) {
         setError(
-          "Saved on this device. Linking will retry when your connection returns.",
+          "Your draft is saved on this device. Reconnect and submit again.",
         );
         return;
       }
@@ -314,7 +302,7 @@ const Dashboard: React.FC = () => {
         (isAxiosError(err) && (err.response?.status || 0) >= 500)
       )
         setError(
-          "Saved on this device. Linking is queued for synchronization.",
+          "Your draft is saved on this device. Reconnect and submit again.",
         );
       else {
         if (readDraft<string>(linkKey)?.revision === draft.revision)

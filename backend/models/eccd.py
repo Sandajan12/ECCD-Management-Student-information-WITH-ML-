@@ -89,6 +89,7 @@ class StudentEccdEvaluation(Base):
     evaluation_date = Column(Date, nullable=False)
     teacher_evaluation_date = Column(Date, nullable=True)
     parent_submitted_at = Column(DateTime(timezone=True), nullable=True)
+    teacher_marked_at = Column(DateTime(timezone=True), nullable=True)
 
     # Enforce strict composite uniqueness matching DepEd logic
     __table_args__ = (

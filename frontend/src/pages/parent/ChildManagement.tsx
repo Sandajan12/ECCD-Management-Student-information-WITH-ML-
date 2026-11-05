@@ -83,7 +83,7 @@ const ChildManagement: React.FC = () => {
             ? "Child details successfully updated!"
             : result === "unchanged"
               ? "No changes to save."
-              : "Saved on this device. Changes are awaiting server confirmation.",
+              : "Your draft is saved on this device. Reconnect and submit again.",
         severity: result === "saved" ? "success" : "info",
       });
       if (result === "saved") {
@@ -146,7 +146,7 @@ const ChildManagement: React.FC = () => {
       )}
       {profile.form.pending && (
         <Alert severity="info" sx={{ mb: 2, borderRadius: 3 }}>
-          Changes are saved on this device and awaiting server confirmation.
+          Your draft is saved on this device. Reconnect and submit again.
         </Alert>
       )}
       {/* Top Header & Persistent Child Selector Bar */}

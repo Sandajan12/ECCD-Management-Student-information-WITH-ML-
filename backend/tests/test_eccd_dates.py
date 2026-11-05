@@ -36,10 +36,10 @@ class DateResolverTests(unittest.TestCase):
         self.assertIsNone(get_official_testing_date(records, "PRE"))
         self.assertEqual(get_grading_date(records, "PRE"), date(2026, 8, 10))
 
-    def test_timestamp_uses_utc_calendar_day(self):
+    def test_timestamp_uses_philippine_calendar_day(self):
         records = [{"testing_period": "PRE", "parent_submitted_at": datetime(
             2026, 8, 11, 1, tzinfo=timezone(timedelta(hours=8)))}]
-        self.assertEqual(get_grading_date(records, "PRE"), date(2026, 8, 10))
+        self.assertEqual(get_grading_date(records, "PRE"), date(2026, 8, 11))
 
     def test_historical_compatibility_dates_only_enable_preview(self):
         records = [

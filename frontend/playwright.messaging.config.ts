@@ -1,11 +1,6 @@
 import { defineConfig } from "@playwright/test";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-const uv =
-  process.platform === "win32"
-    ? `"${join(tmpdir(), "ames-uv", "uv.exe")}"`
-    : "uv";
 export default defineConfig({
   testDir: "./tests",
   testMatch: "messaging.spec.ts",
@@ -23,13 +18,12 @@ export default defineConfig({
   ],
   webServer: [
     {
-      command: `${uv} --cache-dir .cache/uv run --no-project --python .venv312 python -c "import uvicorn; from backend.tests.serve_phase3 import main; uvicorn.run(main.app, host='127.0.0.1', port=8768, lifespan='off', log_level='warning')"`,
+      command: `uv --cache-dir .cache/uv run --no-project --python .venv312 python -c "import uvicorn; from backend.tests.serve_phase3 import main; uvicorn.run(main.app, host='127.0.0.1', port=8768, lifespan='off', log_level='warning')"`,
       cwd: join(import.meta.dirname, ".."),
       url: "http://127.0.0.1:8768/",
       env: {
         ENVIRONMENT: "development",
         ENABLE_OTP: "false",
-        DATABASE_URL: "postgresql://ames_test@127.0.0.1:55432/ames_test",
         JWT_SECRET: "test-only-jwt-key-for-disposable-unit-tests",
         BACKUP_ENCRYPTION_KEY:
           "MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA=",
@@ -41,7 +35,7 @@ export default defineConfig({
       },
     },
     {
-      command: `${process.platform === "win32" ? "corepack.cmd pnpm" : "pnpm"} dev --host 127.0.0.1 --port 5191 --strictPort`,
+      command: `${process.platform === "win32" ? "pnpm.cmd" : "pnpm"} dev --host 127.0.0.1 --port 5191 --strictPort`,
       cwd: import.meta.dirname,
       url: "http://127.0.0.1:5191/",
       env: {

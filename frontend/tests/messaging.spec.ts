@@ -368,7 +368,7 @@ test("two portals stay idle for two minutes and receive committed sends without 
   }
 });
 
-test("failed sends survive reload and offline replay pushes one persisted message", async ({
+test("failed sends survive reload and reconnect until a manual send persists one message", async ({
   browser,
   request,
 }, testInfo) => {
@@ -415,6 +415,15 @@ test("failed sends survive reload and offline replay pushes one persisted messag
     await teacher.page.evaluate(() =>
       window.dispatchEvent(new Event("online")),
     );
+    await expect(
+      teacher.page.getByRole("textbox", { name: "Message", exact: true }),
+    ).toHaveValue("Offline durable message");
+    await expect(
+      parent.page.getByText("Offline durable message", { exact: true }),
+    ).toHaveCount(0);
+    await teacher.page
+      .getByRole("button", { name: "Send message", exact: true })
+      .click();
     await expect(
       parent.page.getByText("Offline durable message", { exact: true }),
     ).toHaveCount(1);
@@ -501,10 +510,32 @@ test("disconnected fallback waits thirty seconds, pauses hidden/offline, and bac
     true,
   );
   try {
+    const recovery = await view.page.evaluateHandle(async () => {
+      const modulePath = "/src/services/messaging.ts";
+      const { MessagingClient } = (await import(modulePath)) as
+        typeof import("../src/services/messaging");
+      let client: { recovery: Promise<unknown> | null } | undefined;
+      const original = MessagingClient.prototype.request;
+      MessagingClient.prototype.request = function <T>(
+        ...args: Parameters<typeof original>
+      ): Promise<T> {
+        MessagingClient.prototype.request = original;
+        client = this as unknown as typeof client;
+        return original.apply(this, args) as Promise<T>;
+      };
+      return {
+        wait: async () => {
+          if (!client) throw new Error("Expected a messaging recovery request");
+          // The next fallback is scheduled by this promise's finally handler.
+          await client.recovery;
+        },
+      };
+    });
     await view.page.clock.runFor(28000);
     expect(view.counts["/api/messages/history"]).toBe(1);
     await view.page.clock.runFor(2500);
     await expect.poll(() => view.counts["/api/messages/history"]).toBe(2);
+    await recovery.evaluate((state) => state.wait());
     await visibility(view.page, "hidden");
     await view.page.clock.runFor(120000);
     expect(view.counts["/api/messages/history"]).toBe(2);
@@ -516,14 +547,17 @@ test("disconnected fallback waits thirty seconds, pauses hidden/offline, and bac
     );
     await view.page.clock.runFor(1100);
     await expect.poll(() => view.counts["/api/messages/history"]).toBe(3);
+    await recovery.evaluate((state) => state.wait());
     await view.page.clock.runFor(59000);
     expect(view.counts["/api/messages/history"]).toBe(3);
     await view.page.clock.runFor(1100);
     await expect.poll(() => view.counts["/api/messages/history"]).toBe(4);
+    await recovery.evaluate((state) => state.wait());
     await view.page.clock.runFor(119000);
     expect(view.counts["/api/messages/history"]).toBe(4);
     await view.page.clock.runFor(1100);
     await expect.poll(() => view.counts["/api/messages/history"]).toBe(5);
+    await recovery.evaluate((state) => state.wait());
     await view.page.evaluate(() => {
       Object.defineProperty(navigator, "onLine", {
         configurable: true,
@@ -620,7 +654,7 @@ test("an older send confirmation cannot erase a newer thread draft", async ({
   }
 });
 
-test("a rate-limited offline replay retains inputs and requires explicit submission", async ({
+test("offline message drafts require explicit submission, including after a rate limit", async ({
   browser,
   request,
 }, testInfo) => {
@@ -664,6 +698,10 @@ test("a rate-limited offline replay retains inputs and requires explicit submiss
       }),
     );
     await view.page.evaluate(() => window.dispatchEvent(new Event("online")));
+    expect(view.counts["/api/messages/send"]).toBe(1);
+    await view.page
+      .getByRole("button", { name: "Send message", exact: true })
+      .click();
     await expect
       .poll(() =>
         view.page.evaluate(

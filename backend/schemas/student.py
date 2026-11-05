@@ -228,6 +228,8 @@ class ChildPublicResponse(StudentPublicResponse):
     allow_parent_view_eccd_pre: bool = False
     allow_parent_view_eccd_mid: bool = False
     allow_parent_view_eccd_post: bool = False
+    allow_parent_view_eccd_marks: bool = False
+    allow_parent_predictions: bool = False
     allow_parent_edit_student_info: bool = True
     allow_parent_edit_home_based_eccd: bool = False
 
