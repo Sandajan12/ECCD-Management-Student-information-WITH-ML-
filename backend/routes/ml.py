@@ -4,11 +4,12 @@ import re
 from decimal import Decimal, ROUND_HALF_UP
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import FileResponse
 from pydantic import ValidationError
 from sqlalchemy.orm import Session, selectinload
 
 from backend.config.database import get_db
-from backend.ml.common import DOMAINS, DOMAIN_NAMES, sandbox_composites
+from backend.ml.common import ARTIFACTS, DOMAINS, DOMAIN_NAMES, sandbox_composites
 from backend.ml.inference import predict_student
 from backend.models import EccdQuestion, FamilyAccess, Parent, Student, StudentEccdEvaluation, User
 from backend.models.eccd import TestingPeriod
@@ -22,8 +23,31 @@ from backend.utils.students import parent_student_name
 
 router = APIRouter(prefix="/api/ml", tags=["ML Research"])
 teacher_only = verify_role(["admin"])
+PLOT_DIRECTORY = ARTIFACTS / "plots"
+PLOT_FILES = {name: name for name in (
+    "01_confusion_matrix.png", "02_classification_metrics_f1.png",
+    "03_feature_importance.png", "04_class_distribution_70_30.png",
+    "05_real_beneficiary_pre_vs_post_comparison.png", "06_probability_reliability.png",
+)}
+# The offline publisher currently saves these two requested JPG names as PNGs.
+PLOT_FILES.update({
+    "05_real_beneficiary_pre_vs_post_comparison.jpg": "05_real_beneficiary_pre_vs_post_comparison.png",
+    "06_probability_reliability.jpg": "06_probability_reliability.png",
+})
 NOTICE = "Educational research prototype for instructional planning, not a formal clinical diagnosis. Model probabilities are not calibrated clinical confidence."
 EDUCATIONS = {v.casefold(): v for v in ("Elementary", "High School", "Vocational", "College")}
+
+
+@router.get("/plots/{filename}", response_class=FileResponse,
+            responses={200: {"content": {"image/png": {}}}})
+def evaluation_plot(filename: str, user: User = Depends(verify_role(["admin", "super-admin"]))):
+    name = PLOT_FILES.get(filename)
+    if name is None:
+        raise HTTPException(404, "Diagnostic plot not found.")
+    path = (PLOT_DIRECTORY / name).resolve()
+    if path.parent != PLOT_DIRECTORY.resolve() or not path.is_file():
+        raise HTTPException(404, "Diagnostic plot not found.")
+    return FileResponse(path, media_type="image/png", headers={"Cache-Control": "no-store"})
 
 
 def pre_readiness(student: Student, records: list, questions: list) -> tuple[bool, str]:

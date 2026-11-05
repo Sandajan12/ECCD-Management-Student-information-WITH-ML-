@@ -112,7 +112,7 @@ class ProfileGateTests(unittest.TestCase):
                 if row["name"] == "B_raw":
                     self.assertEqual(row["features"]["pre_standard_score"], 104)
 
-    def test_profile_probability_bands_block_publication(self):
+    def test_old_probability_bands_are_diagnostics_not_publication_gates(self):
         class ScenarioModel:
             classes_ = np.array(sorted(ACTIVE_CLASSES))
 
@@ -130,9 +130,13 @@ class ProfileGateTests(unittest.TestCase):
 
         self.assertTrue(behavior_check(ScenarioModel())["passed"])
         for average, severe in ((.7499, .70), (.90, .6499), (.90, .9001)):
-            self.assertFalse(behavior_check(ScenarioModel(average, severe))["passed"])
+            result = behavior_check(ScenarioModel(average, severe))
+            self.assertTrue(result["passed"])
+            self.assertFalse(result["legacy_probability_bands_met"])
         for severe in (.65, .90):
-            self.assertTrue(behavior_check(ScenarioModel(severe=severe))["passed"])
+            self.assertTrue(behavior_check(ScenarioModel(severe=severe))["legacy_probability_bands_met"])
+        self.assertFalse(behavior_check(ScenarioModel(average=1))["passed"])
+        self.assertFalse(behavior_check(ScenarioModel(severe=np.nan))["passed"])
 
 
 if __name__ == "__main__":

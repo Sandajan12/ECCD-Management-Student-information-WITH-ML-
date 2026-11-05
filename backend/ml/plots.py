@@ -37,7 +37,7 @@ def make_plots(metrics: dict, train: pd.DataFrame, test: pd.DataFrame,
                     color="white" if matrix[i, j] > matrix.max()/2 else "#203040")
     ax.set(xticks=range(5), xticklabels=SHORT_CLASSES, yticks=range(5), yticklabels=SHORT_CLASSES,
            xlabel="Predicted interpretation", ylabel="Actual interpretation",
-           title="Hybrid 30% holdout confusion matrix (n=459)\nAdvanced POST outcomes excluded from training scope")
+           title="Standalone RF: mixed 30% holdout confusion matrix (n=459)\nAdvanced POST outcomes excluded from training scope")
     plt.setp(ax.get_xticklabels(), rotation=25, ha="right")
     fig.colorbar(image, ax=ax, label="Students")
     fig.tight_layout()

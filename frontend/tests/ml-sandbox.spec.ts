@@ -117,6 +117,124 @@ test.beforeEach(async ({ page, request }) => {
   await page.getByRole("tab", { name: "Sandbox Simulator" }).click();
 });
 
+test("staff diagnostics load on expansion and enlarge without disturbing sandbox drafts", async ({
+  page,
+}, testInfo) => {
+  const requests: string[] = [];
+  page.on("request", (request) => {
+    if (request.url().includes("/api/ml/plots/")) {
+      expect(request.headers().authorization).toMatch(/^Bearer /);
+      requests.push(request.url());
+    }
+  });
+  const toggle = page.getByRole("button", {
+    name: "Technical Model Evaluation & Defense Diagnostics",
+  });
+  const gallery = page.locator("#model-diagnostics-content");
+  const raw = page.getByLabel("Gross Motor raw score", { exact: true });
+  await raw.fill("10");
+  await expect(toggle).toHaveAttribute("aria-expanded", "false");
+  expect(requests).toHaveLength(0);
+  await toggle.click();
+  const images = gallery.getByRole("img");
+  await expect(images).toHaveCount(6);
+  await expect
+    .poll(() =>
+      images.evaluateAll((elements) =>
+        elements.every(
+          (element) =>
+            element instanceof HTMLImageElement &&
+            element.complete &&
+            element.naturalWidth > 0,
+        ),
+      ),
+    )
+    .toBe(true);
+  expect(requests).toHaveLength(6);
+  for (const title of [
+    "Classification Performance",
+    "Feature Importance & Split",
+    "Real Cohort & Probability Calibration",
+  ])
+    await expect(
+      gallery.getByRole("heading", { name: title, exact: true }),
+    ).toBeVisible();
+  await expect(gallery).toContainText("92.16%");
+  await expect(gallery).toContainText("ECE = 0.045");
+  for (const title of [
+    "Holdout confusion matrix",
+    "Precision, recall & F1",
+    "Feature importance",
+    "Training & holdout distribution",
+    "Real cohort PRE vs POST",
+    "Probability reliability",
+  ]) {
+    await gallery
+      .getByRole("button", { name: `Expand ${title}`, exact: true })
+      .click();
+    const dialog = page.getByRole("dialog", { name: title, exact: true });
+    await expect(
+      dialog.getByRole("img", { name: title, exact: true }),
+    ).toBeVisible();
+    expect(
+      await dialog.evaluate(
+        (element) => element.scrollWidth <= element.clientWidth,
+      ),
+    ).toBe(true);
+    await page.keyboard.press("Escape");
+    await expect(dialog).toBeHidden();
+    await expect(raw).toHaveValue("10");
+  }
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+  await gallery.screenshot({
+    path: testInfo.outputPath("diagnostic-gallery.png"),
+  });
+  await toggle.click();
+  await expect(images).toHaveCount(0);
+  await expect(raw).toHaveValue("10");
+  await page.reload();
+  await page.getByRole("tab", { name: "Sandbox Simulator" }).click();
+  await expect(raw).toHaveValue("10");
+  await expect(toggle).toHaveAttribute("aria-expanded", "false");
+});
+
+test("unavailable diagnostic plots can be retried without losing inputs", async ({
+  page,
+}) => {
+  let unavailable = true;
+  await page.route(
+    "**/api/ml/plots/03_feature_importance.png",
+    async (route) => {
+      if (unavailable)
+        await route.fulfill({ status: 503, json: { detail: "Unavailable" } });
+      else await route.continue();
+    },
+  );
+  const raw = page.getByLabel("Gross Motor raw score", { exact: true });
+  await raw.fill("8");
+  await page
+    .getByRole("button", {
+      name: "Technical Model Evaluation & Defense Diagnostics",
+    })
+    .click();
+  const gallery = page.locator("#model-diagnostics-content");
+  await expect(gallery.getByRole("img")).toHaveCount(5);
+  await expect(
+    gallery.getByText("Chart unavailable. Please retry."),
+  ).toBeVisible();
+  unavailable = false;
+  await gallery.getByRole("button", { name: "Retry diagnostic plots" }).click();
+  await expect(gallery.getByRole("img")).toHaveCount(6);
+  await expect(
+    gallery.getByRole("button", { name: "Retry diagnostic plots" }),
+  ).toBeHidden();
+  await expect(raw).toHaveValue("8");
+});
+
 test("frontend conversions match backend across every raw value and supported month", async () => {
   const script = `
 import json

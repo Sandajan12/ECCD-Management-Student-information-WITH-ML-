@@ -658,7 +658,7 @@ records, question access, school settings, audit history, exports, and backups.
 
 These workflows exist in the active Python/FastAPI/PostgreSQL and React/TypeScript
 code. **ML predictions are fully implemented for both Teacher and Parent
-portals**, using the shared V1 18-feature calibrated ensemble inference service and
+portals**, using the shared V1 18-feature sigmoid-calibrated standalone Random Forest inference service and
 `backend/ml/artifacts/rf_post_test_model.joblib`. Teachers have section-scoped
 batch predictions, student detail modals and a sandbox; parents request a
 prediction on demand for an authorized linked child. Feature implementation does
@@ -680,7 +680,7 @@ and instructional planning; official ECCD scores remain deterministic (section 1
 | JS tooling | pnpm **12.11.2** pinned in root `package.json`; ESLint, Prettier, Playwright |
 | Workspace | Root `pnpm-workspace.yaml` includes frontend and retains separate lockfiles; frontend has matching pnpm 12 YAML overrides and its own package-manager pin for isolated installs; automatic dependency verification before scripts is disabled |
 | Spreadsheets | openpyxl handles active workbook import/export; pandas is installed |
-| ML | V1 sigmoid-calibrated RF/HistGradientBoosting ensemble, joblib artifact, 18 PRE/demographic inputs, three supported POST outcomes; shared teacher/parent inference |
+| ML | V1 sigmoid-calibrated standalone Random Forest, joblib artifact, 18 PRE/demographic inputs (five household fields excluded), three supported POST outcomes; shared teacher/parent inference |
 | Migrations | Python migrations 001–016; only the nullable teacher timestamp (016) is applied automatically at startup. Other required upgrades are explicit; no active Alembic setup, pyproject.toml, or uv.lock |
 
 Observed on this Windows checkout on **2026-10-25**:
@@ -1171,6 +1171,7 @@ the complete method/path/query inventory.
 | Chairman account | /api/chairman/verify-password, /account | `routes/chairman.py` |
 | Backup | /api/backup/export, /restore; /api/chairman/backup/export, /restore | `routes/backup.py` |
 | Teacher ML | GET /api/ml/students?section_id=N; POST /api/ml/predict/student/{student_id}, /api/ml/predict/sandbox | `routes/ml.py` |
+| Staff ML diagnostics | GET /api/ml/plots/{filename}; allowlisted static PNGs, teacher/Chairman only, no-store | `routes/ml.py` |
 | Parent ML | GET /api/ml/parent/readiness/{student_id}; POST /api/ml/parent/predict/{student_id} | `routes/ml.py` |
 
 Shortened paths in each row are relative to that row's API prefix.
@@ -1673,7 +1674,80 @@ Validation/permission failures retain inputs for review.
 
 ## 11. Implemented V1 ML service and verification boundaries
 
-### Conditional growth retraining (2026-10-30; current model)
+### Teacher sandbox diagnostic gallery (2026-11-05)
+
+The Sandbox Simulator in `pages/teacher/MlInsights.tsx` includes a collapsed
+**Technical Model Evaluation & Defense Diagnostics** accordion with six saved
+plots in three responsive pairs, captions grounded in the current evaluation
+metrics, and accessible enlarged dialogs. Expanding fetches authenticated image
+blobs through the shared API client; collapse cancels requests and revokes object
+URLs. Failed reads offer a manual retry without changing prediction inputs or
+durable drafts. Parent views have no diagnostic gallery or links.
+
+`GET /api/ml/plots/{filename}` accepts only the six offline plot filenames from
+`backend/ml/artifacts/plots/`, allowing `admin` and `super-admin` sessions only.
+The last two requested `.jpg` names alias the existing `.png` files and return
+the actual `image/png` content type; no image conversion, training, or plot
+generation runs during requests. Responses use `Cache-Control: no-store`;
+unknown or missing plots return sanitized 404 errors. The plot directory remains
+ignored by Git under the existing research-data rules; deployments must provision
+the six approved staff-only assets separately to display all six charts.
+
+Verification: the requested ML API pytest module passes 17 tests and 96 subtests;
+all 24 sandbox browser cases pass at 1280px and 320px using disposable PostgreSQL
+fixtures. Both frontend TypeScript projects, standalone browser-test typing,
+full lint, production build, changed-file formatting and whitespace checks pass.
+No model retraining, application migrations, live school-data writes or deployment
+were performed for this gallery.
+
+### Standalone Random Forest integration (2026-11-05; current model)
+
+The active artifact is now a standalone RandomForestClassifier (`rf_full_leaf3`:
+400 trees, minimum leaf size 3, max_features 0.8, balanced class weights, seed 42),
+wrapped by the existing fold-local preprocessing/weighting and three-fold sigmoid
+SupportAwareCalibration. No RF/HGB voting ensemble remains in the primary model.
+The specified configuration came from prior screening; this run is not a new
+hyperparameter search or a claim of optimality. The original hybrid is frozen in
+`backend/ml/artifacts/hybrid_comparison_metrics.json` and a verified 40-file local
+archive, with `hybrid_baseline_manifest.json` recording source/data/model hashes.
+
+Active RF SHA-256:
+`1ff4591f0f8e21bbaeb48f5617f61acd460f2953f6609cac52d5f86a6bdcec73`.
+Mixed holdout accuracy is 423/459 (92.1569%); macro F1 92.1690%; synthetic accuracy
+420/451 (93.1264%); real holdout 3/8 (37.5%). Five-fold mixed training CV accuracy
+is 88.5981%, macro F1 88.6136%. Shared-anchor student-excluded real accuracy is
+9/29 (31.0345%). All 29 real POST labels are Average: always-Average is 29/29,
+PRE-category persistence 4/29. The main dataset and 70/30 split are unchanged.
+
+A separate five-fold real-learner evaluation regenerates scenarios using each
+fold's real training learners only, then refits preprocessing/calibration/RF there.
+Its held-out results are 3/6, 4/6, 3/6, 1/6 and 2/5: pooled 13/29 (44.8276%).
+It is exploratory because these learners already informed development, not new
+external validation or a controlled improvement over the hybrid's differently
+designed real benchmark. Real delay sensitivity is not estimable. No real-world
+predictive usefulness, clinical confidence or treatment effect is established.
+
+Loader/publication now validate a fitted sigmoid-calibrated standalone RF,
+supported classes, household invariance and finite normalized probabilities.
+The former >=90% metric gates and hand-picked probability bands remain diagnostics
+only; the RF's below-90% CV results are explicitly reported. The 18-field input,
+five excluded household fields, deterministic PRE tiers, rule-based guides, access
+controls, schemas and assessment routes are unchanged. Both portals update only
+the existing accuracy/methodology notices. Restart a running API to refresh its
+model cache; no hosted deployment or migration was performed.
+
+Fresh integration verification: 31 ML unit tests passed; parent ML pytest passed
+10 tests; shared ML API/forecast checks passed 21 tests and 96 subtests. Both
+frontend TypeScript projects, lint and production build passed. Archive/model
+checksums and unchanged main datasets/splits were verified. Exact comparisons
+against archived portal files confirmed notice-text-only changes. Dependency
+deprecations and an enum collection warning did not fail the checks.
+
+The following dated hybrid training/promotion notes are historical comparison
+records. Their metrics, fingerprints and old acceptance policies do not describe
+the active standalone RF; the current subsection and evaluation JSON supersede them.
+
+### Conditional growth retraining (2026-10-30; historical hybrid)
 
 The approved `SYNTHETIC_GROWTH_RETRAINING_PLAN.md` is implemented. Synthetic PRE
 age proposals are uniformly sampled from completed months 36–71; all 36 ages
@@ -1819,12 +1893,12 @@ deployment was performed.
 Teacher and Parent predictions are fully implemented on the shared **V1**
 research inference path. `backend/ml/common.py` defines the feature order and
 artifact directory; `backend/schemas/ml.py::MLFeatures` validates inputs.
-`backend/ml/inference.py` loads the fitted calibrated ensemble pipeline
+`backend/ml/inference.py` loads the fitted sigmoid-calibrated standalone RF pipeline
 from **`backend/ml/artifacts/rf_post_test_model.joblib`** and caches it with
 `lru_cache`. The experimental artifact was promoted to local `main` on 2026-10-29.
 Its custom `backend/ml/pipeline.py` prunes all five household fields, engineers
 internal PRE domain composites and scoring-interval summaries, and applies a
-sigmoid-calibrated RF/HistGradientBoosting ensemble. Retained missing numeric values
+sigmoid-calibrated standalone Random Forest. Retained missing numeric values
 use training medians; categorical values use training modes and unknown-safe
 one-hot encoding. Outside PRE score support, probabilities blend toward training
 priors; this is not measured intervention recovery. The same cached service supplies
@@ -1905,8 +1979,8 @@ drafts take precedence. Successful inference retains inputs; offline failures
 mark pending state and retry on reconnection. No student/parent scoring, model
 artifact or official assessment records are changed by this sandbox behavior.
 
-Cached artifact loading additionally requires a fitted sigmoid-calibrated soft
-RF/HistGradientBoosting voting ensemble; incompatible models retain sanitized
+Cached artifact loading additionally requires a fitted sigmoid-calibrated standalone
+Random Forest; hybrid or incompatible models retain sanitized
 503 responses. Regression tests verify the active artifact SHA-256 against the
 matching evaluation record; the current retraining fingerprint is listed above.
 Probabilities come directly from the saved model. Exact table entries, including

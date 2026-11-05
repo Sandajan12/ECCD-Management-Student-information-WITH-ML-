@@ -1,6 +1,22 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { Modal, Stack } from "@mui/material";
+import {
+  Accordion,
+  AccordionDetails,
+  AccordionSummary,
+  Box,
+  Button,
+  Card,
+  CardActionArea,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  Modal,
+  Stack,
+  Typography,
+} from "@mui/material";
+import ExpandMoreRounded from "@mui/icons-material/ExpandMoreRounded";
 import AutoAwesomeRounded from "@mui/icons-material/AutoAwesomeRounded";
 import PlayArrowRounded from "@mui/icons-material/PlayArrowRounded";
 import SchoolOutlined from "@mui/icons-material/SchoolOutlined";
@@ -875,6 +891,261 @@ function derivedSandboxValues(values: SandboxInputs): SandboxValues {
   };
 }
 
+interface DiagnosticPlot {
+  filename: string;
+  title: string;
+  caption: string;
+}
+interface DiagnosticGroup {
+  title: string;
+  plots: DiagnosticPlot[];
+}
+const diagnosticGroups: DiagnosticGroup[] = [
+  {
+    title: "Classification Performance",
+    plots: [
+      {
+        filename: "01_confusion_matrix.png",
+        title: "Holdout confusion matrix",
+        caption:
+          "92.16% mixed holdout accuracy (423/459); real holdout accuracy is 37.5% (3/8).",
+      },
+      {
+        filename: "02_classification_metrics_f1.png",
+        title: "Precision, recall & F1",
+        caption:
+          "92.17% macro F1 across three supported classes; advanced outcomes have no support.",
+      },
+    ],
+  },
+  {
+    title: "Feature Importance & Split",
+    plots: [
+      {
+        filename: "03_feature_importance.png",
+        title: "Feature importance",
+        caption:
+          "Five household features pruned at 0.00 importance; PRE age has the largest importance (0.384).",
+      },
+      {
+        filename: "04_class_distribution_70_30.png",
+        title: "Training & holdout distribution",
+        caption:
+          "Stratified 70/30 split: 1,070 training and 459 holdout records across three supported classes.",
+      },
+    ],
+  },
+  {
+    title: "Real Cohort & Probability Calibration",
+    plots: [
+      {
+        filename: "05_real_beneficiary_pre_vs_post_comparison.jpg",
+        title: "Real cohort PRE vs POST",
+        caption:
+          "29 real learners, all with Average POST outcomes; shared synthetic anchors limit independence.",
+      },
+      {
+        filename: "06_probability_reliability.jpg",
+        title: "Probability reliability",
+        caption:
+          "Sigmoid calibration holdout ECE = 0.045 (10 bins); research-scenario reliability, not clinical confidence.",
+      },
+    ],
+  },
+];
+
+function DiagnosticGallery() {
+  const [images, setImages] = useState<Record<string, string | null> | null>(
+    null,
+  );
+  const [retry, setRetry] = useState<number>(0);
+  const [selected, setSelected] = useState<DiagnosticPlot | null>(null);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const urls: string[] = [];
+    void Promise.all(
+      diagnosticGroups
+        .flatMap((group) => group.plots)
+        .map(async (plot) => {
+          try {
+            const response = await API.get<Blob>(
+              `/api/ml/plots/${plot.filename}`,
+              {
+                responseType: "blob",
+                signal: controller.signal,
+              },
+            );
+            if (controller.signal.aborted)
+              return [plot.filename, null] as const;
+            const url = URL.createObjectURL(response.data);
+            urls.push(url);
+            return [plot.filename, url] as const;
+          } catch {
+            return [plot.filename, null] as const;
+          }
+        }),
+    ).then((results) => {
+      if (!controller.signal.aborted) setImages(Object.fromEntries(results));
+    });
+    return () => {
+      controller.abort();
+      urls.forEach((url) => URL.revokeObjectURL(url));
+    };
+  }, [retry]);
+
+  return (
+    <Stack sx={{ gap: 3, minWidth: 0 }}>
+      <Typography variant="body2" sx={{ color: "text.secondary" }}>
+        Saved evaluation plots for the current research model. Select a chart to
+        enlarge it. These results do not establish independent real-world
+        validity.
+      </Typography>
+      {images === null && (
+        <Typography role="status">Loading diagnostic plots…</Typography>
+      )}
+      {diagnosticGroups.map((group) => (
+        <Stack key={group.title} sx={{ gap: 2, minWidth: 0 }}>
+          <Typography
+            component="h3"
+            variant="subtitle1"
+            sx={{ fontWeight: 600 }}
+          >
+            {group.title}
+          </Typography>
+          <Stack direction={{ xs: "column", md: "row" }} sx={{ gap: 2 }}>
+            {group.plots.map((plot) => (
+              <Card
+                key={plot.filename}
+                elevation={1}
+                sx={{ flex: 1, minWidth: 0, borderRadius: 3 }}
+              >
+                <CardActionArea
+                  disabled={!images?.[plot.filename]}
+                  onClick={() => setSelected(plot)}
+                  aria-label={`Expand ${plot.title}`}
+                  sx={{ p: 2 }}
+                >
+                  <Typography component="h4" variant="subtitle2" sx={{ mb: 1 }}>
+                    {plot.title}
+                  </Typography>
+                  <Box
+                    sx={{
+                      aspectRatio: "16 / 10",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    {images?.[plot.filename] ? (
+                      <Box
+                        component="img"
+                        src={images[plot.filename] || undefined}
+                        alt={plot.title}
+                        sx={{
+                          width: "100%",
+                          height: "100%",
+                          objectFit: "contain",
+                        }}
+                      />
+                    ) : (
+                      <Typography
+                        variant="body2"
+                        sx={{ color: "text.secondary" }}
+                      >
+                        {images === null
+                          ? "Loading chart…"
+                          : "Chart unavailable. Please retry."}
+                      </Typography>
+                    )}
+                  </Box>
+                </CardActionArea>
+                <Typography
+                  variant="body2"
+                  sx={{ p: 2, pt: 0, color: "text.secondary" }}
+                >
+                  {plot.caption}
+                </Typography>
+              </Card>
+            ))}
+          </Stack>
+        </Stack>
+      ))}
+      {images && Object.values(images).some((url) => url === null) && (
+        <Button
+          variant="outlined"
+          onClick={() => {
+            setImages(null);
+            setRetry((value) => value + 1);
+          }}
+          sx={{ alignSelf: "flex-start", borderRadius: 3 }}
+        >
+          Retry diagnostic plots
+        </Button>
+      )}
+      <Dialog
+        open={selected !== null}
+        onClose={() => setSelected(null)}
+        fullWidth
+        maxWidth="xl"
+        aria-labelledby="diagnostic-plot-title"
+        slotProps={{
+          paper: {
+            sx: {
+              borderRadius: 3,
+              m: { xs: 1, sm: 3 },
+              width: { xs: "calc(100% - 16px)", sm: "100%" },
+            },
+          },
+        }}
+      >
+        <DialogTitle id="diagnostic-plot-title">{selected?.title}</DialogTitle>
+        <DialogContent>
+          {selected && images?.[selected.filename] && (
+            <Box
+              component="img"
+              src={images[selected.filename] || undefined}
+              alt={selected.title}
+              sx={{ display: "block", width: "100%", height: "auto" }}
+            />
+          )}
+          <Typography variant="body2" sx={{ mt: 2, color: "text.secondary" }}>
+            {selected?.caption}
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setSelected(null)} sx={{ borderRadius: 3 }}>
+            Close chart
+          </Button>
+        </DialogActions>
+      </Dialog>
+    </Stack>
+  );
+}
+
+function ModelDiagnostics() {
+  const [expanded, setExpanded] = useState<boolean>(false);
+  return (
+    <Accordion
+      expanded={expanded}
+      onChange={(_, value) => setExpanded(value)}
+      elevation={1}
+      sx={{ borderRadius: "12px !important", "&::before": { display: "none" } }}
+    >
+      <AccordionSummary
+        expandIcon={<ExpandMoreRounded />}
+        id="model-diagnostics-heading"
+        aria-controls="model-diagnostics-content"
+      >
+        <Typography sx={{ fontWeight: 600 }}>
+          Technical Model Evaluation &amp; Defense Diagnostics
+        </Typography>
+      </AccordionSummary>
+      <AccordionDetails>{expanded && <DiagnosticGallery />}</AccordionDetails>
+    </Accordion>
+  );
+}
+
 function SandboxSimulator() {
   const { user } = useAuth();
   const [legacyValues] = useState(
@@ -1293,6 +1564,7 @@ function SandboxSimulator() {
         )}
       </section>
       {prediction && <PredictionView prediction={prediction} sandbox />}
+      <ModelDiagnostics />
     </Stack>
   );
 }
@@ -1377,14 +1649,15 @@ export default function MlInsights() {
             </p>
             <p className="mt-2 font-medium">Understand the evaluation limits</p>
             <p className="mt-2">
-              The evaluation report records 92.81% accuracy on 459 mixed
-              real/synthetic holdout records, but only 37.5% accuracy on its
-              eight real holdout learners. All 29 real learners had Average
-              Post-Test outcomes, and all contributed to synthetic generation
-              anchors. Household details are excluded from prediction. The
-              synthetic generator uses simulation assumptions rather than causal
-              findings. Model probabilities and activity suggestions do not
-              demonstrate diagnostic validity or intervention effectiveness.
+              The standalone sigmoid-calibrated Random Forest evaluation records
+              92.16% accuracy on 459 mixed real/synthetic holdout records, but
+              only 37.5% accuracy on its eight real holdout learners. All 29
+              real learners had Average Post-Test outcomes, and all contributed
+              to synthetic generation anchors. Household details are excluded
+              from prediction. The synthetic generator uses simulation
+              assumptions rather than causal findings. Model probabilities and
+              activity suggestions do not demonstrate diagnostic validity or
+              intervention effectiveness.
             </p>
           </details>
           <Stack

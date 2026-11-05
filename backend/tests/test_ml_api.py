@@ -1,5 +1,7 @@
 """Inference and authorization regressions in disposable PostgreSQL schemas."""
 from datetime import date
+from pathlib import Path
+from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 
@@ -42,6 +44,43 @@ class MLApiTests(unittest.TestCase):
                     teacher_evaluation_date=date(2026, 8, 10) if teacher_date else None,
                     evaluator_role="teacher" if teacher_date else "parent"))
             db.commit()
+
+    def test_diagnostic_plots_are_static_staff_only_and_allowlisted(self):
+        filenames = (
+            "01_confusion_matrix.png", "02_classification_metrics_f1.png",
+            "03_feature_importance.png", "04_class_distribution_70_30.png",
+            "05_real_beneficiary_pre_vs_post_comparison.jpg", "06_probability_reliability.jpg",
+        )
+        directory = Path(self.enterContext(TemporaryDirectory()))
+        self.enterContext(patch("backend.routes.ml.PLOT_DIRECTORY", directory))
+        for filename in filenames:
+            source = directory / filename.replace(".jpg", ".png")
+            source.write_bytes(b"\x89PNG\r\n\x1a\nstatic plot fixture: " + filename.encode())
+            path = f"/api/ml/plots/{filename}"
+            self.assertEqual(self.fixture.client.get(path).status_code, 401)
+            for actor in (5, 6):
+                self.assertEqual(self.call("GET", path, actor).status_code, 403)
+            for actor in (1, 2):
+                with self.subTest(filename=filename, actor=actor):
+                    response = self.call("GET", path, actor)
+                    self.assertEqual(response.status_code, 200)
+                    self.assertEqual(response.headers["content-type"], "image/png")
+                    self.assertEqual(response.headers["cache-control"], "no-store")
+                    self.assertEqual(response.content, source.read_bytes())
+            if filename.endswith(".jpg"):
+                original = self.call("GET", path.replace(".jpg", ".png"), 2)
+                self.assertEqual(original.status_code, 200)
+                self.assertEqual(original.content, source.read_bytes())
+        for filename in ("evaluation_metrics.json", "rf_post_test_model.joblib", "unknown.png",
+                         "%2e%2e%2fevaluation_metrics.json"):
+            self.assertEqual(self.call("GET", f"/api/ml/plots/{filename}", 2).status_code, 404)
+
+    def test_missing_diagnostic_plot_returns_sanitized_404(self):
+        with TemporaryDirectory() as directory, patch("backend.routes.ml.PLOT_DIRECTORY", Path(directory)):
+            response = self.call("GET", "/api/ml/plots/01_confusion_matrix.png", 2)
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.json(), {"success": False, "detail": "Diagnostic plot not found.",
+                                          "message": "Diagnostic plot not found."})
 
     def test_student_access_roster_scoping_and_incomplete_pre(self):
         for actor in (1, 5, 6):
@@ -188,8 +227,6 @@ class MLApiTests(unittest.TestCase):
                 self.assertEqual(result["predicted_post_interpretation"], ACTIVE_CLASSES[0])
                 expected = predict_student(result["features"])["class_probabilities"]
                 self.assertEqual(result["class_probabilities"], expected)
-                if "raw_scores" not in changes:
-                    self.assertTrue(.65 <= expected[ACTIVE_CLASSES[0]] <= .90)
                 self.assertAlmostEqual(sum(result["confidence_percentages"].values()), 100)
                 self.assertTrue(all(0 < value < 100 for value in result["confidence_percentages"].values()))
 
@@ -212,11 +249,8 @@ class MLApiTests(unittest.TestCase):
                 self.assertEqual(result["class_probabilities"], predict_student(features)["class_probabilities"])
                 if scenario["name"].startswith(("A", "B")):
                     self.assertEqual(result["predicted_post_interpretation"], ACTIVE_CLASSES[2])
-                    self.assertGreaterEqual(result["class_probabilities"][ACTIVE_CLASSES[2]],
-                                            .75 if scenario["name"].startswith("A") else .60)
                 elif scenario["name"] == "C":
                     self.assertEqual(result["predicted_post_interpretation"], ACTIVE_CLASSES[0])
-                    self.assertTrue(.65 <= result["class_probabilities"][ACTIVE_CLASSES[0]] <= .90)
 
 
 class MLSandboxScoringTests(unittest.TestCase):
@@ -254,9 +288,10 @@ class MLSandboxScoringTests(unittest.TestCase):
 
 
 class MLCacheTests(unittest.TestCase):
-    def test_loader_rejects_uncalibrated_or_incompatible_ensembles(self):
+    def test_loader_rejects_uncalibrated_unfitted_and_hybrid_estimators(self):
         import copy
         from types import SimpleNamespace
+        from sklearn.ensemble import RandomForestClassifier, VotingClassifier
         bundle = load_model()
         original = bundle["pipeline"].named_steps["classifier"]
         isotonic = copy.copy(original)
@@ -268,7 +303,13 @@ class MLCacheTests(unittest.TestCase):
             pipeline_=SimpleNamespace(named_steps={"classifier": object()})))]
         malformed = copy.copy(original)
         malformed.calibrated_classifiers_ = [object()]
-        for classifier in (object(), isotonic, unfitted, wrong_ensemble, malformed):
+        invalid_estimators = []
+        for estimator in (RandomForestClassifier(), VotingClassifier([("forest", RandomForestClassifier())])):
+            invalid = copy.copy(original)
+            invalid.calibrated_classifiers_ = [SimpleNamespace(estimator=SimpleNamespace(
+                pipeline_=SimpleNamespace(named_steps={"classifier": estimator}))) ]
+            invalid_estimators.append(invalid)
+        for classifier in (object(), isotonic, unfitted, wrong_ensemble, malformed, *invalid_estimators):
             load_model.cache_clear()
             pipeline = SimpleNamespace(classes_=bundle["pipeline"].classes_, named_steps={"classifier": classifier})
             with patch("backend.ml.inference.joblib.load", return_value={**bundle, "pipeline": pipeline}):

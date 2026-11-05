@@ -585,7 +585,8 @@ export default function ParentMlInsights() {
         </summary>
         <Typography variant="body2" sx={{ mt: 1 }}>
           Educational research prototype for instructional planning, not a
-          formal clinical diagnosis. Research evaluation reported 92.81%
+          formal clinical diagnosis. Standalone sigmoid-calibrated Random Forest
+          evaluation reported 92.16%
           mixed-holdout accuracy, but only 37.5% on eight real holdout learners.
           All 29 observed real POST outcomes were Average and contributed
           generator anchors; there is no independent real-world validation.

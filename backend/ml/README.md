@@ -1,132 +1,142 @@
-# ECCD model research and teacher insights
+# ECCD standalone Random Forest research model
 
-On 2026-10-30 the conditional-growth model replaced the preceding saved experiment:
-92.8105% combined holdout accuracy (426/459), 92.8205% Macro F1, 90.2804%
-five-fold CV accuracy, 93.7916% synthetic accuracy and 3/8 real holdout predictions
-correct. All real POST outcomes are Average; the real-only always-Average
-baseline is 100%. The synthetic-dominated combined result does not establish
-independent real-world validity. The sigmoid-calibrated soft-voting ensemble
-combines Random Forest and HistGradientBoosting. Internal domain composites and
-official PRE scoring-interval summaries preserve the 18-input API. All five
-household fields are excluded before preprocessing; retained missing inputs use
-training median/mode defaults. Training folds use real weight 2.0 and down-weight
-contradictory synthetic boundaries. Outside PRE score support, probabilities blend
-toward training priors; this is not measured intervention recovery.
+Updated 2026-11-05. The primary artifact is a **standalone sigmoid-calibrated
+RandomForestClassifier**, replacing the RF/HistGradientBoosting voting hybrid.
+Both teacher and parent inference use `artifacts/rf_post_test_model.joblib`.
 
-The immediately preceding model, datasets, metrics and source are preserved in
-`artifacts/baseline_pre_missingness_weighting/before_growth_retraining_20261029_211422/active_before_growth.zip`
-with a verified 42-file SHA-256 manifest. Generated datasets and the snapshot
-remain ignored. The current model SHA-256 is
+## Current measured results
+
+| Evaluation | Accuracy |
+| --- | ---: |
+| Mixed holdout | 92.1569% (423/459) |
+| Synthetic holdout | 93.1264% (420/451) |
+| Real holdout | 37.5% (3/8) |
+| Five-fold mixed training CV mean | 88.5981% |
+| Student-excluded real benchmark with shared anchors | 31.0345% (9/29) |
+| Separate exploratory real-fold evaluation | 44.8276% (13/29) |
+| Always-Average, all 29 real learners | 100% (29/29) |
+| PRE-category persistence, all 29 real learners | 13.7931% (4/29) |
+
+Mixed-holdout macro F1 is 92.1690%; weighted F1 is 92.1727%. Five-fold mixed
+training CV macro F1 is 88.6136%. The model does not beat the constant Average
+baseline on the available real cohort. No independent real-world validity,
+real delay sensitivity, clinical confidence or intervention effectiveness is established.
+
+## Architecture and training
+
+`rf_full_leaf3` uses 400 trees, `min_samples_leaf=3`, `max_features=0.8`,
+`class_weight='balanced'`, `n_jobs=1`, `random_state=42`. This specified
+configuration came from prior screening; this run evaluates that configuration
+rather than performing a new hyperparameter search or claiming optimality.
+Neither HistGradientBoostingClassifier nor VotingClassifier is in the primary model.
+
+The existing `FoldWeightedClassifier` fits feature engineering and preprocessing
+inside each training/calibration subfold. `SupportAwareCalibration` subclasses
+`CalibratedClassifierCV(method='sigmoid', cv=3, ensemble=False)`. It fits inner
+OOF sigmoid calibration and refits the base pipeline on the available training rows.
+Outside PRE score training support, it also blends toward training class priors
+with mass `1-exp(-L2(range_overshoot/training_std))`; age alone is excluded. This
+unchanged safeguard is not an empirically calibrated recovery estimate.
+
+Real sample weight is 2; synthetic weight is 1. Fit-local 12-neighbor consensus
+down-weights isolated synthetic contradictions to 0.5. No labels are changed.
+Five outer folds measure the complete procedure on the mixed training set.
+
+The exact 18-field API remains in `common.py` and `schemas/ml.py`. Five household
+inputs are excluded before preprocessing; no values or missingness flags reach
+the estimator. Eleven numeric inputs use training-median imputation and scaling;
+gender/handedness use training modes and unknown-safe one-hot encoding. Six PRE
+composites and three fixed official-table interval proxies remain. IDs, source,
+and MID/POST measurements are excluded from predictors. Only three POST classes
+are supported; advanced POST candidates are counted and rejected, never relabeled.
+
+## Evaluation design and limitations
+
+The saved dataset remains unchanged: 29 real + 1,500 synthetic rows, split into
+1,070 training and 459 holdout rows with stratification and seed 42. There are
+21 real training and 8 real holdout learners. The final estimator fits only the
+training portion. However, all 29 real learners anchored the original generator
+before splitting, so mixed CV and holdout are not independent real-cohort validation.
+All real observed POST labels are Average. Synthetic balance is imposed, not
+population prevalence. Synthetic PRE ages span 36–71 months; real ages remain 59–80.
+Growth factor 0.40, noise standard deviation 0.006, conditional norm preservation,
+illustrative household penalties and official scoring rules remain unchanged.
+
+A separate five-fold real-learner experiment regenerates 1,500 training scenarios
+from only each fold's 23 or 24 training learners, fits/calibrates there, and scores
+only the held-out real learners. Fold counts correct are 3/6, 4/6, 3/6, 1/6 and 2/5.
+All 29 learners already informed development; 13/29 is exploratory, not external
+validation or a directly comparable improvement over the hybrid's shared-anchor
+benchmark. Real delay sensitivity is not estimable without observed delayed POST outcomes.
+
+Both always-Average and PRE-category-persistence baselines are included for mixed,
+real and synthetic holdouts and the real cohort. Persistence retains the observed
+PRE category, including advanced categories. Macro/weighted headline metrics use
+three supported labels; the five-label report includes zero-support advanced labels
+and has a different macro denominator. JSON records both matrix label orders.
+
+## Publication policy and frozen comparison
+
+Publication checks fitted standalone RF architecture, sigmoid calibration, three
+supported classes, household invariance and finite normalized probabilities. The
+former >=90% accuracy/F1 gates and selected-profile A/B/C probability bands remain
+**reported diagnostics only**. The current RF CV accuracy/F1 are below 90%; no
+result is hidden or probabilities forced to satisfy these bands.
+
+`artifacts/hybrid_comparison_metrics.json` preserves the original hybrid metrics
+without modification: mixed holdout 92.8105%, mixed CV 90.2804%, real holdout 3/8,
+shared-anchor student-excluded real benchmark 10/29. The 40-file verified local
+snapshot `artifacts/hybrid_baseline_before_standalone_rf.local` preserves the old
+artifact, reports, sources and dataset/splits. `hybrid_baseline_manifest.json`
+records checksums. Learner datasets and the archive remain Git-ignored.
+
+Active RF SHA-256:
+`1ff4591f0f8e21bbaeb48f5617f61acd460f2953f6609cac52d5f86a6bdcec73`.
+Hybrid SHA-256:
 `835139f31887924c02f98c9d12878755885c4b476ae6ef54e3412b599d54ecc6`.
-Restart the backend after switching artifacts because inference caches the model.
 
-Run from the repository root with Python 3.12 and the project's environment:
+## Runtime contracts
+
+Teacher routes remain `GET /api/ml/students?section_id=N`,
+`POST /api/ml/predict/student/{student_id}` and `POST /api/ml/predict/sandbox`.
+Parent routes remain `GET /api/ml/parent/readiness/{student_id}` and
+`POST /api/ml/parent/predict/{student_id}`. Complete teacher-confirmed PRE,
+section/child ownership, active-adviser permissions and independent PRE release
+are preserved. Parent responses continue excluding family inputs and checklist
+marks. Inference never refits or writes official assessments.
+
+`baseline_domains` still uses deterministic PRE tiers: <=3 Delay, 4–6 Slight Delay,
+>=7 Average. `prescriptions.py` still triggers local activity guides for scaled
+scores <=6 or explicit DI-KAYA items, independently of the predicted category.
+These are planning tools, not diagnoses or demonstrated effective interventions.
+Sandbox raw-score conversion, 36–71 month sandbox age validation, 18 derived
+features, official scoring tables and owner-scoped durable drafts are unchanged.
+No portal layout, database schema, assessment route or permission was changed.
+
+## Reproduction and verification
+
+Use the existing Python 3.12 environment and frozen comparison dataset; no new
+dependencies are required. Do not rebuild the main dataset for a controlled
+comparison. `dataset_builder` remains available when a separately audited dataset
+rebuild is explicitly intended; it needs the original local workbooks.
 
 ```powershell
-uv pip install --python .venv312 -r backend/requirements.txt
-uv run --no-project --python .venv312 python -m backend.ml.dataset_builder
 uv run --no-project --python .venv312 python -m backend.ml.train_random_forest
-uv run --no-project --python .venv312 python -m unittest backend.tests.test_ml_model -v
+uv run --no-project --python .venv312 python -m unittest backend.tests.test_ml_model backend.tests.test_ml_pipeline backend.tests.test_ml_growth -v
+uv run --no-project --python .venv312 python -m pytest backend/tests/test_parent_ml.py -q
+pnpm.cmd --dir frontend exec tsc --noEmit -p tsconfig.app.json
+pnpm.cmd --dir frontend exec tsc --noEmit -p tsconfig.node.json
+pnpm.cmd --dir frontend run lint
+pnpm.cmd --dir frontend run build
 ```
 
-The two named beneficiary workbooks must be present in `raw_data/`. The builder
-never edits them. It produces 29 anonymous real rows, 1,500 synthetic rows and
-1,529 hybrid rows. Direct execution of either script is also supported.
+`--cv-only` saves a training selection; `--finalize` requires a matching dataset,
+trainer, component and scoring-table manifest. `evaluation_metrics.json` records
+hashes, parameters, versions, baselines, probability diagnostics and every fold.
+`MODEL_EVALUATION_REPORT.md` and root `ML_ACCURACY_REVIEW.md` summarize results.
+`ML_MODEL_AUDIT.md` separates current findings, completed integration and future
+research. Individual comparisons remain in ignored local files.
 
-The target scope remains **three supported classes**. Younger scoring brackets
-can produce advanced POST outcomes; those candidates are counted and excluded,
-never relabeled. Five-label reports retain advanced classes as unsupported. No
-scoring tables or application interpretation rules are changed.
-
-Synthetic PRE age proposals are uniform across integer months 36–71; real ages
-remain unchanged (59–80). Gender/handedness, covariance and assessment intervals
-retain real anchors. At PRE scaled >=8, the future-age table supplies a raw count
-preserving the scaled level before growth over remaining capacity. Scaled <=6
-uses constrained recovery; 7 interpolates normal/constrained targets. At least
-three delayed domains disable preservation floors throughout the profile.
-Counts remain bounded and nondecreasing; official scoring derives every label.
-Household priors, household effects and conditional growth rules are explicit
-simulation assumptions. They are not estimates about individual AMES families.
-Real household fields remain missing, and preprocessing is fitted within training.
-
-Both scripts use seed 42. The pipeline accepts exactly 18 PRE/demographic/household
-inputs; all POST/MID scores, source labels and IDs are excluded from predictors.
-The 70/30 split is stratified, with five-fold training-only parameter selection.
-The serialized model remains fitted on the 1,070 training records.
-
-Publication requires Average >=75% for scaled Profile A, >=60% for B, and
-Significant Delay 65–90% for all-scaled-1 Profile C, at 38 and 66 months. All
-gender/handedness combinations and blank/filled households must pass, including
-table-attainable raw A/B counterparts. The original 65–80% C band failed and the
-user approved 65–90% before holdout evaluation. Runtime probability logic is
-unchanged. Raw minima are separate reported profiles without C's band.
-Both holdout accuracy and Macro F1 must be >=90%; incompatible models cannot
-replace the calibrated RF/HGB ensemble. `growth_retraining_experiments.json`
-records the training-only screens and approved gate revision. See the root
-`SYNTHETIC_GROWTH_RETRAINING_RESULTS.md` for exact probabilities and test results.
-
-`artifacts/MODEL_EVALUATION_REPORT.md` documents experimental metrics, exact bundle
-hashes, the confusion matrix, source overlap and limitations. All 18 feature
-importances remain in `evaluation_metrics.json`; individual real comparisons
-remain local in `real_beneficiary_benchmark.csv`.
-`dataset_audit.json` records input hashes, repair decisions and generator parameters.
-All real learners anchor the generator before splitting, so the holdout does not
-constitute independent real-cohort validation. All 29 real POST outcomes are Average;
-an always-Average baseline is therefore essential to interpreting that benchmark.
-
-The interventions are transparent PRE-based rules, independent of predictions.
-They include all seven domains and three local support tiers. Activities are
-locally authored, aligned at domain level to the linked DepEd curriculum; they
-are not official prescriptions, diagnoses or evidence of treatment effectiveness.
-Student-excluded real predictions combine training OOF and holdout predictions,
-with method and final-model training overlap shown per learner.
-
-Local single-student inference:
-
-```python
-import pandas as pd
-from backend.ml.common import DATA
-from backend.ml.inference import predict_student
-
-student = pd.read_csv(DATA / "real_beneficiary_cleaned.csv").iloc[0].to_dict()
-result = predict_student(student)
-```
-
-The Teacher Portal integrates this saved model at `/teacher/ml-insights`.
-Teacher-authenticated routes are `GET /api/ml/students?section_id=N`,
-`POST /api/ml/predict/student/{student_id}`, and `POST /api/ml/predict/sandbox`.
-Pydantic request/response contracts live in `backend/schemas/ml.py`. Student
-inference checks section ownership and complete PRE data, uses the official
-teacher PRE date for age/scoring, and discloses missing imputed demographics.
-Free-text occupations remain missing because no reviewed tier mapping exists.
-The sandbox accepts raw KAYA counts for seven domains and converts them to
-scaled scores using completed-month PRE age, rounded to one decimal year with
-HALF_UP, and the existing official scoring JSON/closest-lower fallback. Raw
-limits are GM=13, FM=11, SH=27, RL=5, EL=8, C=21 and SE=24. The UI shows decimal
-age, scoring bracket and calculated scaled scores; composites are read-only.
-The sandbox validates PRE ages 36–71 months and sends 18 derived features plus
-strict `raw_scores` request metadata. The backend authoritatively converts raw
-counts and normalizes composites before passing exactly 18 fields to inference.
-Scaled-only requests remain supported. Standard-score tables are identical across brackets, but
-raw-to-scaled tables differ: age changes within a bracket can leave scores unchanged.
-Owner-scoped `ml_sandbox_raw_v2` drafts retain raw/age/household inputs across
-reloads and failures. Old `ml_sandbox_v1` scaled drafts remain untouched and
-visible for reference; their age/demographics initialize the new form, but raw
-scores start blank. New-format drafts take precedence. Successful inference
-retains inputs; offline failures mark pending state and retry on reconnection.
-No predictions alter official assessments. Startup caches artifacts in memory;
-missing artifacts return HTTP 503 for prediction requests.
-
-Additional integration checks:
-
-```powershell
-uv run --no-project --python .venv312 python -m unittest backend.tests.test_ml_api -v
-pnpm.cmd --dir frontend exec playwright test --config playwright.ml-sandbox.config.ts
-```
-
-Load only trusted joblib artifacts. Names and LRNs never enter exported CSVs, but
-pseudonymous developmental records are still sensitive. Workbooks and datasets
-remain Git-ignored by existing project policy. The active V1 binary is explicitly
-tracked for deployment. Generated reports and figures are reproducible locally.
-Offline training and local inference require no
-database or API server; the teacher integration uses the existing application DB.
+Load trusted joblib only. Restart an already-running backend to refresh its cached
+artifact. This branch integration does not imply a hosted deployment. Offline
+training/inference requires no application database; route tests use disposable schemas.

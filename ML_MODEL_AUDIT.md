@@ -1,319 +1,394 @@
-# Machine-learning audit and proposed integration plan — `feat/feedbacks-changes`
+# Machine-learning audit and integration status — feat/feedbacks-changes
 
-Date: 2026-11-05
+Updated: **2026-11-05**. Active model: **standalone sigmoid-calibrated Random Forest**.
+This report separates measured findings from integration status and remaining research work.
 
-Status: Documentation only. Part I describes the current hybrid model and its recorded findings. Part II describes the selected future standalone Random Forest approach; it has not been implemented by this update. The active model's checksum was checked against the saved evaluation report. Accuracy figures below come from that report; this documentation update did not rerun predictions, training, or the full test suites.
+## Part I — Current model: verified findings and limitations
 
-| Item | Current branch | Proposed approach |
-|---|---|---|
-| Primary classifier | Random Forest + HistGradientBoosting hybrid | Standalone Random Forest as the primary classifier, with preprocessing/calibration disclosed |
-| Available real data | 29 learners, all Average at POST | Use the same available records; no additional real dataset assumed |
-| Prediction accuracy | Recorded hybrid results in Part I | New RF-specific measurements required; no accuracy promised |
-| Deployment/integration status | Existing hybrid serves both portals | Future coordinated artifact, loader, and portal update |
-| Research claim | Experimental forecasting; real-world usefulness unestablished | Retain that limitation unless new evidence supports a stronger claim |
+### 1. Assessment and dataset constraint
 
-## Part I — Current model: findings and limitations
+The Random Forest forecasting pipeline is implemented and evaluated. **Reliable
+real-world predictive usefulness is not established.** There are only 29 real
+learners and every observed POST outcome is Average. The team reports that the
+client lost earlier records/backups and cannot provide more historical data;
+that explanation is client-reported, not independently verified by the repository.
 
-### 1. Assessment and client-reported limitation
+All-Average outcomes do not impose a 34% accuracy ceiling. A constant Average
+answer scores 100% here. Lower model accuracy means the model incorrectly forecasts
+delay for some observed Average outcomes. Separately, absent real delayed outcomes
+make real delay sensitivity and three-class population performance unidentifiable.
 
-**AMES can be presented as a working assessment system with an experimental forecasting component. The current evidence does not establish reliable prediction of POST outcomes for new real learners.** Defense acceptance depends on the approved research objectives and the panel's rubric; this audit cannot guarantee it.
+### 2. Active architecture and provenance
 
-The project team reports that the client cannot provide additional historical datasets because earlier records and backups were lost. This is a client-reported constraint, not a fact independently established from repository files. It explains the limited available data, but it does not validate the model or make the synthetic benchmark representative of real children.
+The deployed artifact path is `backend/ml/artifacts/rf_post_test_model.joblib`.
+Its fitted base classifier is **RandomForestClassifier**, with no VotingClassifier
+or HistGradientBoostingClassifier. Configuration `rf_full_leaf3` uses 400 trees,
+minimum leaf size 3, `max_features=0.8`, balanced class weights, `n_jobs=1` and seed 42.
+This specified configuration came from prior screening. This integration run
+**does not perform a new hyperparameter search or establish optimality**.
 
-The available real dataset contains 29 learners, all with an Average POST outcome. This limits evaluation of real delay cases. **It does not impose a 34% accuracy ceiling:** always predicting Average would score 100% on these particular real records, while providing no evidence that delay cases can be detected.
+The full estimator is wrapped in three-fold sigmoid `CalibratedClassifierCV`
+(`ensemble=False`). Preprocessing, boundary weighting and imputation refit inside
+each calibration/training fold. The existing `SupportAwareCalibration` also blends
+probabilities toward training class priors outside age-normalized PRE score support;
+age alone is excluded from that distance. This is an extrapolation safeguard,
+not measured recovery or calibrated clinical confidence. No scenario-specific
+class override or probability clipping was added.
 
-### 2. Confirmed model
+Active RF SHA-256:
+`1ff4591f0f8e21bbaeb48f5617f61acd460f2953f6609cac52d5f86a6bdcec73`.
 
-The app loads `backend/ml/artifacts/rf_post_test_model.joblib`: a **Random Forest + HistGradientBoosting soft-voting ensemble with sigmoid calibration**. The filename does not mean the active model is only a Random Forest. Teacher and parent inference use the same saved model.
+The former sigmoid-calibrated RF/HGB hybrid has SHA-256
+`835139f31887924c02f98c9d12878755885c4b476ae6ef54e3412b599d54ecc6`.
+Its original metrics remain unmodified in
+[hybrid_comparison_metrics.json](backend/ml/artifacts/hybrid_comparison_metrics.json).
+A verified 40-file local archive, `hybrid_baseline_before_standalone_rf.local`,
+contains its artifact, reports, sources, datasets and split provenance. Checksums
+are in [hybrid_baseline_manifest.json](backend/ml/artifacts/hybrid_baseline_manifest.json).
+The archive and learner-level datasets remain local/ignored; aggregate metrics
+and the active inference artifact are available for version control.
 
-Verified model SHA-256:
+### 3. Features X: exact public input contract
 
-```text
-835139f31887924c02f98c9d12878755885c4b476ae6ef54e3412b599d54ecc6
-```
+| Group | Exact fields | Processing |
+| --- | --- | --- |
+| Seven PRE domain scores | `gm_pre_scaled`, `fm_pre_scaled`, `sh_pre_scaled`, `rl_pre_scaled`, `el_pre_scaled`, `cog_pre_scaled`, `se_pre_scaled` | Retained |
+| PRE summary fields | `pre_total_scaled`, `pre_standard_score`, `pre_delayed_domains_count` | Retained |
+| PRE age | `age_months_pre` | Retained |
+| Demographics | `gender`, `handedness` | Retained |
+| Household inputs | `mother_education_level`, `father_education_level`, `household_occupation_tier`, `num_siblings`, `birth_order` | Accepted for compatibility, excluded before preprocessing |
 
-### 3. X: prediction inputs
+The API still accepts **18 fields**. Only **13 supplied fields** can influence
+the estimator. No household values or household missingness flags reach the forest.
+Eleven numeric fields use training-median imputation/scaling; the two retained
+categorical fields use training-mode imputation and unknown-safe one-hot encoding.
 
-**X means the information supplied to predict an outcome.** The API accepts 18 fields:
+Internal engineering retains motor, language and cognitive/socio-emotional means,
+delayed-domain fraction, population domain standard deviation and minimum domain
+score. Three additional interval summaries use fixed official PRE scoring tables
+and age; these are capacity proxies, not recovered observed raw scores.
+Names, LRNs, student IDs, source labels, and MID/POST measurements are excluded from X.
 
-| Group | Exact fields |
-|---|---|
-| Seven PRE domain scores | `gm_pre_scaled`, `fm_pre_scaled`, `sh_pre_scaled`, `rl_pre_scaled`, `el_pre_scaled`, `cog_pre_scaled`, `se_pre_scaled` |
-| PRE summaries | `pre_total_scaled`, `pre_standard_score`, `pre_delayed_domains_count` |
-| Age and demographics | `age_months_pre`, `gender`, `handedness` |
-| Household information | `mother_education_level`, `father_education_level`, `household_occupation_tier`, `num_siblings`, `birth_order` |
+### 4. Target Y
 
-The seven domains are Gross Motor, Fine Motor, Self-Help, Receptive Language, Expressive Language, Cognitive, and Socio-Emotional.
+`post_interpretation` is the future overall POST interpretation, with three supported categories:
 
-**Important distinction:** the saved pipeline excludes all five household fields. It retains 13 supplied fields and creates additional internal features. Accepting 18 fields does not mean all 18 affect predictions.
+1. Suggests Significant Delay in Overall Development.
+2. Suggests Slight Delay in Overall Development.
+3. Average Overall Development.
 
-IDs, names, LRNs, source labels, and MID/POST scores are not prediction inputs.
+Slightly Advanced and Highly Advanced outcomes remain unsupported. The generator
+counts and rejects advanced POST candidates; it does not relabel them as Average.
+The model predicts an overall category, not a raw score or future domain scores.
 
-### 4. Y: prediction target
+### 5. Why a PRE domain displays Delay or Average on either portal
 
-**Y is one target: `post_interpretation`.** It predicts one of three POST outcomes:
+Both portals receive the same `baseline_domains` from the shared ML route.
+For actual students, the system counts teacher-confirmed PRE KAYA answers,
+calculates assessment age from birth date and official PRE date, and uses the
+existing official age-bracket tables to convert raw counts into scaled scores.
+The following fixed local planning thresholds then label each domain:
 
-- Suggests Significant Delay in Overall Development
-- Suggests Slight Delay in Overall Development
-- Average Overall Development
-
-Advanced outcomes are unsupported. This model predicts a category, not exact future checklist scores. Its activity recommendations come from separate PRE-based rules. Predictions do not change official assessments.
-
-### 5. How PRE domain labels work in both portals
-
-The labels on the PRE domain cards are calculated from existing assessment results using fixed planning rules:
-
-1. Count KAYA answers separately for each domain to obtain raw scores.
-2. Calculate the child's age at the official teacher-confirmed PRE assessment date.
-3. Convert each raw score to a scaled score through the age group's ECCD lookup table.
-4. Assign the domain's planning tier using its scaled score:
-
-| PRE domain scaled score | Displayed tier |
-|---|---|
-| 0-3 | Delay |
-| 4-6 | Slight Delay |
+| PRE scaled score | Domain planning tier |
+| --- | --- |
+| 0–3 | Delay |
+| 4–6 | Slight Delay |
 | 7 or higher | Average |
 
-For example, a Gross Motor scaled score of 3 displays Delay, and a Cognitive scaled score of 8 displays Average. These thresholds apply to scaled scores, not raw KAYA counts or percentages. Raw-to-scaled conversion varies by domain and age group.
+These tiers are **deterministic PRE summaries**, not Random Forest predictions
+or clinical diagnoses. The local Average tier includes high scores and does not
+create separate advanced-domain tiers. Overall PRE interpretation is calculated
+separately from total scaled score → standard score → official interpretation.
 
-The backend supplies these values in `baseline_domains`. Both parent and teacher pages display the returned tiers. The parent endpoint calls the same student prediction function, with additional linked-child authorization, prediction permission, and independent PRE-release checks.
+`prescriptions.py` remains rule-based: a domain score <=6 or an explicit DI-KAYA
+item triggers activity guidance. An Average domain may therefore still receive
+an activity for an observed item gap. The guides are not learned interventions
+and provide no evidence of treatment effectiveness. Parent privacy, active-adviser
+permissions, linked-child ownership, complete teacher-confirmed PRE and independent
+PRE release gates remain unchanged. Predictions never write official assessments.
 
-These are **local instructional-planning tiers**, separate from both the overall PRE interpretation and the model's predicted overall POST category. The overall PRE interpretation comes from the combined scaled total and standard-score table. Scores of 7 and above are grouped as Average on the domain cards, so those cards do not distinguish advanced domain performance. The tiers are not clinical diagnoses.
+### 6. Dataset and evaluation design
 
-Support activities are also rule-based: a domain is included when its scaled score is 6 or below, or when it has explicitly recorded DI-KAYA items. An Average-tier domain can therefore still have a targeted activity. Activities do not demonstrate that an intervention will cause the predicted outcome or a particular recovery rate.
+| Source | All rows | Training | Mixed holdout |
+| --- | ---: | ---: | ---: |
+| Real | 29 | 21 | 8 |
+| Synthetic | 1,500 | 1,049 | 451 |
+| Total | 1,529 | 1,070 | 459 |
 
-### 6. Training data and evaluation design
+The existing comparison dataset is unchanged. Synthetic data form approximately
+98.1% of all records, with 500 records per supported POST class. This imposed
+balance is not observed school prevalence. The mixed split is stratified 70/30,
+seed 42. Synthetic PRE proposals span 36–71 months; real PRE ages remain 59–80.
 
-| Dataset | Real records | Synthetic records | Total |
-|---|---:|---:|---:|
-| Full dataset | 29 | 1,500 | 1,529 |
-| Training split | 21 | 1,049 | 1,070 |
-| Holdout split | 8 | 451 | 459 |
+The main dataset was generated from all 29 real learners before splitting. PRE
+covariance, observed POST growth, demographics and period-spacing anchors therefore
+include later real holdout learners. Classifier-local fold isolation does not
+remove this end-to-end dependence. Mixed holdout and CV measure the declared
+simulation experiment, not independent forecasting accuracy on new real learners.
 
-The split is 70/30, stratified by POST category, with seed 42. Five-fold cross-validation on the training split selects candidates. The saved model remains fitted using the training split; the holdout is used for evaluation.
+The generator retains the 0.40 recovery-factor scenario, Gaussian POST noise
+standard deviation 0.006, norm-preserving rules and bounded nondecreasing raw
+counts. Official scoring derives labels. Household penalties are illustrative
+simulation assumptions even though household predictors are excluded.
 
-Synthetic data represents approximately 98.1% of all records. There are 500 synthetic records per supported POST class. This balance is imposed by generation and rejection sampling; it is not measured class prevalence in the client's population. Advanced synthetic POST candidates are excluded, not relabeled.
+### 7. Measured RF results and frozen hybrid comparison
 
-Synthetic generation uses real learners' profiles, covariance, assessment spacing, and observed growth. Its conditional growth and household effects are declared simulation assumptions. Although household fields are excluded from the classifier, simulated household factors still influence generated outcomes.
+| Evaluation | Active standalone RF | Archived hybrid |
+| --- | ---: | ---: |
+| Mixed holdout accuracy | **92.1569% (423/459)** | 92.8105% (426/459) |
+| Synthetic holdout accuracy | 93.1264% (420/451) | 93.7916% (423/451) |
+| Real holdout accuracy | **37.5% (3/8)** | 37.5% (3/8) |
+| Five-fold mixed training CV mean accuracy | 88.5981% | 90.2804% |
+| Five-fold mixed training CV mean macro F1 | 88.6136% | 90.2799% |
+| Student-excluded real benchmark, shared anchors | **31.0345% (9/29)** | 34.4828% (10/29) |
+| Final-model predictions across all 29 real learners | 75.8621% (22/29) | 79.3103% (23/29) |
 
-All 29 real learners inform generation before splitting. Consequently, a learner being excluded from a classifier fit does not mean that learner was excluded from the entire data-generation process. Fold-local imputation and training do not remove this upstream dependence.
+The last row overlaps final-model training for 21 learners; it is **not unseen
+accuracy**. Student-excluded predictions combine training OOF predictions and the
+real holdout, but generator anchors and prior development remain shared.
+The RF does not outperform the hybrid on these headline development measurements;
+its primary role aligns the implemented classifier with the approved RF objective.
 
-### 7. Recorded performance of the current hybrid
+| Active RF mixed-holdout metric | Macro | Weighted |
+| --- | ---: | ---: |
+| Precision | 92.1888% | 92.2154% |
+| Recall | 92.1761% | 92.1569% |
+| F1 | 92.1690% | 92.1727% |
 
-These are saved evaluation results, not freshly recomputed measurements. All model results in this section belong to the current RF/HistGradientBoosting hybrid, not the proposed standalone RF. The always-Average row is a separate baseline:
+| Class | Precision | Recall | F1 | Support |
+| --- | ---: | ---: | ---: | ---: |
+| Significant Delay | 94.6309% | 94.0000% | 94.3144% | 150 |
+| Slight Delay | 88.3871% | 91.3333% | 89.8361% | 150 |
+| Average | 93.5484% | 91.1950% | 92.3567% | 159 |
 
-| Evaluation | Recorded accuracy | Records |
-|---|---:|---:|
-| Combined holdout | **92.81%** | 426/459 |
-| Synthetic-only holdout | **93.79%** | 423/451 |
-| Real-only holdout | **37.50%** | 3/8 |
-| Five-fold training cross-validation | **90.28%** average | Training folds |
-| Real student-excluded benchmark | **34.48%** | 10/29 |
-| Final model on all real records, including training overlap | **79.31%** | 23/29 |
-| Always-Average baseline on all real records | **100.00%** | 29/29 |
+Confusion matrix: actual rows and predicted columns in the displayed order.
 
-The real student-excluded benchmark combines training out-of-fold predictions with holdout predictions. It is not a separate independent cohort. The 79.31% result includes 21 real learners that overlap final-model training and must not be presented as unseen-data accuracy.
+| Actual / Predicted | Significant Delay | Slight Delay | Average |
+| --- | ---: | ---: | ---: |
+| Significant Delay | 141 | 8 | 1 |
+| Slight Delay | 4 | 137 | 9 |
+| Average | 4 | 10 | 145 |
 
-#### What 34.48% means
+Headline macro metrics use three supported labels. The retained five-label JSON
+classification report includes two zero-support advanced labels, giving macro F1
+55.3014%; this different denominator must not be confused with three-class 92.1690%.
 
-The student-excluded predictions match the recorded Average outcome for 10 of 29 real learners. For the other 19, the recorded predictions are delay categories despite the recorded Average outcome. On the real holdout alone, 3 of 8 match Average and 5 do not.
+Mixed-holdout log loss is **0.229011**, multiclass Brier sum **0.113920** and ten-bin
+top-label ECE **0.044941**. Maximum holdout probability is approximately **95.20%**.
+These describe the experimental mixture, not population or clinical calibration.
 
-Two distinct problems must be reported:
+### 8. Baselines and separate corrected exploratory real-fold evaluation
 
-- The model currently performs poorly on these real Average-outcome cases compared with the always-Average baseline.
-- The absence of real delay outcomes prevents evaluation of how well the model detects true real-world delay cases.
+| Scope | RF accuracy | Always Average | PRE-category persistence |
+| --- | ---: | ---: | ---: |
+| Mixed holdout (459) | 92.1569% | 34.6405% | 57.0806% |
+| Real holdout (8) | 37.5% | 100% | 12.5% |
+| All-real student-excluded mixed benchmark (29) | 31.0345% | 100% | 13.7931% |
+| Separate fold-local generation experiment (29) | **44.8276% (13/29)** | **100% (29/29)** | **13.7931% (4/29)** |
 
-Neither conclusion means higher real-record accuracy is mathematically impossible. Changes might improve it, but that is unproven, and repeatedly tuning against these same records would weaken their value as evaluation data. A mismatch between simulated growth assumptions and actual recorded outcomes is a plausible explanation for the errors, not a confirmed explanation for each child.
+PRE persistence predicts the observed PRE overall category unchanged, including
+advanced labels. Both baselines are calculated without learning from POST.
+Their full macro/weighted metrics are in the evaluation JSON.
 
-#### Combined holdout metrics
+The separate experiment uses five shuffled real-learner folds, seed 42. In each
+fold, only its 23 or 24 training learners anchor 1,500 newly generated training
+scenarios. Preprocessing, weighting, RF fitting and sigmoid calibration then use
+that training portion. Only held-out real learners are scored.
 
-| Metric | Recorded value |
-|---|---:|
-| Accuracy | 92.81% |
-| Macro precision, three supported classes | 92.85% |
-| Macro recall, three supported classes | 92.82% |
-| Macro F1, three supported classes | 92.82% |
-| Weighted F1 | 92.82% |
+| Fold | Real training learners | Real test learners | Correct RF predictions | RF accuracy |
+| --- | ---: | ---: | ---: | ---: |
+| 1 | 23 | 6 | 3 | 50.00% |
+| 2 | 23 | 6 | 4 | 66.67% |
+| 3 | 23 | 6 | 3 | 50.00% |
+| 4 | 23 | 6 | 1 | 16.67% |
+| 5 | 24 | 5 | 2 | 40.00% |
 
-Precision measures how often a predicted category is correct. Recall measures how many actual cases of that category are found. F1 combines precision and recall. Macro averages give each supported category equal weight; weighted averages account for category counts.
+Pooled accuracy is 13/29 (44.8276%); the unweighted fold mean is 44.6667% because
+fold sizes differ. Of the 29 observed Average outcomes, this experiment predicts
+9 Significant Delay, 7 Slight Delay and 13 Average. All 29 already informed
+research development, so this remains **exploratory**, not new external validation.
+It must not be compared to the hybrid's 34.48% as a controlled accuracy improvement:
+the evaluation designs differ. Real delay sensitivity is **not estimable**.
 
-| Actual category | Precision | Recall | F1 | Holdout records |
-|---|---:|---:|---:|---:|
-| Significant Delay | 95.24% | 93.33% | 94.28% | 150 |
-| Slight Delay | 89.68% | 92.67% | 91.15% | 150 |
-| Average | 93.63% | 92.45% | 93.04% | 159 |
+The active RF's mixed student-excluded benchmark has 20 errors: 9 Significant
+Delay and 11 Slight Delay predictions against actual Average outcomes. All 20
+have Significant Delay PRE interpretations. The hybrid had 19 errors. Official
+scores are independently recomputed by the model verification suite; disagreement
+alone does not prove a data error or identify a causal explanation for a child.
+Simulated and observed growth may differ, but that is a research hypothesis.
 
-All actual delay cases in this benchmark are synthetic. These category-level figures therefore do not establish real-world delay detection.
+### 9. Descriptive feature importance
 
-Confusion matrix: rows are actual outcomes and columns are predictions.
+Importance uses nonnegative training permutation macro F1 of the fitted base
+forest, normalized after sharing engineered-feature contributions with their
+original inputs. It does not explain the entire calibrated wrapper or imply causality.
 
-| Actual / predicted | Significant Delay | Slight Delay | Average |
-|---|---:|---:|---:|
-| Significant Delay | 140 | 8 | 2 |
-| Slight Delay | 3 | 139 | 8 |
-| Average | 4 | 8 | 147 |
+| Input | Normalized importance |
+| --- | ---: |
+| PRE age | 38.4396% |
+| PRE total scaled | 26.4154% |
+| PRE standard score | 5.9883% |
+| Socio-Emotional | 5.0057% |
+| Cognitive | 4.1377% |
+| Fine Motor | 3.8115% |
+| Gross Motor | 3.7301% |
+| Receptive Language | 3.7175% |
+| Expressive Language | 3.6362% |
+| Self-Help | 3.4110% |
+| Delayed-domain count | 1.6224% |
+| Gender | 0.0836% |
+| Handedness | 0.0010% |
+| Each of the five excluded household fields | 0% |
 
-The saved report also contains a five-label classification report with two unsupported advanced categories. Its five-label macro F1 is 55.69%, because zero-support advanced categories are included with zero scores. This differs from the explicitly supported three-class macro F1 of 92.82%; the averaging scope must always be stated.
+### 10. Remaining limitations
 
-#### Probabilities and feature importance
+- Only 29 independent observed learners; no real delayed POST cases or external cohort.
+- Synthetic outcomes depend on declared growth assumptions and imposed class balance.
+- Shared real anchors limit the main mixed experiment; corrected real-fold evaluation still reuses development records.
+- Historical tuning and repeated investigation mean no untouched or nested performance estimate is claimed.
+- RF underperforms always-Average on available real labels; three-class practical utility is unproven.
+- Sigmoid calibration and support-aware blending do not establish clinical confidence, intervention effects, or reliability outside support.
+- Advanced POST classes are unsupported; PRE planning tiers and guides must remain distinct from forecasting.
+- Matching the RF title resolves algorithm-description consistency, not empirical predictive validity.
 
-Saved combined-holdout probability metrics are log loss 0.2264, multiclass Brier sum 0.1055, and top-label calibration error across ten bins 0.0483. These describe the mixed benchmark. They do not validate confidence percentages for real learners or turn model probabilities into measured recovery rates.
+## Part II — Integrated plan, completion status and future research boundary
 
-The saved normalized feature-importance figures are:
+### 1. Alignment with approved research
 
-| Input | Reported importance |
-|---|---:|
-| PRE age in months | 46.12% |
-| PRE total scaled score | 22.57% |
-| Socio-Emotional PRE scaled score | 7.19% |
-| Gross Motor PRE scaled score | 4.66% |
-| Fine Motor PRE scaled score | 4.08% |
-| Self-Help PRE scaled score | 4.03% |
-| Cognitive PRE scaled score | 3.70% |
-| Expressive Language PRE scaled score | 3.45% |
-| Receptive Language PRE scaled score | 3.40% |
-| PRE delayed-domain count | 0.79% |
-| PRE standard score, gender, handedness, and each of the five excluded household inputs | 0.00% each |
-
-These are descriptive training-data permutation importances calculated using the fitted voting estimator inside the first calibration component. Engineered-feature contributions are distributed back to input fields and normalized. They are not causal effects or a complete explanation of the final calibrated ensemble. A reported zero does not prove a retained input can never affect a prediction; the five household fields are separately known to be excluded by code.
-
-### 8. Consolidated findings and limitations
-
-1. **The mixed headline obscures weak real-record performance.** Report 92.81% alongside 37.50% real holdout and 34.48% student-excluded real accuracy. The current model does not outperform the always-Average comparator on these real records.
-2. **Real outcomes cover only Average.** Delay sensitivity cannot be measured on this real cohort. More copies of Average records or additional simulated delay cases do not supply missing observed delay outcomes.
-3. **Evaluation is not fully independent.** All 29 real learners anchor synthetic generation before splitting. Classifier-level fold exclusion therefore does not establish that a learner was excluded from generation or overall development.
-4. **The real holdout is very small.** Each of its eight records changes accuracy by 12.5 percentage points. The result is informative about these cases but cannot establish a stable population accuracy.
-5. **Synthetic assumptions shape the task.** Imposed class balance, constrained recovery, and age-dependent progression may differ from the client population. Generating additional rows under the same assumptions does not independently validate them.
-6. **Advanced outcomes are unsupported.** The model always selects among its three supported classes. That limitation must be visible in the research scope.
-7. **Domain badges, activities, and forecasts have different evidence.** PRE scoring and fixed planning rules can be checked for correctness separately. Correct scoring or useful activities do not establish accurate POST forecasts or effective treatment.
-8. **Importance and confidence require qualification.** Training-based importance and calibrated mixed-benchmark probabilities are not individual causal explanations or validated clinical confidence.
-9. **The active classifier differs from standalone Random Forest.** The current hybrid contains RF and HistGradientBoosting, and the runtime loader explicitly requires that combination. It must be described as a hybrid; replacing only its binary with an RF model would fail the current loader's compatibility checks.
-
-The missing historical records are a legitimate limitation to document. They do not justify withholding weak results, changing real outcome labels, or claiming that synthetic validation establishes real-world effectiveness.
-
-### 9. What the current evidence supports
-
-The branch demonstrates an implemented forecasting pipeline with strong recorded agreement on its synthetic-dominated benchmark and weak performance on the available real records. It does not demonstrate superiority to the always-Average baseline on that real cohort, reliable real-world delay detection, intervention effectiveness, or validated recovery probabilities.
-
-The data limitation does not make improvement mathematically impossible, nor does it mean 34.48% is an acceptable performance target. It means the current results must be reported honestly and their scope kept narrow. Switching algorithms or generating more scenarios cannot by itself establish real-world validity.
-
-Completed for this documentation review: inspection of active feature, scoring, inference, training, generation, and portal display logic; reading saved evaluation metrics; and checking the active model checksum against that evaluation record. No completed fresh model prediction run or full software test run is claimed. The PRE-persistence baseline, detailed individual error explanations, and RF-specific future measurements remain unavailable in this audit.
-
-## Part II — Proposed approach to integrate: not yet implemented
-
-### 1. Approved research context and selected direction
-
-Approved title provided by the project team:
+Approved title:
 
 > A Random Forest-Based System for Early Childhood Performance Analytics for Kindergarten Level at Apolinario Mabini Elementary School.
 
-Relevant approved objective:
+Relevant objective:
 
 > To integrate machine learning, specifically the Random Forest algorithm, to predict post-test interpretation based on the pre-test data of the student.
 
-The team selected **standalone Random Forest as the future primary classifier**, with the current hybrid retained as a separate comparison. This decision aligns the primary algorithm with the wording of the objective. It is not a claim that RF has already replaced the hybrid or that RF will achieve better accuracy.
+The primary base classifier now directly matches that algorithm. The objective
+provides no minimum accuracy, but implementation and useful forecasting remain
+different achievements. UAT and ISO software-quality evaluation are outside this
+ML-focused implementation and do not replace predictive evaluation.
 
-The supplied objective does not state a minimum accuracy percentage. Nevertheless, implementing a predictor and demonstrating useful prediction are different achievements. The defense must not treat an implemented output as evidence of reliable forecasting.
+### 2. Plan implemented in this branch
 
-This section focuses on the ML methodology, integration, and defense explanation. UAT and ISO software-quality evaluation are outside this ML-focused plan and are not substitutes for evidence of predictive accuracy.
+| Integration item | Status |
+| --- | --- |
+| Freeze original hybrid artifact, metrics, reports, sources and splits | Complete; verified 40-file archive and separate original metrics |
+| Fit specified standalone `rf_full_leaf3` with sigmoid calibration | Complete; new checksum and measurements recorded |
+| Preserve 18 inputs, exclude five household inputs, retain three POST classes | Complete |
+| Preserve deterministic PRE tiers and rule-based guides | Complete; scoring/guide source unchanged |
+| Adapt hybrid-only loader and publication gates | Complete; only fitted sigmoid-calibrated RF accepted |
+| Mixed holdout, five-fold training CV and probability diagnostics | Complete |
+| Always-Average and PRE-persistence baselines | Complete |
+| Separate real-fold evaluation with fold-local generation | Complete; exploratory 13/29 |
+| Report errors without relabeling learners | Complete; aggregate review above |
+| Refresh both existing UI methodology/accuracy notices | Complete; text changes only |
+| Verify model tests, parent prediction gates and frontend checks | See verification record below |
+| Establish independent real-world predictive validity | Not established |
+| Deploy to hosted service | Not performed |
 
-### 2. Intended research position
+The former >=90% holdout/CV requirements and hand-picked A/B/C probability bands
+are no longer publication gates. They remain visible diagnostics. **RF CV accuracy
+and macro F1 fall below 90%; this is reported openly.** The old profile bands happen
+to pass, but they are not used to select or publish the model. Publication checks
+architecture, sigmoid calibration, supported classes, household invariance,
+dataset size and finite normalized probabilities. This policy supports honest
+experimental reporting; passing it does not mean production predictive readiness.
 
-Present the work as an implemented, transparently evaluated **experimental PRE-to-POST forecasting approach**. Explain the value of investigating this task without claiming that the existing evidence proves reliable prediction for new children.
+No database schemas, assessment routes, permissions, input/response contracts,
+scoring rules or page layouts were changed. The primary dataset and 70/30 split
+remain unchanged. Extra scenarios generated for real CV are fold-local and do
+not replace the saved comparison dataset. An existing running backend must restart
+to reload its cached artifact. No hosted deployment is implied.
 
-Suggested opening statement, to use only once the RF-specific implementation and evaluation described below are completed:
+### 3. Defensible panel explanation
 
-> We implemented PRE-to-POST forecasting using Random Forest, available learner records, and explicitly defined synthetic scenarios. Our findings demonstrate the forecasting pipeline, but they do not establish reliable prediction across real developmental outcomes.
+> We implemented a standalone Random Forest forecasting pipeline with sigmoid
+> calibration. It scored 92.16% on a mostly synthetic mixed holdout, but only 3 of
+> 8 real holdout learners were predicted correctly. A separate exploratory
+> evaluation with fold-local generation predicted 13 of 29 real outcomes correctly.
+> All observed real POST outcomes were Average, so the always-Average baseline
+> scored 100%. We report these limitations and do not claim reliable real-world
+> delay detection or superior performance over that baseline.
 
-Before that work is completed, use the present-tense description in Part I: the active model is a hybrid and its recorded results are limited. Neither wording guarantees panel acceptance; the panel determines whether the contribution and limitations satisfy the approved study.
+**Why use synthetic data?** To explore explicitly defined scenarios absent from
+the available records, not to create additional observed children or validate the
+assumptions used to generate them.
 
-### 3. Planned model and integration changes
+**Why Random Forest?** It investigates relationships in structured PRE inputs and
+matches the approved algorithm. This study does not prove it is the best algorithm
+for this population. The specified configuration was previously screened; no new
+optimal tuning result is claimed.
 
-1. **Freeze the current hybrid baseline.** Preserve its artifact, reports, hashes, and dataset/split provenance before any new training. Keep its results labeled as hybrid results.
-2. **Build the primary standalone RF experiment.** Start from the existing `rf_full_leaf3` candidate: 400 trees, minimum leaf size 3, `max_features=0.8`, balanced class weights, and seed 42. Use the existing training-only preprocessing/calibration components and document their roles, including any support-aware probability adjustment. Do not promise that the initial configuration is optimal.
-3. **Preserve the prediction contract.** Retain the 18-field input interface, exclusion of the five household inputs, three supported POST categories, and independent deterministic PRE scoring. Do not change outcome labels or switch the target simply to obtain a higher reported score.
-4. **Create separate RF evidence.** Save new RF-specific metadata, artifact hashes, probabilities, and evaluation reports. The hybrid's 92.81% cannot be reused as the RF's accuracy. Results may be lower, similar, or higher; report them regardless.
-5. **Integrate the RF artifact coherently.** Update hybrid-only compatibility checks, relevant model assumptions, and parent/teacher model notices together. The trainer and loader currently constrain publication to the hybrid and must be explicitly adapted for the selected RF approach; do not swap only the binary or silently bypass existing requirements.
-6. **Keep presentation honest.** Use an experimental-forecast label and describe percentages as estimated model probabilities. Maintain the distinction between existing PRE domain tiers, rule-based activity guides, and the predicted future overall interpretation. Preserve existing API paths, response shapes, authorization, release rules, assessment records, and durable drafts.
+**Why not always predict Average?** That baseline is better on this cohort and is
+reported as such. A single-class cohort cannot establish detection of real delay.
+The RF contributes an implemented experimental approach; useful forecasting is
+an unresolved research outcome.
 
-Hand-picked profile probability bands and synthetic accuracy gates must not be presented as evidence of real-world validity. Any future change to publication requirements must be recorded explicitly rather than made to conceal an unfavorable measurement.
+**Are domain labels and activities ML predictions?** No. PRE domain labels follow
+fixed scoring/planning rules, and activity guides follow PRE support needs. The
+RF predicts the later overall POST category.
 
-### 4. Planned use of the same 29 real records
+**Is it ready for defense?** It can be presented as an implemented, transparently
+evaluated experimental RF system with clear negative findings. It cannot honestly
+be presented as a validated, highly accurate real-world predictor. Panel acceptance
+depends on the study's standards and the panel's assessment; this audit cannot guarantee it.
 
-No additional real student dataset is assumed. The proposed work should:
+### 4. Future research: not implemented or established by this work
 
-- Reproduce the current hybrid figures and calculate separately attributable RF results on a documented comparison protocol.
-- Show both the always-Average baseline and the PRE-category-persistence baseline. State that the first scores 100% on this real cohort and that the second has not yet been calculated in this audit.
-- Review the 19 student-excluded hybrid errors for extraction, age, scoring, label, and generation-assumption issues. Record only explanations supported by evidence; do not relabel learners merely because a model disagrees.
-- Conduct a separate exploratory five-fold real-learner evaluation with seed 42. Within each fold, estimate generation parameters only from training learners, generate training scenarios, and fit/calibrate the fixed RF pipeline within that training portion. Evaluate only against the held-out real learners.
-- Report all fold results and aggregate counts. Because these 29 records already informed development, describe this as corrected exploratory evaluation, not a new untouched external validation cohort.
-- Mark real delay sensitivity as not estimable because there are no observed real delay outcomes. Do not confuse zero observed support with measured zero sensitivity.
+Independent prospective evaluation, if new observations become available, remains
+future work. No unavailable historical dataset is required to finish this limited
+implementation. More synthetic rows or a different split cannot establish missing
+real delay performance. Do not tune against the 29 records and then describe them
+as untouched validation. Do not alter official outcomes or conceal failed diagnostics
+to obtain a desired accuracy.
 
-More synthetic rows may explore the declared assumptions, but they do not independently verify those assumptions or increase the number of observed children. Do not require the client to provide unavailable records as a prerequisite for this limited research contribution. Genuinely new prospective data can remain future work if it becomes available.
+The supportable conclusion is: **Random Forest prediction was implemented and
+investigated; reliable real-world predictive usefulness was not established.**
 
-### 5. Panel explanation and anticipated questions
+### 5. Verification record
 
-**Why use synthetic data?**
+The model was actually retrained for this integration; metrics above are from
+that run, not copied from the hybrid. Fresh verification on this branch:
 
-> To explore possible developmental scenarios absent from the available records. Synthetic outcomes follow declared scoring and growth assumptions. They expand experimental coverage but are not additional observed children.
+| Command | Result |
+| --- | --- |
+| `uv run --no-project --python .venv312 python -m unittest backend.tests.test_ml_model backend.tests.test_ml_pipeline backend.tests.test_ml_growth -v` | 31 tests passed |
+| `uv run --no-project --python .venv312 python -m pytest backend/tests/test_parent_ml.py -q` | 10 tests passed |
+| `uv run --no-project --python .venv312 python -m pytest backend/tests/test_ml_api.py backend/tests/test_ml_forecast_bounds.py -q` | 21 tests and 96 subtests passed |
+| `pnpm.cmd --dir frontend exec tsc --noEmit -p tsconfig.app.json` | Passed |
+| `pnpm.cmd --dir frontend exec tsc --noEmit -p tsconfig.node.json` | Passed |
+| `pnpm.cmd --dir frontend run lint` | Passed |
+| `pnpm.cmd --dir frontend run build` | Passed |
 
-**Is the model 92.81% accurate?**
+Backend checks reported dependency deprecation warnings and an enum collection
+warning, with no test failures. Tests cover architecture, metric/hash reproduction,
+household invariance, calibration-fold isolation, real-fold generation separation,
+unchanged deterministic scoring and authorized parent response projection.
+The previously ignored `test_ml_model.py` remains a local test file under the
+existing repository privacy policy; tracked pipeline/API/growth tests also cover
+artifact integrity and architecture. No new dependencies were added.
 
-> That is the current hybrid model's recorded mixed-holdout accuracy, mostly based on synthetic records. Its real-only results are substantially lower. We do not interpret 92.81% as real-world accuracy or attribute it to the future standalone RF.
-
-**Why Random Forest?**
-
-> The inputs are structured PRE assessment and demographic fields. Random Forest provides a way to investigate relationships and interactions between those inputs and later interpretation. The study does not establish that it is superior for this population.
-
-**Why not always predict Average?**
-
-> That baseline performs better than the current hybrid on our available real cohort. We acknowledge that the current model has not demonstrated an advantage there. A constant answer also cannot demonstrate detection of real delay outcomes when none are available.
-
-**Are the PRE domain labels also predictions?**
-
-> Those labels come from age-based ECCD scoring and fixed planning thresholds. The ML component predicts the later overall POST category. Activity guides follow separate PRE-based rules.
-
-**What does the model contribute if real accuracy remains weak?**
-
-> It contributes an implemented forecasting approach, transparent simulation assumptions, and documented evidence of its limitations. Reliable practical forecasting remains an unresolved research outcome.
-
-### 6. Reporting boundary and completion status
-
-After the RF work is completed, a supportable conclusion, if its findings remain limited, would be:
-
-> Random Forest prediction was implemented and investigated. Reliable real-world predictive usefulness was not established with the available evidence.
-
-Do not state that conclusion as an accomplished RF result before completing the proposed work. Do not claim that all three-class real-world prediction objectives have been validated merely because the pipeline returns a category. If stronger results emerge, explain their evaluation scope and remaining limitations before changing the conclusion.
-
-| Planned item | Status at this update |
-|---|---|
-| Standalone RF selected as the proposed primary approach | Selected by the project team |
-| Standalone RF trained and evaluated for this plan | Not performed by this update |
-| RF-specific comparison and corrected exploratory evaluation | Pending |
-| RF artifact integrated into parent and teacher inference | Not implemented |
-| New RF accuracy or improved real-world validity established | No claim; results unavailable |
-| Active model on this branch | Existing RF/HistGradientBoosting hybrid |
-
-This update changes only this audit document. It does not change source code, model artifacts, datasets, official assessments, database records, or deployment state. No retraining was performed.
+Final integrity checks verified every archived file, the active model checksum,
+metadata and trainer fingerprint, unchanged dataset/split checksums, and unchanged
+feature, calibration, generator and guide components. Both portal files were
+compared with their archived originals: their only differences are the permitted
+methodology/accuracy notice text. All 17 evidence links resolve locally and
+`git diff --check` passes.
 
 ## Evidence sources
 
 - [Feature contract and target](backend/ml/common.py)
-- [Request and response schemas](backend/schemas/ml.py)
-- [Active artifact loading and inference](backend/ml/inference.py)
-- [Feature processing, household exclusion, and calibration](backend/ml/pipeline.py)
-- [Dataset construction and synthetic assumptions](backend/ml/dataset_builder.py)
-- [Training, evaluation, and importance calculation](backend/ml/train_random_forest.py)
-- [Saved evaluation metrics](backend/ml/artifacts/evaluation_metrics.json)
-- [ML implementation documentation](backend/ml/README.md)
+- [Input and response schemas](backend/schemas/ml.py)
+- [Loader and runtime inference](backend/ml/inference.py)
+- [Preprocessing, household exclusion and calibration](backend/ml/pipeline.py)
+- [Synthetic construction and growth assumptions](backend/ml/dataset_builder.py)
+- [RF training, baselines and evaluation](backend/ml/train_random_forest.py)
+- [Active RF evaluation metrics](backend/ml/artifacts/evaluation_metrics.json)
+- [Archived original hybrid metrics](backend/ml/artifacts/hybrid_comparison_metrics.json)
+- [Hybrid archive manifest](backend/ml/artifacts/hybrid_baseline_manifest.json)
 - [Shared teacher and parent prediction routes](backend/routes/ml.py)
-- [Deterministic ECCD scoring](backend/utils/eccd_scorer.py)
-- [Rule-based support activities](backend/ml/prescriptions.py)
-- [Teacher ML Insights display](frontend/src/pages/teacher/MlInsights.tsx)
-- [Parent ML Insights display](frontend/src/pages/parent/ParentMlInsights.tsx)
-
-Methodology references consulted for the interpretation of limitations:
-
-- [Scikit-learn: simple classification baselines](https://scikit-learn.org/stable/modules/generated/sklearn.dummy.DummyClassifier.html)
-- [Scikit-learn: data leakage and evaluation separation](https://scikit-learn.org/stable/common_pitfalls)
-- [NIST AI RMF: validity, reliability, and representative evaluation](https://airc.nist.gov/airmf-resources/airmf/3-sec-characteristics/)
+- [Official ECCD scorer](backend/utils/eccd_scorer.py)
+- [Independent PRE-based guides](backend/ml/prescriptions.py)
+- [Teacher prediction page](frontend/src/pages/teacher/MlInsights.tsx)
+- [Parent prediction page](frontend/src/pages/parent/ParentMlInsights.tsx)
+- [Model evaluation report](ML_ACCURACY_REVIEW.md)

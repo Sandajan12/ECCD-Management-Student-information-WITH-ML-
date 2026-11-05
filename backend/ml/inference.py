@@ -9,7 +9,8 @@ import joblib
 import numpy as np
 import pandas as pd
 from sklearn.calibration import CalibratedClassifierCV
-from sklearn.ensemble import HistGradientBoostingClassifier, RandomForestClassifier, VotingClassifier
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.utils.validation import check_is_fitted
 
 from backend.ml.common import ACTIVE_CLASSES, ARTIFACTS, CATEGORICAL_FEATURES, FEATURES, NUMERIC_FEATURES
 from backend.ml.prescriptions import recommend
@@ -23,16 +24,13 @@ def load_model(model_path: Path = ARTIFACTS / "rf_post_test_model.joblib") -> di
     classifier = getattr(bundle["pipeline"], "named_steps", {}).get("classifier")
     fitted = getattr(classifier, "calibrated_classifiers_", [])
     if not isinstance(classifier, CalibratedClassifierCV) or classifier.method != "sigmoid" or not fitted:
-        raise ValueError("The model must be a fitted sigmoid-calibrated ensemble")
+        raise ValueError("The model must be a fitted sigmoid-calibrated Random Forest")
     for calibrated in fitted:
         nested = getattr(getattr(calibrated, "estimator", None), "pipeline_", None)
-        ensemble = getattr(nested, "named_steps", {}).get("classifier")
-        members = getattr(ensemble, "estimators_", [])
-        if (not isinstance(ensemble, VotingClassifier) or ensemble.voting != "soft"
-                or len(members) != 2
-                or not any(isinstance(member, RandomForestClassifier) for member in members)
-                or not any(isinstance(member, HistGradientBoostingClassifier) for member in members)):
-            raise ValueError("The calibrated model must contain the fitted RF/HGB ensemble")
+        forest = getattr(nested, "named_steps", {}).get("classifier")
+        if not isinstance(forest, RandomForestClassifier):
+            raise ValueError("The calibrated model must contain a standalone Random Forest")
+        check_is_fitted(forest)
     return bundle
 
 
