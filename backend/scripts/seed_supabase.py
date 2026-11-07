@@ -22,7 +22,7 @@ from backend.migrations import (
     parent_assessment_access, parent_eccd_marks, parent_linking,
     parent_predictions, parity_batch1, parity_batch2, phase1, phase2,
     section_ownership, email_only_identity, production_performance, optional_student_lrn,
-    teacher_marked_at,
+    teacher_marked_at, eccd_question_sequence,
 )
 from backend.models import EccdDomain, EccdQuestion, User, SystemSettings
 from backend.models.user import UserRole
@@ -49,6 +49,7 @@ MIGRATIONS = (
     (production_performance.VERSION, production_performance.apply_production_performance),
     (optional_student_lrn.VERSION, optional_student_lrn.apply_optional_student_lrn),
     (teacher_marked_at.VERSION, teacher_marked_at.apply_teacher_marked_at),
+    (eccd_question_sequence.VERSION, eccd_question_sequence.apply_eccd_question_sequence),
 )
 
 

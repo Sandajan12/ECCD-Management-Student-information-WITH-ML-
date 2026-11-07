@@ -57,7 +57,7 @@ def preview_eccd_card(
     authorize_student(db, current_user, student)
     workbook = student_workbook(db, student)
     try:
-        html = worksheet_preview(workbook["CHECKLIST"])
+        html = worksheet_preview(workbook["CHECKLIST"], tuple(sheet for sheet in workbook if sheet.title != "CHECKLIST"))
     finally:
         workbook.close()
     response.headers["Cache-Control"] = "no-store"

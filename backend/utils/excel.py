@@ -1,5 +1,6 @@
 """DepEd workbook import/export with protected student identity."""
 from collections import defaultdict
+from copy import deepcopy
 from dataclasses import dataclass
 from datetime import date, datetime
 from io import BytesIO
@@ -193,7 +194,7 @@ def checklist_data(db: Session, students: list[Student]) -> ChecklistData:
     evaluations = defaultdict(list)
     for record in db.query(StudentEccdEvaluation).options(joinedload(StudentEccdEvaluation.question)).filter(StudentEccdEvaluation.student_id.in_(ids)):
         evaluations[record.student_id].append(record)
-    return ChecklistData(advisers, parents, evaluations, db.query(EccdQuestion).all(), settings_record(db))
+    return ChecklistData(advisers, parents, evaluations, db.query(EccdQuestion).options(joinedload(EccdQuestion.domain)).all(), settings_record(db))
 
 
 def student_workbook(db: Session, student: Student, *, batch: ChecklistData | None = None):
@@ -275,6 +276,7 @@ def summary_workbook(db: Session, section: Section, students: list[Student]):
         StudentEccdEvaluation.student_id.in_([student.student_id for student in students[:30]])
     ).all():
         by_student_period[(record.student_id, record.testing_period)].append(record)
+    raw_scores = {}
     for period, sheet_name in ((TestingPeriod.PRE, "PR"), (TestingPeriod.MID, "M"), (TestingPeriod.POST, "PO")):
         sheet = wb[sheet_name]
         for row in range(14, 44):
@@ -289,7 +291,8 @@ def summary_workbook(db: Session, section: Section, students: list[Student]):
             row = 14 + index
             middle = f" {student.middle_name[:1].upper()}." if student.middle_name else ""
             name = f"{student.last_name or ''}, {student.first_name or ''}{middle}".upper()
-            records = by_student_period[(student.student_id, period)]
+            records = [record for record in by_student_period[(student.student_id, period)]
+                       if 1 <= record.question.domain_id <= 7]
             values = [index + 1, student.lrn_number, name, None, None, student.gender.value.upper() if student.gender else "", student.date_of_birth]
             for column, value in enumerate(values, 2):
                 if value is not None:
@@ -301,6 +304,7 @@ def summary_workbook(db: Session, section: Section, students: list[Student]):
             if evaluation_date and student.date_of_birth:
                 age = calculate_decimal_age(student.date_of_birth, evaluation_date)
                 scores = calculate_scores([{"domain_id": record.question.domain_id, "answer": record.answer.value} for record in records], age)
+                raw_scores[(student.student_id, period)] = scores["raw_scores"]
                 write_cell(sheet, row, 10, age)
                 for offset, code in enumerate(("GM", "FM", "SH", "RL", "EL", "C", "SE")):
                     write_cell(sheet, row, 11 + offset * 2, scores["raw_scores"][code])
@@ -314,6 +318,87 @@ def summary_workbook(db: Session, section: Section, students: list[Student]):
         for row, gender in ((45, "Male"), (46, "Female")):
             for column, aliases in enumerate(groups, 4):
                 write_cell(sheet, row, column, sum(tallies[alias][gender] for alias in aliases))
+    questions = db.query(EccdQuestion).options(joinedload(EccdQuestion.domain)).order_by(
+        EccdQuestion.domain_id, EccdQuestion.sequence_order, EccdQuestion.question_id
+    ).all()
+    periods = tuple(TestingPeriod)
+    header_dates = {}
+    for period in periods:
+        dates = [get_official_testing_date(
+            [record for record in by_student_period[(student.student_id, period)]
+             if record.question.domain_id in DOMAIN_SHEETS], period) for student in students[:30]]
+        header_dates[period] = min((value for value in dates if value), default=None)
+    domains = dict(DOMAIN_SHEETS)
+    # Custom domains have no official template/scoring code; use a continuation layout.
+    domains.update({question.domain_id: f"D{question.domain_id}" for question in questions
+                    if question.domain_id not in domains})
+    for domain_id, code in domains.items():
+        standard = domain_id in DOMAIN_SHEETS
+        source = wb[code + "F"] if standard else wb["GMF"]
+        slots = {cell.value: cell.column for cell in source[5] if type(cell.value) is int}
+        capacity = max(slots)
+        domain_questions = [question for question in questions if question.domain_id == domain_id]
+        base_questions = {question.sequence_order: question for question in domain_questions
+                          if standard and question.sequence_order <= capacity}
+        extra = [question for question in domain_questions if not standard or question.sequence_order > capacity]
+        pages = [(source, base_questions)] if standard else []
+        for offset in range(0, len(extra), capacity):
+            sheet = wb.copy_worksheet(source)
+            sheet.title = f"{code}F_{offset // capacity + 2}"
+            sheet.print_area = source.print_area
+            sheet.print_title_rows = source.print_title_rows
+            sheet.print_title_cols = source.print_title_cols
+            sheet.row_breaks = deepcopy(source.row_breaks)
+            sheet.col_breaks = deepcopy(source.col_breaks)
+            sheet.sheet_properties = deepcopy(source.sheet_properties)
+            sheet.views = deepcopy(source.views)
+            pages.append((sheet, dict(zip(sorted(slots), extra[offset:offset + capacity]))))
+        for sheet, page_questions in pages:
+            blocks = [cell.column for cell in sheet[5] if cell.value == "No."]
+            totals = [cell.column for cell in sheet[6] if cell.value == "RAW SCORE"]
+            continued = sheet is not source or not standard
+            # Copies for custom domains may originate from a populated GMF sheet.
+            for row in sheet.iter_rows(min_row=9, max_row=38):
+                for cell in row:
+                    if not isinstance(cell, MergedCell):
+                        cell.value = None
+                        cell.comment = None
+            for start in blocks:
+                for row, offset, value in (
+                    (2, 0, setting.school_name.upper()),
+                    (3, 0, students[0].school_year if students else setting.current_school_year),
+                    (2, 16, section.section_name.upper()), (3, 16, teacher_name),
+                    *((3, 30 + index * 3, header_dates[period]) for index, period in enumerate(periods)),
+                ):
+                    write_cell(sheet, row, start + offset, value)
+                if continued:
+                    write_cell(sheet, 1, start, f'{domain_questions[0].domain.domain_name} — continued')
+            question_columns = {}
+            for slot, column in slots.items():
+                question = page_questions.get(slot)
+                write_cell(sheet, 6, column, question.question_text if question else None)
+                if continued:
+                    write_cell(sheet, 5, column, question.sequence_order if question else None)
+                if question:
+                    question_columns[question.question_id] = column
+            if continued:
+                for column in totals:
+                    write_cell(sheet, 6, column, "RAW SCORE (WHOLE DOMAIN)")
+            for index, student in enumerate(students[:30]):
+                row = 9 + index
+                middle = f" {student.middle_name[:1].upper()}." if student.middle_name else ""
+                name = f"{student.last_name or ''}, {student.first_name or ''}{middle}".upper()
+                for start in blocks:
+                    write_cell(sheet, row, start, index + 1)
+                    write_cell(sheet, row, start + 1, name)
+                for period_index, period in enumerate(periods):
+                    for record in by_student_period[(student.student_id, period)]:
+                        column = question_columns.get(record.question_id)
+                        if column is not None:
+                            write_cell(sheet, row, column + period_index * 2 + (record.answer != EccdAnswer.KAYA), 1)
+                    scores = raw_scores.get((student.student_id, period))
+                    if scores is not None and standard:
+                        write_cell(sheet, row, totals[period_index], scores[code])
     return wb
 
 

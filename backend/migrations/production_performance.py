@@ -33,7 +33,8 @@ def check_production_performance(connection: Connection, schema: str = "public")
             by_table[table] = {index["name"]: index for index in inspector.get_indexes(table, schema=schema)}
         actual = by_table[table].get(expected.name)
         if (actual is None or actual["column_names"] != [column.name for column in expected.columns]
-                or actual["unique"] or actual.get("dialect_options", {}).get("postgresql_where")):
+                or (actual["unique"] and expected.name != "idx_questions_domain_sequence")
+                or actual.get("dialect_options", {}).get("postgresql_where")):
             raise MigrationError(f"Production index mismatch: {expected.name}")
     valid = set(connection.execute(text(
         "SELECT c.relname FROM pg_index i JOIN pg_class c ON c.oid=i.indexrelid "
@@ -55,7 +56,11 @@ def apply_production_performance(connection: Connection, schema: str = "public")
         check_production_performance(connection, schema)
         return False
     for index in INDEXES:
-        index.create(connection, checkfirst=True)
+        if index.name == "idx_questions_domain_sequence":
+            # Keep 014's original index; 017 upgrades it after duplicate preflight.
+            connection.execute(text("CREATE INDEX IF NOT EXISTS idx_questions_domain_sequence ON eccd_questions (domain_id, sequence_order)"))
+        else:
+            index.create(connection, checkfirst=True)
     check_production_performance(connection, schema)
     connection.execute(text(f"INSERT INTO {LEDGER} (version) VALUES (:version)"), {"version": VERSION})
     return True

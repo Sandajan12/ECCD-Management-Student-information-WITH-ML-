@@ -1,7 +1,7 @@
 # Feature migrations: Phase 2 is the current backend schema
 
 For a fresh PostgreSQL/Supabase database, the explicit
-[bootstrap command](../scripts/README.md) applies pending migrations 001–016 and
+[bootstrap command](../scripts/README.md) applies pending migrations 001–017 and
 seeds the exact tracked 7-domain/109-question ECCD baseline plus an
 environment-configured Chairman in one transaction:
 
@@ -11,6 +11,37 @@ uv run --no-project --python 3.12 python -m backend.scripts.seed_supabase --appl
 
 Repeated runs preserve existing accounts and matching reference data. Existing
 school/account exports are not embedded in the seed fixture.
+
+## Automatic question ordering (017)
+
+Question creation and domain moves append after the highest existing sequence.
+Text/home-based edits keep the existing position. The editable sequence input is
+removed; older API clients may still send it, but the server assigns placement.
+Domain row locks serialize allocations and a unique `(domain_id, sequence_order)`
+index protects all writers. Migration 014 accepts its original nonunique index
+and the unique index installed by 017.
+
+Stop API writers and check the configured database before upgrading:
+
+```powershell
+uv run --no-project --python .venv312 python -m backend.migrations.eccd_question_sequence --check
+uv run --no-project --python .venv312 python -m backend.migrations.eccd_question_sequence --apply
+uv run --no-project --python .venv312 python -m backend.migrations.eccd_question_sequence --check
+```
+
+The initial check reports a missing uniqueness index on a database awaiting 017.
+If duplicate groups are found, it lists domain IDs, sequences and question IDs;
+stop and manually assign the intended unused sequences to those question IDs
+before applying. Never delete questions or evaluations to resolve conflicts.
+The migration refuses duplicates, preserves all question rows, upgrades the
+existing index transactionally, and is repeatable. Startup checks 017 but never
+applies it automatically. Fresh bootstrap registers 017 explicitly.
+
+Checklist downloads append per-domain continuation sheets, up to 25 extra
+questions each, beyond the original template's slots. Summary downloads copy
+domain layouts for additional groups and label repeated whole-domain totals.
+Question IDs, existing sequences, assessment links, scoring rules and blank
+template assets remain unchanged. Card previews include continuation sheets.
 
 ## Teacher correction timestamps (016)
 

@@ -95,7 +95,6 @@ function ConfigForm({
     {
       domain_name: domain?.domain_name || "",
       question_text: question?.question_text || "",
-      sequence_order: question ? String(question.sequence_order) : "",
       is_home_based: question?.is_home_based || false,
     },
   );
@@ -123,7 +122,6 @@ function ConfigForm({
               ? { domain_name: values.domain_name }
               : {
                   question_text: values.question_text,
-                  sequence_order: Number(values.sequence_order),
                   domain_id: domain?.domain_id,
                   is_home_based: values.is_home_based,
                 },
@@ -158,20 +156,9 @@ function ConfigForm({
         />
       ) : (
         <>
-          <Field
-            label="Sequence Order (e.g. 1)"
-            containerClassName="mt-2 mb-4"
-            floating
-            small={false}
-            type="number"
-            min={1}
-            disabled={busy}
-            value={values.sequence_order}
-            onChange={(e) =>
-              change({ ...values, sequence_order: e.target.value })
-            }
-            required
-          />
+          <p className="mb-4 text-sm text-slate-500">
+            New questions are added at the end of this domain.
+          </p>
           <TextArea
             label="Question Text"
             className="mt-2 mb-1"

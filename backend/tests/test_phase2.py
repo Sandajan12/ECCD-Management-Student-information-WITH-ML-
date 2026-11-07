@@ -818,7 +818,7 @@ class BackendTests(unittest.TestCase):
         response=self.call('GET','/api/chairman/sections/1/export-summary')
         self.assertEqual(response.status_code,200)
         wb=openpyxl.load_workbook(BytesIO(response.content))
-        self.assertEqual(wb.sheetnames,['PR','M','PO'])
+        self.assertEqual(wb.sheetnames,['PR','M','PO','GMF','FMF','SHF','RLF','ELF','CF','SEF'])
         self.assertEqual(wb['PR']['C14'].value,LRN)
         self.assertEqual(wb['PR']['D14'].value,'STUDENT, TEST M.')
         self.assertEqual(wb['PR']['B3'].value,'TEST SCHOOL')

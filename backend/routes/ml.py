@@ -51,7 +51,9 @@ def evaluation_plot(filename: str, user: User = Depends(verify_role(["admin", "s
 
 
 def pre_readiness(student: Student, records: list, questions: list) -> tuple[bool, str]:
+    questions = [question for question in questions if 1 <= question.domain_id <= 7]
     required = {q.question_id for q in questions}
+    records = [record for record in records if record.question_id in required]
     if {q.domain_id for q in questions} != set(range(1, 8)):
         return False, "All seven ECCD domains must have configured questions."
     if not required.issubset({r.question_id for r in records}):
@@ -151,8 +153,13 @@ def predict_record(student_id: int, db: Session = Depends(get_db), user: User = 
 
 def predict_student_record(db: Session, student: Student, *, parent_request: bool = False):
     student_id = student.student_id
-    questions = db.query(EccdQuestion).order_by(EccdQuestion.sequence_order, EccdQuestion.question_id).all()
-    records = db.query(StudentEccdEvaluation).filter_by(student_id=student_id, testing_period=TestingPeriod.PRE).all()
+    questions = db.query(EccdQuestion).filter(EccdQuestion.domain_id.between(1, 7)).order_by(EccdQuestion.sequence_order, EccdQuestion.question_id).all()
+    question_ids = {question.question_id for question in questions}
+    records = db.query(StudentEccdEvaluation).filter(
+        StudentEccdEvaluation.student_id == student_id,
+        StudentEccdEvaluation.testing_period == TestingPeriod.PRE,
+        StudentEccdEvaluation.question_id.in_(question_ids),
+    ).all()
     complete, note = pre_readiness(student, records, questions)
     if not complete:
         if parent_request:

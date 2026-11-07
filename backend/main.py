@@ -34,6 +34,7 @@ from backend.migrations.auth_security_version import check_auth_security_version
 from backend.migrations.email_only_identity import check_email_only_identity
 from backend.migrations.phase1 import MigrationError
 from backend.migrations.teacher_marked_at import apply_teacher_marked_at
+from backend.migrations.eccd_question_sequence import check_eccd_question_sequence
 
 access_logger = logging.getLogger("uvicorn.access")
 if not any(isinstance(item, UnreadPollingFilter) for item in access_logger.filters):
@@ -78,6 +79,7 @@ def initialize_runtime():
         check_email_only_identity(connection, schema)
         check_phase2(connection, schema)
         check_optional_student_lrn(connection, schema)
+        check_eccd_question_sequence(connection, schema)
         check_batch2(connection, schema)
     with SessionLocal() as db:
         seed_reference_data(db)

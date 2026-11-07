@@ -9,6 +9,7 @@ export default defineConfig({
     "teacher-import.spec.ts",
     "offline-scope.spec.ts",
     "offline-settings.spec.ts",
+    "eccd-question-order.spec.ts",
   ],
   outputDir: "./test-results/parent-sync",
   workers: 1,

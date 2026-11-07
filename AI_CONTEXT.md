@@ -1,6 +1,85 @@
 # AMES System: Current Codebase Context
 
-Updated: **2026-11-05**. This document describes the active working tree in
+Appended checklist sections and supplementary results (2026-11-07): individual
+student workbooks now contain one CHECKLIST sheet. Overflow questions in the
+seven standard domains appear first, followed by custom domains, in copied
+Gross Motor panels with up to 13 questions. Pages fill the three native panel
+positions, repeat school/year/student/section/adviser identification, retain
+answer timestamp comments, and extend the print area with horizontal breaks.
+Long questions increase row heights and can leave unused panel slots to keep
+the panel together. Custom ISKOR rows contain literal KAYA/configured-question
+ratios or an em dash for unassessed periods. The appended Custom Domain Results
+— Supplementary table shows configured counts and KAYA/answered counts for
+each period; unanswered questions are never inferred as DI-KAYA. These counts
+include saved parent observations visible to staff and require no official date
+or birth date. Official DepEd conversion tables and original-domain scoring are
+unchanged. Custom records cannot supply official checklist/summary score dates
+or summary header dates, block ML readiness, confirm official PRE completion,
+or enter prediction dates, features or item positions. Summary layouts and
+custom continuation sheets remain otherwise unchanged. No migration, template
+asset, API shape, assessment record or durable-draft change is part of this work.
+
+Append verification: the final full active backend run passed 528 tests and 667
+subtests; the requested two workbook modules passed all six tests. All 33 export
+browser cases passed across desktop/tablet/mobile, including the extended
+preview. Both frontend TypeScript projects, standalone browser-test typing,
+changed-file ESLint/Prettier and git diff --check passed. Native Excel opened
+the final synthetic workbook normally in read-only mode, with one CHECKLIST
+sheet and six printed pages; appended panels and the supplementary table were
+inspected in the exported PDF. Review artifacts are in the ignored
+frontend/test-results/eccd-append-verification directory. Tests used synthetic
+SQLite records and disposable PostgreSQL schemas. Existing dependency
+deprecation and enum collection warnings remain.
+
+Automatic question ordering and continuation exports (2026-11-07): question
+management no longer accepts manual ordering through the form. Create and
+cross-domain moves allocate max(sequence_order)+1 under a destination-domain
+row lock; legacy API sequence inputs are optional and ignored. Text/home edits
+keep their position; gaps are preserved. Migration 017 explicitly upgrades
+idx_questions_domain_sequence to a unique domain/sequence index, reports
+existing duplicate IDs without changing records, and is registered by bootstrap.
+Startup checks 017 and still automatically applies only 016. See
+backend/migrations/README.md before restarting an existing database.
+Individual downloads bound the original checklist mappings and append native
+panels within the main CHECKLIST, as described above. Summary exports retain their
+ten base sheets and append copied domain layouts for overflow groups, with
+whole-domain totals. Custom domains appear on continuation sheets without new
+official scoring codes. Preview HTML includes the extended main CHECKLIST. Existing
+IDs, evaluations, draft keys, template assets and scoring rules are preserved.
+Verification: the full active backend suite passed 520 tests and 667 subtests;
+the subsequently added external-writer conflict regression passed separately
+(521 distinct tests overall). All 34 browser cases passed: four chairman/teacher
+ordering/draft checks on desktop/mobile and 30 existing export checks on
+desktop/tablet/mobile. Both frontend TypeScript projects, standalone browser-test
+typing, changed-file ESLint/Prettier, production build and git diff --check pass.
+Native Excel opened the generated synthetic checklist (8 sheets) and summary
+(17 sheets) normally in read-only mode. Migration 017 was applied and checked
+on the configured local development database after finding no duplicate groups;
+existing question numbering and school records were preserved. Other databases
+still require the explicit migration before starting this version. Existing
+dependency deprecation and enum collection warnings remain.
+
+ECCD summary domain sheets (2026-11-07): the summary template and shared
+`backend/utils/excel.py` generator now export PR, M, PO, GMF, FMF, SHF, RLF,
+ELF, CF, SEF, in that order. The seven domain sheets include all genders,
+repeat the cohort roster and metadata across horizontal page blocks, and use
+numeric 1 for recorded K/D marks in PRE/MID/POST. Parent observations appear
+as marks; official raw scores reuse PR/M/PO's teacher-date and birth-date
+requirements and scorer. Section/year filtering, archived cohorts, ownership,
+30-student ZIP batching, API contracts and database schemas are unchanged.
+The blank asset preserves the source layouts, removes Info Sheet formulas and
+sample marks, corrects FMF/RLF raw-score period labels, and registers copied
+cell and dimension styles in the destination workbook. Its SHA-256 is recorded
+in `backend/assets/templates/manifest.json`. Regressions are in
+`backend/tests/test_checklist_workbook.py` and `backend/tests/test_eccd_exports.py`.
+Native Excel opened both the template and a generated synthetic export normally;
+the existing export browser suite passed all 30 desktop/tablet/mobile cases.
+Final verification: the clean full backend run passed 512 tests and 667
+subtests; all 18 workbook/card export regressions passed. Both frontend
+TypeScript projects and `git diff --check` passed. Existing dependency
+deprecation and enum collection warnings remain.
+
+Updated: **2026-11-07**. This document describes the active working tree in
 `backend/` and `frontend/`, including existing uncommitted changes. Local
 configuration observations are a snapshot, not deployment defaults or a claim
 that every workflow has passed testing. This refresh checked active source,
@@ -681,7 +760,7 @@ and instructional planning; official ECCD scores remain deterministic (section 1
 | Workspace | Root `pnpm-workspace.yaml` includes frontend and retains separate lockfiles; frontend has matching pnpm 12 YAML overrides and its own package-manager pin for isolated installs; automatic dependency verification before scripts is disabled |
 | Spreadsheets | openpyxl handles active workbook import/export; pandas is installed |
 | ML | V1 sigmoid-calibrated standalone Random Forest, joblib artifact, 18 PRE/demographic inputs (five household fields excluded), three supported POST outcomes; shared teacher/parent inference |
-| Migrations | Python migrations 001–016; only the nullable teacher timestamp (016) is applied automatically at startup. Other required upgrades are explicit; no active Alembic setup, pyproject.toml, or uv.lock |
+| Migrations | Python migrations 001–017; only the nullable teacher timestamp (016) is applied automatically at startup. Other required upgrades are explicit; no active Alembic setup, pyproject.toml, or uv.lock |
 
 Observed on this Windows checkout on **2026-10-25**:
 
@@ -793,7 +872,8 @@ applies only migration 016 (`teacher_marked_at`) after checking evaluator
 provenance. This adds a nullable timestamp without a default or historical
 backfill and serializes concurrent workers on the migration ledger. Other
 missing or incompatible required schema stops startup; those upgrades remain
-explicit. Migration 014 remains optional for startup.
+explicit. Migration 014 remains optional for startup. Migration 017's unique
+question sequence index is checked but must be applied explicitly.
 It then seeds `assets/reference/eccd.json` (7 domains, 109 questions) only if
 **both** reference tables are empty and warms the cached V1 model and guides.
 Unavailable/incompatible ML artifacts log a sanitized error and leave ordinary
@@ -802,7 +882,7 @@ call create_all or provision users.
 
 For a fresh PostgreSQL/Supabase database, explicitly run
 `backend.scripts.seed_supabase --apply` as a module before API startup. It applies
-pending migrations 001–016 in order and seeds the tracked 7-domain/109-question
+pending migrations 001–017 in order and seeds the tracked 7-domain/109-question
 ECCD fixture plus an environment-configured Chairman (`INITIAL_CHAIRMAN_EMAIL`,
 `INITIAL_CHAIRMAN_PASSWORD`, `INITIAL_CHAIRMAN_NAME`). The name is stored in
 `system_settings.chairman_name`. Repeated runs preserve existing accounts/reference rows;

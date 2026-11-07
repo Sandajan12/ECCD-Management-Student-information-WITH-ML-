@@ -131,10 +131,11 @@ class EccdCardExportTests(TestCase):
         chairman_book = openpyxl.load_workbook(BytesIO(chairman.content))
         self.addCleanup(teacher_book.close)
         self.addCleanup(chairman_book.close)
-        self.assertEqual(teacher_book.sheetnames, ["PR", "M", "PO"])
+        self.assertEqual(teacher_book.sheetnames, ["PR", "M", "PO", "GMF", "FMF", "SHF", "RLF", "ELF", "CF", "SEF"])
         for sheet in teacher_book:
-            self.assertEqual(sheet["D14"].value, "STUDENT, SAVED")
-            self.assertIsNone(sheet["D15"].value)
+            name_cell, empty_cell = ("D14", "D15") if sheet.title in ("PR", "M", "PO") else ("B9", "B10")
+            self.assertEqual(sheet[name_cell].value, "STUDENT, SAVED")
+            self.assertIsNone(sheet[empty_cell].value)
             for row in sheet:
                 for cell in row:
                     expected = chairman_book[sheet.title][cell.coordinate]
@@ -230,9 +231,15 @@ class EccdCardExportTests(TestCase):
             workbook = openpyxl.load_workbook(BytesIO(response.content))
             self.addCleanup(workbook.close)
             for sheet in workbook:
-                self.assertEqual(sheet["J8"].value, "SCHOOL YEAR: 2025-2026")
-                self.assertEqual({sheet["D14"].value, sheet["D15"].value}, {"ACTIVE, PAST", "ARCHIVED, PAST"})
-                self.assertIsNone(sheet["D16"].value)
+                if sheet.title in ("PR", "M", "PO"):
+                    self.assertEqual(sheet["J8"].value, "SCHOOL YEAR: 2025-2026")
+                    self.assertEqual({sheet["D14"].value, sheet["D15"].value}, {"ACTIVE, PAST", "ARCHIVED, PAST"})
+                    self.assertIsNone(sheet["D16"].value)
+                else:
+                    for start in (cell.column for cell in sheet[5] if cell.value == "No."):
+                        self.assertEqual(sheet.cell(3, start).value, "2025-2026")
+                        self.assertEqual({sheet.cell(9, start + 1).value, sheet.cell(10, start + 1).value}, {"ACTIVE, PAST", "ARCHIVED, PAST"})
+                        self.assertIsNone(sheet.cell(11, start + 1).value)
 
     def test_year_scoped_exports_handle_empty_cohorts_and_validate_queries(self):
         for endpoint in ("cards-zip", "section-summary"):

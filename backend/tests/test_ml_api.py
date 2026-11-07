@@ -8,7 +8,7 @@ from unittest.mock import patch
 from backend.ml.common import ACTIVE_CLASSES, ARTIFACTS, DOMAINS, sandbox_composites, sha256
 from backend.ml.train_random_forest import acceptance_profiles
 from backend.ml.inference import load_model, predict_student, warm_inference
-from backend.models import EccdQuestion, Parent, StudentEccdEvaluation
+from backend.models import EccdDomain, EccdQuestion, Parent, StudentEccdEvaluation
 from backend.models.eccd import EccdAnswer, TestingPeriod
 from backend.tests import test_phase2
 from backend.utils.eccd_scorer import calculate_raw_scores, calculate_scores, lookup_standard_score, scoring_data
@@ -122,6 +122,51 @@ class MLApiTests(unittest.TestCase):
         response = self.call("POST", "/api/ml/predict/student/1", 2)
         self.assertEqual(response.status_code, 409)
         self.assertIn("teacher-confirmed", response.json()["detail"])
+
+    def test_custom_domains_never_change_ml_readiness_dates_or_inputs(self):
+        self.complete_pre()
+        before = self.call("POST", "/api/ml/predict/student/1", 2)
+        self.assertEqual(before.status_code, 200, before.text)
+        with self.fixture.sessions() as db:
+            db.add(EccdDomain(domain_id=8, domain_name="Custom domain"))
+            db.add(EccdQuestion(question_id=8000, domain_id=8, sequence_order=1,
+                                question_text="Supplementary question"))
+            db.commit()
+        # An unanswered custom question does not make an official PRE incomplete.
+        for path in ("/api/ml/students?section_id=1", "/api/ml/parent/readiness/1"):
+            response = self.call("GET", path, 2 if "students?" in path else 5)
+            self.assertEqual(response.status_code, 200, response.text)
+            data = response.json()
+            self.assertTrue((data[0] if isinstance(data, list) else data)["pre_complete"])
+        after = self.call("POST", "/api/ml/predict/student/1", 2)
+        self.assertEqual(after.status_code, 200, after.text)
+        for key in ("features", "baseline_domains", "interventions", "assessment_date", "class_probabilities"):
+            self.assertEqual(before.json()[key], after.json()[key], key)
+        with self.fixture.sessions() as db:
+            db.add(StudentEccdEvaluation(student_id=1, question_id=8000, teacher_id=1,
+                testing_period=TestingPeriod.PRE, answer=EccdAnswer.KAYA,
+                evaluation_date=date(2026, 7, 7), teacher_evaluation_date=date(2026, 7, 7),
+                evaluator_role="teacher"))
+            db.commit()
+        answered = self.call("POST", "/api/ml/predict/student/1", 2)
+        self.assertEqual(answered.status_code, 200, answered.text)
+        for key in ("features", "baseline_domains", "interventions", "assessment_date", "class_probabilities"):
+            self.assertEqual(before.json()[key], answered.json()[key], key)
+        settings = self.call("PUT", "/api/teachers/me/access", 2, json={
+            "allow_parent_predictions": True, "allow_parent_view_eccd_pre": True})
+        self.assertEqual(settings.status_code, 200, settings.text)
+        parent_result = self.call("POST", "/api/ml/parent/predict/1", 5)
+        self.assertEqual(parent_result.status_code, 200, parent_result.text)
+        self.assertEqual(parent_result.json()["assessment_date"], before.json()["assessment_date"])
+        # A teacher date on a custom question cannot confirm parent-only official answers.
+        with self.fixture.sessions() as db:
+            for record in db.query(StudentEccdEvaluation).filter(StudentEccdEvaluation.question_id != 8000):
+                record.teacher_evaluation_date = None
+                record.evaluator_role = "parent"
+            db.commit()
+        self.assertEqual(self.call("POST", "/api/ml/predict/student/1", 2).status_code, 409)
+        self.assertEqual(self.call("POST", "/api/ml/parent/predict/1", 5).status_code, 400)
+        self.assertFalse(self.call("GET", "/api/ml/parent/readiness/1", 5).json()["pre_complete"])
 
     def test_sandbox_validation_imputation_and_observed_item_trigger(self):
         features = sandbox_features()

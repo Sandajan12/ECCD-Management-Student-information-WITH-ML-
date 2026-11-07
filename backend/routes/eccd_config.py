@@ -1,4 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from typing import List
 
@@ -6,8 +8,8 @@ from backend.config.database import get_db
 from backend.utils.deps import verify_eccd_question_access, verify_role
 from backend.models.eccd import EccdDomain, EccdQuestion
 from backend.schemas.common import MessageResult
-from backend.schemas.eccd_config import AddedDomain, AddedQuestion, ConfigDomain, HomeBasedPayload, QuestionEdit
-from backend.schemas.eccd import EccdDomainBase as DomainBase, EccdDomainResponse as DomainResponse, EccdQuestionBase as QuestionBase, EccdQuestionResponse as QuestionResponse
+from backend.schemas.eccd_config import AddedDomain, AddedQuestion, ConfigDomain, HomeBasedPayload, QuestionCreate, QuestionEdit
+from backend.schemas.eccd import EccdDomainBase as DomainBase, EccdDomainResponse as DomainResponse, EccdQuestionResponse as QuestionResponse
 
 router = APIRouter(prefix="/api/eccd-config", tags=["ECCD Config"])
 chairman_router = APIRouter(prefix="/api/chairman", tags=["ECCD Management"])
@@ -18,7 +20,7 @@ def get_domains_and_questions(
     current_user = Depends(verify_role(["super-admin", "chairman", "admin", "teacher"]))
 ):
     domains = db.query(EccdDomain).all()
-    questions = db.query(EccdQuestion).order_by(EccdQuestion.sequence_order.asc()).all()
+    questions = db.query(EccdQuestion).order_by(EccdQuestion.sequence_order, EccdQuestion.question_id).all()
     
     formatted_domains = []
     for d in domains:
@@ -82,20 +84,28 @@ def delete_domain(
 
 @router.post("/questions", response_model=QuestionResponse)
 def add_question(
-    payload: QuestionBase,
+    payload: QuestionCreate,
     db: Session = Depends(get_db),
     current_user = Depends(verify_eccd_question_access)
 ):
-    if db.get(EccdDomain, payload.domain_id) is None:
+    # All appends to a domain share this lock, including cross-domain moves.
+    if db.query(EccdDomain).filter_by(domain_id=payload.domain_id).with_for_update().first() is None:
         raise HTTPException(400, "Domain does not exist.")
+    sequence = (db.query(func.max(EccdQuestion.sequence_order)).filter_by(domain_id=payload.domain_id).scalar() or 0) + 1
     new_q = EccdQuestion(
         domain_id=payload.domain_id,
         question_text=payload.question_text,
-        sequence_order=payload.sequence_order,
+        sequence_order=sequence,
         is_home_based=payload.is_home_based
     )
     db.add(new_q)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as error:
+        db.rollback()
+        if getattr(getattr(error.orig, "diag", None), "constraint_name", None) == "idx_questions_domain_sequence":
+            raise HTTPException(409, "Question order changed. Please submit again.") from None
+        raise
     db.refresh(new_q)
     return new_q
 
@@ -107,18 +117,24 @@ def update_question(
     db: Session = Depends(get_db),
     current_user = Depends(verify_eccd_question_access)
 ):
-    q = db.query(EccdQuestion).filter(EccdQuestion.question_id == question_id).first()
+    q = db.query(EccdQuestion).filter(EccdQuestion.question_id == question_id).with_for_update().first()
     if not q:
         raise HTTPException(status_code=404, detail="Question not found")
-    if payload.domain_id is not None:
-        if db.get(EccdDomain, payload.domain_id) is None:
+    if payload.domain_id is not None and payload.domain_id != q.domain_id:
+        if db.query(EccdDomain).filter_by(domain_id=payload.domain_id).with_for_update().first() is None:
             raise HTTPException(400, "Domain does not exist.")
+        q.sequence_order = (db.query(func.max(EccdQuestion.sequence_order)).filter_by(domain_id=payload.domain_id).scalar() or 0) + 1
         q.domain_id = payload.domain_id
     if payload.is_home_based is not None:
         q.is_home_based = payload.is_home_based
     q.question_text = payload.question_text
-    q.sequence_order = payload.sequence_order
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as error:
+        db.rollback()
+        if getattr(getattr(error.orig, "diag", None), "constraint_name", None) == "idx_questions_domain_sequence":
+            raise HTTPException(409, "Question order changed. Please submit again.") from None
+        raise
     return {"message": "Question updated successfully"}
 
 @router.delete("/questions/{question_id}", response_model=MessageResult)
@@ -163,6 +179,6 @@ def legacy_add_domain(payload: DomainBase, db: Session = Depends(get_db), curren
 
 
 @chairman_router.post("/eccd-questions", response_model=AddedQuestion)
-def legacy_add_question(payload: QuestionBase, db: Session = Depends(get_db), current_user=Depends(verify_eccd_question_access)):
+def legacy_add_question(payload: QuestionCreate, db: Session = Depends(get_db), current_user=Depends(verify_eccd_question_access)):
     question = add_question(payload, db, current_user)
     return {"message": "Question added successfully", "question_id": question.question_id}

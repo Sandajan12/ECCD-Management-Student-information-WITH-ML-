@@ -100,7 +100,7 @@ function MainLayoutContent({ children }: MainLayoutProps) {
           {
             title: "System Audit Log",
             path: "/super-admin/audit",
-            icon: "Settings",
+            icon: "Accessibility",
           },
           {
             title: "ECCD Questions",
@@ -110,7 +110,7 @@ function MainLayoutContent({ children }: MainLayoutProps) {
           {
             title: "Settings",
             path: "/super-admin/settings",
-            icon: "Accessibility",
+            icon: "Settings",
           },
         ]
       : role === "admin"

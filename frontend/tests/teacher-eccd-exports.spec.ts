@@ -3,6 +3,7 @@ import type { Page } from "@playwright/test";
 import type { SessionUser } from "../src/types";
 
 interface ExportState {
+  previewHtml: string;
   previewError: boolean;
   downloadError: boolean;
   downloadErrorMessage: string;
@@ -15,6 +16,7 @@ async function portal(
   studentIds: number[] = [1, 2],
 ): Promise<ExportState> {
   const state: ExportState = {
+    previewHtml: "",
     previewError: false,
     downloadError: false,
     downloadErrorMessage: "Section is not assigned to you.",
@@ -55,7 +57,9 @@ async function portal(
         await route.fulfill({
           json: {
             student_id: Number(studentId),
-            html: `<!doctype html><html><body><h1>Card for Student ${studentId}</h1><table><tr><td>Gross Motor</td><td>PRE: 5</td><td>MID: 6</td><td>POST: 7</td></tr><tr><td>Interpretation</td><td>Average</td></tr></table></body></html>`,
+            html:
+              state.previewHtml ||
+              `<!doctype html><html><body><h1>Card for Student ${studentId}</h1><table><tr><td>Gross Motor</td><td>PRE: 5</td><td>MID: 6</td><td>POST: 7</td></tr><tr><td>Interpretation</td><td>Average</td></tr></table></body></html>`,
           },
         });
       }
@@ -555,4 +559,54 @@ test("changing students hides previous results while the next preview is pending
       .frameLocator('iframe[title="Official ECCD Card"]')
       .getByRole("heading", { name: "Latest student card" }),
   ).toBeVisible();
+});
+
+test("appended checklist panels and supplementary ratios fit the complete preview", async ({
+  page,
+}) => {
+  const state = await portal(page);
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  const panels = Array.from(
+    { length: 120 },
+    (_, index) =>
+      `<tr style="height:24pt"><td>${index + 1}</td><td colspan="2">Appended indicator ${index + 1}</td><td>PRETEST</td><td>KAYA</td><td>DI-KAYA</td></tr>`,
+  ).join("");
+  state.previewHtml = `<!doctype html><html><body><table style="min-width:75rem"><tbody>
+    <tr><td colspan="6">SCHOOL YEAR: 2026-2027 | STUDENT: Student 1 | SECTION: Test A</td></tr>
+    ${panels}
+    <tr><td colspan="3">Custom domain — continued</td><td>PRETEST</td><td>MID</td><td>POSTTEST</td></tr>
+    <tr><td colspan="3">ISKOR</td><td>3/5</td><td>1/5</td><td>—</td></tr>
+    <tr><td colspan="6">Custom Domain Results — Supplementary</td></tr>
+    <tr><td colspan="3">Custom domain</td><td>3 KAYA / 5 answered</td><td>1 KAYA / 2 answered</td><td>—</td></tr>
+    </tbody></table></body></html>`;
+  await page
+    .getByRole("button", { name: "Preview ECCD Card", exact: true })
+    .click();
+  await chooseStudent(page, "Student 1 Test (Pending)");
+  const frame = page.frameLocator('iframe[title="Official ECCD Card"]');
+  await expect(
+    frame.getByText("Appended indicator 120", { exact: true }),
+  ).toBeVisible();
+  await expect(frame.getByText("3/5", { exact: true })).toBeVisible();
+  await expect(
+    frame.getByText("Custom Domain Results — Supplementary"),
+  ).toBeVisible();
+  await expect(frame.getByText("1 KAYA / 2 answered")).toBeVisible();
+  await expectFitsViewport(page);
+  const fits = await page
+    .locator('iframe[title="Official ECCD Card"]')
+    .evaluate((element) => {
+      const iframe = element as HTMLIFrameElement;
+      const body = iframe.contentDocument!.body;
+      return Number(iframe.height) >= body.scrollHeight;
+    });
+  expect(fits).toBe(true);
+  expect(errors).toEqual([]);
+  expect(state.downloads).toEqual([]);
+  await expect
+    .poll(() =>
+      page.evaluate(() => localStorage.getItem("ames_draft_2_unrelated")),
+    )
+    .toBe("keep my work");
 });

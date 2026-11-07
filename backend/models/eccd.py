@@ -45,7 +45,7 @@ class EccdDomain(Base):
 
 class EccdQuestion(Base):
     __tablename__ = "eccd_questions"
-    __table_args__ = (Index("idx_questions_domain_sequence", "domain_id", "sequence_order"),)
+    __table_args__ = (Index("idx_questions_domain_sequence", "domain_id", "sequence_order", unique=True),)
 
     question_id = Column(Integer, primary_key=True, autoincrement=True)
     domain_id = Column(
