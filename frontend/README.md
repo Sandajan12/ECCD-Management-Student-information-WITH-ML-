@@ -35,45 +35,57 @@ student records and evaluation history.
 
 ## Run locally
 
-From the repository root, with PostgreSQL running and the existing backend/.env:
+From the repository root, with PostgreSQL running, required migrations ready and
+the existing backend/.env, start the API and UI in separate terminals:
 
 ```powershell
-pnpm.cmd run dev
+uv run --no-project --python .venv312 python -m uvicorn backend.main:app --reload --host 127.0.0.1 --port 8000 --env-file backend/.env
+pnpm.cmd run frontend
 ```
 
 Open http://localhost:5173. The API runs on http://localhost:8000.
-To start only the UI, use `pnpm.cmd run frontend`.
+Root `pnpm.cmd run dev` also starts both scripts, but its backend command relies
+on `uvicorn` on PATH and does not explicitly select Python 3.12.
 Set `VITE_API_URL` in frontend/.env.local only when changing the API origin;
 `VITE_SOCKET_URL` optionally overrides the chat origin. Restart Vite after changes.
-Keep database/email secrets in backend/.env. Local email verification follows
-the backend's `ENABLE_OTP=false` setting and its actual challenge responses.
+Keep database/email secrets in backend/.env. Local development may use
+`ENABLE_OTP=false`; the UI follows actual backend challenge responses. Production
+requires OTP enabled and configured email delivery.
 Existing account credentials are preserved.
 
 ## Migrated workflows
 
 - Staff/parent dashboards, domain progress and released assessment results.
 - Student enrollment, family details, child linking, archives and bulk transfers.
-- Teacher/section management, adviser/substitute assignments and question access.
+- Teacher/section management, Primary Adviser assignments/handovers and question access.
 - PRE/MID/POST ECCD assessment, home-based parent answers and question configuration.
-- Six parent access permissions, locked placeholders and protected editing.
+- Eight granular parent permissions, independent marks/score-release gates and protected editing.
 - Excel import with per-row feedback, checklist/summary downloads and section exports.
 - School branding, account changes, audit history, rollover/undo and encrypted backups.
 - Authenticated chat, unread counts, mobile conversations and reconnect history.
 
 Public student records display masked LRNs; API URLs and saved assessment state
-use integer student IDs. Raw 12-digit LRNs are entered only for enrollment/linking.
+use integer student IDs. LRNs are optional for enrollment/staff edits; supplied
+values require 12 ASCII digits. Authorized staff student-detail reads return the
+decrypted LRN for editing, and authorized staff exports include it. Parent/public
+responses remain masked. Linking and workbook matching still require an LRN.
 
 ## Durable inputs
 
 Forms use owner/record-scoped localStorage drafts. Assessment keys also include
-student ID, period and domain. Network failures queue submissions for reconnection.
+student ID, period and domain. Automatic replay is limited to authenticated
+teacher (`admin`) ECCD drafts for exactly `POST /api/eccd/evaluate`, with matching
+owner, student, period and revision. Other forms, parent observations and old
+queued records require manual online submission after reconnecting.
 Only the exact server-confirmed revision is removed; newer edits survive an older
 response. Logout and session expiry preserve drafts. Validation/permission failures
 retain inputs for review rather than treating them as successful saves.
 
 Credential fields survive reload in sessionStorage within the current browser tab.
 Selected files survive reload in IndexedDB. Background images and import workbooks
-can sync after reconnect; partial workbook imports retain the file and row errors.
+require explicit online submission after reconnecting; partial workbook imports
+retain the file and row errors. Other forms show: "Your draft is saved on this
+device. Reconnect and submit again."
 Restore and rollover are explicit, confirmed actions. No global localStorage clearing
 is used. Keep the page open if the browser reports unavailable/full device storage.
 
@@ -81,6 +93,7 @@ is used. Keep the page open if the browser reports unavailable/full device stora
 
 ```powershell
 pnpm.cmd --dir frontend exec tsc --noEmit -p tsconfig.app.json
+pnpm.cmd --dir frontend exec tsc --noEmit -p tsconfig.node.json
 pnpm.cmd --dir frontend run lint
 pnpm.cmd --dir frontend run build
 ```

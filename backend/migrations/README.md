@@ -37,11 +37,14 @@ The migration refuses duplicates, preserves all question rows, upgrades the
 existing index transactionally, and is repeatable. Startup checks 017 but never
 applies it automatically. Fresh bootstrap registers 017 explicitly.
 
-Checklist downloads append per-domain continuation sheets, up to 25 extra
-questions each, beyond the original template's slots. Summary downloads copy
-domain layouts for additional groups and label repeated whole-domain totals.
-Question IDs, existing sequences, assessment links, scoring rules and blank
-template assets remain unchanged. Card previews include continuation sheets.
+Individual checklist downloads keep one CHECKLIST sheet and append copied
+native panels of up to 13 questions for standard-domain overflow, then custom
+domains. Custom results remain supplementary counts without official scoring
+codes. Summary downloads retain ten base sheets and copy domain layouts for
+additional groups, labelling repeated whole-domain totals. Question IDs, existing
+sequences, assessment links and official scoring rules remain unchanged. Card
+previews include the extended CHECKLIST; see `AI_CONTEXT.md` at the repository
+root for the current export rules.
 
 ## Teacher correction timestamps (016)
 
@@ -94,7 +97,8 @@ uv run --no-project --python 3.12 python -m backend.migrations.auth_security_ver
 Adds non-null `users.security_version` with default zero without changing existing
 account fields. Archive/restore and adviser deactivation advance this version so
 previous sessions cannot revive. Repeated application preserves versions. Startup
-checks the column and never runs DDL; backup restore preserves live user versions.
+checks this column without applying 012; only migration 016 is automatically
+applied at startup. Backup restore preserves live user versions.
 
 The Phase 2 backend is implemented in Python/FastAPI, SQLAlchemy/PostgreSQL and
 Pydantic V2. React/Tailwind integration is Phase 3. Stop the dev server before
@@ -356,7 +360,7 @@ everything back. Repeated applies validate the schema and return without writes.
 `--check` validates without applying upgrades. Rollback requires the retained
 backup and matching older application release; dropped usernames are not rebuilt.
 
-Fresh bootstrap runs migrations 001–016 before seeding. Historical Phase 1 keeps
+Fresh bootstrap runs migrations 001–017 before seeding. Historical Phase 1 keeps
 username and excludes the new expression index and Chairman name. Phase 2 uses
 the migration ledger to distinguish its historical and post-013 column contracts,
 and fingerprints actual intermediate columns rather than the evolving ORM.
