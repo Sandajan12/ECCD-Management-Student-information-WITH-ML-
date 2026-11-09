@@ -31,8 +31,7 @@ API.interceptors.request.use((config) => {
     config.url === "/api/settings/update" &&
     config.data &&
     !(config.data instanceof FormData) &&
-    ("existing_logo_url" in config.data ||
-      "existing_profile_pic_url" in config.data)
+    "existing_logo_url" in config.data
   ) {
     const form = new FormData();
     for (const [key, value] of Object.entries(

@@ -1,5 +1,5 @@
 """Retain the Phase 1 compatibility schema for upgrades from the original DB."""
-from sqlalchemy import CheckConstraint, Column, ForeignKeyConstraint, Index, MetaData, String, Table, UniqueConstraint
+from sqlalchemy import CheckConstraint, Column, ForeignKeyConstraint, Index, MetaData, String, Table, Text, UniqueConstraint
 from backend.models import Base
 
 
@@ -56,6 +56,10 @@ def phase1_metadata() -> MetaData:
         if index.name == "ux_users_email_lower":
             users.indexes.remove(index)
     settings = metadata.tables["system_settings"]
+    # Preserve the historical settings shape until explicit migration 018.
+    settings.append_column(Column("secondary_color", String(10), default="#FFFFFF"))
+    settings.append_column(Column("profile_pic_url", Text, nullable=True))
+    settings.append_column(Column("login_background", Text, nullable=True))
     if "chairman_name" in settings.c:
         settings._columns.remove(settings.c.chairman_name)
     return metadata

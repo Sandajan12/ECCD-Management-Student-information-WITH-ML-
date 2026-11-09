@@ -326,17 +326,17 @@ class Batch2DatabaseTests(unittest.TestCase):
             self.assertEqual(response.status_code, 200)
         with self.sessions() as db:
             before = len(list(db.execute(Student.__table__.select())))
-        for path, user, mime, limit in (("/api/teachers/import-students", 2, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", EXCEL_LIMIT), ("/api/settings/upload-background", 1, "image/png", IMAGE_LIMIT), ("/api/backup/restore", 1, "application/octet-stream", BACKUP_LIMIT)):
+        for path, method, field, user, mime, limit in (("/api/teachers/import-students", "POST", "file", 2, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", EXCEL_LIMIT), ("/api/settings/update", "PUT", "systemLogo", 1, "image/png", IMAGE_LIMIT), ("/api/backup/restore", "POST", "file", 1, "application/octet-stream", BACKUP_LIMIT)):
             with self.subTest(path=path):
-                response = self.call("POST", path, user, files={"file": ("large.xlsx" if path.endswith("import-students") else "large.file", b"x" * (limit + 1), mime)})
+                response = self.call(method, path, user, files={field: ("large.xlsx" if path.endswith("import-students") else "large.file", b"x" * (limit + 1), mime)})
                 self.assertEqual(response.status_code, 413)
-        for path, method, field in (("/api/settings/upload-background", "POST", "file"), ("/api/settings/update", "PUT", "systemLogo"), ("/api/settings/update", "PUT", "profilePic")):
+        for path, method, field in (("/api/settings/update", "PUT", "systemLogo"),):
             response = self.call(method, path, files={field: ("image.svg", b"<svg/>", "image/svg+xml")})
             self.assertEqual(response.status_code, 400)
         for mime in ("image/jpeg", "image/png", "image/webp"):
-            response = self.call("POST", "/api/settings/upload-background", files={"file": ("image", b"safe", mime)})
+            response = self.call("PUT", "/api/settings/update", files={"systemLogo": ("image", b"safe", mime)})
             self.assertEqual(response.status_code, 200)
-            self.assertTrue(response.json()["url"].startswith(f"data:{mime};base64,"))
+            self.assertTrue(response.json()["settings"]["logo_url"].startswith(f"data:{mime};base64,"))
         with self.sessions() as db:
             self.assertEqual(len(list(db.execute(Student.__table__.select()))), before)
 

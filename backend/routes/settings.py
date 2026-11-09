@@ -1,11 +1,11 @@
 import base64
-from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 from backend.config.database import get_db
 from backend.models import SystemLog, User
-from backend.schemas.settings import BackgroundResult, SettingsUpdateResult, SchoolSettingsResponse, SchoolSettingsUpdate, RolloverRequest, RolloverResponse, RolloverUndoResponse
+from backend.schemas.settings import SettingsUpdateResult, SchoolSettingsResponse, SchoolSettingsUpdate, RolloverRequest, RolloverResponse, RolloverUndoResponse
 from backend.utils.deps import verify_role
 from backend.utils.rollover import settings_record, rollover, undo_availability, undo_rollover
 from backend.utils.uploads import branding_image
@@ -41,13 +41,12 @@ async def save_settings(data, form, db: Session, user: User):
     except ValidationError:
         raise HTTPException(422, "Invalid school settings, colour or opening month.") from None
     images = {}
-    for field, existing, upload in (("logo_url", "existing_logo_url", "systemLogo"), ("profile_pic_url", "existing_profile_pic_url", "profilePic")):
-        if form and form.get(upload) and hasattr(form[upload], "read"):
-            file = form[upload]
-            encoded = base64.b64encode(await branding_image(file)).decode()
-            images[field] = f"data:{file.content_type};base64,{encoded}"
-        elif existing in data:
-            images[field] = data[existing]
+    if form and form.get("systemLogo") and hasattr(form["systemLogo"], "read"):
+        file = form["systemLogo"]
+        encoded = base64.b64encode(await branding_image(file)).decode()
+        images["logo_url"] = f"data:{file.content_type};base64,{encoded}"
+    elif "existing_logo_url" in data:
+        images["logo_url"] = data["existing_logo_url"]
     return await run_in_threadpool(persist_settings, payload, images, db, user)
 
 
@@ -61,19 +60,6 @@ def persist_settings(payload: SchoolSettingsUpdate, images: dict, db: Session, u
     db.add(SystemLog(user_id=user.user_id, action_type="UPDATE_SYSTEM_SETTINGS", details=f"Updated school configuration; opening month {setting.school_year_start_month}."))
     db.commit()
     return {"message": "Settings updated successfully!", "settings": {**SchoolSettingsResponse.model_validate(setting).model_dump(), **undo_availability(setting)}}
-
-
-@router.post("/upload-background", response_model=BackgroundResult)
-async def upload_background(file: UploadFile = File(...), db: Session = Depends(get_db), user: User = Depends(verify_role(["super-admin"]))):
-    url = f"data:{file.content_type};base64,{base64.b64encode(await branding_image(file)).decode()}"
-    return await run_in_threadpool(persist_background, url, db)
-
-
-def persist_background(url: str, db: Session):
-    setting = settings_record(db)
-    setting.login_background = url
-    db.commit()
-    return {"message": "Background uploaded successfully", "url": url}
 
 
 @router.post("/rollover", response_model=RolloverResponse)

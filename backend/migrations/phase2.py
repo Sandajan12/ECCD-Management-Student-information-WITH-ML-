@@ -10,6 +10,7 @@ from backend.migrations.phase1 import LEDGER, MigrationError, quote, select_sche
 from backend.utils.lrn import decrypt_lrn, hash_lrn
 
 VERSION = "002_student_identity_api"
+RETIRED_SETTINGS_COLUMNS = ("secondary_color", "profile_pic_url", "login_background")
 
 
 def digest_table(connection: Connection, name: str) -> str:
@@ -33,9 +34,15 @@ def check_phase2(connection: Connection, schema: str = "public") -> None:
     historical_identity = inspector.has_table(LEDGER, schema=schema) and not connection.execute(text(
         f"SELECT EXISTS (SELECT 1 FROM {LEDGER} WHERE version='013_email_only_identity')"
     )).scalar_one()
+    settings_cleanup_applied = inspector.has_table(LEDGER, schema=schema) and connection.execute(text(
+        f"SELECT EXISTS (SELECT 1 FROM {LEDGER} WHERE version='018_retired_branding_settings')"
+    )).scalar_one()
     for name, table in Base.metadata.tables.items():
         actual = {column["name"] for column in inspector.get_columns(name, schema=schema)}
         expected = set(table.columns.keys())
+        if name == "system_settings" and not settings_cleanup_applied:
+            # Deploy the new app before the explicit column-drop maintenance window.
+            actual -= set(RETIRED_SETTINGS_COLUMNS)
         if historical_identity and name == "users":
             expected.add("username")
         if historical_identity and name == "system_settings":

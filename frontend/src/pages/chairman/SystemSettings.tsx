@@ -302,9 +302,7 @@ interface BrandingFields {
   chairman_name: string;
   system_title: string;
   primary_color: string;
-  secondary_color: string;
   existing_logo_url: string;
-  existing_profile_pic_url: string;
 }
 interface SchoolBrandingProps {
   initial: SystemSettings;
@@ -327,9 +325,7 @@ function SchoolBranding({
       chairman_name: initial.chairman_name || "",
       system_title: initial.system_title,
       primary_color: initial.primary_color,
-      secondary_color: initial.secondary_color,
       existing_logo_url: initial.logo_url || "",
-      existing_profile_pic_url: initial.profile_pic_url || "",
     },
   );
   const [busy, setBusy] = useState(false);
@@ -363,7 +359,11 @@ function SchoolBranding({
             const monthRevision =
               readDraft<OpeningMonthFields>(openingDraftKey)?.revision;
             const result = await save("/api/settings/update", "put", {
-              ...values,
+              school_name: values.school_name,
+              principal_name: values.principal_name,
+              system_title: values.system_title,
+              primary_color: values.primary_color,
+              existing_logo_url: values.existing_logo_url,
               chairman_name:
                 values.chairman_name ?? initial.chairman_name ?? "",
               school_year_start_month: openingMonth,
