@@ -69,10 +69,8 @@ class RequestLimitsMiddleware:
                 ceiling = EXCEL_LIMIT + 64 * 1024
             elif path in ("/api/backup/restore", "/api/chairman/backup/restore"):
                 ceiling = BACKUP_LIMIT + 64 * 1024
-            elif path == "/api/settings/upload-background":
-                ceiling = IMAGE_LIMIT + 64 * 1024
             elif path == "/api/settings/update":
-                ceiling = 2 * IMAGE_LIMIT + 64 * 1024
+                ceiling = IMAGE_LIMIT + 64 * 1024
         async def too_large():
             await JSONResponse({"success": False, "message": "Request body is too large."}, status_code=413)(scope, receive, send)
         if "content-length" in headers:

@@ -6,7 +6,7 @@ import type {
   InputHTMLAttributes,
   ReactNode,
 } from "react";
-import { useSettings } from "../context/SettingsContext";
+import { Box } from "@mui/material";
 import Background from "../assets/background_pic.webp";
 import LegacyIcon from "./LegacyIcon";
 import LegacyRipple from "./LegacyRipple";
@@ -14,14 +14,13 @@ import type { LegacyIconName } from "./LegacyIcon";
 
 export const fallbackLogo = "https://via.placeholder.com/150?text=Logo";
 export function AuthBackdrop({ children }: { children: ReactNode }) {
-  const { settings } = useSettings();
   return (
     <main className="relative isolate flex min-h-screen w-full items-center justify-center overflow-hidden p-4 font-sans text-[#333]">
-      <div
+      <Box
         aria-hidden="true"
         className="absolute inset-0 -z-20 bg-cover bg-center blur-[3px]"
-        style={{
-          backgroundImage: `url("${settings.login_background || Background}")`,
+        sx={{
+          backgroundImage: `url("${Background}")`,
         }}
       />
       <div aria-hidden="true" className="absolute inset-0 -z-10 bg-black/40" />

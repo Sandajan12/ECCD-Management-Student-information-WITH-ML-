@@ -55,7 +55,7 @@ class ParityTests(unittest.TestCase):
             "logs": {"get": ["/"]},
             "settings": {
                 "get": ["/"], "put": ["/update"],
-                "post": ["/upload-background", "/rollover", "/undo-rollover", "/revert-school-year"],
+                "post": ["/rollover", "/undo-rollover", "/revert-school-year"],
             },
             "eccd": {
                 "get": ["/students", "/domains-progress", "/assessment/{lrn}", "/student/{student_lrn}", "/section/{section_id}/summary", "/section/{section_id}/export", "/export-all", "/parent/assessment/{student_lrn}", "/parent/domains-progress/{student_lrn}", "/parent/dashboard-stats/{student_lrn}", "/parent/progress/{student_lrn}"],

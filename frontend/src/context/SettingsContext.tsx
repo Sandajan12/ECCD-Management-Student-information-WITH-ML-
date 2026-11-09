@@ -15,10 +15,7 @@ export interface SystemSettings {
   principal_name: string | null;
   chairman_name: string | null;
   primary_color: string;
-  secondary_color: string;
   logo_url: string | null;
-  profile_pic_url: string | null;
-  login_background: string | null;
   current_school_year: string;
   school_year_start_month: number;
   previous_school_year: string | null;
@@ -32,10 +29,7 @@ const defaults: SystemSettings = {
   principal_name: "",
   chairman_name: "",
   primary_color: "#2563eb",
-  secondary_color: "#111827",
   logo_url: "",
-  profile_pic_url: "",
-  login_background: "",
   current_school_year: "",
   school_year_start_month: 8,
   previous_school_year: null,
@@ -86,10 +80,6 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     document.documentElement.style.setProperty(
       "--primary-color",
       settings.primary_color,
-    );
-    document.documentElement.style.setProperty(
-      "--secondary-color",
-      settings.secondary_color,
     );
     document.title = settings.system_title;
   }, [settings]);

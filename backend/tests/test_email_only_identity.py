@@ -39,7 +39,7 @@ class EmailOnlyIdentityTests(unittest.TestCase):
             self.assertFalse(migration.apply_email_only_identity(connection, self.schema))
             self.assertEqual(before, list(connection.execute(text("SELECT to_jsonb(u)-'email' FROM users u ORDER BY user_id"))))
             self.assertEqual(connection.execute(text("SELECT chairman_name FROM system_settings WHERE id=1")).scalar_one(), "Account 1")
-            settings = connection.execute(text("SELECT system_title, primary_color, secondary_color, current_school_year FROM system_settings WHERE id=1")).one()
+            settings = connection.execute(text("SELECT system_title, primary_color, current_school_year FROM system_settings WHERE id=1")).one()
             self.assertTrue(all(value is not None for value in settings))
             self.assertEqual(connection.execute(text("SELECT email FROM users WHERE user_id=2")).scalar_one(), "parent@example.com")
             phase2.check_phase2(connection, self.schema)

@@ -1,7 +1,7 @@
 # Feature migrations: Phase 2 is the current backend schema
 
 For a fresh PostgreSQL/Supabase database, the explicit
-[bootstrap command](../scripts/README.md) applies pending migrations 001–017 and
+[bootstrap command](../scripts/README.md) applies pending migrations 001–018 and
 seeds the exact tracked 7-domain/109-question ECCD baseline plus an
 environment-configured Chairman in one transaction:
 
@@ -11,6 +11,38 @@ uv run --no-project --python 3.12 python -m backend.scripts.seed_supabase --appl
 
 Repeated runs preserve existing accounts and matching reference data. Existing
 school/account exports are not embedded in the seed fixture.
+
+## Retired branding settings (018)
+
+The matching application removes `secondary_color`, `profile_pic_url` and
+`login_background` from the settings model, API, form and new encrypted backups.
+Login/registration use the bundled `background_pic.webp`; portal logo and primary
+color remain supported. `/api/settings/upload-background` is retired (404).
+Older backup imports discard only these three retired keys and continue to
+reject unknown settings fields. Existing form drafts remain available for manual
+submission; current fields are sent without the retired values.
+
+Deploy the matching backend and frontend before dropping columns. The new
+backend accepts the old columns while 018 is pending, and startup never applies
+this migration. Older backend releases still depend on these SQL columns and
+must not run after the upgrade. Take a protected database backup, stop API
+writers, then explicitly run against the intended database:
+
+```powershell
+uv run --no-project --python .venv312 python -m backend.migrations.settings_cleanup --check
+uv run --no-project --python .venv312 python -m backend.migrations.settings_cleanup --apply
+uv run --no-project --python .venv312 python -m backend.migrations.settings_cleanup --check
+```
+
+The first check reports pending removal on an old schema and makes no changes.
+The apply locks the ledger/settings table, drops only the three named columns
+without CASCADE, verifies all remaining settings values, and records
+`018_retired_branding_settings` in the same transaction. Lock waits time out after
+five seconds. Dependent objects or validation failures roll back the entire
+upgrade. Repeat applies validate without further changes. Fresh bootstrap
+includes 018. Recovery of the removed branding values requires the retained
+pre-upgrade database backup; application backup imports intentionally discard
+these retired fields. Preparing this migration does not apply it to Supabase.
 
 ## Automatic question ordering (017)
 
@@ -360,7 +392,7 @@ everything back. Repeated applies validate the schema and return without writes.
 `--check` validates without applying upgrades. Rollback requires the retained
 backup and matching older application release; dropped usernames are not rebuilt.
 
-Fresh bootstrap runs migrations 001–017 before seeding. Historical Phase 1 keeps
+Fresh bootstrap runs migrations 001–018 before seeding. Historical Phase 1 keeps
 username and excludes the new expression index and Chairman name. Phase 2 uses
 the migration ledger to distinguish its historical and post-013 column contracts,
 and fingerprints actual intermediate columns rather than the evolving ORM.

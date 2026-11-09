@@ -2,20 +2,17 @@ from datetime import datetime
 from uuid import UUID
 from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
-from .common import ApiModel, MessageResult, OpeningMonth, PositiveId, SchoolYear
+from .common import ApiModel, OpeningMonth, PositiveId, SchoolYear
 from typing import Optional
 
 
 class SettingsResponse(BaseModel):
     system_title: str
     primary_color: str
-    secondary_color: str
     logo_url: Optional[str] = None
-    profile_pic_url: Optional[str] = None
     current_school_year: str
     previous_school_year: Optional[str] = None
     last_rollover_timestamp: Optional[str] = None
-    login_background: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -36,17 +33,12 @@ class SettingsUpdateResult(ApiModel):
     settings: SchoolSettingsResponse
 
 
-class BackgroundResult(MessageResult):
-    url: str
-
-
 class SchoolSettingsUpdate(ApiModel):
     school_name: str | None = Field(default=None, min_length=1, max_length=255)
     principal_name: str | None = Field(default=None, max_length=255)
     chairman_name: str | None = Field(default=None, max_length=255)
     system_title: str | None = Field(default=None, min_length=1, max_length=255)
     primary_color: str | None = Field(default=None, pattern=r"^#[0-9a-fA-F]{6}$")
-    secondary_color: str | None = Field(default=None, pattern=r"^#[0-9a-fA-F]{6}$")
     school_year_start_month: OpeningMonth | None = None
 
 

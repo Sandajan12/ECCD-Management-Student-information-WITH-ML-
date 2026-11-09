@@ -3,6 +3,7 @@ import type { Page } from "@playwright/test";
 import type { Draft } from "../src/utils/drafts";
 import type { Assessment, Domain, SessionUser } from "../src/types";
 import type { Answer } from "../src/types";
+import type { SystemSettings } from "../src/context/SettingsContext";
 
 const modulePath = "/src/utils/drafts.ts";
 const teacherKey = "eccd_draft_1_PRE_1_2";
@@ -18,6 +19,118 @@ const teacher: SessionUser = {
   section_name: "Test A",
   allow_eccd_question_management: false,
 };
+
+test("retired branding uses the bundled login background", async ({ page }) => {
+  await page.route("**/api/**", async (route) => {
+    await route.fulfill({
+      json: {
+        system_title: "Test school",
+        primary_color: "#2563eb",
+        login_background: "https://retired.invalid/background.png",
+      },
+    });
+  });
+  await page.goto("/login");
+  await expect(page.locator("main > [aria-hidden=true]").first()).toHaveCSS(
+    "background-image",
+    /background_pic/,
+  );
+});
+
+test("retired branding preserves old settings drafts and submits only current fields", async ({
+  page,
+}) => {
+  const key = "ames_draft_1_school_settings";
+  const settings: SystemSettings = {
+    system_title: "Test school",
+    school_name: "Server school",
+    principal_name: "Principal",
+    chairman_name: "Chairman",
+    primary_color: "#2563eb",
+    logo_url: "",
+    current_school_year: "2026-2027",
+    school_year_start_month: 8,
+    previous_school_year: null,
+    last_rollover_timestamp: null,
+    canRevertSchoolYear: false,
+    daysRemaining: 0,
+  };
+  await page.addInitScript(
+    ({ account, draftKey, initial }) => {
+      localStorage.setItem("user", JSON.stringify(account));
+      const claims = btoa(JSON.stringify({ exp: Date.now() / 1000 + 3600 }));
+      localStorage.setItem("token", `test.${claims}.test`);
+      if (!localStorage.getItem(draftKey))
+        localStorage.setItem(
+          draftKey,
+          JSON.stringify({
+            owner_id: 1,
+            revision: "legacy-branding-revision",
+            is_pending_sync: false,
+            values: {
+              ...initial,
+              school_name: "Unsaved school",
+              existing_logo_url: "",
+              secondary_color: "#abcdef",
+              existing_profile_pic_url: "old-profile",
+            },
+          }),
+        );
+    },
+    {
+      account: { ...teacher, id: 1, role: "super-admin" },
+      draftKey: key,
+      initial: settings,
+    },
+  );
+  const submissions: string[] = [];
+  await page.route("**/api/**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path === "/api/settings/update") {
+      submissions.push(route.request().postData() || "");
+      await route.fulfill({ json: { message: "Saved", settings } });
+    } else if (path === "/api/settings")
+      await route.fulfill({ json: settings });
+    else await route.fulfill({ json: {} });
+  });
+  await page.goto("/super-admin/settings");
+  const school = page.getByRole("textbox", { name: "School Name:" });
+  await expect(school).toHaveValue("Unsaved school");
+  await school.fill("Updated offline school");
+  await page.evaluate(() =>
+    Object.defineProperty(navigator, "onLine", {
+      configurable: true,
+      value: false,
+    }),
+  );
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(
+    page
+      .getByText(
+        "Your draft is saved on this device. Reconnect and submit again.",
+      )
+      .first(),
+  ).toBeVisible();
+  expect(submissions).toHaveLength(0);
+  await page.reload();
+  await expect(school).toHaveValue("Updated offline school");
+  expect(submissions).toHaveLength(0);
+  expect(
+    await page.evaluate((draftKey) => localStorage.getItem(draftKey), key),
+  ).not.toBeNull();
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(
+    page.getByText("School settings saved.", { exact: true }),
+  ).toBeVisible();
+  expect(submissions).toHaveLength(1);
+  expect(submissions[0]).toContain("Updated offline school");
+  expect(submissions[0]).not.toMatch(
+    /secondary_color|profile_pic|profilePic|login_background/,
+  );
+  expect(
+    await page.evaluate((draftKey) => localStorage.getItem(draftKey), key),
+  ).toBeNull();
+});
 
 test("teacher confirmations, reverted edits and corrections send intent and display Philippine dates", async ({
   page,

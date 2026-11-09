@@ -34,12 +34,15 @@ On this Windows checkout, use `--python .venv312` to select the installed Python
 `--schema bootstrap_test_...` is available for isolated verification. The command
 does not create databases or change the application's connection settings.
 
-All pending migrations run in order, **001–017**. The current API also requires
+All pending migrations run in order, **001–018**. The current API also requires
 the optional-LRN schema (015). Migration 016 adds the nullable teacher save
 timestamp without backfilling historical records; startup can apply that one
 additive upgrade transactionally. Migration 017 explicitly enforces per-domain
 question sequence uniqueness and reports existing duplicates for manual correction;
-startup checks it without applying it. Applied migrations are skipped, then the final
+startup checks it without applying it. Migration 018 removes the retired secondary
+color/profile picture/login background columns; deploy the matching application
+before applying it to an existing database. Startup never applies 018. Applied
+migrations are skipped, then the final
 schema is checked; historical Phase 1 checks cannot validate a Phase 2 schema.
 The runner uses the existing migration functions and their preservation checks.
 It accepts fresh databases and compatible versioned AMES schemas; unknown ledger

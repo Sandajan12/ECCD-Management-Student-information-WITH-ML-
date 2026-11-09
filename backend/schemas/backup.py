@@ -207,13 +207,19 @@ class SettingsBackupRow(BackupRow):
     chairman_name: str | None = Field(default=None, max_length=255)
     school_year_start_month: int = Field(ge=1, le=12)
     primary_color: str | None = Field(max_length=10)
-    secondary_color: str | None = Field(max_length=10)
     logo_url: str | None
-    profile_pic_url: str | None
     current_school_year: str | None = Field(max_length=20)
     previous_school_year: str | None = Field(max_length=20)
     last_rollover_timestamp: str | None = Field(max_length=100)
-    login_background: str | None
+
+    @model_validator(mode="before")
+    @classmethod
+    def discard_retired_branding(cls, value: object) -> object:
+        # Older encrypted backups remain usable without restoring retired columns.
+        if isinstance(value, dict):
+            return {key: item for key, item in value.items()
+                    if key not in ("secondary_color", "profile_pic_url", "login_background")}
+        return value
 
 
 class VerificationBackupRow(BackupRow):

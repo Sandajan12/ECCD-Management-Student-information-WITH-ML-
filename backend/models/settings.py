@@ -13,13 +13,10 @@ class SystemSettings(Base):
     chairman_name = Column(String(255), nullable=True)
     school_year_start_month = Column(Integer, default=8, server_default="8", nullable=False)
     primary_color = Column(String(10), default="#2D6A4F")
-    secondary_color = Column(String(10), default="#FFFFFF")
     logo_url = Column(Text, nullable=True)
-    profile_pic_url = Column(Text, nullable=True)
     current_school_year = Column(String(20), default="2026-2027")
     previous_school_year = Column(String(20), nullable=True)
     last_rollover_timestamp = Column(String(100), nullable=True)
-    login_background = Column(Text, nullable=True)
     __table_args__ = (
         CheckConstraint("school_year_start_month BETWEEN 1 AND 12", name="ck_school_year_start_month"),
     )

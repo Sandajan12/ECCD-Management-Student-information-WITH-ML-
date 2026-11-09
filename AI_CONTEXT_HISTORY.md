@@ -21,6 +21,61 @@ For research history, consult the former section 11's hybrid retraining and
 promotion notes and section 12's implementation/V2 archive below. The standalone
 RF evaluation has its current reference in `backend/ml/README.md`.
 
+## 2026-11-09: Retired branding settings cleanup
+
+Removed `secondary_color`, `profile_pic_url` and `login_background` from the
+active ORM, settings responses/updates, Chairman form and frontend context.
+The login/registration backdrop now uses the existing bundled image; the
+background-upload endpoint is removed. Portal logo uploads and primary-color
+customization remain supported. Existing school-settings drafts retain their
+values through offline saves/reloads; manual submissions use only current
+fields and confirmation still clears only the matching revision.
+
+Prepared explicit `018_retired_branding_settings` in
+`backend/migrations/settings_cleanup.py` and registered it in fresh bootstrap.
+The new backend tolerates the three old columns until the ledger records 018,
+so the matching backend/frontend can be deployed before dropping columns.
+Historical Phase 1 retains the old shape for upgrade compatibility. Migration
+018 locks the ledger/settings table, drops only the named columns without
+CASCADE, verifies all remaining settings values and commits its ledger entry
+transactionally. Dependency conflicts and caller rollback preserve the old
+columns/data. Repeat applies validate without additional writes. Older
+encrypted backups discard exactly the three retired settings keys; other
+unknown settings keys remain invalid.
+
+Updated current guidance and the four ERD artifacts. The intended full schema
+has 17 tables/135 columns/18 foreign keys after 018; the defense diagrams omit
+only the migration ledger and contain 16 tables/133 columns/18 foreign keys.
+The existing `.gitignore` change was preserved; `docs/` remains ignored.
+
+Executed verification:
+
+- Focused `backend/tests/test_settings_cleanup.py`: **6 passed**, covering
+  pending/applied schemas, settings/logo behavior, migration repeatability,
+  preservation of other tables, dependent-object refusal, transaction rollback,
+  old encrypted backup imports and strict rejection of unknown settings keys.
+- Full `uv run --no-project --python .venv312 python -m pytest backend/tests -q`:
+  **534 passed, 666 subtests passed** in 1312.51 seconds. Ten warnings concern
+  Starlette deprecations and imported `TestingPeriod` enum collection; no test
+  failures occurred.
+- Playwright `playwright.parent-sync.config.ts`, `offline-scope.spec.ts`,
+  `--grep 'retired branding'`: **4 passed** across desktop and mobile, covering
+  the bundled background and old draft preservation/manual submission.
+- Both explicit TypeScript project checks, scoped ESLint (the four changed
+  source files and browser spec), and `pnpm.cmd --dir frontend run build`: passed.
+- Offline PostgreSQL DDL compilation and model-to-ERD table/column/FK checks:
+  passed. Current Python AST imports and TypeScript AST mapping (82 files,
+  50 inbound imports to affected shared modules) were inspected; no retired
+  frontend property accesses remain. `git diff --check`: passed.
+
+No production migration, deployment, dataset regeneration, model retraining,
+artifact replacement or dependency installation was performed. Tests used
+disposable PostgreSQL schemas and mocked browser APIs. No ERD renderer/import
+was run. Apply 018 only after deploying the matching code, retaining a protected
+database backup and stopping API writers; the check/apply/check procedure is in
+`backend/migrations/README.md`. An older backend cannot run after the drop;
+recovering retired branding values requires the pre-upgrade database backup.
+
 ---
 
 # AMES System: Current Codebase Context

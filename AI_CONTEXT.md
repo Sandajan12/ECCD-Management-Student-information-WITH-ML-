@@ -63,7 +63,7 @@ keys with protected backups; do not regenerate them during routine setup.
 | Workspace | Root `pnpm-workspace.yaml` includes frontend and retains separate lockfiles; frontend has matching pnpm 12 YAML overrides and its own package-manager pin for isolated installs; automatic dependency verification before scripts is disabled |
 | Spreadsheets | openpyxl handles active workbook import/export; pandas is installed |
 | ML | V1 sigmoid-calibrated standalone Random Forest, joblib artifact, 18 PRE/demographic inputs (five household fields excluded), three supported POST outcomes; shared teacher/parent inference |
-| Migrations | Python migrations 001–017; only the nullable teacher timestamp (016) is applied automatically at startup. Other required upgrades are explicit; no active Alembic setup, pyproject.toml, or uv.lock |
+| Migrations | Python migrations 001–018; only the nullable teacher timestamp (016) is applied automatically at startup. Other upgrades are explicit; 018 retires three branding columns after the matching app is deployed. No active Alembic setup, pyproject.toml, or uv.lock |
 
 Exact dependency versions belong to manifests/lockfiles. Do not assume another
 environment named `.venv` uses Python 3.12. Root and frontend workspace YAML
@@ -187,7 +187,7 @@ do not treat stale graph edges as an exact current caller inventory.
 | student_eccd_evaluations / `models/eccd.py` | Evaluation/student/question IDs, nullable teacher_id/parent_id, evaluator_role=teacher/parent, PRE/MID/POST, KAYA/DI-KAYA, compatibility evaluation_date, official teacher_evaluation_date, timezone-aware parent_submitted_at and nullable teacher_marked_at; unique (student_id, question_id, testing_period) |
 | messages / `models/message.py` | Teacher/parent FKs, sender role, subject/body, read/archive flags, creation time |
 | system_logs / `models/log.py` | User-linked actions, TEXT details including rollover snapshots/chunks, timestamp |
-| system_settings / `models/settings.py` | Singleton ID 1; branding/images, school/principal/chairman names, opening month 1-12, current/previous year, rollover timestamp |
+| system_settings / `models/settings.py` | Singleton ID 1; title, primary color and logo, school/principal/chairman names, opening month 1-12, current/previous year, rollover timestamp; secondary_color/profile_pic_url/login_background retired by explicit 018 |
 | email_verifications / `models/email_verification.py` | Account/email/purpose-bound hashed challenge/OTP, expiry, attempts; login/registration/password-change/email-change purposes |
 | user_trusted_devices / `models/trusted_device.py` | Account FK, hashed token, user agent, UTC expiry/creation |
 
@@ -228,6 +228,7 @@ preserve those routes and their protection.
 | 015 | optional_student_lrn | Allow null protected LRNs while preserving assigned-LRN uniqueness and existing student data |
 | 016 | teacher_marked_at | Nullable teacher save timestamp; additive startup/bootstrap migration with no historical backfill |
 | 017 | eccd_question_sequence | Unique idx_questions_domain_sequence on (domain_id, sequence_order); explicit upgrade preserving question rows |
+| 018 | settings_cleanup | Explicitly drop secondary_color/profile_pic_url/login_background, preserving every remaining settings field; deploy matching application before upgrading |
 
 `backend/main.py::initialize_runtime` checks evaluator provenance first, then
 transactionally applies **only 016** with migration-ledger serialization. The
@@ -235,6 +236,15 @@ timestamp is nullable, without a default or historical backfill. Other missing
 or incompatible required schema stops startup; upgrades remain explicit.
 Migration 011 is an explicit ownership cleanup rather than a startup repair;
 014 is explicit and optional for startup. 017 is checked and never auto-applied.
+
+Migration 018 is explicit and never auto-applied. The new backend accepts the
+three retired settings columns while its ledger entry is absent, so deploy the
+matching backend/frontend before taking a protected database backup and stopping
+writers for the check/apply/check workflow in `backend/migrations/README.md`.
+After 018 is recorded, startup rejects reintroduced retired columns. The old
+backend cannot run after the drop; recovering the removed branding values
+requires a pre-upgrade database backup. Do not infer that Supabase has been
+upgraded merely because the migration file exists.
 
 Before upgrading 017, stop API writers and inspect the configured database.
 When performing an authorized upgrade, use:
@@ -260,7 +270,7 @@ are configured, the explicit bootstrap is:
 uv run --no-project --python .venv312 python -m backend.scripts.seed_supabase --apply
 ```
 
-It applies pending **001–017** in order, seeds matching reference data and
+It applies pending **001–018** in order, seeds matching reference data and
 provisions the environment-configured Chairman in one transaction. Repeated
 runs preserve accounts/reference rows; conflicting reference data aborts.
 Existing databases need missing feature upgrades in order; use the migration
@@ -298,7 +308,7 @@ the complete method/path/query inventory.
 | Summary exports | /api/chairman/export-eccd, /sections/{section_id}/export-summary; /api/eccd/section/{section_id}/export, /export-all | `routes/chairman.py`, `eccd.py` |
 | Year-scoped ECCD exports | GET /api/eccd/export/cards-zip, /card-single, /section-summary; required school_year plus section_id or student_id | `routes/eccd.py`, `schemas/eccd.py`, `utils/excel.py` |
 | Messaging | /api/messages/contacts, /history, /send, POST /, /notify-student, /unread-count, /unread, /read, /mark-read; /link-lrn linking alias | `routes/messages.py`, `students.py` |
-| Settings/year | /api/settings, /update, /upload-background, /rollover, /undo-rollover, /revert-school-year; /api/chairman/rollover-year, /undo-rollover | `routes/settings.py` |
+| Settings/year | /api/settings, /update, /rollover, /undo-rollover, /revert-school-year; /api/chairman/rollover-year, /undo-rollover | `routes/settings.py` |
 | Chairman account | /api/chairman/verify-password, /account | `routes/chairman.py` |
 | Backup | /api/backup/export, /restore; /api/chairman/backup/export, /restore | `routes/backup.py` |
 | Teacher ML | GET /api/ml/students?section_id=N; POST /api/ml/predict/student/{student_id}, /api/ml/predict/sandbox | `routes/ml.py` |
@@ -542,10 +552,12 @@ already shared independently. Preserve cooldowns/Retry-After and live credential
 relationship checks. See `utils/messaging.py`, `realtime.py` and frontend
 `MessagingContext.tsx`.
 
-Settings contain branding, school/principal/chairman names, current year and
-opening month (default August). Public settings GET can create singleton defaults,
-so is not guaranteed read-only. Images are base64 data URLs in settings.
-New enrollment uses the configured school year.
+Settings contain the title, primary color, portal logo, school/principal/chairman
+names, current year and opening month (default August). Public settings GET can
+create singleton defaults, so is not guaranteed read-only. Logos are base64 data
+URLs. Secondary color and profile-picture settings are retired; login and
+registration always use the bundled `background_pic.webp`. The former background
+upload endpoint is removed. New enrollment uses the configured school year.
 
 Rollover archives exactly its active batch and records snapshots transactionally.
 Undo has a **30-day window**, restores only that batch's IDs and original month
@@ -558,6 +570,13 @@ credentials**, clears OTP/device records, restarts school-data sequences and
 commits atomically. Invalid keys/relationships abort. Never generate replacement
 keys to bypass failure or accept historical SQL/CBC formats as current restores.
 Backup routes remain Chairman-only.
+
+New encrypted backups omit the three retired branding settings. Older backups
+remain importable: `SettingsBackupRow` discards exactly `secondary_color`,
+`profile_pic_url` and `login_background` before strict validation, while unknown
+settings keys are still rejected. Current school-settings submissions use an
+explicit field list so old durable drafts cannot resend retired values; drafts
+are otherwise retained until revision-matched server confirmation.
 
 ## 10. Offline durability and development rules
 
