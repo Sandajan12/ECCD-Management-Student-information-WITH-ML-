@@ -108,6 +108,6 @@ class Settings(BaseSettings):
             raise ValueError("LRN_HMAC_SECRET must contain at least 32 characters")
         return value
 
-    model_config = SettingsConfigDict(env_file=ENV_FILE_PATH, extra="ignore", populate_by_name=True)
+    model_config = SettingsConfigDict(env_file=ENV_FILE_PATH, extra="ignore", populate_by_name=True, hide_input_in_errors=True)
 
 settings = Settings()

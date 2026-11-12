@@ -39,6 +39,14 @@ def config(**changes):
 
 
 class DeploymentSecurityTests(unittest.TestCase):
+    def test_invalid_production_settings_do_not_echo_secret_inputs(self):
+        secret = "SyntheticPrivateDatabasePassword012345"
+        with self.assertRaises(ValidationError) as caught:
+            config(DATABASE_URL=f"postgresql://probe:{secret}@localhost/test?sslmode=require")
+        self.assertIn("Production database requires", str(caught.exception))
+        self.assertNotIn(secret, str(caught.exception))
+        self.assertNotIn("SyntheticTestSecret", str(caught.exception))
+
     def test_production_requires_otp_and_approved_algorithm(self):
         self.assertTrue(config().otp_enabled)
         for changes in ({"ENABLE_OTP": False}, {"ALGORITHM": "HS384"}, {"ALGORITHM": "none"}, {"ACCESS_TOKEN_EXPIRE_MINUTES": 0}):

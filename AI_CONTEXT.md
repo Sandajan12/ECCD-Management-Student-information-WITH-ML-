@@ -119,6 +119,8 @@ it. Preserve existing configuration and copy templates only when files are absen
 Never print or regenerate existing secrets. Preserve LRN encryption/HMAC keys
 and the Fernet backup key. Local OTP bypass is a development option, not a
 production default or proof of email delivery.
+Settings validation hides input values in exception text to keep startup
+tracebacks from echoing database credentials or other configured secrets.
 
 Startup checks required schema and transactionally applies **only migration 016**;
 017 is checked but explicitly applied (section 4). It seeds the tracked

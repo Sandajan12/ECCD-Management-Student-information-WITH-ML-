@@ -3618,3 +3618,24 @@ occasional Windows test-server connection-reset diagnostics during tab closure.
 A new real production login/OTP and authenticated ML prediction are not claimed
 by these local checks. Live production acceptance is recorded in the local
 release report after deploy.
+
+
+### 2026-11-13 — Live production-mode check and safe startup errors
+
+After 5ede302 deployed, the real browser check on www.ameskinder.com passed:
+secure context, no JavaScript/CORS/failed-request errors, no stored auth keys,
+and structured401 INVALID_TOKEN from credentialed refresh without a cookie.
+The API still accepted a missing Origin and lacked HSTS, indicating development
+mode. Set both Render ENV aliases to production on the approved service.
+The resulting deployment correctly failed closed on the pre-existing database
+TLS configuration: verify-full and a trusted sslrootcert are required. The last
+healthy deployment remains serving. The connector cannot read the private
+Render database URL, so the user was asked to preserve its credentials while
+updating only TLS options in the Dashboard; no connection URL was requested in
+chat and no certificate verification was disabled.
+
+Added Settings hide_input_in_errors=True after observing validation input values
+in startup tracebacks (tool output redacted them). New synthetic-secret coverage
+and all deployment-settings tests passed:8 tests,21 subtests in8.55s. No auth
+behavior or dependencies changed. Production readiness is pending the TLS fix
+and final smoke/log verification, not established by this note.
