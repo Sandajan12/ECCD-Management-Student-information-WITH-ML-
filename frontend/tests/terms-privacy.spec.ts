@@ -74,7 +74,7 @@ for (const registration of [false, true]) {
   }, info) => {
     const requests: string[] = [];
     page.on("request", (request) => {
-      if (request.method() === "POST" && request.url().includes("/api/auth/"))
+      if (request.method() === "POST" && request.url().includes("/api/auth/") && !request.url().endsWith("/api/auth/refresh"))
         requests.push(request.url());
     });
     await page.goto(registration ? "/register-parent" : "/login");

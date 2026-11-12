@@ -23,6 +23,7 @@ from backend.migrations.phase1 import apply_phase1, select_schema
 from backend.migrations.phase2 import apply_phase2, check_phase2
 from backend.migrations.adviser_takeover import apply_adviser_takeover
 from backend.migrations.email_only_identity import apply_email_only_identity
+from backend.migrations.refresh_cookie_sessions import apply_refresh_cookie_sessions
 from backend.models import Base, EccdQuestion, EmailVerification, FamilyAccess, Message, Parent, Section, SectionTeacher, Student, StudentEccdEvaluation, SystemLog, SystemSettings, Teacher, User, UserTrustedDevice
 from backend.models.eccd import EccdAnswer, TestingPeriod
 from backend.models.user import UserRole
@@ -50,6 +51,7 @@ class BackendTests(unittest.TestCase):
             apply_phase2(connection, self.schema)
             apply_adviser_takeover(connection, self.schema)
             apply_email_only_identity(connection, self.schema)
+            apply_refresh_cookie_sessions(connection, self.schema)
         self.test_engine = create_engine(engine.url, connect_args={'options': f'-csearch_path={self.schema},public'})
         self.sessions = sessionmaker(bind=self.test_engine, autoflush=False)
         with self.sessions() as db:
@@ -93,7 +95,7 @@ class BackendTests(unittest.TestCase):
         limits.reset()
         self.rate_setting = patch.object(limits, 'bypass', True)
         self.rate_setting.start()
-        self.client = TestClient(app)
+        self.client = TestClient(app, base_url="http://localhost", headers={"Origin": "http://localhost:5173"})
 
     def tearDown(self):
         self.client.close()

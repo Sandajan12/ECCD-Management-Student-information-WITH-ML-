@@ -103,16 +103,37 @@ remembered devices. Ordinary logout retains device trust; explicit forget-device
 removes it. As before, a copied access JWT survives ordinary logout until expiry
 or credential revocation. No new per-session logout blacklist is introduced.
 
-For sliding sessions, verify the actual Render environment uses
-`ACCESS_TOKEN_EXPIRE_MINUTES=30` and `REFRESH_TOKEN_EXPIRE_MINUTES=1440`; the
-refresh value must exceed the access value. Deploy the matching backend before
-promoting the frontend. Fresh login supplies both tokens; older access-only
-sessions finish their original lifetime. Check JSON-body `/api/auth/refresh`,
-CORS exposure of `Date`/`Retry-After`, renewal after access expiry, temporary
-outage recovery, and account revocation on the actual HTTPS origins. Copied
-refresh JWTs also survive ordinary logout until expiry or account revocation;
-successful renewal slides their expiry forward, without an absolute login-age
-cap or a consumed-token ledger. No new database migration is required.
+Authentication uses the production custom site https://ameskinder.com / www.ameskinder.com
+and backend https://api.ameskinder.com. Set both Vercel VITE_API_URL and
+VITE_SOCKET_URL to https://api.ameskinder.com (without /api), then rebuild. Render
+CORS_ORIGINS must contain https://ameskinder.com, https://www.ameskinder.com,
+https://ames-ml.vercel.app and http://localhost:5173. CORS credentials are enabled
+with explicit methods/headers. vercel.app production visitors redirect to the
+custom site because SameSite=Strict cookies cannot authenticate across sites.
+
+Before deploying cookie authentication, run the explicit additive migration:
+
+```powershell
+uv run --no-project --python .venv312 python -m backend.migrations.refresh_cookie_sessions --apply
+uv run --no-project --python .venv312 python -m backend.migrations.refresh_cookie_sessions --check
+```
+
+It creates only private auth_refresh_sessions with RLS, a cascading users FK,
+current/previous JTIs, expiry and a 10-second rotation grace. It does not rewrite
+school records. Startup checks 019 and never applies it. Fresh bootstrap includes
+001–019. Keep ACCESS_TOKEN_EXPIRE_MINUTES=30 and REFRESH_TOKEN_EXPIRE_MINUTES=1440.
+The access token/user stay only in RAM; refresh JWTs never appear in JSON or web
+storage. Login/OTP/credential replacement set host-only ames_refresh_token with
+HttpOnly; Secure; SameSite=Strict; Path=/api/auth; Max-Age=86400. Only HTTP loopback
+development disables Secure. Refresh and logout require an approved Origin or
+Referer; production rejects a missing origin. Logout revokes the cookie family
+and clears its cookie; credential changes revoke all account families.
+
+Deploy matching backend/frontend together after019; old localStorage sessions
+must sign in once. Check F5 restoration, concurrent tabs, proactive refresh,
+Socket.IO, outage cooldown, logout/revocation and draft preservation. Refresh
+families never enter backups and are cleared during restore. A copied access
+JWT remains valid until its short expiry or credential revocation.
 
 The browser requires consent on login, registration and OTP verification, and
 sends `terms_accepted=true`. Explicit false/null or malformed consent is rejected

@@ -1,7 +1,7 @@
 # Feature migrations: Phase 2 is the current backend schema
 
 For a fresh PostgreSQL/Supabase database, the explicit
-[bootstrap command](../scripts/README.md) applies pending migrations 001–018 and
+[bootstrap command](../scripts/README.md) applies pending migrations 001–019 and
 seeds the exact tracked 7-domain/109-question ECCD baseline plus an
 environment-configured Chairman in one transaction:
 
@@ -392,7 +392,7 @@ everything back. Repeated applies validate the schema and return without writes.
 `--check` validates without applying upgrades. Rollback requires the retained
 backup and matching older application release; dropped usernames are not rebuilt.
 
-Fresh bootstrap runs migrations 001–018 before seeding. Historical Phase 1 keeps
+Fresh bootstrap runs migrations 001–019 before seeding. Historical Phase 1 keeps
 username and excludes the new expression index and Chairman name. Phase 2 uses
 the migration ledger to distinguish its historical and post-013 column contracts,
 and fingerprints actual intermediate columns rather than the evolving ORM.
@@ -421,3 +421,16 @@ Fresh `seed_supabase --apply` includes 014 and validates these indexes on repeat
 Startup does not require this optional performance migration or silently apply it.
 For a large live database, schedule a separately reviewed concurrent index rollout
 instead of running this transactional bootstrap while serving traffic.
+
+
+## 019: HttpOnly refresh cookie sessions
+
+Run `uv run --no-project --python .venv312 python -m backend.migrations.refresh_cookie_sessions --apply`
+then `--check` before deploying cookie authentication. This additive transaction
+creates only auth_refresh_sessions and its user/expiry index, enables RLS,
+revokes PUBLIC/anon/authenticated access and records 019 in the existing ledger.
+No school rows or existing account columns change. Lock timeout is five seconds;
+a conflict rolls back. Startup checks 019 without applying it. Fresh bootstrap
+includes 001–019. Preserve this additive table when rolling back application code;
+never restore refresh-family records from a backup. Old browser-storage sessions
+require a fresh login. Use custom same-site HTTPS origins for Strict cookies.

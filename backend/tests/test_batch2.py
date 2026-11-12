@@ -63,7 +63,8 @@ class Batch2GuardTests(unittest.TestCase):
 
     def test_origins_are_exact_shared_config_and_keep_local_defaults(self):
         value = configuration(FRONTEND_URL=" https://ames.vercel.app/, https://preview.vercel.app ", ALLOWED_ORIGINS="https://school.example, https://ames.vercel.app")
-        self.assertEqual(value.allowed_origins, ["http://localhost:5173", "http://127.0.0.1:5173", "https://ames.vercel.app", "https://preview.vercel.app", "https://school.example"])
+        self.assertEqual(value.allowed_origins, ["http://localhost:5173", "http://127.0.0.1:5173", "https://ameskinder.com",
+            "https://www.ameskinder.com", "https://ames-ml.vercel.app", "https://ames.vercel.app", "https://preview.vercel.app", "https://school.example"])
         for origin in ("*", "https://*.vercel.app", "https://site.example/path", "https://user:pass@site.example", "javascript:alert(1)", "https://site.example; unsafe", "http://localhost:99999"):
             with self.subTest(origin=origin), self.assertRaises(ValidationError):
                 configuration(FRONTEND_URL=origin)

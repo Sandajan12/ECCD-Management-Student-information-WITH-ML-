@@ -6,7 +6,7 @@ import argparse
 import asyncio
 
 from fastapi import HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 import uvicorn
 
 from backend.tests.serve_phase3 import fixture, main
@@ -42,6 +42,7 @@ auth.send_otp_email = teachers.send_otp_email = captured_email
 class ModeRequest(BaseModel):
     enabled: bool = True
     expire_devices: bool = False
+    access_minutes: int = Field(default=30, ge=1, le=30)
 
 
 class ModeResponse(BaseModel):
@@ -61,6 +62,7 @@ def loopback(request: Request) -> None:
 def mode(payload: ModeRequest, request: Request):
     loopback(request)
     settings.ENABLE_OTP = payload.enabled
+    settings.ACCESS_TOKEN_EXPIRE_MINUTES = payload.access_minutes
     codes.clear()
     if payload.expire_devices:
         with fixture.sessions() as db:

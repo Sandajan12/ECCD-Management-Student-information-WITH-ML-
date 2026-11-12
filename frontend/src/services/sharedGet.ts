@@ -1,4 +1,4 @@
-import API from "./api";
+import API, { getAccessToken } from "./api";
 
 export type SharedGetParams = Record<string, string | number | undefined>;
 
@@ -13,7 +13,7 @@ export function sharedGet<T>(
   params?: SharedGetParams,
 ): Promise<T> {
   const key = JSON.stringify([
-    localStorage.getItem("token"),
+    getAccessToken(),
     path,
     Object.entries(params || {}).sort(([a], [b]) => a.localeCompare(b)),
   ]);

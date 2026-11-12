@@ -1,7 +1,7 @@
 import axios from "axios";
 import type { AxiosRequestConfig, InternalAxiosRequestConfig } from "axios";
-import type { SessionResponse } from "../types";
-const apiBaseUrl = import.meta.env.VITE_API_URL || "http://localhost:8000";
+import type { SessionResponse, SessionUser } from "../types";
+const apiBaseUrl = import.meta.env.VITE_API_URL || "https://api.ameskinder.com";
 const API = axios.create({
   baseURL: apiBaseUrl,
   withCredentials: true,
@@ -24,22 +24,56 @@ let authGeneration = 0;
 let refreshInFlight: Promise<void> | null = null;
 let lastRenewalAt = -Infinity;
 let refreshRetry: {
-  token: string;
+  generation: number;
   at: number;
   delay: number;
   error: unknown;
 } | null = null;
 
+let accessToken: string | null = null;
+let sessionUser: SessionUser | null = null;
+export const getAccessToken = (): string | null => accessToken;
+export const getSessionUser = (): SessionUser | null => sessionUser;
+const channel =
+  typeof BroadcastChannel !== "undefined"
+    ? new BroadcastChannel("ames-auth")
+    : null;
+type AuthMessage =
+  | { type: "session"; session: SessionResponse; renewal: boolean }
+  | { type: "logout" };
 function sessionOwner(): string | null {
-  try {
-    const user = JSON.parse(localStorage.getItem("user") || "null") as {
-      id: number;
-      role: string;
-    } | null;
-    return user ? `${user.id}:${user.role}` : null;
-  } catch {
-    return null;
+  return sessionUser ? `${sessionUser.id}:${sessionUser.role}` : null;
+}
+function purgeLegacyCredentials(): void {
+  for (const storage of [localStorage, sessionStorage])
+    for (const key of ["token", "refresh_token", "user", "role"])
+      storage.removeItem(key);
+}
+purgeLegacyCredentials();
+channel?.addEventListener("message", (event: MessageEvent<AuthMessage>) => {
+  if (event.data.type === "logout") clearSession(false);
+  else if (event.data.type === "session") {
+    if (
+      event.data.renewal &&
+      (!accessToken || localStorage.getItem("ames_logout_pending"))
+    )
+      return;
+    saveSession(
+      event.data.session,
+      event.data.renewal &&
+        sessionOwner() ===
+          `${event.data.session.user.id}:${event.data.session.user.role}`,
+      false,
+    );
   }
+});
+export function updateSessionUser(user: SessionUser): void {
+  if (!accessToken || sessionUser?.id !== user.id) return;
+  sessionUser = user;
+  window.dispatchEvent(new Event("ames-session-updated"));
+}
+export function refreshIsDeferred(): boolean {
+  return refreshRetry !== null || !navigator.onLine;
 }
 
 export function accessTokenRemaining(token: string): number {
@@ -54,30 +88,42 @@ export function accessTokenRemaining(token: string): number {
     return Number.NaN;
   }
 }
-export function saveSession(data: SessionResponse, renewal = false): void {
+export function saveSession(
+  data: SessionResponse,
+  renewal = false,
+  broadcast = true,
+): void {
   refreshRetry = null;
   if (!renewal) {
     authGeneration += 1;
     refreshInFlight = null;
   }
-  localStorage.setItem("token", data.access_token || data.token);
-  if (data.refresh_token)
-    localStorage.setItem("refresh_token", data.refresh_token);
-  else localStorage.removeItem("refresh_token");
-  localStorage.setItem("user", JSON.stringify(data.user));
+  accessToken = data.access_token || data.token;
+  sessionUser = data.user;
+  localStorage.removeItem("ames_logout_pending");
+  purgeLegacyCredentials();
   if (data.deviceToken)
     localStorage.setItem("ames_device_token", data.deviceToken);
   window.dispatchEvent(new Event("ames-session-updated"));
+  if (broadcast)
+    channel?.postMessage({
+      type: "session",
+      session: data,
+      renewal,
+    } satisfies AuthMessage);
 }
-export function clearSession(): void {
+export function clearSession(broadcast = true): void {
   authGeneration += 1;
   refreshInFlight = null;
   refreshRetry = null;
-  for (const key of ["token", "refresh_token", "user", "role"])
-    localStorage.removeItem(key);
+  accessToken = null;
+  sessionUser = null;
+  purgeLegacyCredentials();
+  window.dispatchEvent(new Event("ames-session-updated"));
+  if (broadcast) channel?.postMessage({ type: "logout" } satisfies AuthMessage);
 }
 export function proactiveRefreshDelay(token: string): number {
-  if (refreshRetry?.token === localStorage.getItem("refresh_token"))
+  if (refreshRetry?.generation === authGeneration)
     return Math.max(0, refreshRetry.at - performance.now());
   // Avoid rapid renewal loops if a skewed client cannot read the server Date.
   const remaining = accessTokenRemaining(token);
@@ -102,16 +148,11 @@ function failureReason(error: unknown): SessionEndReason {
       ? "expired"
       : "invalid";
 }
-export function refreshSession(): Promise<void> {
+export function refreshSession(bootstrap = false): Promise<void> {
   if (refreshInFlight) return refreshInFlight;
-  const refreshToken = localStorage.getItem("refresh_token");
   const generation = authGeneration;
-  if (!refreshToken) {
-    endSession("expired");
-    return Promise.reject(new Error("No refresh token is available."));
-  }
   if (
-    refreshRetry?.token === refreshToken &&
+    refreshRetry?.generation === generation &&
     performance.now() < refreshRetry.at
   )
     return Promise.reject(refreshRetry.error);
@@ -121,23 +162,14 @@ export function refreshSession(): Promise<void> {
     );
   const pending = (async () => {
     try {
-      const response = await API.post<SessionResponse>("/api/auth/refresh", {
-        refresh_token: refreshToken,
-      });
+      const response = await API.post<SessionResponse>("/api/auth/refresh");
       // Logout, another login, or a credential replacement wins over a late renewal.
-      if (
-        generation !== authGeneration ||
-        localStorage.getItem("refresh_token") !== refreshToken
-      )
+      if (generation !== authGeneration)
         throw new axios.CanceledError("Session changed during renewal.");
       lastRenewalAt = performance.now();
       saveSession(response.data, true);
     } catch (error) {
-      if (
-        generation === authGeneration &&
-        localStorage.getItem("refresh_token") === refreshToken &&
-        !axios.isCancel(error)
-      ) {
+      if (generation === authGeneration && !axios.isCancel(error)) {
         const status = axios.isAxiosError(error)
           ? error.response?.status
           : undefined;
@@ -150,7 +182,7 @@ export function refreshSession(): Promise<void> {
             (status !== undefined && status >= 500 && status < 600))
         ) {
           const delay =
-            refreshRetry?.token === refreshToken
+            refreshRetry?.generation === generation
               ? Math.min(refreshRetry.delay * 2, 120000)
               : 30000;
           const header = String(error.response?.headers?.["retry-after"] || "");
@@ -165,7 +197,7 @@ export function refreshSession(): Promise<void> {
                 ? responseTime
                 : Date.now() + serverClockOffset);
           refreshRetry = {
-            token: refreshToken,
+            generation,
             at:
               performance.now() +
               Math.max(delay, Number.isFinite(wait) ? wait : 0),
@@ -173,7 +205,7 @@ export function refreshSession(): Promise<void> {
             error,
           };
           window.dispatchEvent(new Event("ames-session-refresh-deferred"));
-        } else endSession(failureReason(error));
+        } else if (!bootstrap) endSession(failureReason(error));
       }
       throw error;
     }
@@ -213,7 +245,7 @@ API.interceptors.request.use((config) => {
   )
     throw new axios.CanceledError("Session changed before retry.");
   authConfig._authOwner = sessionOwner();
-  const token = localStorage.getItem("token");
+  const token = getAccessToken();
   if (isApiDestination(config)) {
     if (token) config.headers.set("Authorization", `Bearer ${token}`);
     else config.headers.delete("Authorization");
@@ -264,7 +296,7 @@ API.interceptors.response.use(
       if (
         config._authGeneration !== authGeneration ||
         config._authOwner !== sessionOwner() ||
-        !localStorage.getItem("token")
+        !getAccessToken()
       )
         return Promise.reject(error);
       // Export endpoints may return their authentication JSON as a Blob.
@@ -287,8 +319,7 @@ API.interceptors.response.use(
       ) {
         // An old in-flight response must not clear a replacement session.
         if (
-          config.headers.get("Authorization") ===
-          `Bearer ${localStorage.getItem("token")}`
+          config.headers.get("Authorization") === `Bearer ${getAccessToken()}`
         )
           endSession(failureReason(error));
       } else if (
@@ -303,23 +334,17 @@ API.interceptors.response.use(
       ) {
         config._authRetry = true;
         if (
-          config.headers.get("Authorization") ===
-          `Bearer ${localStorage.getItem("token")}`
+          config.headers.get("Authorization") === `Bearer ${getAccessToken()}`
         )
           await refreshSession();
         if (
           config._authGeneration !== authGeneration ||
           config._authOwner !== sessionOwner() ||
-          !localStorage.getItem("token")
+          !getAccessToken()
         )
           return Promise.reject(error);
-        config.headers.set(
-          "Authorization",
-          `Bearer ${localStorage.getItem("token")}`,
-        );
+        config.headers.set("Authorization", `Bearer ${getAccessToken()}`);
         return API.request(config);
-      } else if (!localStorage.getItem("refresh_token")) {
-        endSession(code === "TOKEN_EXPIRED" ? "expired" : "invalid");
       }
     }
     return Promise.reject(error);

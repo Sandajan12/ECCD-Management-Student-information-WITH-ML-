@@ -34,7 +34,7 @@ On this Windows checkout, use `--python .venv312` to select the installed Python
 `--schema bootstrap_test_...` is available for isolated verification. The command
 does not create databases or change the application's connection settings.
 
-All pending migrations run in order, **001–018**. The current API also requires
+All pending migrations run in order, **001–019**. The current API also requires
 the optional-LRN schema (015). Migration 016 adds the nullable teacher save
 timestamp without backfilling historical records; startup can apply that one
 additive upgrade transactionally. Migration 017 explicitly enforces per-domain

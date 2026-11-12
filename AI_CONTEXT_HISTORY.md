@@ -3566,3 +3566,55 @@ a separate reviewed change; neither this report nor this documentation update
 switches the runtime artifact. Fold membership, anchors and individual predictions
 in local CSV/JSON files remain sensitive microdata; preserve the existing ignore
 policy and do not copy learner-level records into this context document.
+
+
+## 2026-11-13 — Custom-domain HttpOnly authentication: pre-release verification
+
+Branch: feature/custom-domain-httponly-auth, based on a6ebfa7. The initial
+main working tree was clean; no refresh-branch checkpoint was needed. Only the
+FastAPI + ML resources are authorized: Render Apolinario Mabini School System,
+Vercel eccd-management-student-information-with-ml, Supabase AMES_SYSTEM_ML.
+
+The refresh cookie is host-only ames_refresh_token, HttpOnly, Secure in
+production, SameSite=Strict, Path=/api/auth, sliding24 hours. Access tokens and
+user context remain only in RAM. Login/OTP/registration/credential replacement
+never return refresh JWTs in JSON. Refresh validates exact Origin/Referer and live
+account/credential state. Explicit additive migration019 creates private refresh
+families with a10-second shared-successor rotation grace; logout revokes that
+family and credential changes revoke all account families. Backups exclude and
+restore clears these sessions. No school-data migration001–018 or ML artifact
+change is part of this release.
+
+Production uses www.ameskinder.com (apex redirects with308), with API/Socket.IO at
+api.ameskinder.com. The API initially returned DNS NXDOMAIN. After the user
+confirmed adding/verifying the Spaceship CNAME and Render custom domain, HTTPS
+health/readiness both returned200. Deployment remains a separate acceptance step.
+
+Executed locally against verified loopback PostgreSQL, with disposable schemas:
+
+- Full `pytest backend/tests -q --maxfail=5`:545 passed,3 failed,663 subtests
+  passed,10 warnings in1539.43s. All three failures were old test expectations:
+  exact CORS origins and two assumptions that every model belongs in backups.
+  Updated the expectations for custom domains and deliberate refresh-session
+  exclusion; exact three-case rerun:3 passed,7 subtests in9.89s.
+- Current cookie/CORS suites:33 passed,31 subtests in115.84s, including the new
+  migration-idempotency/backup privacy test added during the full run.
+- Entire Phase1 schema/backup suite after correction:19 passed,11 subtests.
+  Across the full run and focused reruns, all549 current backend cases have
+  passing coverage; this was not one clean549-case run.
+- Auth/refresh Playwright, desktop and320px mobile:40 passed in5.7m. Consent and
+  privacy suite:18 passed in2.8m. Covers real synthetic OTP, RAM-only storage,
+  Strict/HttpOnly local cookies, F5, concurrent tabs, BroadcastChannel login and
+  logout, proactive renewal using a real short-lived test JWT, outage/cooldown,
+  late response rejection, and durable teacher ECCD draft boundaries.
+- `npm run build` (tsc-b + Vite), both explicit TypeScript projects, changed-file
+  ESLint and Git whitespace checks passed. No dependencies were installed.
+- Secret scan of reviewed candidate files and exact staged blobs found no
+  configured secrets, provider tokens or private keys. Only .env.example
+  placeholders are included; actual environment files remain ignored.
+
+Warnings are test-library deprecations, pytest Enum collection notices and
+occasional Windows test-server connection-reset diagnostics during tab closure.
+A new real production login/OTP and authenticated ML prediction are not claimed
+by these local checks. Live production acceptance is recorded in the local
+release report after deploy.

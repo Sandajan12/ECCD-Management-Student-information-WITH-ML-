@@ -385,8 +385,12 @@ class AuthenticationSecurityTests(unittest.TestCase):
         for cookie in response.headers.get_list("set-cookie"):
             self.assertIn("HttpOnly", cookie)
             self.assertIn("; Secure", cookie)
-            self.assertIn("SameSite=none", cookie)
-            self.assertIn("Max-Age=2592000", cookie)
+            if cookie.startswith("ames_refresh_token="):
+                self.assertIn("SameSite=strict", cookie)
+                self.assertIn("Max-Age=86400", cookie)
+            else:
+                self.assertIn("SameSite=none", cookie)
+                self.assertIn("Max-Age=2592000", cookie)
 
     def test_version_migration_is_repeatable_and_preserves_accounts(self):
         with self.fixture.test_engine.begin() as connection:

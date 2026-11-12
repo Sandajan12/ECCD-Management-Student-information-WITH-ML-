@@ -51,7 +51,8 @@ class Settings(BaseSettings):
 
     @property
     def allowed_origins(self) -> list[str]:
-        values = ["http://localhost:5173", "http://127.0.0.1:5173"]
+        values = ["http://localhost:5173", "http://127.0.0.1:5173",
+                  "https://ameskinder.com", "https://www.ameskinder.com", "https://ames-ml.vercel.app"]
         values.extend(self.FRONTEND_URL.split(","))
         values.extend(self.ALLOWED_ORIGINS.split(","))
         values.extend(self.CORS_ORIGINS.split(","))

@@ -5,6 +5,9 @@ Reviewed: **2026-11-07**, against code commit **a836697**. Read
 migrations, manifests and tests establish contracts; identify and resolve
 documentation/code conflicts using the relevant implementation.
 
+Authentication and custom-domain guidance updated **2026-11-13** for the
+HttpOnly cookie release; see section 6 and the explicit migration 019 instructions.
+
 ## 1. Purpose and account handoff
 
 AMES manages early childhood student records, deterministic DepEd ECCD
@@ -63,7 +66,7 @@ keys with protected backups; do not regenerate them during routine setup.
 | Workspace | Root `pnpm-workspace.yaml` includes frontend and retains separate lockfiles; frontend has matching pnpm 12 YAML overrides and its own package-manager pin for isolated installs; automatic dependency verification before scripts is disabled |
 | Spreadsheets | openpyxl handles active workbook import/export; pandas is installed |
 | ML | V1 sigmoid-calibrated standalone Random Forest, joblib artifact, 18 PRE/demographic inputs (five household fields excluded), three supported POST outcomes; shared teacher/parent inference |
-| Migrations | Python migrations 001–018; only the nullable teacher timestamp (016) is applied automatically at startup. Other upgrades are explicit; 018 retires three branding columns after the matching app is deployed. No active Alembic setup, pyproject.toml, or uv.lock |
+| Migrations | Python migrations 001–019; only the nullable teacher timestamp (016) is applied automatically at startup. Other upgrades are explicit; 018 retires three branding columns after the matching app is deployed. No active Alembic setup, pyproject.toml, or uv.lock |
 
 Exact dependency versions belong to manifests/lockfiles. Do not assume another
 environment named `.venv` uses Python 3.12. Root and frontend workspace YAML
@@ -110,7 +113,7 @@ it. Preserve existing configuration and copy templates only when files are absen
 | `LRN_HMAC_SECRET` | At least 32 characters; required for exact LRN lookup |
 | `MAIL_*` | SMTP account/password/sender/server/port and STARTTLS/SSL settings |
 | `EMAIL_TRANSPORT`, `BREVO_API_KEY` | smtp (local-compatible default) or brevo_api (HTTPS 443); production requires credentials and a real MAIL_FROM; Render blueprint selects brevo_api |
-| `VITE_API_URL` | Public backend origin without /api; fallback http://localhost:8000 |
+| `VITE_API_URL` | Public backend origin without /api; fallback https://api.ameskinder.com |
 | `VITE_SOCKET_URL` | Optional chat-origin override; otherwise chat uses API origin |
 
 Never print or regenerate existing secrets. Preserve LRN encryption/HMAC keys
@@ -230,6 +233,7 @@ preserve those routes and their protection.
 | 016 | teacher_marked_at | Nullable teacher save timestamp; additive startup/bootstrap migration with no historical backfill |
 | 017 | eccd_question_sequence | Unique idx_questions_domain_sequence on (domain_id, sequence_order); explicit upgrade preserving question rows |
 | 018 | settings_cleanup | Explicitly drop secondary_color/profile_pic_url/login_background, preserving every remaining settings field; deploy matching application before upgrading |
+| 019 | refresh_cookie_sessions | Private refresh families, 10-second rotation grace; explicit additive upgrade before deployment |
 
 `backend/main.py::initialize_runtime` checks evaluator provenance first, then
 transactionally applies **only 016** with migration-ledger serialization. The
@@ -271,7 +275,7 @@ are configured, the explicit bootstrap is:
 uv run --no-project --python .venv312 python -m backend.scripts.seed_supabase --apply
 ```
 
-It applies pending **001–018** in order, seeds matching reference data and
+It applies pending **001–019** in order, seeds matching reference data and
 provisions the environment-configured Chairman in one transaction. Repeated
 runs preserve accounts/reference rows; conflicting reference data aborts.
 Existing databases need missing feature upgrades in order; use the migration
@@ -318,7 +322,7 @@ the complete method/path/query inventory.
 
 Shortened paths in each row are relative to that row's API prefix.
 
-Axios uses localStorage bearer tokens, credentials, and a 60-second default
+Axios uses in-memory bearer tokens, credentials, and a 60-second default
 timeout (including login). Bearers attach only to the configured API origin,
 including resolved relative URLs; foreign destinations lose Authorization.
 Downloads use 120 seconds, decode blob-contained JSON errors, and honor
@@ -339,47 +343,65 @@ limit. Teacher temporary passwords use their own 8-character minimum and
 mandatory first-login replacement; restricted sessions cannot access ordinary
 protected APIs/chat.
 
-Access JWTs have `tokenType: "session"` and default to 30 minutes. Refresh JWTs
-have `tokenType: "refresh"`, account ID in `sub`, credential version, role,
-unique `jti` and UTC expiry; their default lifetime is 1440 minutes. Token types
-cannot be interchanged. Login (including OTP/registration) and self-service
-credential replacement return `token` (compatibility alias), `access_token`,
-`refresh_token` and `user`. `POST /api/auth/refresh` accepts JSON
-`{"refresh_token":"..."}`, reloads/locks the live PostgreSQL account, validates
-eligibility, profile, role and credential version, then returns a fresh pair
-and current user context. Each successful renewal slides refresh expiry forward
-by the configured lifetime; there is no absolute login-age cap. Wrong/expired
-tokens return 401 `INVALID_TOKEN`/`TOKEN_EXPIRED`; account changes return 401
-`SESSION_REVOKED`. First-login restrictions still apply to renewed sessions.
+The production UI is https://ameskinder.com (and www.ameskinder.com); API and
+Socket.IO use https://api.ameskinder.com. CORS explicitly permits both UI origins,
+https://ames-ml.vercel.app and localhost:5173, with credentials, explicit methods
+and headers, and exposed Date/Retry-After. Production vercel.app visits redirect
+to the custom site: Strict cookies cannot authenticate a cross-site preview.
 
-React stores `token`, `refresh_token` and `user` in localStorage. It renews about
-two minutes before access expiry, rechecks on focus/visibility/reconnection,
-and uses exposed API HTTP `Date` headers to compensate for clock skew. Timer
-renewal and concurrent expired HTTP calls share a promise per tab. Messaging
-reconnects with the new access token without remounting the portal/form subtree.
-Late renewal cannot
-restore a locally logged-out/replaced session. Session expiry/logout removes
-only `token`, `refresh_token`, `user`, `role`; durable drafts remain. Legacy
-clients/sessions without refresh tokens retain their original access lifetime.
-Redirects preserve `session=expired|revoked|invalid`; login messages describe
-expiry, account changes or invalid sessions, never inferred inactivity.
-Network/timeout failures and HTTP 408/425/429/5xx during renewal preserve local
-credentials and drafts. Renewal retries after 30, 60, then at most 120 seconds
-(or a longer server `Retry-After`), sharing the cooldown across timer/401 calls.
-Focus and clock updates cannot bypass that cooldown. Offline tabs pause renewal
-and recheck on reconnection; expired access never grants server access while
-offline. Successful renewal, logout or session replacement resets retry state.
-Confirmed refresh rejection still ends the session with the matching reason.
-Protected `403 ACCOUNT_INACTIVE` responses end the current local session as
-revoked; ordinary permission-related 403 responses do not log users out.
-Recovery renews credentials only; failed forms retain drafts and still require
-manual resubmission except for the existing authorized teacher ECCD replay.
+Access JWTs use `tokenType: "session"` and a 30-minute lifetime. React/API service
+hold the access token and user profile only in RAM. No token, refresh_token, user
+or role goes into localStorage/sessionStorage; exact legacy keys are purged.
+Durable drafts and ames_device_token remain. Axios sends credentials and the RAM
+bearer only to the configured API origin; Socket.IO uses that same RAM token.
 
-Refresh rotation issues a new JWT but does not maintain a server-side used-token
-ledger. A copied old refresh JWT remains usable until its expiry or account
-revocation. Ordinary logout is local cleanup (body optional), preserves device
-trust and does not invalidate copied JWTs. No schema migration is required.
-Refresh tokens are browser-readable bearer credentials; never log/share them.
+Login, registration, OTP and credential replacement return `access_token`, its
+compatibility alias `token`, and `user`. They deliver refresh JWTs only through
+ames_refresh_token: host-only, HttpOnly, Secure in production, SameSite=Strict,
+Path=/api/auth, Max-Age=86400 (REFRESH_TOKEN_EXPIRE_MINUTES defaults to 1440).
+Secure is disabled only for plain HTTP loopback in development. Refresh JWTs
+include sub, credentialVersion, role, sid, jti and exp; they cannot authenticate
+protected HTTP/Socket.IO routes. Access JWTs cannot renew sessions.
+
+POST /api/auth/refresh reads only the cookie (no JSON credential), checks exact
+Origin or Referer, and reloads/locks the PostgreSQL account and cookie family.
+Production rejects missing/untrusted origins. It validates signature, token type,
+active/pending state, required profile, role and credential version. The private
+auth_refresh_sessions table stores family IDs/current and previous random JTIs,
+a 10-second predecessor deadline and expiry; it never stores JWT strings.
+During grace, parallel predecessor/current requests receive the same successor
+cookie; after grace, predecessors fail. Rotation slides the 24-hour expiry;
+there is no absolute login-age cap. First-login restrictions remain enforced.
+
+On F5, AuthProvider shows a loading state and calls credentialed refresh before
+mounting protected pages. BroadcastChannel("ames-auth") synchronizes login,
+renewal and logout within the same UI origin, without persistent credentials.
+Proactive renewal occurs about two minutes before expiry with exposed HTTP Date
+clock compensation, focus/visibility/reconnection checks and a shared in-flight
+promise. Protected expired 401s retry at most once. SESSION_REVOKED/INVALID_TOKEN,
+auth routes and foreign origins never recursively renew. Late responses cannot
+restore logged-out/replaced memory. Messaging renewal preserves form subtrees.
+
+Network/timeouts and 408/425/429/5xx preserve memory and drafts and share a
+30/60/120-second cooldown, honoring a longer Retry-After; offline renewal pauses.
+Startup outages show a recoverable loading state instead of assuming logout.
+Confirmed rejection ends the session with session=expired|revoked|invalid;
+ACCOUNT_INACTIVE revokes while ordinary permission 403s do not log users out.
+No generic form replay is introduced: only authorized teacher ECCD drafts replay.
+
+POST /api/auth/logout revokes the cookie family and deletes the matching cookie
+attributes/path; remembered-device trust remains unless explicitly forgotten.
+An offline logout sets only the non-sensitive ames_logout_pending helper so F5
+cannot resurrect the cookie before server logout succeeds. Credential revocation
+deletes all account refresh families. Copied access JWTs can finish their short
+lifetime unless account credentials are revoked. Existing browser-storage sessions
+must sign in once after this release. Refresh families are excluded from encrypted
+backups and cleared on restore, never restored as active sessions.
+
+Migration 019_refresh_cookie_sessions is explicit and additive: apply/check it
+before deploying this backend; startup checks and never auto-applies it. Enable
+RLS and revoke PUBLIC/anon/authenticated access; only the direct database backend
+uses this table. Fresh bootstrap includes 001–019.
 
 JWTs bind to live credentials and persistent security version. Inactive/pending
 accounts cannot use protected services. Credential changes, archive/restore and

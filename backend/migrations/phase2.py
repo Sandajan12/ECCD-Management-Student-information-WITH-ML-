@@ -38,6 +38,9 @@ def check_phase2(connection: Connection, schema: str = "public") -> None:
         f"SELECT EXISTS (SELECT 1 FROM {LEDGER} WHERE version='018_retired_branding_settings')"
     )).scalar_one()
     for name, table in Base.metadata.tables.items():
+        if name == "auth_refresh_sessions" and not inspector.has_table(name, schema=schema):
+            # Migration 019 is checked separately at current API startup.
+            continue
         actual = {column["name"] for column in inspector.get_columns(name, schema=schema)}
         expected = set(table.columns.keys())
         if name == "system_settings" and not settings_cleanup_applied:
@@ -83,7 +86,7 @@ def apply_phase2(connection: Connection, schema: str = "public") -> bool:
         check_phase2(connection, schema)
         return False
     connection.execute(text("LOCK TABLE students, family_access, student_eccd_evaluations IN ACCESS EXCLUSIVE MODE"))
-    before = {name: digest_table(connection, name) for name in Base.metadata.tables}
+    before = {name: digest_table(connection, name) for name in Base.metadata.tables if inspector.has_table(name, schema=schema)}
     for row in connection.execute(text("SELECT lrn_number, lrn_encrypted, lrn_search_hash FROM students")):
         if decrypt_lrn(row.lrn_encrypted) != row.lrn_number or hash_lrn(row.lrn_number) != row.lrn_search_hash:
             raise MigrationError("LRN migration integrity check failed")
@@ -98,6 +101,8 @@ def apply_phase2(connection: Connection, schema: str = "public") -> bool:
     connection.execute(text("ALTER TABLE students DROP COLUMN lrn_number"))
     # Verify/recreate all ID-based FK relationships, including fresh installations.
     for name, table in Base.metadata.tables.items():
+        if not inspector.has_table(name, schema=schema):
+            continue
         existing = inspect(connection).get_foreign_keys(name, schema=schema)
         for constraint in table.foreign_key_constraints:
             targets = list(constraint.elements)

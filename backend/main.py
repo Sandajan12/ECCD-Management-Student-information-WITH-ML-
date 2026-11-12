@@ -35,6 +35,7 @@ from backend.migrations.email_only_identity import check_email_only_identity
 from backend.migrations.phase1 import MigrationError
 from backend.migrations.teacher_marked_at import apply_teacher_marked_at
 from backend.migrations.eccd_question_sequence import check_eccd_question_sequence
+from backend.migrations.refresh_cookie_sessions import check_refresh_cookie_sessions
 
 access_logger = logging.getLogger("uvicorn.access")
 if not any(isinstance(item, UnreadPollingFilter) for item in access_logger.filters):
@@ -77,6 +78,7 @@ def initialize_runtime():
         check_parent_linking(connection, schema)
         check_auth_security_version(connection, schema)
         check_email_only_identity(connection, schema)
+        check_refresh_cookie_sessions(connection, schema)
         check_phase2(connection, schema)
         check_optional_student_lrn(connection, schema)
         check_eccd_question_sequence(connection, schema)
@@ -109,8 +111,8 @@ api.add_middleware(
     CORSMiddleware,
     allow_origins=runtime_settings.allowed_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"],
+    allow_headers=["Authorization", "Content-Type", "Accept", "X-Device-Token"],
     expose_headers=["Content-Disposition", "Retry-After", "Date"],
 )
 

@@ -112,7 +112,7 @@ class Batch1BackendTests(unittest.TestCase):
         self.fixture.tearDown()
 
     def assert_cookies(self, response, production=False, cleared=False):
-        cookies = response.headers.get_list("set-cookie")
+        cookies = [cookie for cookie in response.headers.get_list("set-cookie") if not cookie.startswith("ames_refresh_token=")]
         self.assertEqual(len(cookies), 2)
         for name in ("device_token", "trusted_device_token"):
             cookie = next(item for item in cookies if item.startswith(name + "="))

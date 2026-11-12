@@ -266,6 +266,8 @@ class BackupDocument(BackupRow):
         if len(active_sections) != len(set(active_sections)):
             raise ValueError("Only one active adviser is allowed per section")
         for table_name, table in Base.metadata.tables.items():
+            if table_name == "auth_refresh_sessions":
+                continue
             primary_key = list(table.primary_key.columns.keys())[0]
             ids = [getattr(row, primary_key) for row in getattr(self, table_name)]
             if len(ids) != len(set(ids)):

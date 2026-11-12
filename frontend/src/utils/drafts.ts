@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
-import API, { errorMessage, isNetworkError } from "../services/api";
+import API, {
+  errorMessage,
+  isNetworkError,
+  getAccessToken,
+  getSessionUser,
+} from "../services/api";
 import { useAuth } from "../context/AuthContext";
 
 type DraftMethod = "post" | "put" | "patch" | "delete";
@@ -123,20 +128,12 @@ export async function syncDrafts(owner: number): Promise<void> {
   syncing = true;
   try {
     for (const { key, draft } of listPending(owner)) {
-      let session: { id?: number; role?: string } | null;
-      try {
-        session = JSON.parse(localStorage.getItem("user") || "null") as {
-          id?: number;
-          role?: string;
-        } | null;
-      } catch {
-        break;
-      }
+      const session = getSessionUser();
       // Teachers use the admin role. Parent and chairman sessions never replay.
       if (
         session?.id !== owner ||
         session.role !== "admin" ||
-        !localStorage.getItem("token")
+        !getAccessToken()
       )
         break;
       if (readDraft<unknown>(key)?.revision !== draft.revision) continue;

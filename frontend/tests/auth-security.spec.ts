@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
-import type { AxiosInstance, InternalAxiosRequestConfig } from "axios";
+import type { InternalAxiosRequestConfig } from "axios";
 import type { SessionResponse } from "../src/types";
 
 const backend = "http://127.0.0.1:8775";
@@ -128,10 +128,16 @@ test("Axios timeout and actual interceptor isolate bearer destinations", async (
   await page.goto("/login");
   const result = await page.evaluate(async () => {
     const modulePath = "/src/services/api.ts";
-    const { default: api } = (await import(modulePath)) as {
-      default: AxiosInstance;
-    };
-    localStorage.setItem("token", "synthetic-bearer");
+    const {
+      default: api,
+      saveSession,
+      clearSession,
+    } = (await import(modulePath)) as typeof import("../src/services/api");
+    saveSession({
+      access_token: "synthetic-bearer",
+      token: "synthetic-bearer",
+      user: { id: 2, role: "admin" },
+    } as SessionResponse);
     const adapter = async (config: InternalAxiosRequestConfig) => ({
       status: 200,
       statusText: "OK",
@@ -157,7 +163,7 @@ test("Axios timeout and actual interceptor isolate bearer destinations", async (
       });
       checks.push(response.data);
     }
-    localStorage.removeItem("token");
+    clearSession();
     return { timeout: api.defaults.timeout, checks };
   });
   expect(result.timeout).toBe(60000);
@@ -191,15 +197,14 @@ test("queue retains non-ECCD drafts and replays only confirmed teacher ECCD work
   const result = await page.evaluate(async (account) => {
     const apiPath = "/src/services/api.ts";
     const draftsPath = "/src/utils/drafts.ts";
-    const { default: api } = (await import(apiPath)) as {
-      default: AxiosInstance;
-    };
+    const { default: api, saveSession } = (await import(
+      apiPath
+    )) as typeof import("../src/services/api");
     const { isDraftRequest, syncDrafts } = (await import(
       draftsPath
     )) as typeof import("../src/utils/drafts");
     const owner = account.user.id;
-    localStorage.setItem("token", account.token);
-    localStorage.setItem("user", JSON.stringify(account.user));
+    saveSession(account);
     const attempted: string[] = [];
     let status = 202;
     api.defaults.adapter = async (config) => {

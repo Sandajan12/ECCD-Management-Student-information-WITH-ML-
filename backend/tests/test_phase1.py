@@ -32,8 +32,10 @@ BASELINE = Path(__file__).parent / "fixtures" / "phase1_baseline.sql"
 
 class SchemaTests(unittest.TestCase):
     def test_backup_schema_matches_model_columns(self) -> None:
-        self.assertEqual(set(BackupDocument.model_fields), set(Base.metadata.tables))
+        self.assertEqual(set(BackupDocument.model_fields), set(Base.metadata.tables) - {"auth_refresh_sessions"})
         for name, table in Base.metadata.tables.items():
+            if name == "auth_refresh_sessions":
+                continue
             row_type = BackupDocument.model_fields[name].annotation.__args__[0]
             self.assertEqual(set(row_type.model_fields), set(table.columns.keys()), name)
     def test_mapper_relationships(self) -> None:
@@ -270,7 +272,8 @@ class MigrationTests(unittest.TestCase):
             apply_email_only_identity(connection, self.schema)
         with engine.begin() as connection:
             select_schema(connection, self.schema)
-            document = {name: [dict(row) for row in connection.execute(table.select()).mappings()] for name, table in Base.metadata.tables.items()}
+            document = {name: [dict(row) for row in connection.execute(table.select()).mappings()] for name, table in Base.metadata.tables.items()
+                        if name != "auth_refresh_sessions"}
         parsed = BackupDocument.model_validate(document)
         self.assertEqual(len(parsed.student_eccd_evaluations), 3)
         self.assertEqual(BackupDocument.model_validate_json(parsed.model_dump_json()), parsed)

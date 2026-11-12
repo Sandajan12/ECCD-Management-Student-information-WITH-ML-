@@ -229,7 +229,7 @@ export class MessagingClient {
       const socket = (this.socket = io(
         import.meta.env.VITE_SOCKET_URL ||
           API.defaults.baseURL ||
-          "http://localhost:8000",
+          "https://api.ameskinder.com",
         {
           auth: { token: this.token },
           withCredentials: true,

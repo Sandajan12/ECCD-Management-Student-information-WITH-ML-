@@ -10,14 +10,15 @@ from backend.config.settings import settings
 from backend.models import Parent, User
 from backend.models.user import UserRole
 from backend.models.email_verification import OtpPurpose
-from backend.schemas.auth import LoginRequest, LoginResponse, LogoutRequest, LogoutResponse, OtpChallengeResponse, RefreshRequest, RegisterParentRequest, UpdatePasswordRequest, VerifyOtpRequest
+from backend.schemas.auth import LoginRequest, LoginResponse, LogoutRequest, LogoutResponse, OtpChallengeResponse, RegisterParentRequest, UpdatePasswordRequest, VerifyOtpRequest
 from backend.schemas.account import SendOtpRequest, ChallengeResult
 from backend.utils.authentication import build_session, clear_device_cookies, complete_login, consume_challenge, device_tokens, digest, discard_failed_challenge, issue_challenge, refresh_session, require_active, revoke_credentials, set_device_cookies, trusted_token
 from backend.utils.deps import get_first_login_user, verify_role
 from backend.utils.email import send_otp_email
 from backend.utils.security import get_password_hash, verify_password
+from backend.utils.authentication import REFRESH_COOKIE, clear_refresh_cookie, deliver_session, revoke_refresh_cookie, verify_auth_origin
 
-router = APIRouter(prefix="/api/auth", tags=["Auth"])
+router = APIRouter(prefix="/api/auth", tags=["Auth"], dependencies=[Depends(verify_auth_origin)])
 
 
 @router.post("/login", response_model=LoginResponse | OtpChallengeResponse, response_model_exclude_none=True)
@@ -40,7 +41,9 @@ def login(data: LoginRequest, request: Request, response: Response, db: Session 
     remembered = trusted_token(db, user, device_tokens(request, data.deviceToken, data.trusted_device_token))
     if remembered:
         set_device_cookies(response, remembered)
-        return {**build_session(db, user), "deviceToken": remembered}
+        result = deliver_session({**build_session(db, user), "deviceToken": remembered}, request, response)
+        db.commit()
+        return result
     if not settings.otp_enabled:
         result = complete_login(db, user, data.rememberDevice, request, response)
         db.commit()
@@ -106,7 +109,7 @@ def register_parent(data: RegisterParentRequest, request: Request, response: Res
 
 
 @router.put("/update-password", response_model=LoginResponse)
-def update_password(data: UpdatePasswordRequest, response: Response, db: Session = Depends(get_db), user: User = Depends(get_first_login_user)):
+def update_password(data: UpdatePasswordRequest, request: Request, response: Response, db: Session = Depends(get_db), user: User = Depends(get_first_login_user)):
     if user.role != UserRole.ADMIN or not user.is_first_login:
         raise HTTPException(403, "Use the verified password-change flow for your account.")
     if verify_password(data.newPassword, user.password_hash):
@@ -117,7 +120,7 @@ def update_password(data: UpdatePasswordRequest, response: Response, db: Session
     result = build_session(db, user)
     db.commit()
     clear_device_cookies(response)
-    return {**result, "message": "Password updated successfully."}
+    return deliver_session({**result, "message": "Password updated successfully."}, request, response)
 
 
 @router.post("/send-otp", response_model=ChallengeResult, response_model_exclude_none=True)
@@ -141,17 +144,24 @@ def send_otp(data: SendOtpRequest, db: Session = Depends(get_db), user: User = D
 
 
 @router.post("/refresh", response_model=LoginResponse)
-def refresh(data: RefreshRequest, response: Response, db: Session = Depends(get_db)):
-    result = refresh_session(db, data.refresh_token)
+def refresh(request: Request, response: Response, db: Session = Depends(get_db)):
+    token = request.cookies.get(REFRESH_COOKIE, "")
+    if not token or len(token) > 3000:
+        from backend.utils.authentication import AuthError
+        raise AuthError(401, "No refresh session is available. Please sign in again.", "INVALID_TOKEN")
+    result = refresh_session(db, token)
     db.commit()
     response.headers["Cache-Control"] = "no-store"
-    return result
+    return deliver_session(result, request, response)
 
 
 @router.post("/logout", response_model=LogoutResponse)
 def logout(request: Request, response: Response, data: LogoutRequest | None = None, db: Session = Depends(get_db)):
     data = data or LogoutRequest()
     response.headers["Cache-Control"] = "no-store"
+    revoke_refresh_cookie(db, request.cookies.get(REFRESH_COOKIE))
+    db.commit()
+    clear_refresh_cookie(request, response)
     if data.forgetDevice:
         from backend.models import UserTrustedDevice
         hashes = [digest(token) for token in device_tokens(request, data.deviceToken, data.trusted_device_token)]

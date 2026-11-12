@@ -8,7 +8,7 @@ from backend.schemas.teacher import AssignmentResponse, TransferResponse
 import re
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
@@ -66,7 +66,7 @@ def verify_current_password(
 
 
 @router.put("/account", response_model=LoginResponse)
-def update_account(request: AccountUpdateRequest, response: Response, db: Session = Depends(get_db), current_user=Depends(verify_role(["super-admin"]))):
+def update_account(request: AccountUpdateRequest, http_request: Request, response: Response, db: Session = Depends(get_db), current_user=Depends(verify_role(["super-admin"]))):
     from backend.utils.account_changes import update_chairman
     from backend.utils.authentication import clear_device_cookies
     try:
@@ -75,7 +75,8 @@ def update_account(request: AccountUpdateRequest, response: Response, db: Sessio
         db.rollback()
         raise HTTPException(400, "Email is already registered.") from None
     clear_device_cookies(response)
-    return result
+    from backend.utils.authentication import deliver_session
+    return deliver_session(result, http_request, response)
 
 
 from backend.models.teacher import Teacher

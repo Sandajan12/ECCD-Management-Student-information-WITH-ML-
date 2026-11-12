@@ -5,12 +5,13 @@ import hmac
 import json
 import secrets
 import math
+from urllib.parse import urlsplit
 
 from fastapi import HTTPException, Request, Response
 from jose import ExpiredSignatureError, JWTError, jwt
 from sqlalchemy.orm import Session
 from backend.config.settings import settings
-from backend.models import EmailVerification, Section, SectionTeacher, Teacher, User, UserTrustedDevice
+from backend.models import EmailVerification, RefreshSession, Section, SectionTeacher, Teacher, User, UserTrustedDevice
 from backend.models.email_verification import OtpPurpose
 from backend.utils.security import create_access_token, create_refresh_token
 from backend.utils.account_identity import account_names
@@ -20,6 +21,50 @@ class AuthError(HTTPException):
     def __init__(self, status_code: int, detail: str, code: str):
         super().__init__(status_code, detail)
         self.code = code
+
+
+REFRESH_COOKIE = "ames_refresh_token"
+
+
+def verify_auth_origin(request: Request) -> None:
+    origin = request.headers.get("origin")
+    if origin is None and request.headers.get("referer"):
+        try:
+            parsed = urlsplit(request.headers["referer"])
+        except ValueError:
+            raise HTTPException(403, "Authentication request origin is not allowed.") from None
+        origin = f"{parsed.scheme}://{parsed.netloc}"
+    if origin not in settings.allowed_origins and (origin is not None or settings.production):
+        raise HTTPException(403, "Authentication request origin is not allowed.")
+
+
+def refresh_cookie_options(request: Request) -> dict:
+    # Never disable Secure for a remote host, even in a development environment.
+    local_http = (not settings.production and request.url.scheme == "http"
+                  and request.url.hostname in ("localhost", "127.0.0.1", "::1"))
+    return {"httponly": True, "secure": not local_http, "samesite": "strict", "path": "/api/auth"}
+
+
+def deliver_session(result: dict, request: Request, response: Response) -> dict:
+    response.set_cookie(REFRESH_COOKIE, result.pop("refresh_token"),
+                        max_age=settings.REFRESH_TOKEN_EXPIRE_MINUTES * 60, **refresh_cookie_options(request))
+    response.headers["Cache-Control"] = "no-store"
+    return result
+
+
+def clear_refresh_cookie(request: Request, response: Response) -> None:
+    response.delete_cookie(REFRESH_COOKIE, **refresh_cookie_options(request))
+
+
+def revoke_refresh_cookie(db: Session, token: str | None) -> None:
+    if not token or len(token) > 3000:
+        return
+    try:
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"], options={"require_exp": True})
+        if payload.get("tokenType") == "refresh" and isinstance(payload.get("sid"), str):
+            db.query(RefreshSession).filter_by(id=payload["sid"]).delete()
+    except (JWTError, ValueError, TypeError):
+        pass
 
 
 def device_cookie_options() -> dict:
@@ -85,7 +130,7 @@ def session_user(db: Session, token: str, allow_first_login: bool = False) -> Us
     return user
 
 
-def build_session(db: Session, user: User) -> dict:
+def build_session(db: Session, user: User, refresh: RefreshSession | None = None) -> dict:
     require_active(db, user)
     section = None
     teacher = db.query(Teacher).filter_by(user_id=user.user_id).first() if user.role.value == "admin" else None
@@ -98,8 +143,14 @@ def build_session(db: Session, user: User) -> dict:
                "allow_eccd_question_management": bool(teacher and teacher.allow_eccd_question_management)}
     claims = {**payload, "tokenType": "session", "credentialVersion": credential_version(user)}
     access_token = create_access_token(claims)
+    if refresh is None:
+        db.query(RefreshSession).filter(RefreshSession.user_id == user.user_id, RefreshSession.expires_at <= now()).delete()
+        refresh = RefreshSession(id=secrets.token_hex(32), user_id=user.user_id, current_jti=secrets.token_hex(32),
+                                 expires_at=now() + timedelta(minutes=settings.REFRESH_TOKEN_EXPIRE_MINUTES))
+        db.add(refresh)
     return {"success": True, "requireOtp": False, "requiresOtp": False, "token": access_token,
-            "access_token": access_token, "refresh_token": create_refresh_token(user.user_id, claims["credentialVersion"], user.role.value), "user": payload,
+            "access_token": access_token, "refresh_token": create_refresh_token(user.user_id, claims["credentialVersion"], user.role.value,
+                refresh.id, refresh.current_jti, refresh.expires_at), "user": payload,
             "requiresPasswordChange": bool(teacher and user.is_first_login)}
 
 
@@ -107,7 +158,9 @@ def refresh_session(db: Session, token: str) -> dict:
     try:
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"], options={"require_exp": True})
         subject = payload.get("sub")
-        if payload.get("tokenType") != "refresh" or not isinstance(subject, str) or not subject.isascii() or not subject.isdigit() or not 0 < int(subject) <= 2147483647:
+        if (payload.get("tokenType") != "refresh" or not isinstance(subject, str) or not subject.isascii() or not subject.isdigit()
+                or not 0 < int(subject) <= 2147483647 or not isinstance(payload.get("sid"), str)
+                or not isinstance(payload.get("jti"), str)):
             raise ValueError()
     except ExpiredSignatureError:
         raise AuthError(401, "Session expired. Please sign in again.", "TOKEN_EXPIRED") from None
@@ -123,7 +176,21 @@ def refresh_session(db: Session, token: str) -> dict:
         raise AuthError(401, "Your account session was revoked. Please sign in again.", "SESSION_REVOKED") from None
     if payload.get("credentialVersion") != credential_version(user) or payload.get("role") != user.role.value:
         raise AuthError(401, "Your account session was revoked. Please sign in again.", "SESSION_REVOKED")
-    return build_session(db, user)
+    row = db.query(RefreshSession).filter_by(id=payload["sid"], user_id=user.user_id).with_for_update().first()
+    moment = now()
+    grace = row is not None and row.previous_valid_until is not None and moment <= row.previous_valid_until
+    if (row is None or row.expires_at <= moment or
+            (not hmac.compare_digest(payload["jti"], row.current_jti) and
+             not (grace and hmac.compare_digest(payload["jti"], row.previous_jti or "")))):
+        raise AuthError(401, "Your account session was revoked. Please sign in again.", "SESSION_REVOKED")
+    if not grace:
+        row.previous_jti = row.current_jti
+        row.previous_valid_until = moment + timedelta(seconds=10)
+        row.current_jti = secrets.token_hex(32)
+        row.expires_at = moment + timedelta(minutes=settings.REFRESH_TOKEN_EXPIRE_MINUTES)
+    # Requests during the grace interval receive the same successor cookie, so
+    # simultaneous tabs cannot overwrite it with an already consumed predecessor.
+    return build_session(db, user, row)
 
 
 def device_tokens(request: Request, supplied: str | None = None, legacy_supplied: str | None = None) -> list[str]:
@@ -152,13 +219,14 @@ def complete_login(db: Session, user: User, remember: bool, request: Request, re
         db.add(UserTrustedDevice(user_id=user.user_id, device_token_hash=digest(token), user_agent=request.headers.get("user-agent", "Unknown")[:255], expires_at=now() + timedelta(days=30)))
         result["deviceToken"] = token
         set_device_cookies(response, token)
-    return result
+    return deliver_session(result, request, response)
 
 
 def revoke_credentials(db: Session, user: User) -> None:
     # Lock the account so concurrent revocations cannot lose a version increment.
     db.refresh(user, attribute_names=["security_version"], with_for_update=True)
     user.security_version += 1
+    db.query(RefreshSession).filter_by(user_id=user.user_id).delete()
     db.query(UserTrustedDevice).filter_by(user_id=user.user_id).delete()
     db.query(EmailVerification).filter_by(user_id=user.user_id).delete()
     user.otp_code = None
