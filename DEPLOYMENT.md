@@ -51,10 +51,14 @@ files. Keep all real credentials in provider environment settings.
    Windows local development should use the explicit uv command in AI_CONTEXT.
 
 3. Set the blueprint's secret inputs directly in Render: `SUPABASE_DB_URL`
-   (or `DATABASE_URL`, which takes precedence), `DATABASE_SSL_ROOT_CERT`,
+   (or `DATABASE_URL`, which takes precedence),
    `JWT_SECRET`, `BREVO_API_KEY`, `MAIL_FROM`, `CORS_ORIGINS`, and the stable
    backup/LRN keys. Use the actual Supabase direct or session-pooler endpoint
-   with `sslmode=verify-full` and its trusted CA mounted at the configured path.
+   with `sslmode=verify-full`. Production uses the tracked public Supabase CA
+   in `backend/certs/prod-ca-2021.crt` when the effective root setting is absent,
+   empty or `system`. Explicit `DATABASE_SSL_ROOT_CERT` paths take precedence;
+   explicit URL `sslrootcert` paths are also supported. See the certificate
+   [renewal notes](backend/certs/README.md) for its fingerprint and expiry.
    Never use a placeholder key or turn off certificate verification. Set
    `ENVIRONMENT=production`, `ENABLE_OTP=true`, `EMAIL_TRANSPORT=brevo_api`.
    The production validator rejects disabled OTP, missing transport credentials,

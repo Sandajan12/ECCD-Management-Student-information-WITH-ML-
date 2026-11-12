@@ -21,6 +21,32 @@ For research history, consult the former section 11's hybrid retraining and
 promotion notes and section 12's implementation/V2 archive below. The standalone
 RF evaluation has its current reference in `backend/ml/README.md`.
 
+## 2026-11-13: Bundled Supabase CA for production TLS
+
+The user supplied the Supabase Dashboard download `prod-ca-2021.crt` after
+Render's production connection to the Singapore Supabase pooler failed with
+certificate verification against system roots. Copied only the public CA to
+`backend/certs/`; no private key or environment credentials are included.
+Verified its CA constraints, self-signature, validity through April 2031 and
+DER SHA-256 fingerprint. A PostgreSQL STARTTLS probe to
+`aws-0-ap-southeast-1.pooler.supabase.com:5432` completed TLS 1.3 with this CA
+and hostname verification; no database login or query was performed by that probe.
+
+Production settings now resolve absent/empty or `system` roots to the absolute
+bundled CA path. Explicit CA paths keep their existing service-setting-over-URL
+precedence; development and mandatory production `sslmode=verify-full` remain.
+Missing bundled files fail closed. The existing SQLAlchemy connection options
+consume the resolved path, so no engine wrapper or new dependency was added.
+
+Executed targeted TLS, deployment guard and deployment security suites:
+**25 tests and 58 subtests passed**. Updated the obsolete assertion that
+verify-full without an explicit root must fail; the bundle now supplies it.
+These pre-push results do not establish hosted deployment acceptance.
+
+Review checkpoint: "Did this change introduce unnecessary abstractions, extra
+state, or new dependencies that existing code already handles?" No: selection
+uses the existing Settings validator and database connect_args.
+
 ## 2026-11-12: Refresh authentication production release verification
 
 The user authorized committing all valid pending work on `fix/refresh-token-auth`,

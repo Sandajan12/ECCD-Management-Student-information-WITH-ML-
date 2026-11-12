@@ -106,7 +106,7 @@ it. Preserve existing configuration and copy templates only when files are absen
 | `ENABLE_OTP` | Defaults **true**; production requires true and configured email transport; local development can bypass OTP |
 | `ENV` / `ENVIRONMENT` | ENV alias has precedence; defaults production; enables production deployment validation, shared rate limits, HSTS and secure cookies |
 | `FRONTEND_URL`, `ALLOWED_ORIGINS`, `CORS_ORIGINS` | Combined comma-separated exact HTTP(S) origins plus localhost defaults for HTTP and Socket.IO; remote production origins require HTTPS |
-| `DATABASE_SSL_ROOT_CERT` | Optional trusted CA path (or libpq system roots); production DATABASE_URL requires sslmode=verify-full and this setting or a URL sslrootcert |
+| `DATABASE_SSL_ROOT_CERT` | Optional explicit trusted CA path; production uses bundled `backend/certs/prod-ca-2021.crt` when the effective setting is absent/empty or `system`. A setting path takes precedence over a URL `sslrootcert` path; explicit URL paths remain supported. Production still requires `sslmode=verify-full`; development is unchanged |
 | `BACKUP_ENCRYPTION_KEY` | Stable Fernet key, normally 44 URL-safe base64 characters; invalid keys are rejected |
 | `BACKUP_IV` | Required by Settings, unused by the current Fernet implementation |
 | `LRN_ENCRYPTION_KEY` | 64 hexadecimal characters; required for LRN protection operations |

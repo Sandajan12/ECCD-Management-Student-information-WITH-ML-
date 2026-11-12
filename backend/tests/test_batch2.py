@@ -56,7 +56,7 @@ class Batch2GuardTests(unittest.TestCase):
         for secret in ("short", "a" * 64, "change-me" * 8):
             with self.subTest(secret_length=len(secret)), self.assertRaises(ValidationError):
                 configuration(ENV="production", JWT_SECRET=secret, DATABASE_URL=good["DATABASE_URL"])
-        for url in ("postgresql://localhost/test", "postgresql://localhost/test?sslmode=require", "postgresql://localhost/test?sslmode=verify-ca&sslrootcert=system", "postgresql://localhost/test?sslmode=verify-full"):
+        for url in ("postgresql://localhost/test", "postgresql://localhost/test?sslmode=require", "postgresql://localhost/test?sslmode=verify-ca&sslrootcert=system"):
             with self.subTest(url=url), self.assertRaises(ValidationError):
                 configuration(ENV="production", DATABASE_URL=url)
         self.assertTrue(configuration(ENV="production", DATABASE_URL="postgresql://localhost/test?sslmode=verify-full", DATABASE_SSL_ROOT_CERT="/test/root.crt").production)

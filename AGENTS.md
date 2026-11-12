@@ -16,6 +16,7 @@ You are maintaining and extending the AMES (Early Childhood Performance Analytic
 - **Evidence-Based Clarification:** Do not fabricate implementations or configuration. Search the current codebase and AI_CONTEXT.md first. Ask for clarification only when a material requirement remains ambiguous or required current information cannot be found. Missing legacy files or historical references must never block feature work or code analysis, and must not prompt requests to restore or supply those files.
 
 ## 3. Backend Rules (FastAPI)
+- **Production database TLS:** Keep `sslmode=verify-full`. The public Supabase CA in `backend/certs/prod-ca-2021.crt` is the fallback for absent/empty or `system` root settings; preserve explicit CA paths in `DATABASE_SSL_ROOT_CERT` or the database URL. Renew the bundled CA before its April 2031 expiry or provider rotation; never disable verification to bypass a trust failure.
 - **Directory Separation:** Maintain strict layers:
   - `config/`: Database sessions and engine connections.
   - `models/`: SQLAlchemy ORM definitions.

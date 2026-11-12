@@ -90,6 +90,12 @@ class Settings(BaseSettings):
             if len(secret) < 32 or len(set(secret)) < 8 or any(word in secret.lower() for word in ("change-me", "changeme", "your-secret", "default-secret")):
                 raise ValueError("Production JWT_SECRET must be a strong secret of at least 32 characters")
             url = make_url(self.DATABASE_URL)
+            root_cert = self.DATABASE_SSL_ROOT_CERT or url.query.get("sslrootcert")
+            if not root_cert or root_cert == "system":
+                # Supabase's private CA is not included in the OS trust store.
+                self.DATABASE_SSL_ROOT_CERT = os.path.join(BACKEND_DIR, "certs", "prod-ca-2021.crt")
+                if not os.path.isfile(self.DATABASE_SSL_ROOT_CERT):
+                    raise ValueError("Bundled Supabase CA certificate is missing")
             if url.get_backend_name() != "postgresql" or url.query.get("sslmode") != "verify-full" or not (url.query.get("sslrootcert") or self.DATABASE_SSL_ROOT_CERT):
                 raise ValueError("Production database requires sslmode=verify-full and a trusted sslrootcert")
         return self
