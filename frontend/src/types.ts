@@ -22,6 +22,8 @@ export interface SessionUser {
 export interface SessionResponse {
   success: true;
   token: string;
+  access_token: string;
+  refresh_token: string;
   user: SessionUser;
   requireOtp: false;
   requiresPasswordChange: boolean;

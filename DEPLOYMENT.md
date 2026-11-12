@@ -103,6 +103,17 @@ remembered devices. Ordinary logout retains device trust; explicit forget-device
 removes it. As before, a copied access JWT survives ordinary logout until expiry
 or credential revocation. No new per-session logout blacklist is introduced.
 
+For sliding sessions, verify the actual Render environment uses
+`ACCESS_TOKEN_EXPIRE_MINUTES=30` and `REFRESH_TOKEN_EXPIRE_MINUTES=1440`; the
+refresh value must exceed the access value. Deploy the matching backend before
+promoting the frontend. Fresh login supplies both tokens; older access-only
+sessions finish their original lifetime. Check JSON-body `/api/auth/refresh`,
+CORS exposure of `Date`/`Retry-After`, renewal after access expiry, temporary
+outage recovery, and account revocation on the actual HTTPS origins. Copied
+refresh JWTs also survive ordinary logout until expiry or account revocation;
+successful renewal slides their expiry forward, without an absolute login-age
+cap or a consumed-token ledger. No new database migration is required.
+
 The browser requires consent on login, registration and OTP verification, and
 sends `terms_accepted=true`. Explicit false/null or malformed consent is rejected
 by the API. Omission remains supported for existing API clients/test helpers;

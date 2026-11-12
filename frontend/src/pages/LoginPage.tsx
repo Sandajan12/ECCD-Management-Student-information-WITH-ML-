@@ -110,8 +110,15 @@ export default function LoginPage() {
     return () => window.clearInterval(timer);
   }, [challenge]);
   const [expiredNotice, setExpiredNotice] = useState(
-    new URLSearchParams(location.search).get("session") === "expired",
+    new URLSearchParams(location.search).has("session"),
   );
+  const sessionReason = new URLSearchParams(location.search).get("session");
+  const sessionMessage =
+    sessionReason === "expired"
+      ? "Your session has expired. Please sign in again."
+      : sessionReason === "revoked"
+        ? "Your session was ended because your account credentials or permissions changed. Please sign in again."
+        : "Your session is no longer valid. Please sign in again.";
   const finishLogin = (data: SessionResponse) => {
     confirmEmail();
     confirmPassword();
@@ -161,10 +168,7 @@ export default function LoginPage() {
   if (user) return <Navigate to={roleHome(user.role)} replace />;
   return (
     <AuthFrame>
-      <AuthAlert tone="warning">
-        {expiredNotice &&
-          "Your session has expired due to inactivity. Please sign in again."}
-      </AuthAlert>
+      <AuthAlert tone="warning">{expiredNotice && sessionMessage}</AuthAlert>
       {!challenge && <AuthAlert>{error}</AuthAlert>}
       <form
         className="w-full"

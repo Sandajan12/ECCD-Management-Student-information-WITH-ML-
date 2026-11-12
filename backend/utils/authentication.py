@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from backend.config.settings import settings
 from backend.models import EmailVerification, Section, SectionTeacher, Teacher, User, UserTrustedDevice
 from backend.models.email_verification import OtpPurpose
-from backend.utils.security import create_access_token
+from backend.utils.security import create_access_token, create_refresh_token
 from backend.utils.account_identity import account_names
 
 
@@ -72,7 +72,7 @@ def session_user(db: Session, token: str, allow_first_login: bool = False) -> Us
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"], options={"require_exp": True})
     except ExpiredSignatureError:
         raise AuthError(401, "Session expired. Please sign in again.", "TOKEN_EXPIRED") from None
-    except (JWTError, ValueError, AttributeError, TypeError):
+    except (JWTError, ValueError, AttributeError, TypeError, OverflowError):
         raise AuthError(401, "Session expired. Please sign in again.", "INVALID_TOKEN") from None
     if not isinstance(payload, dict) or payload.get("tokenType") != "session" or type(payload.get("id")) is not int or not 0 < payload["id"] <= 2147483647:
         raise AuthError(401, "Session expired. Please sign in again.", "SESSION_REVOKED")
@@ -97,8 +97,33 @@ def build_session(db: Session, user: User) -> dict:
                "section_id": section.section_id if section else None, "section_name": section.section_name if section else None,
                "allow_eccd_question_management": bool(teacher and teacher.allow_eccd_question_management)}
     claims = {**payload, "tokenType": "session", "credentialVersion": credential_version(user)}
-    return {"success": True, "requireOtp": False, "requiresOtp": False, "token": create_access_token(claims), "user": payload,
+    access_token = create_access_token(claims)
+    return {"success": True, "requireOtp": False, "requiresOtp": False, "token": access_token,
+            "access_token": access_token, "refresh_token": create_refresh_token(user.user_id, claims["credentialVersion"], user.role.value), "user": payload,
             "requiresPasswordChange": bool(teacher and user.is_first_login)}
+
+
+def refresh_session(db: Session, token: str) -> dict:
+    try:
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"], options={"require_exp": True})
+        subject = payload.get("sub")
+        if payload.get("tokenType") != "refresh" or not isinstance(subject, str) or not subject.isascii() or not subject.isdigit() or not 0 < int(subject) <= 2147483647:
+            raise ValueError()
+    except ExpiredSignatureError:
+        raise AuthError(401, "Session expired. Please sign in again.", "TOKEN_EXPIRED") from None
+    except (JWTError, ValueError, AttributeError, TypeError, OverflowError):
+        raise AuthError(401, "Invalid refresh token. Please sign in again.", "INVALID_TOKEN") from None
+    # Serialize renewal with credential revocation and read current PostgreSQL state.
+    user = db.query(User).filter_by(user_id=int(subject)).populate_existing().with_for_update().first()
+    try:
+        require_active(db, user)
+        if user.role.value == "user" and user.parent is None:
+            raise HTTPException(403, "Parent profile is unavailable.")
+    except HTTPException:
+        raise AuthError(401, "Your account session was revoked. Please sign in again.", "SESSION_REVOKED") from None
+    if payload.get("credentialVersion") != credential_version(user) or payload.get("role") != user.role.value:
+        raise AuthError(401, "Your account session was revoked. Please sign in again.", "SESSION_REVOKED")
+    return build_session(db, user)
 
 
 def device_tokens(request: Request, supplied: str | None = None, legacy_supplied: str | None = None) -> list[str]:

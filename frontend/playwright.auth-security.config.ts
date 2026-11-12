@@ -4,7 +4,11 @@ import path from "node:path";
 const windows = process.platform === "win32";
 export default defineConfig({
   testDir: "./tests",
-  testMatch: ["auth-security.spec.ts", "terms-privacy.spec.ts"],
+  testMatch: [
+    "auth-security.spec.ts",
+    "terms-privacy.spec.ts",
+    "refresh-auth.spec.ts",
+  ],
   outputDir: "./test-results/auth-security",
   workers: 1,
   timeout: 60000,

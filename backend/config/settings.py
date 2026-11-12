@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     SECRET_KEY: str = Field(validation_alias=AliasChoices("JWT_SECRET", "SECRET_KEY"))
     ALGORITHM: Literal["HS256"] = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(default=30, gt=0)
+    REFRESH_TOKEN_EXPIRE_MINUTES: int = Field(default=1440, gt=0)
     ENABLE_OTP: bool = True
     ENVIRONMENT: str = Field(default="production", validation_alias=AliasChoices("ENV", "ENVIRONMENT"))
     FRONTEND_URL: str = ""
@@ -58,6 +59,8 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_deployment(self):
+        if self.REFRESH_TOKEN_EXPIRE_MINUTES <= self.ACCESS_TOKEN_EXPIRE_MINUTES:
+            raise ValueError("REFRESH_TOKEN_EXPIRE_MINUTES must exceed ACCESS_TOKEN_EXPIRE_MINUTES")
         for origin in self.allowed_origins:
             parsed = urlsplit(origin)
             if not re.fullmatch(r"https?://(?:[A-Za-z0-9.-]+|\[[A-Fa-f0-9:]+\])(?::[0-9]{1,5})?", origin) or parsed.username or parsed.password or parsed.path or parsed.query or parsed.fragment:

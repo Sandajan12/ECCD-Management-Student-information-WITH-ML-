@@ -10,6 +10,7 @@ from backend.utils.security import get_password_hash, verify_password
 
 
 def change_password(db: Session, user: User, payload: PasswordChangeVerify) -> dict:
+    """Revoke prior credentials and return a replacement access/refresh pair."""
     if settings.otp_enabled:
         consume_challenge(db, payload.challengeToken or "", payload.otp or "", (OtpPurpose.PASSWORD_CHANGE,), user.user_id, payload.email)
     elif not verify_password(payload.oldPassword or "", user.password_hash):
@@ -25,6 +26,7 @@ def change_password(db: Session, user: User, payload: PasswordChangeVerify) -> d
 
 
 def update_chairman(db: Session, user: User, payload: AccountUpdateRequest) -> dict:
+    """Replace the current session pair after the account security version changes."""
     if not verify_password(payload.currentPassword, user.password_hash):
         raise HTTPException(401, "Incorrect current password.")
     if not payload.newEmail and not payload.newPassword:

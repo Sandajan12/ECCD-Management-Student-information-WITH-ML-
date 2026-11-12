@@ -1,7 +1,8 @@
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 import bcrypt
-from jose import jwt, JWTError
+import secrets
+from jose import jwt
 from backend.config.settings import settings
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
@@ -23,3 +24,11 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm="HS256")
     return encoded_jwt
+
+
+def create_refresh_token(user_id: int, credential_version: str, role: str) -> str:
+    return jwt.encode({
+        "sub": str(user_id), "tokenType": "refresh", "credentialVersion": credential_version,
+        "role": role, "jti": secrets.token_hex(32),
+        "exp": datetime.now(timezone.utc) + timedelta(minutes=settings.REFRESH_TOKEN_EXPIRE_MINUTES),
+    }, settings.SECRET_KEY, algorithm="HS256")

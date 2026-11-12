@@ -111,7 +111,7 @@ api.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
-    expose_headers=["Content-Disposition", "Retry-After"],
+    expose_headers=["Content-Disposition", "Retry-After", "Date"],
 )
 
 # Mount Routers

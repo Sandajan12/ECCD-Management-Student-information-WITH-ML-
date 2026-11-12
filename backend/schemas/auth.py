@@ -54,6 +54,8 @@ class LoginResponse(ApiModel):
     success: Literal[True] = True
     message: str = "Login successful!"
     token: str
+    access_token: str
+    refresh_token: str
     user: SessionUser
     requireOtp: Literal[False] = False
     requiresOtp: Literal[False] = False
@@ -109,6 +111,10 @@ class LogoutRequest(ApiModel):
     forgetDevice: bool = False
     deviceToken: str | None = Field(default=None, max_length=512)
     trusted_device_token: str | None = Field(default=None, max_length=512)
+
+
+class RefreshRequest(ApiModel):
+    refresh_token: str = Field(min_length=1, max_length=3000)
 
 
 class LogoutResponse(ApiModel):

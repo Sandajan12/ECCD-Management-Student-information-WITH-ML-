@@ -43,7 +43,7 @@ interface TeacherProviderProps {
 }
 
 export function TeacherProvider({ children }: TeacherProviderProps) {
-  const { user, token, login } = useAuth();
+  const { user, token, updateUser } = useAuth();
   const userId = user?.id;
   const latestUser = useRef<SessionUser | null>(user);
   useEffect(() => {
@@ -109,18 +109,12 @@ export function TeacherProvider({ children }: TeacherProviderProps) {
           currentUser.section_id !== controls.section_id ||
           currentUser.section_name !== controls.section_name)
       ) {
-        login({
-          success: true,
-          requireOtp: false,
-          requiresPasswordChange: false,
-          token,
-          user: {
-            ...currentUser,
-            allow_eccd_question_management:
-              controls.allow_eccd_question_management,
-            section_id: controls.section_id,
-            section_name: controls.section_name,
-          },
+        updateUser({
+          ...currentUser,
+          allow_eccd_question_management:
+            controls.allow_eccd_question_management,
+          section_id: controls.section_id,
+          section_name: controls.section_name,
         });
       }
       setInitialized(true);
@@ -130,7 +124,7 @@ export function TeacherProvider({ children }: TeacherProviderProps) {
     } finally {
       if (version === requestVersion.current) setLoading(false);
     }
-  }, [userId, token, cacheKey, storageKey, selectSection, login]);
+  }, [userId, token, cacheKey, storageKey, selectSection, updateUser]);
   useEffect(() => {
     void refresh();
     const reload = () => void refresh();

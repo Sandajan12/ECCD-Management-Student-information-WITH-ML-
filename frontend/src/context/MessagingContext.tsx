@@ -41,9 +41,11 @@ function SessionMessaging({ children }: MessagingProviderProps) {
 }
 
 export function MessagingProvider({ children }: MessagingProviderProps) {
-  const { user, token } = useAuth();
+  const { user } = useAuth();
   return (
-    <SessionMessaging key={`${user?.id}:${token}`}>{children}</SessionMessaging>
+    <SessionMessaging key={`${user?.id}:${user?.role}`}>
+      {children}
+    </SessionMessaging>
   );
 }
 

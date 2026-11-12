@@ -25,6 +25,10 @@ services:
         value: "300"
       - key: ALGORITHM
         value: HS256
+      - key: ACCESS_TOKEN_EXPIRE_MINUTES
+        value: "30"
+      - key: REFRESH_TOKEN_EXPIRE_MINUTES
+        value: "1440"
       - key: EMAIL_TRANSPORT
         value: brevo_api
       - key: BREVO_API_KEY

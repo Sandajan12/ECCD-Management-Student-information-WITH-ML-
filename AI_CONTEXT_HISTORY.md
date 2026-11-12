@@ -21,6 +21,200 @@ For research history, consult the former section 11's hybrid retraining and
 promotion notes and section 12's implementation/V2 archive below. The standalone
 RF evaluation has its current reference in `backend/ml/README.md`.
 
+## 2026-11-12: Refresh authentication production release verification
+
+The user authorized committing all valid pending work on `fix/refresh-token-auth`,
+pushing it, merging updated `origin/main`, and deploying only Render
+`Apolinario Mabini School System`, Vercel
+`eccd-management-student-information-with-ml`, and Supabase `AMES_SYSTEM_ML`.
+The older Node.js hosting resources are excluded.
+
+Pre-commit review covered all 25 pending files, including the existing model audit
+and DFD guide. No secret-bearing environment file, private key, provider token,
+or credential URL was found in the candidate changes. `backend/.env.example`
+contains placeholders and public lifetime defaults; local environments remain
+ignored. No model artifact, dependency, migration or business rule was changed.
+
+Executed again before this release: requested backend suites and refresh tests
+passed **99 tests and 173 subtests** against local disposable PostgreSQL schemas.
+Three warnings concern Starlette/httpx, AnyIO and pytest's `TestingPeriod` enum
+collection. `npm run build` in frontend and both explicit TypeScript project
+checks passed. The refresh browser spec passed **36 desktop/mobile checks** using
+`playwright.auth-security.config.ts`, including renewal, outages, revocation,
+race guards and draft preservation. `git diff --check` passed.
+
+Review checkpoint: "Did this change introduce unnecessary abstractions, extra
+state, or new dependencies that existing code already handles?" The existing
+API service and AuthProvider own renewal; no extra layer or dependency is needed.
+These are pre-commit results. Hosted deployment/configuration acceptance is
+reported separately after the main push; these local checks do not establish it.
+
+## 2026-11-12: Renewal recovery fixes and merge-readiness review
+
+Inspected the existing uncommitted branch and remote `main`; both pointed to
+`d5fc07e`, with no branch divergence. The user requested fixes and a deployment
+verdict. Work remains on `fix/refresh-token-auth`; no commit, push, merge,
+production configuration change or deployment was performed. Preserved the
+pre-existing model-audit report and DFD guide work.
+
+Review reproduced two frontend gaps: renewal network/429/503 errors cleared
+otherwise valid credentials, and protected `403 ACCOUNT_INACTIVE` responses
+left the browser signed in until renewal. PostgreSQL continued to reject the
+archived account; this was stale browser state, not an authorization bypass.
+The user selected keeping credentials/drafts and retrying temporary failures.
+
+Updated `frontend/src/services/api.ts` and `context/AuthContext.tsx` to retain
+credentials for network/timeouts and HTTP 408/425/429/5xx. Account-scoped retries
+use 30/60/120-second backoff, honor a longer Retry-After, and share the cooldown
+across timer/expired-request/focus/clock triggers. Offline tabs pause renewal;
+reconnection rechecks the schedule. Successful renewal/logout/replacement resets
+retry state. Exact protected ACCOUNT_INACTIVE responses end the current browser
+session as revoked; ordinary permission 403s stay local to the failed action.
+Existing token-type/live-database checks, trusted devices, one-retry limits,
+late-response guards and durable drafts remain intact. No generic form replay,
+service layer or dependency was added.
+
+Extended `frontend/tests/refresh-auth.spec.ts` with temporary failure recovery,
+cooldown/backoff, logout/reset, offline reconnection and real archive/ordinary
+403 cases. Updated AI_CONTEXT.md, AGENTS.md, DEPLOYMENT.md and the ignored local
+authentication findings summary with current behavior and rollout checks.
+
+Executed the requested backend suites plus refresh tests: **99 passed**, 173
+subtests, using disposable PostgreSQL schemas. Initial new desktop checks had
+six passes and one fixture failure: the mocked cross-origin 429 omitted CORS
+exposure of Retry-After. Corrected that fixture to match the actual backend's
+existing exposed-header configuration. The offline fixture now waits for the
+actual dashboard to load before disconnecting.
+
+The first complete extended browser run had 57 passes and three fixture
+failures. Explicitly simulate server TOKEN_EXPIRED after reconnection, because
+successful API responses can correct the advanced browser clock and the real
+server-issued access token has not aged 31 minutes. The archive fixture now
+allows the expected navigation to destroy its pending browser-script context,
+while asserting the exact revoked URL/message and retained draft. Added an
+absolute Retry-After/server-Date case with browser clock skew; the retry uses
+the response Date before falling back to the compensated client time. The
+corrected targeted desktop/mobile run passed all **8 checks**.
+
+Final production build (`npm run build` from frontend), both explicit frontend
+TypeScript checks, strict standalone type-checking of the refresh browser spec
+and config, full frontend lint, targeted lint, formatting and whitespace checks
+passed. Some pnpm commands initially failed to fetch tooling inside the sandbox;
+the same checks passed with authorized network access. The final complete
+authentication/terms/refresh browser run passed **62 tests** across desktop and
+mobile (6.4 minutes), using `pnpm.cmd exec playwright test --config
+playwright.auth-security.config.ts` from frontend. The earlier targeted eight
+checks overlap this final complete suite and are separate runs.
+The fixture can emit the previously observed Engine.IO REQUEST_METHOD teardown
+trace during token/socket replacement; no corresponding authentication failure
+was established by that log.
+
+Hosted settings/health are not established by local checks. Render discovery
+became available, but no workspace was selected; the optional identification
+question was unanswered during this task. The connected Vercel personal/team project listings
+were empty. No provider settings were changed or deployments triggered. The
+original reported hosted logout under ten minutes remains unreproduced. No
+database migration is required for these session changes.
+
+Verdict: the reviewed authentication changes are ready to commit and merge into
+main based on local verification. The feature branch still has no commits ahead
+of main, so a merge before committing these working changes would deploy nothing.
+Include the new backend/browser regression files in that commit, preserve the
+unrelated report/DFD work, and do not include ignored local environment secrets.
+Production acceptance still requires actual 30/1440 lifetime configuration,
+backend-before-frontend rollout and HTTPS-origin smoke checks in DEPLOYMENT.md.
+
+Review checkpoint: "Did this change introduce unnecessary abstractions, extra
+state, or new dependencies that existing code already handles?" One retry
+record and the existing AuthProvider timer handle recovery. The same API
+service and request/account guards remain in use; no additional dependency.
+Graphify's AST map was refreshed before shared changes and inbound callers were
+inspected. Diagnostics reported zero missing/dangling endpoints, three self-loops
+and 385 potentially collapsed undirected same-endpoint edges; active source and
+tests supplied caller evidence. Optional SQL extraction was unavailable without
+tree_sitter_sql; no dependency was installed.
+
+## 2026-11-12: Sliding refresh authentication on `fix/refresh-token-auth`
+
+Created the branch from `main` at `d5fc07e` after inspecting Git status.
+Preserved the pre-existing model-audit report and DFD guide work. No commit,
+push, merge, migration, production account write or hosted deployment was part
+of this task. The earlier investigation of the reported hosted logout under
+ten minutes remains a diagnostic baseline, not a reproduced root cause.
+
+Added 30-minute access JWTs plus configurable 1440-minute sliding refresh JWTs,
+with a JSON-body `/api/auth/refresh` endpoint. Login/OTP/registration and
+self-service credential replacement return both tokens while preserving the
+legacy `token` access alias. Refresh validates the live PostgreSQL account,
+profile, role and credential version under the account lock; token types cannot
+be interchanged. First-login restrictions and 30-day trusted-device semantics
+remain intact. Refresh rotation issues a unique new JWT but has no used-token
+ledger: old copies remain valid until expiry or account revocation. Ordinary
+logout removes local credentials without blacklisting separately retained JWTs.
+
+The frontend shares renewal across timer/expired HTTP requests, retries a
+rejected protected call only once, compensates with exposed HTTP Date headers,
+rechecks on tab wake and preserves the logout reason. Logout and failed renewal
+preserve durable drafts. Late refreshes cannot restore a logged-out/replaced
+session, and expired requests cannot retry as another stored account. Messaging
+reconnects without remounting portal children; teacher access updates preserve
+both tokens. No new dependencies or generic offline replay mechanisms were added.
+
+### Modified file inventory
+
+| Files | Change |
+| --- | --- |
+| `backend/config/settings.py`, `backend/.env.example`, `render.yaml` | Positive refresh lifetime exceeding access lifetime; 30/1440 defaults and templates |
+| Local ignored `backend/.env` | Changed only token lifetime settings to 30/1440; no secret changes |
+| `backend/utils/security.py`, `backend/utils/authentication.py` | Refresh JWT creation, paired session issuance, live refresh validation and structured rejection codes |
+| `backend/routes/auth.py`, `backend/schemas/auth.py`, `backend/utils/account_changes.py` | Typed refresh endpoint/response fields, optional logout body, credential replacement documentation |
+| `backend/main.py` | Expose HTTP Date through CORS for clock compensation |
+| `frontend/src/services/api.ts`, `frontend/src/types.ts` | Token persistence/types, single renewal promise, clock offset, one retry, stale-session guards and reason events |
+| `frontend/src/context/AuthContext.tsx` | Proactive renewal/wake scheduling, current user updates, scoped authentication cleanup |
+| `frontend/src/context/TeacherContext.tsx`, `frontend/src/context/MessagingContext.tsx` | Update teacher context without replacing tokens; preserve mounted portal/forms on token renewal |
+| `frontend/src/pages/LoginPage.tsx` | Accurate expired/revoked/invalid messages |
+| New `backend/tests/test_refresh_tokens.py` | Settings, issuance, isolation, renewal, expiration, live revocation, credential replacement and first-login regressions |
+| New `frontend/tests/refresh-auth.spec.ts`, `frontend/playwright.auth-security.config.ts` | Desktop/mobile renewal, clock, retry, reason, race and draft regression coverage |
+| `frontend/tests/auth-security.spec.ts` | Wait for React mount before manually seeding auth in the isolated draft-replay test |
+| `AI_CONTEXT.md`, `AGENTS.md`, `AI_CONTEXT_HISTORY.md` | Current architecture/rules and this dated delivery record |
+| Local ignored `docs/AUTHENTICATION_SESSION_FINDINGS.md` | Marked the prior investigation as a historical baseline with links to current guidance |
+
+### Executed verification
+
+- Requested PostgreSQL suites plus refresh tests: **99 passed**, 173 subtests.
+  Command: `uv run --no-project --python .venv312 python -m pytest backend/tests/test_batch1.py backend/tests/test_phase2.py backend/tests/test_security_batch2.py backend/tests/test_refresh_tokens.py -q`.
+  After extending the expired-access assertion, reran refresh tests: **10 passed**,
+  four subtests. Tests create/drop randomized disposable schemas; no school
+  records were changed. Existing deprecation/collection warnings were emitted.
+- Complete authentication/terms/refresh browser suite: **44 passed** on desktop
+  and mobile using `playwright.auth-security.config.ts`. Initial failures exposed
+  test seeding races; fixtures were corrected without changing replay rules.
+  Browser fixture runs also emitted Engine.IO/Windows connection teardown errors;
+  these did not fail the final complete suite.
+- Final targeted refresh browser run: **20 passed** across desktop/mobile after
+  the page-mount preservation assertion and malformed legacy-token reason check
+  were added. Command: `pnpm.cmd exec playwright test --config playwright.auth-security.config.ts refresh-auth.spec.ts`
+  from `frontend/`. This overlaps the full suite; the counts are separate runs.
+- `npm run build` in `frontend/` passed, including TypeScript and Vite production
+  compilation. Both explicit frontend tsconfig checks, targeted ESLint and
+  `git diff --check` passed. Final changed frontend files also passed Prettier.
+- Refreshed the ignored Graphify AST map before shared changes and inspected
+  inbound callers. Graph diagnostics reported zero missing/dangling endpoints,
+  three self-loops and 377 potentially collapsed undirected same-endpoint edges;
+  source/tests supplied the final caller evidence. SQL extraction was unavailable
+  without optional `tree_sitter_sql`; no dependency was installed.
+
+Operational boundary: Render/Vercel were not changed or tested. Deployment needs
+matching backend/frontend and backend lifetime configuration, followed by fresh
+login to obtain refresh credentials; older access-only sessions retain their
+original lifetime. The signed refresh JWTs are browser-readable bearer secrets.
+
+Review checkpoint: "Did this change introduce unnecessary abstractions, extra
+state, or new dependencies that existing code already handles?" The shared API
+and auth context were reused; request-generation/owner guards prevent cross-session
+retries, clock state supports skew compensation, and one promise coalesces renewal.
+No additional service layer or dependency was introduced.
+
 ## 2026-11-09: Retired branding settings cleanup
 
 Removed `secondary_color`, `profile_pic_url` and `login_background` from the

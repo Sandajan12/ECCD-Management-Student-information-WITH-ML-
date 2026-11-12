@@ -98,7 +98,8 @@ it. Preserve existing configuration and copy templates only when files are absen
 | --- | --- |
 | `DATABASE_URL` / `SUPABASE_DB_URL` | Required PostgreSQL URL; DATABASE_URL takes precedence; engine and SessionLocal are in `config/database.py` |
 | `JWT_SECRET` / `SECRET_KEY`, `ALGORITHM` | JWT_SECRET alias has precedence; production requires a strong secret of at least 32 characters; algorithm defaults HS256 |
-| `ACCESS_TOKEN_EXPIRE_MINUTES` | Code default 30; inspect the environment template and actual configuration for overrides |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | Default/template/Render blueprint 30 minutes; deployed environment overrides must be checked |
+| `REFRESH_TOKEN_EXPIRE_MINUTES` | Default/template/Render blueprint 1440 minutes (24 hours); positive and greater than the access lifetime |
 | `ENABLE_OTP` | Defaults **true**; production requires true and configured email transport; local development can bypass OTP |
 | `ENV` / `ENVIRONMENT` | ENV alias has precedence; defaults production; enables production deployment validation, shared rate limits, HSTS and secure cookies |
 | `FRONTEND_URL`, `ALLOWED_ORIGINS`, `CORS_ORIGINS` | Combined comma-separated exact HTTP(S) origins plus localhost defaults for HTTP and Socket.IO; remote production origins require HTTPS |
@@ -291,7 +292,7 @@ the complete method/path/query inventory.
 
 | Area | Principal paths | Handler |
 | --- | --- | --- |
-| Authentication | /api/auth/login, /login-step1, /verify-otp, /register-parent, /update-password, /send-otp, /request-otp, /logout | `routes/auth.py` |
+| Authentication | /api/auth/login, /login-step1, /verify-otp, /register-parent, /update-password, /refresh, /send-otp, /request-otp, /logout | `routes/auth.py` |
 | Teacher CRUD/access | /api/teachers/, /active, /archived, /create, user-ID update/archive/unarchive/delete aliases, /me/access, /access-controls, /settings GET/PUT, password request/verify; POST /api/chairman/teachers provisioning alias | `routes/teachers.py`, `chairman.py` |
 | Parent linking management | GET /api/teacher/students and /api/teachers/students; POST /api/teachers/students/{student_id}/approve-parent-link, /reject-parent-link, /unlink-parent | `routes/teachers.py` |
 | Section parent editing windows | GET/PUT /api/teacher/settings/parent-assessment-access, optional section_id for assigned-section selection | `routes/teachers.py` |
@@ -323,8 +324,11 @@ including resolved relative URLs; foreign destinations lose Authorization.
 Downloads use 120 seconds, decode blob-contained JSON errors, and honor
 Content-Disposition. Relevant settings payloads convert to multipart. HTTP
 errors expose detail/message; 422 responses retain location/type/message without
-echoing sensitive inputs. Non-auth 401 responses trigger session expiry except
-incorrect-current-password responses.
+echoing sensitive inputs. Protected API 401 `TOKEN_EXPIRED` responses (or an
+expired access JWT) use one shared in-flight refresh and retry each rejected
+request at most once; incorrect-current-password responses are excluded.
+`SESSION_REVOKED`/`INVALID_TOKEN` never trigger renewal. Auth endpoints never
+recursively retry; foreign API origins never receive these tokens.
 
 ## 6. Authentication, ownership and parent access
 
@@ -334,6 +338,48 @@ require 8+ characters, uppercase/lowercase and a number, within bcrypt's 72-byte
 limit. Teacher temporary passwords use their own 8-character minimum and
 mandatory first-login replacement; restricted sessions cannot access ordinary
 protected APIs/chat.
+
+Access JWTs have `tokenType: "session"` and default to 30 minutes. Refresh JWTs
+have `tokenType: "refresh"`, account ID in `sub`, credential version, role,
+unique `jti` and UTC expiry; their default lifetime is 1440 minutes. Token types
+cannot be interchanged. Login (including OTP/registration) and self-service
+credential replacement return `token` (compatibility alias), `access_token`,
+`refresh_token` and `user`. `POST /api/auth/refresh` accepts JSON
+`{"refresh_token":"..."}`, reloads/locks the live PostgreSQL account, validates
+eligibility, profile, role and credential version, then returns a fresh pair
+and current user context. Each successful renewal slides refresh expiry forward
+by the configured lifetime; there is no absolute login-age cap. Wrong/expired
+tokens return 401 `INVALID_TOKEN`/`TOKEN_EXPIRED`; account changes return 401
+`SESSION_REVOKED`. First-login restrictions still apply to renewed sessions.
+
+React stores `token`, `refresh_token` and `user` in localStorage. It renews about
+two minutes before access expiry, rechecks on focus/visibility/reconnection,
+and uses exposed API HTTP `Date` headers to compensate for clock skew. Timer
+renewal and concurrent expired HTTP calls share a promise per tab. Messaging
+reconnects with the new access token without remounting the portal/form subtree.
+Late renewal cannot
+restore a locally logged-out/replaced session. Session expiry/logout removes
+only `token`, `refresh_token`, `user`, `role`; durable drafts remain. Legacy
+clients/sessions without refresh tokens retain their original access lifetime.
+Redirects preserve `session=expired|revoked|invalid`; login messages describe
+expiry, account changes or invalid sessions, never inferred inactivity.
+Network/timeout failures and HTTP 408/425/429/5xx during renewal preserve local
+credentials and drafts. Renewal retries after 30, 60, then at most 120 seconds
+(or a longer server `Retry-After`), sharing the cooldown across timer/401 calls.
+Focus and clock updates cannot bypass that cooldown. Offline tabs pause renewal
+and recheck on reconnection; expired access never grants server access while
+offline. Successful renewal, logout or session replacement resets retry state.
+Confirmed refresh rejection still ends the session with the matching reason.
+Protected `403 ACCOUNT_INACTIVE` responses end the current local session as
+revoked; ordinary permission-related 403 responses do not log users out.
+Recovery renews credentials only; failed forms retain drafts and still require
+manual resubmission except for the existing authorized teacher ECCD replay.
+
+Refresh rotation issues a new JWT but does not maintain a server-side used-token
+ledger. A copied old refresh JWT remains usable until its expiry or account
+revocation. Ordinary logout is local cleanup (body optional), preserves device
+trust and does not invalidate copied JWTs. No schema migration is required.
+Refresh tokens are browser-readable bearer credentials; never log/share them.
 
 JWTs bind to live credentials and persistent security version. Inactive/pending
 accounts cannot use protected services. Credential changes, archive/restore and

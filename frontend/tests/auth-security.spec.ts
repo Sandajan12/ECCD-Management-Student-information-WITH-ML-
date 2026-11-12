@@ -184,14 +184,19 @@ test("queue retains non-ECCD drafts and replays only confirmed teacher ECCD work
   const session = (await login.json()) as SessionResponse;
   expect(session.user.role).toBe("admin");
   await page.goto("/login");
+  // Mount auth before manually seeding storage so the layout cannot race this isolated replay check.
+  await expect(
+    page.getByRole("button", { name: "Log In", exact: true }),
+  ).toBeVisible();
   const result = await page.evaluate(async (account) => {
     const apiPath = "/src/services/api.ts";
     const draftsPath = "/src/utils/drafts.ts";
     const { default: api } = (await import(apiPath)) as {
       default: AxiosInstance;
     };
-    const { isDraftRequest, syncDrafts } = (await import(draftsPath)) as
-      typeof import("../src/utils/drafts");
+    const { isDraftRequest, syncDrafts } = (await import(
+      draftsPath
+    )) as typeof import("../src/utils/drafts");
     const owner = account.user.id;
     localStorage.setItem("token", account.token);
     localStorage.setItem("user", JSON.stringify(account.user));
@@ -279,7 +284,8 @@ test("queue retains non-ECCD drafts and replays only confirmed teacher ECCD work
     const retained = requests.map(
       (_, index) =>
         JSON.parse(
-          localStorage.getItem(`ames_draft_${owner}_security_${index}`) || "null",
+          localStorage.getItem(`ames_draft_${owner}_security_${index}`) ||
+            "null",
         ) as { values: { text: string }; is_pending_sync: boolean } | null,
     );
     return {
