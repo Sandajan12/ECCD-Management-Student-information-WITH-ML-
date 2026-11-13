@@ -12,6 +12,7 @@ from .assessment_access import ParentAssessmentAccess
 class EccdExportYearQuery(ApiModel):
     school_year: SchoolYear | None = None
     testing_period: TestingPeriod = TestingPeriod.PRE
+    format: Literal["xlsx", "pdf"] = "xlsx"
 
 
 class EccdSectionExportQuery(EccdExportYearQuery):
@@ -22,6 +23,7 @@ class EccdSectionExportQuery(EccdExportYearQuery):
 class EccdStudentExportQuery(ApiModel):
     student_id: PositiveId
     school_year: SchoolYear
+    format: Literal["xlsx", "pdf"] = "xlsx"
 
 
 # --- DOMAIN SCHEMAS ---

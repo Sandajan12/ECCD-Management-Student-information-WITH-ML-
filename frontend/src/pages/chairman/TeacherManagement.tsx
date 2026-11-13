@@ -596,6 +596,7 @@ export default function TeacherManagement() {
   const [archived, setArchived] = useState(false);
   const [activeTeachers, setActiveTeachers] = useState<Teacher[]>([]);
   const [sectionsOpen, setSectionsOpen] = useState(false);
+  const [exportFormat, setExportFormat] = useState<"xlsx" | "pdf">("xlsx");
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
@@ -851,6 +852,17 @@ export default function TeacherManagement() {
             <h2 className="mb-5 text-lg font-semibold">
               Sections & Primary Advisers
             </h2>
+            <Select
+              aria-label="Summary export file format"
+              value={exportFormat}
+              disabled={busy}
+              onChange={(event) =>
+                setExportFormat(event.target.value === "pdf" ? "pdf" : "xlsx")
+              }
+            >
+              <option value="xlsx">Excel (.xlsx)</option>
+              <option value="pdf">PDF (.pdf)</option>
+            </Select>
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
               {sections.map((s) => (
                 <section
@@ -872,8 +884,8 @@ export default function TeacherManagement() {
                         void act(
                           () =>
                             downloadFile(
-                              `/api/chairman/sections/${s.section_id}/export-summary?schoolYear=All`,
-                              "ECCD_Summary.xlsx",
+                              `/api/chairman/sections/${s.section_id}/export-summary?schoolYear=All${exportFormat === "pdf" ? "&format=pdf" : ""}`,
+                              `ECCD_Summary.${exportFormat}`,
                             ),
                           "Summary downloaded.",
                         )

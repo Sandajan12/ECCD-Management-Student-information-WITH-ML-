@@ -632,6 +632,39 @@ download routes and all PRE/MID/POST content.
 Relevant regressions in `backend/tests/`: `test_eccd_question_order.py`,
 `test_eccd_card_exports.py`, `test_checklist_workbook.py`, `test_eccd_exports.py`.
 
+### Staff PDF export option
+
+Chairman Student Records' Download ECCD Records, Teacher Management's section
+Export summary, and Teacher ECCD's records/summary dialogs offer Excel (.xlsx)
+or PDF (.pdf). The existing authenticated `downloadFile` client handles both;
+bearers remain in RAM and downloads use blob responses. Excel remains the
+default and its workbook generation, filenames and ZIP behavior are unchanged.
+
+All existing staff Excel routes also accept validated `format=pdf`: Chairman
+`/api/chairman/export-eccd` and `/sections/{section_id}/export-summary`, ECCD
+`/api/eccd/export/card-single`, `/export/cards-zip`, `/export/section-summary`,
+`/section/{section_id}/export` and `/export-all`, plus teacher compatibility
+`/api/teachers/download/{lrn}` and `/download-all` (shortened paths retain their
+family prefix). Authorization and cohort selection run before PDF generation.
+PDF scope matches Excel, including all PRE/MID/POST periods, archived-year
+rules, and section/year cohorts with 30-child summary parts. Chairman Student
+Records' export remains independent of roster year/search filters. Bulk
+downloads remain ZIPs containing PDFs; a single summary part for a specific
+section is a PDF, while multiple parts/cohorts remain a ZIP.
+
+`utils/pdf.py` uses fpdf2 and the already-installed Matplotlib DejaVu fonts,
+without OS font packages. It reads populated Excel workbooks, preserving
+official scores, blank/unanswered marks, custom supplementary domains,
+continuations and saved-mark timestamp comments. Individual checklists are
+portrait A4; summaries are landscape A4 with split wide matrices, repeated
+learner identity/table headers, wrapped text and continuation rows for long
+content. Headers identify Apolinario Mabini Elementary School, report and
+section/year/all-period scope; each page has Page X of Y and an export timestamp
+in Philippine Time (Asia/Manila, UTC+8). PDFs reformat reports rather than
+reproducing spreadsheet geometry. Targeted checks are
+`backend/tests/test_pdf_exports.py` and the non-browser
+`node --test frontend/tests/pdf-export-options.test.cjs`.
+
 ## 9. Messaging, settings, rollover and backups
 
 Messaging requires active teacher/parent accounts linked through an active child

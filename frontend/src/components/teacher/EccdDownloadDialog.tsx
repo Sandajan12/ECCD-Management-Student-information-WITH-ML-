@@ -47,6 +47,7 @@ export default function EccdDownloadDialog({
   const [selectedYear, setSelectedYear] = useState<string>("");
   const [studentId, setStudentId] = useState<string>(initialStudentId);
   const [error, setError] = useState<string>("");
+  const [format, setFormat] = useState<"xlsx" | "pdf">("xlsx");
   const years = [...new Set([currentSchoolYear, ...schoolYears])]
     .filter(Boolean)
     .sort()
@@ -72,6 +73,7 @@ export default function EccdDownloadDialog({
     if (!canDownload || downloading) return;
     setError("");
     const params = new URLSearchParams({ school_year: schoolYear });
+    if (format === "pdf") params.set("format", format);
     const bulk = !isCurrentYear || studentId === "all";
     const endpoint = isSummary
       ? "section-summary"
@@ -85,10 +87,10 @@ export default function EccdDownloadDialog({
     const downloadError = await onDownload(
       `/api/eccd/export/${endpoint}?${params.toString()}`,
       isSummary
-        ? `Section_ECCD_Summary_${schoolYear}.xlsx`
+        ? `Section_ECCD_Summary_${schoolYear}.${format}`
         : bulk
           ? `ECCD_Section_${schoolYear}.zip`
-          : `ECCD_Assessment_${schoolYear}.xlsx`,
+          : `ECCD_Assessment_${schoolYear}.${format}`,
       isSummary
         ? "Section summary record downloaded successfully!"
         : bulk
@@ -115,6 +117,21 @@ export default function EccdDownloadDialog({
       </DialogTitle>
       <DialogContent>
         <Stack sx={{ pt: 1, gap: 2 }}>
+          <FormControl fullWidth size="small" disabled={downloading}>
+            <InputLabel id="teacher-export-format-label">File Format</InputLabel>
+            <Select
+              labelId="teacher-export-format-label"
+              label="File Format"
+              value={format}
+              onChange={(event) =>
+                setFormat(event.target.value === "pdf" ? "pdf" : "xlsx")
+              }
+              sx={{ borderRadius: 3 }}
+            >
+              <MenuItem value="xlsx">Excel (.xlsx)</MenuItem>
+              <MenuItem value="pdf">PDF (.pdf)</MenuItem>
+            </Select>
+          </FormControl>
           <Typography variant="body2" sx={{ color: "text.secondary" }}>
             {isSummary
               ? "Download the consolidated section summary for the selected school year."

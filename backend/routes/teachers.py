@@ -1,4 +1,5 @@
 from backend.schemas.account import PasswordChangeRequest, PasswordChangeVerify, ChallengeResult
+from typing import Literal
 from backend.schemas.auth import LoginResponse
 from backend.schemas.common import MessageResult, PositiveId
 from backend.schemas.teacher import ParentPermissionUpdate, TeacherAccessResponse, TeacherProvisionRequest, TeacherProvisionResponse, TeacherSettingsResponse, TeacherSettingsUpdate
@@ -263,15 +264,15 @@ def update_teacher_settings(payload: TeacherSettingsUpdate, db: Session = Depend
 
 
 @router.get("/download/{lrn}")
-def download_student_assessment(lrn: str, db: Session = Depends(get_db), current_user=Depends(verify_role(["admin", "super-admin"]))):
+def download_student_assessment(lrn: str, db: Session = Depends(get_db), current_user=Depends(verify_role(["admin", "super-admin"])), format: Literal["xlsx", "pdf"] = Query("xlsx")):
     from backend.utils.excel import checklist_response
-    return checklist_response(db, current_user, lrn)
+    return checklist_response(db, current_user, lrn, output_format=format)
 
 
 @router.get("/download-all")
-def download_all_assessments(db: Session = Depends(get_db), current_user=Depends(verify_role(["admin", "super-admin"]))):
+def download_all_assessments(db: Session = Depends(get_db), current_user=Depends(verify_role(["admin", "super-admin"])), format: Literal["xlsx", "pdf"] = Query("xlsx")):
     from backend.utils.excel import bulk_checklist_response
-    return bulk_checklist_response(db, current_user)
+    return bulk_checklist_response(db, current_user, output_format=format)
 
 
 @router.put("/{user_id}", response_model=MessageResult)

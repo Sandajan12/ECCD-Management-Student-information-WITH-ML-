@@ -1,6 +1,6 @@
 import math
 from collections import defaultdict
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response
 from sqlalchemy import select
@@ -302,7 +302,7 @@ def export_eccd_cards(
     current_user=Depends(verify_role(["super-admin", "admin"])),
 ):
     from backend.utils.excel import bulk_checklist_response
-    return bulk_checklist_response(db, current_user, section_id=query.section_id, school_year=query.school_year)
+    return bulk_checklist_response(db, current_user, section_id=query.section_id, school_year=query.school_year, output_format=query.format)
 
 
 @router.get("/export/card-single")
@@ -312,7 +312,7 @@ def export_eccd_card(
     current_user=Depends(verify_role(["super-admin", "admin"])),
 ):
     from backend.utils.excel import checklist_response
-    return checklist_response(db, current_user, query.student_id, school_year=query.school_year)
+    return checklist_response(db, current_user, query.student_id, school_year=query.school_year, output_format=query.format)
 
 
 @router.get("/export/section-summary")
@@ -322,17 +322,17 @@ def export_eccd_section_summary(
     current_user=Depends(verify_role(["super-admin", "admin"])),
 ):
     from backend.utils.excel import summary_response
-    return summary_response(db, current_user, section_filter=query.section_id, school_year=query.school_year)
+    return summary_response(db, current_user, section_filter=query.section_id, school_year=query.school_year, output_format=query.format)
 
 
 @router.get("/section/{section_id}/export")
 def export_section_summary(section_id: PositiveId, query: Annotated[EccdExportYearQuery, Query()], db: Session = Depends(get_db), current_user=Depends(verify_role(["super-admin", "admin"]))):
     from backend.utils.excel import summary_response
-    return summary_response(db, current_user, section_filter=section_id, school_year=query.school_year)
+    return summary_response(db, current_user, section_filter=section_id, school_year=query.school_year, output_format=query.format)
 
 @router.get("/export-all")
-def export_all_eccd(testing_period: TestingPeriod = Query(TestingPeriod.PRE), db: Session = Depends(get_db), current_user=Depends(verify_role(["super-admin"]))):
+def export_all_eccd(testing_period: TestingPeriod = Query(TestingPeriod.PRE), db: Session = Depends(get_db), current_user=Depends(verify_role(["super-admin"])), format: Literal["xlsx", "pdf"] = Query("xlsx")):
     from backend.utils.excel import summary_response
-    return summary_response(db, current_user)
+    return summary_response(db, current_user, output_format=format)
 
 

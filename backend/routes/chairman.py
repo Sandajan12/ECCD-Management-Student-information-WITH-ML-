@@ -7,6 +7,7 @@ from backend.schemas.teacher import TeacherPermissionResponse
 from backend.schemas.teacher import AssignmentResponse, TransferResponse
 import re
 from datetime import datetime, timezone
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from fastapi.responses import JSONResponse
@@ -25,15 +26,15 @@ router = APIRouter(prefix="/api/chairman", tags=["Chairman"])
 
 
 @router.get("/export-eccd")
-def export_all_sections(section: str = Query("All"), schoolYear: str = Query("All"), db: Session = Depends(get_db), current_user=Depends(verify_role(["super-admin"]))):
+def export_all_sections(section: str = Query("All"), schoolYear: str = Query("All"), db: Session = Depends(get_db), current_user=Depends(verify_role(["super-admin"])), format: Literal["xlsx", "pdf"] = Query("xlsx")):
     from backend.utils.excel import summary_response
-    return summary_response(db, current_user, section, schoolYear)
+    return summary_response(db, current_user, section, schoolYear, output_format=format)
 
 
 @router.get("/sections/{section_id}/export-summary")
-def export_section(section_id: int, schoolYear: str = Query("All"), db: Session = Depends(get_db), current_user=Depends(verify_role(["super-admin"]))):
+def export_section(section_id: int, schoolYear: str = Query("All"), db: Session = Depends(get_db), current_user=Depends(verify_role(["super-admin"])), format: Literal["xlsx", "pdf"] = Query("xlsx")):
     from backend.utils.excel import summary_response
-    return summary_response(db, current_user, section_id, schoolYear)
+    return summary_response(db, current_user, section_id, schoolYear, output_format=format)
 
 
 @router.post("/sections", status_code=201, response_model=SectionCreatedResponse)

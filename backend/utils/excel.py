@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from io import BytesIO
 from pathlib import Path
+from typing import Literal
 import posixpath
 import re
 from zipfile import ZipFile
@@ -211,7 +212,7 @@ def student_workbook(db: Session, student: Student, *, batch: ChecklistData | No
     return generate_student_workbook(student, teacher, parents, batch.evaluations.get(student.student_id, []), batch.questions, batch.setting)
 
 
-def checklist_response(db: Session, user: User, identifier: str | int, school_year: str | None = None) -> StreamingResponse:
+def checklist_response(db: Session, user: User, identifier: str | int, school_year: str | None = None, *, output_format: Literal["xlsx", "pdf"] = "xlsx") -> StreamingResponse:
     student = resolve_student(db, identifier)
     authorize_student(db, user, student)
     if school_year is not None:
@@ -219,8 +220,13 @@ def checklist_response(db: Session, user: User, identifier: str | int, school_ye
             raise HTTPException(400, "Archived school year records must be downloaded as a section ZIP.")
         if student.school_year != school_year or not student.is_active:
             raise HTTPException(404, f"No active student record found in School Year {school_year}.")
-    filename = f"{safe_filename(student.last_name or 'STUDENT').upper()}_{safe_filename(student.school_year or 'RECORD')}.xlsx"
-    return stream_bytes(workbook_bytes(student_workbook(db, student)), filename)
+    filename = f"{safe_filename(student.last_name or 'STUDENT').upper()}_{safe_filename(student.school_year or 'RECORD')}.{output_format}"
+    workbook = student_workbook(db, student)
+    if output_format == "pdf":
+        from backend.utils.pdf import workbook_pdf
+        scope = f"Section: {student.section.section_name if student.section else student.section_name or 'Unassigned'} | School year: {student.school_year or 'Unspecified'} | Periods: PRE / MID / POST"
+        return stream_bytes(workbook_pdf(workbook, title="ECCD Individual Checklist", scope=scope, checklist=True), filename, "application/pdf")
+    return stream_bytes(workbook_bytes(workbook), filename)
 
 
 def authorize_export_section(db: Session, user: User, section_id: int) -> None:
@@ -229,7 +235,7 @@ def authorize_export_section(db: Session, user: User, section_id: int) -> None:
         raise HTTPException(403, "Section is not assigned to you.")
 
 
-def bulk_checklist_response(db: Session, user: User, section_id: int | None = None, school_year: str | None = None) -> StreamingResponse:
+def bulk_checklist_response(db: Session, user: User, section_id: int | None = None, school_year: str | None = None, *, output_format: Literal["xlsx", "pdf"] = "xlsx") -> StreamingResponse:
     query = db.query(Student)
     if section_id is not None:
         authorize_export_section(db, user, section_id)
@@ -256,7 +262,14 @@ def bulk_checklist_response(db: Session, user: User, section_id: int | None = No
             if name in used:
                 name += f"_{student.student_id}"
             used.add(name)
-            archive.writestr(name + ".xlsx", workbook_bytes(student_workbook(db, student, batch=batch)))
+            workbook = student_workbook(db, student, batch=batch)
+            if output_format == "pdf":
+                from backend.utils.pdf import workbook_pdf
+                scope = f"Section: {student.section.section_name if student.section else 'Unassigned'} | School year: {student.school_year or 'Unspecified'} | Periods: PRE / MID / POST"
+                content = workbook_pdf(workbook, title="ECCD Individual Checklist", scope=scope, checklist=True)
+            else:
+                content = workbook_bytes(workbook)
+            archive.writestr(name + "." + output_format, content)
     sections = {student.section.section_name if student.section else "UNASSIGNED" for student in students}
     years = {student.school_year or 'RECORD' for student in students}
     section = next(iter(sections)) if len(sections) == 1 else "ALL_SECTIONS"
@@ -402,7 +415,7 @@ def summary_workbook(db: Session, section: Section, students: list[Student]):
     return wb
 
 
-def summary_response(db: Session, user: User, section_filter: str | int | None = None, school_year: str | None = None) -> StreamingResponse:
+def summary_response(db: Session, user: User, section_filter: str | int | None = None, school_year: str | None = None, *, output_format: Literal["xlsx", "pdf"] = "xlsx") -> StreamingResponse:
     query = db.query(Student).filter_by(is_active=True)
     if school_year and school_year != "All":
         query = db.query(Student).filter_by(school_year=school_year)
@@ -427,10 +440,17 @@ def summary_response(db: Session, user: User, section_filter: str | int | None =
         section = db.get(Section, section_id) if section_id else Section(section_name="UNASSIGNED")
         for offset in range(0, len(cohort), 30):
             suffix = f"_Part{offset // 30 + 1}" if len(cohort) > 30 else ""
-            name = f"{safe_filename(section.section_name).upper()}{suffix}_{safe_filename(year or 'RECORD')}.xlsx"
-            exports.append((name, workbook_bytes(summary_workbook(db, section, cohort[offset:offset + 30]))))
+            name = f"{safe_filename(section.section_name).upper()}{suffix}_{safe_filename(year or 'RECORD')}.{output_format}"
+            workbook = summary_workbook(db, section, cohort[offset:offset + 30])
+            if output_format == "pdf":
+                from backend.utils.pdf import workbook_pdf
+                scope = f"Section: {section.section_name} | School year: {year or 'Unspecified'} | Periods: PRE / MID / POST{suffix.replace('_', ' ')}"
+                content = workbook_pdf(workbook, title="ECCD Section Summary", scope=scope)
+            else:
+                content = workbook_bytes(workbook)
+            exports.append((name, content))
     if specific and len(exports) == 1:
-        return stream_bytes(exports[0][1], exports[0][0])
+        return stream_bytes(exports[0][1], exports[0][0], "application/pdf" if output_format == "pdf" else XLSX)
     output = BytesIO()
     with ZipFile(output, "w") as archive:
         for name, content in exports:

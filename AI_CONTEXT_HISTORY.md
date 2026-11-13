@@ -1,5 +1,39 @@
 # AMES Context History
 
+## 2026-11-13 — Local staff PDF export option
+
+At the user's request, committed the existing `PARENT_ANDROID_APP_PLAN.md` on
+`main` as `2e3a773`, then based `feat/pdf-export-options` on that clean commit.
+All PDF implementation work remains on the feature branch. Added and installed
+the explicitly approved `fpdf2==2.9.0` in `.venv312`; existing Matplotlib DejaVu
+font files supply portable Unicode text without system font packages.
+
+Chairman Student Records/section summaries and Teacher ECCD records/summary
+dialogs now offer Excel or PDF. All nine existing staff export routes accept
+`format=pdf`, sharing existing authorization, workbook data and cohort selection.
+Excel remains the default. PDFs retain all PRE/MID/POST content, official scores,
+custom/overflow questions and timestamp comments; bulk PDF downloads remain
+ZIPs and summary parts retain the 30-child limit. Printable tables use portrait
+checklists, landscape summaries, repeated headers, long-row continuations,
+school/report/scope headers, page totals and Philippine-Time export timestamps.
+
+Executed only local targeted verification: the combined
+`test_pdf_exports.py`, `test_eccd_exports.py`, `test_eccd_card_exports.py` run
+passed 23 tests before the final pagination test was added. After renderer
+refinements, the seven PDF route/content tests passed again; the added eighth
+PDF pagination/footer test passed separately after its assertions were adapted
+to fpdf2's content-stream wrapper and separate page-total text operator. These
+cover 24 distinct backend export cases, using synthetic SQLite data rather than
+school databases. The non-browser Node format-selection tests passed 3 cases;
+both explicit frontend tsconfig checks and the frontend production build passed.
+The existing FastAPI/Starlette deprecation warnings and imported TestingPeriod
+pytest collection warning remain. The Ponytail/React diff review kept existing
+download/auth logic and added no unrelated abstractions or frontend dependencies.
+
+No full backend suite, Playwright/browser checks, migrations, hosting/database
+tools, deployment, merge into main, or remote push was performed. Visual print
+review remains for the user's local browser.
+
 ## 2026-11-13 — Audit UTC serialization and staff sidebar labels
 
 Created `fix/audit-timezone-and-sidebar-label` in an isolated clean worktree

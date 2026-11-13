@@ -165,7 +165,9 @@ export default function StudentRecords() {
   const [download, setDownload] = useState(false);
   const downloadForm = useDurableForm("chairman_eccd_export", {
     section: "All Sections",
+    format: "xlsx",
   });
+  const exportFormat = downloadForm.values.format === "pdf" ? "pdf" : "xlsx";
   const [busy, setBusy] = useState(false);
   const exporting = useRef(false);
   const [notification, setNotification] = useState<SnackbarMessage | null>(
@@ -501,11 +503,11 @@ export default function StudentRecords() {
                     const fallback =
                       exportSection === "All Sections"
                         ? `ALL_SECTIONS_${currentYear}-${currentYear + 1}.zip`
-                        : `${exportSection.replace(/[^a-zA-Z0-9-_]/g, "_").toUpperCase()}_${currentYear}-${currentYear + 1}.xlsx`;
+                        : `${exportSection.replace(/[^a-zA-Z0-9-_]/g, "_").toUpperCase()}_${currentYear}-${currentYear + 1}.${exportFormat}`;
                     // Legacy export scope is independent of the roster year filter.
                     // The API validates sections and splits oversized cohorts.
                     const filename = await downloadFile(
-                      `/api/chairman/export-eccd?${new URLSearchParams({ section: exportSection })}`,
+                      `/api/chairman/export-eccd?${new URLSearchParams({ section: exportSection, ...(exportFormat === "pdf" ? { format: "pdf" } : {}) })}`,
                       fallback,
                     );
                     setDownload(false);
@@ -530,17 +532,36 @@ export default function StudentRecords() {
           }
         >
           <p className="mb-4 text-base leading-[1.5] text-[#374151]">
-            Select a section to download its ECCD records as an Excel file.
-            Select "All Sections" to download a ZIP archive containing all
-            sections.
+            Select a section and file format to download its ECCD records. Select
+            "All Sections" to download a ZIP archive containing all sections.
           </p>
+          <Select
+            aria-label="Download file format"
+            className="mb-4 rounded-lg bg-[#f9fafb]"
+            value={exportFormat}
+            disabled={busy}
+            onChange={(event) =>
+              downloadForm.change({
+                ...downloadForm.values,
+                format: event.target.value,
+              })
+            }
+          >
+            <option value="xlsx">Excel (.xlsx)</option>
+            <option value="pdf">PDF (.pdf)</option>
+          </Select>
           <Select
             small={false}
             aria-label="Download section"
             className="rounded-lg bg-[#f9fafb]"
             value={exportSection}
             disabled={busy}
-            onChange={(e) => downloadForm.change({ section: e.target.value })}
+            onChange={(e) =>
+              downloadForm.change({
+                ...downloadForm.values,
+                section: e.target.value,
+              })
+            }
           >
             <option value="All Sections">All Sections</option>
             {rosterSections.map((name) => (
