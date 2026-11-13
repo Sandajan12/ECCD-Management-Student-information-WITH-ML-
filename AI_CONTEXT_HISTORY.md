@@ -1,5 +1,32 @@
 # AMES Context History
 
+## 2026-11-13 — Audit UTC serialization and staff sidebar labels
+
+Created `fix/audit-timezone-and-sidebar-label` in an isolated clean worktree
+from main `408d743`, preserving the unrelated untracked Android plan. Inspected
+`chairman.py`, the audit helper/model/schema, and the active analytics log route:
+`AuditLogItem` is the actual response boundary for `/api/analytics/logs` and
+both `/api/logs` aliases. Its timestamp validator now treats historical naive
+values as UTC and normalizes aware values to UTC before ISO serialization.
+No database timestamps, models, routes, migrations or ML artifacts changed.
+
+The System Audit Logs page and CSV share the existing formatter, which now
+treats missing offsets as UTC and explicitly formats date/time in Asia/Manila.
+Only Chairman Portal and Teacher Portal label styles changed in the shared
+desktop/mobile drawer: 16px, weight 700, white. Parent styling is preserved.
+
+Executed against localhost PostgreSQL disposable schemas:
+`uv run --no-project --python .venv312 python -m pytest backend/tests/test_audit_logs.py -q`
+passed **8 tests and 4 subtests**. Two existing Starlette/httpx/anyio deprecation
+warnings remain. Both explicit frontend tsconfig checks, pnpm lint, production
+build and `git diff --check` passed. A local Playwright harness passed **60
+checks**, using mocked API/session responses against the changed Vite app:
+naive/Z/offset timestamps, midnight rollover, null/invalid values, downloaded
+CSV, and both staff labels at 1280/768/320 widths in Manila/UTC/Los Angeles
+browser timezones. Browser mocks establish rendering/export behavior, not live
+production audit data. The Ponytail/React diff review found no new dependencies,
+state or unnecessary abstractions.
+
 ## 2026-11-13 — Parent sync/import CI session fixtures corrected
 
 Inspected failed main Actions run `43416122412` of **Parent sync and Excel

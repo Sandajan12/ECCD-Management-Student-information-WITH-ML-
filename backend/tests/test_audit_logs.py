@@ -1,9 +1,28 @@
 """Audit snapshots and actor contracts against disposable PostgreSQL schemas."""
 import json
 import unittest
+from datetime import datetime, timedelta, timezone
 
 from backend.models import EccdQuestion, Section, SystemLog, Teacher
 from backend.tests import test_phase2
+from backend.schemas.operations import AuditLogItem
+
+
+class AuditTimestampTests(unittest.TestCase):
+    def test_response_serializes_naive_and_aware_timestamps_as_utc(self):
+        for timestamp in (
+            datetime(2026, 11, 13, 12, 13),
+            datetime(2026, 11, 13, 12, 13, tzinfo=timezone.utc),
+            datetime(2026, 11, 13, 20, 13, tzinfo=timezone(timedelta(hours=8))),
+            "2026-11-13T12:13:00",
+        ):
+            with self.subTest(timestamp=timestamp):
+                log = AuditLogItem.model_validate({
+                    "id": 1, "action": "TEST", "performed_by": "System",
+                    "teacher_name": "System", "actor_name": "System",
+                    "role": "System", "timestamp": timestamp,
+                })
+                self.assertEqual(log.model_dump(mode="json")["timestamp"], "2026-11-13T12:13:00Z")
 
 
 class AuditLogTests(unittest.TestCase):
@@ -21,6 +40,15 @@ class AuditLogTests(unittest.TestCase):
         response = self.call("GET", "/api/analytics/logs")
         self.assertEqual(response.status_code, 200, response.text)
         return response.json()
+
+    def test_log_routes_return_explicit_utc_timestamps(self):
+        with self.sessions() as db:
+            db.add(SystemLog(action_type="TEST", timestamp=datetime(2026, 11, 13, 12, 13)))
+            db.commit()
+        for path in ("/api/analytics/logs", "/api/logs", "/api/logs/"):
+            response = self.call("GET", path)
+            self.assertEqual(response.status_code, 200, response.text)
+            self.assertEqual(response.json()[0]["timestamp"], "2026-11-13T12:13:00Z")
 
     def test_handover_snapshots_names_ids_and_survives_renaming(self):
         response = self.call("POST", "/api/chairman/sections/1/assign-teacher", json={"teacher_id": 3})

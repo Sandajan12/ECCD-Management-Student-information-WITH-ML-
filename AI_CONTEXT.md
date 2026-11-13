@@ -76,6 +76,10 @@ creating/syncing them; `uv pip sync` can remove extras, and
 dependencies require explicit approval.
 
 The approved deployment stack is **Vercel + Render + Brevo HTTPS API + Supabase**.
+Target only Render **Apolinario Mabini School System** (`backend.main:app`),
+Vercel **eccd-management-student-information-with-ml** (ameskinder.com and
+www.ameskinder.com), and Supabase **AMES_SYSTEM_ML**. Do not operate on
+**AMES-SYSTEM-1** or **ames-system**.
 See [DEPLOYMENT.md](DEPLOYMENT.md), `render.yaml` and `frontend/vercel.json`.
 Vercel builds from `frontend`; public API/socket URLs point at the Render HTTPS
 origin without `/api`. Backend CORS uses exact origins. Private credentials
@@ -160,6 +164,17 @@ Backend roles are `super-admin` (Chairman), `admin` (Teacher), `user` (Parent);
 frontend guard lists also accept descriptive aliases. Chairman redirects remain.
 The teacher question route requires `allow_eccd_question_management`.
 Old workspace/shim page directories are absent.
+
+The shared `MainLayout.tsx` drawer renders Chairman Portal and Teacher Portal
+at `text-base font-bold text-white` on desktop and mobile; Parent Portal keeps
+its existing styling. Limit portal-label styling changes to the intended roles.
+
+System Audit Logs (`/super-admin/audit`) receive explicit ISO-8601 UTC timestamps
+through `AuditLogItem` in `schemas/operations.py`, used by `/api/analytics/logs`
+and `/api/logs` aliases. Historical naive system-log timestamps mean UTC;
+normalize offsets at the response boundary without rewriting stored records.
+The page and its CSV share a formatter that treats missing offsets as UTC and
+formats both date and time explicitly in `Asia/Manila`, regardless of device zone.
 
 Important routed workflows:
 

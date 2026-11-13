@@ -4,6 +4,7 @@
 You are maintaining and extending the AMES (Early Childhood Performance Analytics) system. The Node.js-to-Python and JavaScript-to-TypeScript migration is complete.
 - **Backend:** Python (FastAPI, SQLAlchemy ORM, PostgreSQL)
 - **Frontend:** React + TypeScript (Vite)
+- **Production targets:** Only Render `Apolinario Mabini School System` (`backend.main:app`), Vercel `eccd-management-student-information-with-ml` (`ameskinder.com` / `www.ameskinder.com`), and Supabase `AMES_SYSTEM_ML`. Never operate on `AMES-SYSTEM-1` or `ames-system`.
 - **Source of Truth:** Use the active code in `backend/` and `frontend/`, including related models, schemas, migrations, tests, manifests, and configuration templates. The legacy reference folders have been removed and are not prerequisites for any task.
 - **Context Requirement:** Before starting any planning or coding task, you MUST silently read AI_CONTEXT.md to understand the domain logic, database schema, and machine learning goals. Preserve its business rules. AI_CONTEXT_HISTORY.md holds dated evidence and superseded experiments; it is optional historical reference, not current operational guidance. If the current guide conflicts with active source, inspect the relevant implementation and tests, report the conflict, and resolve it before changing behavior.
 
@@ -16,6 +17,7 @@ You are maintaining and extending the AMES (Early Childhood Performance Analytic
 - **Evidence-Based Clarification:** Do not fabricate implementations or configuration. Search the current codebase and AI_CONTEXT.md first. Ask for clarification only when a material requirement remains ambiguous or required current information cannot be found. Missing legacy files or historical references must never block feature work or code analysis, and must not prompt requests to restore or supply those files.
 
 ## 3. Backend Rules (FastAPI)
+- **Audit timestamps:** `AuditLogItem` normalizes historical naive audit timestamps as UTC and serializes explicit UTC ISO-8601 offsets for `/api/analytics/logs` and `/api/logs` aliases. Preserve stored timestamps and response shapes; the audit page and CSV must treat missing offsets as UTC and format dates/times in `Asia/Manila` regardless of device timezone.
 - **Production database TLS:** Keep `sslmode=verify-full`. The public Supabase CA in `backend/certs/prod-ca-2021.crt` is the fallback for absent/empty or `system` root settings; preserve explicit CA paths in `DATABASE_SSL_ROOT_CERT` or the database URL. Renew the bundled CA before its April 2031 expiry or provider rotation; never disable verification to bypass a trust failure.
 - **Directory Separation:** Maintain strict layers:
   - `config/`: Database sessions and engine connections.
@@ -30,6 +32,7 @@ You are maintaining and extending the AMES (Early Childhood Performance Analytic
 - **Migration 020 Safeguards:** Deploy the matching backend/frontend before `remove_trusted_devices --check`, `--apply`, `--check`; retain a protected backup and stop API writers. Drops only `user_trusted_devices` with RESTRICT; external dependencies stop the migration. Startup never applies 020 and accepts the unused table until cleanup. Preserve refresh sessions, rate limiting and school records; never roll back to a backend requiring device trust after the drop. Older encrypted backups discard only the retired top-level collection before strict validation.
 
 ## 4. Frontend Rules (React & TypeScript)
+- **Sidebar portal labels:** `MainLayout.tsx` shares the desktop/mobile drawer header. Chairman Portal and Teacher Portal use `text-base font-bold text-white`; preserve Parent Portal styling and unrelated sidebar elements/layouts.
 - **Commands:** Exclusively use `pnpm` for package management (e.g., `pnpm install`, `pnpm dev`).
 - **Strict MUI Styling Rule:** Never pass raw CSS properties (like fontWeight) as direct top-level props to MUI components. Always use the `sx` prop for custom styling (e.g., `sx={{ fontWeight: 'bold' }}`).
 - **Strict Typing:** Define explicit TypeScript interfaces for all component props, state variables, and API data payloads. Avoid using the `any` type.

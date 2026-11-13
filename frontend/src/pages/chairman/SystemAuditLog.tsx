@@ -166,9 +166,11 @@ function mapAudit(row: AuditPayload): Audit {
 }
 function date(timestamp: string | null): string {
   if (!timestamp) return "Unavailable";
-  const value = new Date(timestamp);
+  const value = new Date(
+    /(?:Z|[+-]\d{2}:?\d{2})$/i.test(timestamp) ? timestamp : `${timestamp}Z`,
+  );
   if (Number.isNaN(value.getTime())) return "Unavailable";
-  return `${value.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })} • ${value.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true })}`;
+  return `${value.toLocaleDateString("en-US", { timeZone: "Asia/Manila", month: "short", day: "numeric", year: "numeric" })} • ${value.toLocaleTimeString("en-US", { timeZone: "Asia/Manila", hour: "2-digit", minute: "2-digit", hour12: true })}`;
 }
 function SpecificDetails({ row }: { row: Audit }) {
   const details =

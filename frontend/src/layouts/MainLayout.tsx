@@ -194,7 +194,9 @@ function MainLayoutContent({ children }: MainLayoutProps) {
           <p className="line-clamp-2 w-full text-xs font-bold leading-tight tracking-[-0.02em] break-words text-white/90">
             {settings.school_name || "ECCD Management System"}
           </p>
-          <p className="mt-1 text-[11px] leading-[1.5] tracking-[0.1px] text-[#94a3b8]">
+          <p
+            className={`mt-1 leading-[1.5] tracking-[0.1px] ${role === "super-admin" || role === "admin" ? "text-base font-bold text-white" : "text-[11px] text-[#94a3b8]"}`}
+          >
             {role === "super-admin"
               ? "Chairman Portal"
               : role === "admin"

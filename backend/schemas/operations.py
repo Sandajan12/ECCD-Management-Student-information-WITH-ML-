@@ -1,7 +1,7 @@
 """Typed contracts for administrative lists and spreadsheet operations."""
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from typing import Literal
-from pydantic import Field, computed_field
+from pydantic import Field, computed_field, field_validator
 from .analytics import CriticalDomainSummary, DelaySummary, ExcellingDomainSummary, TeacherPeriodInsights
 from .common import ApiModel, PositiveId
 
@@ -114,6 +114,16 @@ class AuditLogItem(ApiModel):
     metadata: dict[str, str | int | None] | None = None
     details: str | None = None
     timestamp: datetime | None = None
+
+    @field_validator("timestamp")
+    @classmethod
+    def timestamp_utc(cls, value: datetime | None) -> datetime | None:
+        if value is None:
+            return None
+        # Historical system_logs timestamps are naive UTC.
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc)
 
     @computed_field
     @property
