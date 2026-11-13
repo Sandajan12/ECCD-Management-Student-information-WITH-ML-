@@ -2,12 +2,13 @@
 
 Date: 2026-11-13
 
-Status: Implemented and verified locally on `refactor/remove-remembered-devices`; awaiting user acceptance.
+Status: Implemented and verified locally; user accepted local testing and authorized merge/deployment on 2026-11-13.
 
-Current release constraint (2026-11-13): finish the local migration and checks,
-then stop for the user's local acceptance testing. Do not merge, push, deploy,
-or change production Supabase. The production release steps below remain a
-future plan and require the user's subsequent instruction to proceed.
+Current release scope (2026-11-13): merge and deploy the verified application
+to the approved ML Render/Vercel projects. The former local-only hold has been
+lifted by the user. Production migration 020 remains a separate maintenance
+step requiring a verified protected backup and stopped API writers. The code
+supports production both before and after that cleanup.
 
 ## 1. Goal and agreed behavior
 

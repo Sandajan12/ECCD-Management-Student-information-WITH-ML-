@@ -1,5 +1,28 @@
 # AMES Context History
 
+## 2026-11-13 — Local acceptance and application release authorization
+
+The user confirmed the remembered-device branch works in local testing and
+explicitly authorized merging and deploying it. This lifts the local-only hold
+recorded below. The verified application commit is `5a2f35c`; the release
+preparation changes only this history and the plan status. Existing verification
+remains 561 backend tests/693 subtests, 62 browser cases, both frontend TypeScript
+projects, lint, build and whitespace checks, all passing.
+
+Fetched origin and confirmed main is still `71de882` with no tracked edits.
+Preserve the unrelated untracked Android plan. Reverified the exact production
+targets: Render `srv-dbfm4p4s728c73dctvf0` (Apolinario Mabini School System,
+`uvicorn backend.main:app`) and Vercel `prj_New0XVlLSCtfDSXaEIRKkoeAJnXN`
+(eccd-management-student-information-with-ml, ameskinder.com/www.ameskinder.com).
+Do not operate on AMES-SYSTEM-1 or ames-system.
+
+Read-only inspection of AMES_SYSTEM_ML (`gqywhrytxzkhpidqxhff`) confirms 019 is
+recorded and 020 is not. Application deployment can proceed with the unused
+device table retained. No production cleanup is claimed here: its protected
+backup/writer-stop requirements still apply. No production connection file is
+available locally. Deployment completion and live behavior must be established
+from the provider status and HTTP/browser checks, not inferred from this note.
+
 ## 2026-11-13 — Remembered-device removal: local acceptance checkpoint
 
 Work is isolated on `refactor/remove-remembered-devices`, created from fetched
