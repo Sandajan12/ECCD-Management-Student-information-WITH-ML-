@@ -95,8 +95,10 @@ pnpm.cmd run frontend
 
 The UI defaults to http://localhost:5173; the API uses port 8000. On Windows,
 `pnpm.cmd` avoids a blocked PowerShell launcher. Root `pnpm.cmd run dev`
-dispatches both scripts but its backend script calls `uvicorn` on PATH without
-selecting Python 3.12. Prefer the explicit uv command above.
+dispatches both scripts; its backend script explicitly selects `.venv312`
+through `uv run --no-project --python .venv312 python -m uvicorn`. Install
+backend requirements into that same environment. The separate `.venv` may use
+another Python version and does not share `.venv312`'s packages.
 
 `backend/config/settings.py` loads `backend/.env`; process variables override
 it. Preserve existing configuration and copy templates only when files are absent.

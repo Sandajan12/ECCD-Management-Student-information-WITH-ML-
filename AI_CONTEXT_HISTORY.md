@@ -1,5 +1,21 @@
 # AMES Context History
 
+## 2026-11-13 — PDF dependency environment correction
+
+Investigated `ModuleNotFoundError: No module named 'fpdf'` locally on
+`feat/pdf-export-options`. Python process paths showed `.venv`/Python 3.14;
+the approved `fpdf2==2.9.0` installation exists in `.venv312`/Python 3.12.
+The root backend script used bare `uvicorn`, allowing PATH to select the other
+environment. Changed only that script to explicitly use uv with `.venv312` and
+updated current launcher guidance. No additional packages were installed.
+
+Verified fpdf2 import, renderer import and a valid synthetic in-memory PDF under
+`.venv312`. `pnpm.cmd run backend --help` passed and displayed the explicit
+Python 3.12 launcher; it did not start the API or access school data.
+`git diff --check` passed. Existing dev processes were left running; the user
+must stop/restart their dev command to select the corrected interpreter.
+No browser checks, hosting tools, migrations, deployment or remote push ran.
+
 ## 2026-11-13 — Local staff PDF export option
 
 At the user's request, committed the existing `PARENT_ANDROID_APP_PLAN.md` on

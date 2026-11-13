@@ -44,8 +44,8 @@ pnpm.cmd run frontend
 ```
 
 Open http://localhost:5173. The API runs on http://localhost:8000.
-Root `pnpm.cmd run dev` also starts both scripts, but its backend command relies
-on `uvicorn` on PATH and does not explicitly select Python 3.12.
+Root `pnpm.cmd run dev` also starts both scripts; its backend command explicitly
+uses `.venv312` through uv. Install backend dependencies in that same environment.
 Set `VITE_API_URL` in frontend/.env.local only when changing the API origin;
 `VITE_SOCKET_URL` optionally overrides the chat origin. Restart Vite after changes.
 Keep database/email secrets in backend/.env. Local development may use
