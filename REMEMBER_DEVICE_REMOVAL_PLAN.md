@@ -2,13 +2,19 @@
 
 Date: 2026-11-13
 
-Status: Implemented and verified locally; user accepted local testing and authorized merge/deployment on 2026-11-13.
+Status: Application merged and deployed on 2026-11-13; production migration 020 remains pending.
 
 Current release scope (2026-11-13): merge and deploy the verified application
 to the approved ML Render/Vercel projects. The former local-only hold has been
 lifted by the user. Production migration 020 remains a separate maintenance
 step requiring a verified protected backup and stopped API writers. The code
 supports production both before and after that cleanup.
+
+Release evidence: application commit `c570b2c` is live on the approved Render
+service and Vercel production project. Anonymous HTTP and desktop/mobile browser
+checks passed on ameskinder.com/www.ameskinder.com and api.ameskinder.com. OTP is
+enabled in production. No production table, policy, account or school-record
+cleanup was performed; the unused device table is retained until maintenance.
 
 ## 1. Goal and agreed behavior
 

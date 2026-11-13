@@ -1,5 +1,42 @@
 # AMES Context History
 
+## 2026-11-13 — Remembered-device application release verified
+
+Fast-forwarded main and pushed application release `c570b2c` after user local
+acceptance. The only changes after verified code commit `5a2f35c` were Markdown
+release notes. The unrelated untracked Android plan was preserved.
+
+Render deploy `dep-dbrf26u8bjmc73bnsrtg` on Apolinario Mabini School System
+became live at 11:16:44 UTC. Vercel production deploy
+`dpl_J2iTd7Zzer8cYSDJUMUDBLzn86kX` is READY and assigned to both custom domains.
+Both providers identify application commit `c570b2c`. Render startup confirms
+email OTP enabled with brevo_api and successful application initialization;
+no error-level application logs were returned for the release window.
+
+Executed anonymous live checks: apex redirects to www, both serve HTTP 200,
+API health/readiness return 200 with production HSTS, session responses omit
+deviceToken/refresh_token, legacy request properties remain accepted, all four
+approved origins pass credentialed CORS, cookie-less refresh returns structured
+401 INVALID_TOKEN, untrusted-origin refresh returns 403, and logout expires
+both legacy device cookies plus the secure HttpOnly Strict refresh cookie at
+their matching paths. Desktop 1280px/mobile 320px login and registration have
+no remember controls, overflow or page errors. Legacy storage cleanup preserves
+synthetic unsaved drafts in both browser stores. Reports/screenshots are ignored
+under `.tools/removal-release-*` and `.tools/removal-live-login-*`.
+
+AMES_SYSTEM_ML still retains the unused device table; refresh-session storage
+and shared rate-limit storage are present, with active counters. No production
+schema/policy changes were made. Explicit cleanup 020 remains pending a verified
+protected backup and stopped API writers; no production connection configuration
+is available locally. Existing refresh sessions need not be revoked. Real
+credentialed production OTP/refresh login was not repeated without account
+credentials; local automated authentication coverage and user acceptance passed.
+The application works with the retired table retained. AMES-SYSTEM-1 and
+ames-system were not changed.
+
+This follow-up commit records the completed release only. Its documented
+`[skip render]` marker avoids restarting the identical backend for Markdown.
+
 ## 2026-11-13 — Local acceptance and application release authorization
 
 The user confirmed the remembered-device branch works in local testing and
