@@ -1,5 +1,31 @@
 # AMES Context History
 
+## 2026-11-13 — Parent sync/import CI session fixtures corrected
+
+Inspected failed main Actions run `43416122412` of **Parent sync and Excel
+import regressions**. Its browser step failed 100 of 102 cases after the
+RAM-only session release. Reproduced the parent-link failure locally: the
+storage-seeded session was purged and the browser showed login instead of the
+parent portal, before any reconnect assertion ran.
+
+Updated all six specs in `playwright.parent-sync.config.ts` to restore mocked
+sessions through `/api/auth/refresh`, using a shared typed fixture. Replay
+isolation/account-switch tests use the real RAM session functions; obsolete
+browser credentials alone cannot authorize replay. Storage assertions cover
+both browser stores and retired remembered-device keys. Fully offline reload
+now checks the session-restoration waiting state and preserved draft, followed
+by authenticated teacher ECCD replay on reconnect. Parent forms and Excel
+uploads retain their manual-submission assertions. No application runtime,
+database schema, dependencies, or production configuration changed.
+
+Expanded the workflow type check from three browser specs to all six, with
+React JSX and Vite types. Executed locally: the complete explicit parent-sync
+Playwright configuration passed **102/102** desktop/mobile cases; application
+and Node tsconfig checks, the expanded six-spec type check, frontend ESLint,
+production build, and changed-test formatting checks passed. These browser
+tests mock the API and do not establish live database persistence. Preserved
+the unrelated untracked Android plan.
+
 ## 2026-11-13 — Remembered-device application release verified
 
 Fast-forwarded main and pushed application release `c570b2c` after user local

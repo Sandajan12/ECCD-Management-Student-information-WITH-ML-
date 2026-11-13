@@ -1,3 +1,4 @@
+import { mockSession, expectNoStoredCredentials } from "./helpers/session";
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 import type { Permissions, SessionUser } from "../src/types";
@@ -32,16 +33,13 @@ async function setupAccess(page: Page, draft?: Draft<unknown>) {
   };
   const writes: Partial<Permissions>[] = [];
   await page.addInitScript(
-    ({ user, saved, key }) => {
-      const payload = btoa(JSON.stringify({ exp: Date.now() / 1000 + 3600 }));
-      localStorage.setItem("user", JSON.stringify(user));
-      localStorage.setItem("token", `test.${payload}.test`);
+    ({ saved, key }) => {
       if (saved && !localStorage.getItem("acl-seeded")) {
         localStorage.setItem(key, JSON.stringify(saved));
         localStorage.setItem("acl-seeded", "true");
       }
     },
-    { user: teacher, saved: draft, key: accessKey },
+    { saved: draft, key: accessKey },
   );
   await page.route("**/api/**", async (route) => {
     const path = new URL(route.request().url()).pathname;
@@ -73,7 +71,9 @@ async function setupAccess(page: Page, draft?: Draft<unknown>) {
     else if (path === "/api/messages/unread-count") json = { unreadCount: 0 };
     await route.fulfill({ json });
   });
+  await mockSession(page, teacher);
   await page.goto("/teacher/settings");
+  await expectNoStoredCredentials(page);
   return { access, writes };
 }
 
@@ -347,11 +347,6 @@ test("teacher permission drafts require an explicit retry after reload and recon
     mid_test_parent_editable: false,
     post_test_parent_editable: false,
   };
-  await page.addInitScript((user) => {
-    const payload = btoa(JSON.stringify({ exp: Date.now() / 1000 + 3600 }));
-    localStorage.setItem("user", JSON.stringify(user));
-    localStorage.setItem("token", `test.${payload}.test`);
-  }, teacher);
   await page.route("**/api/**", async (route) => {
     const path = new URL(route.request().url()).pathname;
     if (route.request().method() === "PUT") {
@@ -376,6 +371,7 @@ test("teacher permission drafts require an explicit retry after reload and recon
     else if (path === "/api/messages/unread-count") json = { unreadCount: 0 };
     await route.fulfill({ json });
   });
+  await mockSession(page, teacher);
   await page.goto("/teacher/settings");
   const prediction = page.getByRole("switch", {
     name: "Student Prediction",
@@ -432,11 +428,6 @@ test("sandbox drafts wait for manual retry after offline edits and online reload
   page,
 }) => {
   let submissions = 0;
-  await page.addInitScript((user) => {
-    const payload = btoa(JSON.stringify({ exp: Date.now() / 1000 + 3600 }));
-    localStorage.setItem("user", JSON.stringify(user));
-    localStorage.setItem("token", `test.${payload}.test`);
-  }, teacher);
   await page.route("**/api/**", async (route) => {
     const path = new URL(route.request().url()).pathname;
     if (path === "/api/ml/predict/sandbox") {
@@ -458,6 +449,7 @@ test("sandbox drafts wait for manual retry after offline edits and online reload
     else if (path === "/api/messages/unread-count") json = { unreadCount: 0 };
     await route.fulfill({ json });
   });
+  await mockSession(page, teacher);
   await page.goto("/teacher/ml-insights");
   await page.getByRole("tab", { name: "Sandbox Simulator" }).click();
   await page.evaluate(() =>
@@ -500,13 +492,7 @@ test("chairman queued switches remain drafts on login and have explicit retry bu
   const writes: string[] = [];
   let home = false;
   let permission = false;
-  await page.addInitScript((account) => {
-    const payload = btoa(JSON.stringify({ exp: Date.now() / 1000 + 3600 }));
-    localStorage.setItem(
-      "user",
-      JSON.stringify({ ...account, id: 1, role: "super-admin" }),
-    );
-    localStorage.setItem("token", `test.${payload}.test`);
+  await page.addInitScript(() => {
     if (!localStorage.getItem("test-switches-seeded")) {
       const draft = {
         owner_id: 1,
@@ -539,7 +525,7 @@ test("chairman queued switches remain drafts on login and have explicit retry bu
       );
       localStorage.setItem("test-switches-seeded", "true");
     }
-  }, teacher);
+  });
   await page.route("**/api/**", async (route) => {
     const path = new URL(route.request().url()).pathname;
     if (route.request().method() === "PUT") {
@@ -586,6 +572,7 @@ test("chairman queued switches remain drafts on login and have explicit retry bu
       json = [{ section_id: 1, section_name: "Test A" }];
     await route.fulfill({ json });
   });
+  await mockSession(page, { ...teacher, id: 1, role: "super-admin" });
   await page.goto("/super-admin/eccd-questions");
   await page.getByRole("button", { name: "Manage Questions" }).click();
   await expect(

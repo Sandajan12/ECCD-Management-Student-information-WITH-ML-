@@ -1,3 +1,9 @@
+import {
+  mockSession,
+  expectNoStoredCredentials,
+  sessionFor,
+  setRamSession,
+} from "./helpers/session";
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 import type { Draft } from "../src/utils/drafts";
@@ -30,7 +36,11 @@ test("retired branding uses the bundled login background", async ({ page }) => {
       },
     });
   });
+  await mockSession(page, null);
   await page.goto("/login");
+  await expect(
+    page.getByRole("button", { name: "Log In", exact: true }),
+  ).toBeVisible();
   await expect(page.locator("main > [aria-hidden=true]").first()).toHaveCSS(
     "background-image",
     /background_pic/,
@@ -56,10 +66,7 @@ test("retired branding preserves old settings drafts and submits only current fi
     daysRemaining: 0,
   };
   await page.addInitScript(
-    ({ account, draftKey, initial }) => {
-      localStorage.setItem("user", JSON.stringify(account));
-      const claims = btoa(JSON.stringify({ exp: Date.now() / 1000 + 3600 }));
-      localStorage.setItem("token", `test.${claims}.test`);
+    ({ draftKey, initial }) => {
       if (!localStorage.getItem(draftKey))
         localStorage.setItem(
           draftKey,
@@ -78,7 +85,6 @@ test("retired branding preserves old settings drafts and submits only current fi
         );
     },
     {
-      account: { ...teacher, id: 1, role: "super-admin" },
       draftKey: key,
       initial: settings,
     },
@@ -93,6 +99,7 @@ test("retired branding preserves old settings drafts and submits only current fi
       await route.fulfill({ json: settings });
     else await route.fulfill({ json: {} });
   });
+  await mockSession(page, { ...teacher, id: 1, role: "super-admin" });
   await page.goto("/super-admin/settings");
   const school = page.getByRole("textbox", { name: "School Name:" });
   await expect(school).toHaveValue("Unsaved school");
@@ -160,11 +167,6 @@ test("teacher confirmations, reverted edits and corrections send intent and disp
       },
     ],
   });
-  await page.addInitScript((account) => {
-    localStorage.setItem("user", JSON.stringify(account));
-    const payload = btoa(JSON.stringify({ exp: Date.now() / 1000 + 3600 }));
-    localStorage.setItem("token", `test.${payload}.test`);
-  }, teacher);
   await page.route("**/api/**", async (route) => {
     const path = new URL(route.request().url()).pathname;
     let json: unknown = {};
@@ -227,6 +229,7 @@ test("teacher confirmations, reverted edits and corrections send intent and disp
     else if (path === "/api/messages/unread-count") json = { unreadCount: 0 };
     await route.fulfill({ json });
   });
+  await mockSession(page, teacher);
   await page.goto(
     "/teacher/eccdassessment?student_id=1&period=PRE&domain_id=1",
   );
@@ -352,7 +355,12 @@ test("shared replay dispatches only teacher ECCD and preserves every other queue
       requests.push(new URL(route.request().url()).pathname);
     await route.fulfill({ json: {} });
   });
+  await mockSession(page, null);
   await page.goto("/login");
+  await expect(
+    page.getByRole("button", { name: "Log In", exact: true }),
+  ).toBeVisible();
+  await setRamSession(page, sessionFor(teacher));
   const retained = Object.fromEntries(
     [
       "/api/eccd/parent/evaluate",
@@ -377,14 +385,12 @@ test("shared replay dispatches only teacher ECCD and preserves every other queue
     eccd_draft_1_PRE_5_2: queued("https://example.com/api/eccd/evaluate"),
   });
   await page.evaluate(
-    ({ account, records, valid, key }) => {
-      localStorage.setItem("user", JSON.stringify(account));
-      localStorage.setItem("token", "test-token");
+    ({ records, valid, key }) => {
       for (const [name, draft] of Object.entries(records))
         localStorage.setItem(name, JSON.stringify(draft));
       localStorage.setItem(key, JSON.stringify(valid));
     },
-    { account: teacher, records: retained, valid: queued(), key: teacherKey },
+    { records: retained, valid: queued(), key: teacherKey },
   );
   await replay(page);
   expect(requests).toEqual(["/api/eccd/evaluate"]);
@@ -409,7 +415,7 @@ for (const session of [
   "other-owner",
   "no-token",
   "offline",
-  "malformed",
+  "legacy-storage-only",
 ] as const) {
   test(`${session} cannot replay a teacher-shaped queued record`, async ({
     page,
@@ -419,25 +425,30 @@ for (const session of [
       if (route.request().method() === "POST") submissions++;
       await route.fulfill({ json: {} });
     });
+    await mockSession(page, null);
     await page.goto("/login");
+    await expect(
+      page.getByRole("button", { name: "Log In", exact: true }),
+    ).toBeVisible();
     const draft = queued();
+    const user: SessionUser = {
+      ...teacher,
+      role:
+        session === "parent"
+          ? "user"
+          : session === "chairman"
+            ? "super-admin"
+            : "admin",
+      id: session === "other-owner" ? 99 : 2,
+    };
+    if (session !== "legacy-storage-only" && session !== "no-token")
+      await setRamSession(page, sessionFor(user));
     await page.evaluate(
       ({ account, record, key, mode }) => {
-        const user = {
-          ...account,
-          role:
-            mode === "parent"
-              ? "user"
-              : mode === "chairman"
-                ? "super-admin"
-                : "admin",
-          id: mode === "other-owner" ? 99 : 2,
-        };
-        localStorage.setItem(
-          "user",
-          mode === "malformed" ? "{" : JSON.stringify(user),
-        );
-        if (mode !== "no-token") localStorage.setItem("token", "test-token");
+        if (mode === "legacy-storage-only") {
+          localStorage.setItem("user", JSON.stringify(account));
+          localStorage.setItem("token", "obsolete-storage-token");
+        }
         if (mode === "offline")
           Object.defineProperty(navigator, "onLine", {
             configurable: true,
@@ -470,15 +481,18 @@ test("teacher replay retains a dropped request and confirms it on the next recon
     }
     await route.fulfill({ json: {} });
   });
+  await mockSession(page, null);
   await page.goto("/login");
+  await expect(
+    page.getByRole("button", { name: "Log In", exact: true }),
+  ).toBeVisible();
+  await setRamSession(page, sessionFor(teacher));
   const draft = queued();
   await page.evaluate(
-    ({ account, record, key }) => {
-      localStorage.setItem("user", JSON.stringify(account));
-      localStorage.setItem("token", "test-token");
+    ({ record, key }) => {
       localStorage.setItem(key, JSON.stringify(record));
     },
-    { account: teacher, record: draft, key: teacherKey },
+    { record: draft, key: teacherKey },
   );
   await replay(page);
   expect(submissions).toBe(1);
@@ -513,11 +527,14 @@ test("a teacher replay confirmation preserves newer edits and stops after an acc
     }
     await route.fulfill({ json: {} });
   });
+  await mockSession(page, null);
   await page.goto("/login");
+  await expect(
+    page.getByRole("button", { name: "Log In", exact: true }),
+  ).toBeVisible();
+  await setRamSession(page, sessionFor(teacher));
   await page.evaluate(
-    ({ account, draft, key }) => {
-      localStorage.setItem("user", JSON.stringify(account));
-      localStorage.setItem("token", "test-token");
+    ({ draft, key }) => {
       localStorage.setItem(key, JSON.stringify(draft));
       localStorage.setItem(
         "eccd_draft_2_PRE_1_2",
@@ -533,7 +550,7 @@ test("a teacher replay confirmation preserves newer edits and stops after an acc
         }),
       );
     },
-    { account: teacher, draft: queued(), key: teacherKey },
+    { draft: queued(), key: teacherKey },
   );
   const replaying = replay(page);
   await expect.poll(() => submissions).toBe(1);
@@ -548,8 +565,8 @@ test("a teacher replay confirmation preserves newer edits and stops after an acc
         is_pending_sync: false,
       }),
     );
-    localStorage.setItem("user", JSON.stringify({ id: 99, role: "admin" }));
   }, firstKey);
+  await setRamSession(page, sessionFor({ ...teacher, id: 99 }));
   release();
   await replaying;
   expect(submissions).toBe(1);
@@ -584,11 +601,6 @@ test("teacher ECCD answers and dates survive offline student switching and reloa
     ],
   };
   const submissions: unknown[] = [];
-  await page.addInitScript((account) => {
-    localStorage.setItem("user", JSON.stringify(account));
-    const payload = btoa(JSON.stringify({ exp: Date.now() / 1000 + 3600 }));
-    localStorage.setItem("token", `test.${payload}.test`);
-  }, teacher);
   await page.route("**/api/**", async (route) => {
     const path = new URL(route.request().url()).pathname;
     let json: unknown = {};
@@ -633,6 +645,7 @@ test("teacher ECCD answers and dates survive offline student switching and reloa
     await route.fulfill({ json });
   });
   const url = "/teacher/eccdassessment?student_id=1&period=PRE&domain_id=1";
+  await mockSession(page, teacher);
   await page.goto(url);
   const answer = page
     .getByRole("row")
@@ -673,7 +686,12 @@ test("teacher ECCD answers and dates survive offline student switching and reloa
     }),
   );
   await page.reload();
-  await expect(answer).toHaveClass(/bg-emerald-600/);
+  await expect(
+    page.getByText(
+      "Waiting for a connection to restore your session. Your drafts are safe.",
+    ),
+  ).toBeVisible();
+  expect(submissions).toHaveLength(0);
   expect(
     await page.evaluate(
       (key) => JSON.parse(localStorage.getItem(key)!).values,
@@ -692,6 +710,7 @@ test("teacher ECCD answers and dates survive offline student switching and reloa
     .poll(() => page.evaluate((key) => localStorage.getItem(key), teacherKey))
     .toBeNull();
   await expect(page.getByText("Online", { exact: true })).toBeVisible();
+  await expectNoStoredCredentials(page);
   expect(submissions[0]).toMatchObject({
     student_id: 1,
     testing_period: "PRE",

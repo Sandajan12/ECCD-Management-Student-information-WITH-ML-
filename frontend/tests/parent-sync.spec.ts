@@ -1,3 +1,4 @@
+import { mockSession, expectNoStoredCredentials } from "./helpers/session";
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 import type { ParentLinkResponse, SessionUser, Student } from "../src/types";
@@ -36,13 +37,10 @@ async function portal(page: Page, status: ParentLinkResponse["status"]) {
     allow_eccd_question_management: false,
   };
   await page.addInitScript(
-    ({ account, profileKey }) => {
-      const payload = btoa(JSON.stringify({ exp: Date.now() / 1000 + 3600 }));
-      localStorage.setItem("user", JSON.stringify(account));
-      localStorage.setItem("token", `test.${payload}.test`);
+    ({ profileKey }) => {
       localStorage.setItem(profileKey, "unrelated unsaved profile");
     },
-    { account: user, profileKey: otherDraftKey },
+    { profileKey: otherDraftKey },
   );
   const child: Student = {
     student_id: 3,
@@ -102,8 +100,10 @@ async function portal(page: Page, status: ParentLinkResponse["status"]) {
       });
     }
   });
+  await mockSession(page, user);
   await page.goto("/parent/dashboard");
   await expect(page.getByRole("dialog")).toBeVisible();
+  await expectNoStoredCredentials(page);
   return state;
 }
 

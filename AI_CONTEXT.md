@@ -859,6 +859,13 @@ needs its API started separately. Example:
 pnpm.cmd --dir frontend exec playwright test --config playwright.ml-sandbox.config.ts
 ```
 
+The parent-sync suite uses `tests/helpers/session.ts` to mock session restoration
+through `/api/auth/refresh`; register it after broad API routes. Seed only durable
+drafts in browser storage. Replay isolation tests set sessions through the API
+module's RAM session functions. A fully offline reload waits for session
+restoration while retaining drafts; reconnect restores the session before teacher
+ECCD replay. Parent forms and Excel uploads still require manual submission.
+
 Database-backed fixtures require configured PostgreSQL and isolated schemas;
 inspect isolation before execution. Never deploy `backend/tests/serve_phase3.py`
 or aim reset helpers at school data. Mocked browser checks do not establish real

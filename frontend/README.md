@@ -105,6 +105,14 @@ is no default `playwright.config.ts`. For example:
 pnpm.cmd --dir frontend run test:e2e --config playwright.ml-sandbox.config.ts
 ```
 
+The database-free parent sync/import regressions run with
+`pnpm.cmd --dir frontend exec playwright test --config playwright.parent-sync.config.ts`.
+Their shared `tests/helpers/session.ts` mocks `/api/auth/refresh` after broad API
+routes so reloads restore the RAM session. Do not seed access tokens or user
+objects in browser storage. Offline reloads retain drafts and wait for a
+connection to restore authentication before teacher ECCD replay; other forms
+and Excel uploads require manual submission.
+
 The sandbox configuration starts a loopback test API on port 8774 and Vite on
 5186, using disposable PostgreSQL schemas and synthetic accounts. PostgreSQL
 must be running. Other current configurations cover audit logs, teacher

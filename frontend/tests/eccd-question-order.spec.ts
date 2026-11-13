@@ -1,3 +1,4 @@
+import { mockSession, expectNoStoredCredentials } from "./helpers/session";
 import { expect, test } from "@playwright/test";
 import type { Domain, Question, SessionUser } from "../src/types";
 
@@ -45,9 +46,6 @@ for (const portal of ["chairman", "teacher"] as const) {
     const writes: Record<string, unknown>[] = [];
     await page.addInitScript(
       ({ account, draftKey }) => {
-        const payload = btoa(JSON.stringify({ exp: Date.now() / 1000 + 3600 }));
-        localStorage.setItem("user", JSON.stringify(account));
-        localStorage.setItem("token", `test.${payload}.test`);
         if (!localStorage.getItem("question-draft-seeded")) {
           localStorage.setItem(
             draftKey,
@@ -118,7 +116,9 @@ for (const portal of ["chairman", "teacher"] as const) {
       portal === "chairman"
         ? "/super-admin/eccd-questions"
         : "/teacher/eccd-questions";
+    await mockSession(page, user);
     await page.goto(path);
+    await expectNoStoredCredentials(page);
     await page.getByRole("button", { name: "Manage Questions" }).click();
     await page
       .getByRole("button", { name: "Add Question", exact: true })

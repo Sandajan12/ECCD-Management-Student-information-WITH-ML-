@@ -1,3 +1,4 @@
+import { mockSession, expectNoStoredCredentials } from "./helpers/session";
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 import type { SectionMismatchResponse, SessionUser } from "../src/types";
@@ -84,13 +85,10 @@ async function portal(page: Page) {
     allow_eccd_question_management: false,
   };
   await page.addInitScript(
-    ({ account, draftKey }) => {
-      const payload = btoa(JSON.stringify({ exp: Date.now() / 1000 + 3600 }));
-      localStorage.setItem("user", JSON.stringify(account));
-      localStorage.setItem("token", `test.${payload}.test`);
+    ({ draftKey }) => {
       localStorage.setItem(draftKey, "unrelated unsaved input");
     },
-    { account: user, draftKey: otherDraftKey },
+    { draftKey: otherDraftKey },
   );
   await page.route("**/api/**", async (route) => {
     const path = new URL(route.request().url()).pathname;
@@ -156,6 +154,7 @@ async function portal(page: Page) {
       await route.fulfill({ json: { unreadCount: 0 } });
     else await route.fulfill({ json: {} });
   });
+  await mockSession(page, user);
   await page.goto("/teacher/students");
   await expect(
     page.getByRole("button", { name: "Import Info Sheet", exact: true }),
@@ -172,6 +171,7 @@ async function portal(page: Page) {
       ),
     )
     .toBe(1);
+  await expectNoStoredCredentials(page);
   return state;
 }
 

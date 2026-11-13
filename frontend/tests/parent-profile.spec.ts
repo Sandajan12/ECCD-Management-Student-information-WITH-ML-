@@ -1,3 +1,4 @@
+import { mockSession, expectNoStoredCredentials } from "./helpers/session";
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 import type { SessionUser, Student } from "../src/types";
@@ -73,14 +74,11 @@ async function portal(page: Page, teacher = false) {
     allow_eccd_question_management: false,
   };
   await page.addInitScript(
-    ({ account, unrelated }) => {
-      const payload = btoa(JSON.stringify({ exp: Date.now() / 1000 + 3600 }));
-      localStorage.setItem("user", JSON.stringify(account));
-      localStorage.setItem("token", `test.${payload}.test`);
+    ({ unrelated }) => {
       if (!localStorage.getItem(unrelated))
         localStorage.setItem(unrelated, "another child's unsaved edits");
     },
-    { account: user, unrelated: otherKey },
+    { unrelated: otherKey },
   );
   await page.route("**/api/**", async (route) => {
     const request = route.request();
@@ -126,12 +124,14 @@ async function portal(page: Page, teacher = false) {
       return route.fulfill({ json: { unreadCount: 0 } });
     return route.fulfill({ json: {} });
   });
+  await mockSession(page, user);
   await page.goto(teacher ? "/teacher/students" : "/parent/childinformation");
   await expect(
     teacher
       ? page.getByTitle("Edit Student")
       : page.locator('input[name="address"]'),
   ).toBeVisible();
+  await expectNoStoredCredentials(page);
   return state;
 }
 const address = (page: Page) => page.locator('input[name="address"]');
