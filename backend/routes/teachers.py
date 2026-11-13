@@ -218,9 +218,7 @@ def request_password_change(payload: PasswordChangeRequest, db: Session = Depend
 @router.post("/change-password-verify", response_model=LoginResponse)
 def verify_password_change(payload: PasswordChangeVerify, request: Request, response: Response, db: Session = Depends(get_db), current_user: User = Depends(verify_role(["admin"]))):
     from backend.utils.account_changes import change_password
-    from backend.utils.authentication import clear_device_cookies
     result = change_password(db, current_user, payload)
-    clear_device_cookies(response)
     from backend.utils.authentication import deliver_session
     return deliver_session(result, request, response)
 

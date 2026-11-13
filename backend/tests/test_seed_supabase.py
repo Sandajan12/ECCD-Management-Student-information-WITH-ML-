@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 
 from backend.config.database import engine
 from backend.migrations import phase1
-from backend.models import Base, EccdDomain, EccdQuestion, EmailVerification, User, UserTrustedDevice, SystemSettings
+from backend.models import Base, EccdDomain, EccdQuestion, EmailVerification, User, SystemSettings
 from backend.models.email_verification import OtpPurpose
 from backend.models.user import UserRole
 from backend.scripts.seed_supabase import (
@@ -171,7 +171,6 @@ class SupabaseSeedTests(unittest.TestCase):
             with Session(bind=connection) as db:
                 user = db.scalars(select(User)).one()
                 token = build_session(db, user)["token"]
-                db.add(UserTrustedDevice(user_id=user.user_id, device_token_hash="a" * 64, expires_at=now() + timedelta(days=30)))
                 db.add(EmailVerification(user_id=user.user_id, email=user.email, purpose=OtpPurpose.LOGIN,
                                          otp="", otp_hash="b" * 64, challenge_hash="c" * 64,
                                          expires_at=now() + timedelta(minutes=10)))
@@ -187,7 +186,6 @@ class SupabaseSeedTests(unittest.TestCase):
                 self.assertEqual(user.email, "replacement@example.com")
                 self.assertTrue(verify_password("Replacement123!", user.password_hash))
                 self.assertEqual(user.security_version, 1)
-                self.assertEqual(db.query(UserTrustedDevice).count(), 0)
                 self.assertEqual(db.query(EmailVerification).count(), 0)
                 with self.assertRaises(HTTPException) as revoked:
                     session_user(db, token)

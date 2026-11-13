@@ -27,8 +27,6 @@ import TermsPrivacyAcknowledgment from "../components/common/TermsPrivacyAcknowl
 interface LoginPayload {
   email: string;
   password: string;
-  rememberDevice: boolean;
-  deviceToken: string | null;
   terms_accepted: true;
 }
 
@@ -84,10 +82,6 @@ export default function LoginPage() {
   const [otp, setOtp, confirmOtp] = useSessionField("ames_login_otp", "");
   const [challenge, setChallenge, confirmChallenge] =
     useSessionField<ChallengeResponse | null>("ames_login_challenge", null);
-  const [remember, setRemember, confirmRemember] = useSessionField(
-    "ames_login_remember_device",
-    Boolean(localStorage.getItem("ames_device_token")),
-  );
   const [busy, setBusy] = useState(false);
   const [termsAccepted, setTermsAccepted, confirmTermsAccepted] =
     useSessionField<boolean>("ames_login_terms_accepted_v1", false);
@@ -124,7 +118,6 @@ export default function LoginPage() {
     confirmPassword();
     confirmOtp();
     confirmChallenge();
-    confirmRemember();
     confirmResendAt();
     confirmTermsAccepted();
     login(data);
@@ -143,8 +136,6 @@ export default function LoginPage() {
     const payload: LoginPayload = {
       email: email.trim(),
       password,
-      rememberDevice: remember,
-      deviceToken: localStorage.getItem("ames_device_token"),
       terms_accepted: true,
     };
     const res = await API.post<AuthResponse>("/api/auth/login", payload);
@@ -213,16 +204,6 @@ export default function LoginPage() {
           disabled={busy || Boolean(challenge)}
           required
         />
-        <label className="mb-2 flex cursor-pointer select-none items-center gap-2 text-left text-sm text-gray-600">
-          <input
-            type="checkbox"
-            name="remember_device"
-            checked={remember}
-            onChange={(event) => setRemember(event.target.checked)}
-            className="h-4 w-4 shrink-0 rounded border-gray-300 text-blue-600 accent-blue-600 focus:ring-blue-500"
-          />
-          <span>Remember this device (Skip OTP for 30 days)</span>
-        </label>
         {!challenge && (
           <TermsPrivacyAcknowledgment
             context="login"

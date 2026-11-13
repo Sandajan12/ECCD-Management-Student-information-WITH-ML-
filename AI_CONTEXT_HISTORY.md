@@ -1,5 +1,69 @@
 # AMES Context History
 
+## 2026-11-13 — Remembered-device removal: local acceptance checkpoint
+
+Work is isolated on `refactor/remove-remembered-devices`, created from fetched
+`main` at `71de882`. The user subsequently limited delivery to local testing:
+do not merge, push, deploy, or change production Supabase until instructed.
+The unrelated untracked Android plan remains untouched. Hosted resources were
+identified read-only before this restriction; no hosted mutation occurred.
+
+Removed the optional 30-day OTP bypass, device-token issuance and active ORM
+model/relationship. Existing request aliases remain inert, old OTP challenge
+remember claims are ignored, and successful session/logout responses expire
+both legacy device cookies. Browser initialization deletes only retired device
+keys and legacy credentials, retaining pending logout and all work drafts.
+Refresh rotation, OTP checks, rate limiting, account preservation, school rules
+and ML behavior remain intact. Old encrypted backups discard only the retired
+top-level device collection before strict validation. Historical migration
+metadata is retained separately from active ORM models.
+
+Migration 020 uses a transactional ledger/table lock, five-second lock timeout,
+external dependency preflight and DROP TABLE RESTRICT. The table's own policies
+are allowed; external views/foreign keys block cleanup. Fresh bootstrap includes
+001–020 and historical performance checks tolerate the recorded retirement.
+Startup never applies 020. AST extraction was refreshed before shared edits and
+again after removal; SQL extraction was unavailable without tree_sitter_sql.
+No dependency was added. Simplicity review: “Did this change introduce
+unnecessary abstractions, extra state, or new dependencies that existing code
+already handles?” No; existing authentication and backup paths were simplified.
+
+Local `backend/.env` targets `localhost/ames_parity_dev`. Its ledger initially
+ended at 018. No API writer was listening on 8000/5000 during migration.
+Created an encrypted pg_dump public-schema snapshot (excluding refresh storage),
+verified decryption and pg_restore catalog, then explicitly applied/checked the
+missing additive 019 prerequisite and ran 020 --check (expected pending),
+--apply, --check successfully. The maintenance snapshot and its separate key
+are ignored under `.tools/remove-remembered-devices/`; application keys were
+not replaced. All other school-table row counts were preserved. Required schema
+checks, database readiness and rate-limit storage checks passed. The updated
+local API starts at 127.0.0.1:8000; health/ready return 200, absent-cookie refresh
+returns 401 INVALID_TOKEN, the response schema omits deviceToken, and logout
+expires all three relevant cookies.
+
+Pre-existing local configuration issues were preserved: the school-backup
+Fernet key is invalid and `idx_students_school_year` is missing despite the
+014 ledger entry. The encrypted pre-migration snapshot confirms the index was
+already absent. These do not prevent current API startup; the optional 014
+integrity checker reports the missing index. Local ENABLE_OTP=false retains
+the development bypass; tests explicitly enable OTP and capture synthetic mail.
+Real email delivery was not tested.
+
+Executed checks at this checkpoint: **561 backend tests and 693 subtests passed**
+in 1698.76 seconds (28:18), with ten existing dependency/collection warnings.
+Both frontend TypeScript projects, ESLint, production build, git diff --check
+and **62 desktop/mobile auth browser cases** passed. Six isolated cleanup/
+backup/CLI tests and 57 targeted security/bootstrap/index/refresh tests also
+passed separately before the complete run. Interrupted earlier runs are not
+reported as passes. Final output is saved locally in
+`.tools/remove-device-pytest.log` and `.tools/remove-device-playwright.log`.
+Actual localhost login/registration also rendered at 1280px and 320px without
+remember controls, horizontal overflow or page errors. Staged secret checking
+reported zero findings. The local API is left running for user acceptance;
+main and origin/main remain at 71de882. No merge, push or deployment was done.
+The RF artifact checksum still matches the current guide. No dataset/model
+was regenerated or replaced.
+
 Archived: **2026-11-07** from the pre-consolidation `AI_CONTEXT.md` at commit
 **a836697**. The original document is preserved in full below, including dated
 delivery notes, test outcomes, local observations, and hybrid/V2 experiments.

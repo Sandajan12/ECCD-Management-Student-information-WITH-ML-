@@ -39,4 +39,3 @@ class User(Base):
     parent = relationship(
         "Parent", back_populates="user", uselist=False, cascade="all, delete-orphan"
     )
-    trusted_devices = relationship("UserTrustedDevice", back_populates="user", cascade="all, delete-orphan")

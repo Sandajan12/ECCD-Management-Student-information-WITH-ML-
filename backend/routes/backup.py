@@ -35,4 +35,4 @@ async def upload_backup(file: UploadFile | None = File(None), backupFile: Upload
     await run_in_threadpool(restore_backup, db, content, audit_user_id=user.user_id)
     from backend.utils.realtime import disconnect_all
     await disconnect_all()
-    return {"message": "System data restored successfully. Current user accounts were preserved; verification codes and trusted devices were cleared."}
+    return {"message": "System data restored successfully. Current user accounts were preserved; verification codes and refresh sessions were cleared."}

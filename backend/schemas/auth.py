@@ -22,17 +22,13 @@ class ConsentRequest(ApiModel):
 class LoginRequest(ConsentRequest):
     email: LoginEmail
     password: str = Field(min_length=1)
+    # Retired compatibility inputs; authentication never reads these fields.
     rememberDevice: bool = Field(default=False, validation_alias=AliasChoices("rememberDevice", "remember_device"))
     rememberMe: bool = False
     deviceToken: str | None = Field(default=None, max_length=512)
     trusted_device_token: str | None = Field(default=None, max_length=512)
     otp: OtpCode | None = None
     challengeToken: str | None = Field(default=None, max_length=3000)
-
-    @model_validator(mode="after")
-    def remember_requested(self) -> "LoginRequest":
-        self.rememberDevice = self.rememberDevice or self.rememberMe
-        return self
 
 
 class SessionUser(ApiModel):
@@ -59,7 +55,6 @@ class LoginResponse(ApiModel):
     requireOtp: Literal[False] = False
     requiresOtp: Literal[False] = False
     requiresPasswordChange: bool = False
-    deviceToken: str | None = None
     email: LoginEmail | None = None
 
 
@@ -81,13 +76,9 @@ class RegisterParentRequest(ConsentRequest):
     lastName: Name = Field(min_length=1, validation_alias=AliasChoices("lastName", "last_name"))
     relationship: str = Field(default="Guardian", max_length=50, validation_alias=AliasChoices("relationship", "relationship_type"))
     otp: OtpCode | Literal[""] = ""
+    # Retired compatibility inputs; authentication never reads these fields.
     rememberDevice: bool = Field(default=False, validation_alias=AliasChoices("rememberDevice", "remember_device"))
     rememberMe: bool = False
-
-    @model_validator(mode="after")
-    def remember_requested(self) -> "RegisterParentRequest":
-        self.rememberDevice = self.rememberDevice or self.rememberMe
-        return self
 
 
 class VerifyOtpRequest(ConsentRequest):

@@ -10,6 +10,5 @@ from .teacher import Teacher
 from .user import User
 from .email_verification import EmailVerification, OtpPurpose
 from .settings import SystemSettings
-from .trusted_device import UserTrustedDevice
 from .refresh_session import RefreshSession
 from . import student_reference

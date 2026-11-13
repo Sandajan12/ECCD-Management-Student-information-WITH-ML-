@@ -1,7 +1,7 @@
 # Feature migrations: Phase 2 is the current backend schema
 
 For a fresh PostgreSQL/Supabase database, the explicit
-[bootstrap command](../scripts/README.md) applies pending migrations 001–019 and
+[bootstrap command](../scripts/README.md) applies pending migrations 001–020 and
 seeds the exact tracked 7-domain/109-question ECCD baseline plus an
 environment-configured Chairman in one transaction:
 
@@ -157,7 +157,7 @@ keys or invalid relationships abort without committing. Runtime startup verifies
 the final schema and seeds the extracted 7 domains/109 questions only if both
 reference tables are empty. It never creates or resets accounts.
 
-The backend implements registration/login/OTP/trusted devices, first-login password
+The backend implements registration/login/OTP/refresh sessions, first-login password
 changes, student and teacher CRUD, permission inheritance, assessment saving and
 masking, transfers, section handovers, settings, 30-day snapshot undo, Excel import
 and real DepEd exports, persisted chat/Socket.IO, and atomic credential-preserving
@@ -167,7 +167,7 @@ Binary endpoints stream workbooks/ZIPs/backups; JSON endpoints have typed schema
 Backup files use the current Python project's Fernet envelope and final-schema
 typed document, not legacy MySQL SQL/CBC/v2 containers or earlier schema exports.
 Keep the stable backup key, LRN encryption key and HMAC secret with backups.
-Restore retains all live user records, clears OTP/device records, replaces school
+Restore retains all live user records, clears OTP challenges and refresh sessions, replaces school
 data only after validation, and rolls back on missing account references. School
 record IDs are imported exactly and their sequences restart transactionally.
 
@@ -224,7 +224,7 @@ gets the complete Phase 1 schema; no accounts or assessment questions are seeded
   accounts get false flags, preserving activation and login behavior. Phase 2
   teacher provisioning must explicitly set `is_first_login=True`.
 - Purpose/account-bound OTP hashes, challenge hashes and attempt counters are
-  available alongside expiring, hashed trusted-device records. Existing OTP
+  available. Historical Phase 1 creates trusted-device storage, retired by 020. Existing OTP
   compatibility columns remain; expiry is normalized to UTC with timezone.
 - Settings include school name, principal and opening month, default August.
   Audit details use `TEXT` for rollover JSON snapshots and record chunks.
@@ -392,7 +392,7 @@ everything back. Repeated applies validate the schema and return without writes.
 `--check` validates without applying upgrades. Rollback requires the retained
 backup and matching older application release; dropped usernames are not rebuilt.
 
-Fresh bootstrap runs migrations 001–019 before seeding. Historical Phase 1 keeps
+Fresh bootstrap runs migrations 001–020 before seeding. Historical Phase 1 keeps
 username and excludes the new expression index and Chairman name. Phase 2 uses
 the migration ledger to distinguish its historical and post-013 column contracts,
 and fingerprints actual intermediate columns rather than the evolving ORM.
@@ -431,6 +431,42 @@ creates only auth_refresh_sessions and its user/expiry index, enables RLS,
 revokes PUBLIC/anon/authenticated access and records 019 in the existing ledger.
 No school rows or existing account columns change. Lock timeout is five seconds;
 a conflict rolls back. Startup checks 019 without applying it. Fresh bootstrap
-includes 001–019. Preserve this additive table when rolling back application code;
+includes 001–020. Preserve this additive table when rolling back application code;
 never restore refresh-family records from a backup. Old browser-storage sessions
 require a fresh login. Use custom same-site HTTPS origins for Strict cookies.
+
+
+## 020: Remove remembered devices after the matching application is live
+
+The application requires OTP for each new production password login and no
+longer reads/writes `user_trusted_devices`. Valid refresh families keep working.
+Old request fields remain accepted but inert; old backup imports discard only
+the retired top-level collection. Browser cleanup preserves pending logout and
+all form/assessment drafts. Keep `api_rate_limits`, refresh storage and their
+security policies.
+
+Target only Render **Apolinario Mabini School System** (`backend.main:app`),
+Vercel **eccd-management-student-information-with-ml** (ameskinder.com), and
+Supabase **AMES_SYSTEM_ML**. Do not operate on AMES-SYSTEM-1 or ames-system.
+
+Deploy and verify the matching backend/frontend first. Retain a protected,
+verified database backup with the original encryption keys. Stop API writers,
+then run against the explicitly verified target database:
+
+```powershell
+uv run --no-project --python .venv312 python -m backend.migrations.remove_trusted_devices --check
+uv run --no-project --python .venv312 python -m backend.migrations.remove_trusted_devices --apply
+uv run --no-project --python .venv312 python -m backend.migrations.remove_trusted_devices --check
+```
+
+Initial check reports pending cleanup; unexpected dependencies must be reviewed.
+Apply locks the ledger/table with a five-second lock timeout and transactionally
+drops only the table using RESTRICT and records `020_remove_trusted_devices`.
+Its own indexes/policies/grants disappear; external views/foreign keys stop the
+upgrade. Repeated apply/check is safe. Startup never runs this destructive step.
+Fresh bootstrap includes 001–020; historical migration schemas remain replayable.
+No other pending cleanup (including 018) is authorized by this operation.
+
+Resume the updated service and verify readiness, rate limiting, password → OTP →
+refresh restoration → logout → OTP-required login. Do not roll back to an old
+backend that queries the dropped table; use a compatible forward fix.

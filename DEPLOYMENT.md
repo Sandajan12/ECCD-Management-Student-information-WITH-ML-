@@ -96,15 +96,13 @@ files. Keep all real credentials in provider environment settings.
 
 6. On the actual HTTPS origins, check `/ready`, frontend deep-link reloads,
    CORS/preflight, real OTP delivery, role-restricted API calls and Socket.IO.
-   Remembered-device cookies are HttpOnly, Secure and SameSite=None in
-   production. Browsers may restrict third-party cookies across provider domains;
-   the existing opaque device-token body/header fallback remains available and
-   its database record expires after 30 days without sliding renewal.
+   New password logins always require email OTP. Existing sessions restore using
+   the secure HttpOnly refresh cookie; no remembered-device bypass remains.
 
 JWTs use HS256 and require expiry. Password/email changes, archive/restore and
 account deactivation during adviser takeover invalidate sessions, challenges and
-remembered devices. Ordinary logout retains device trust; explicit forget-device
-removes it. As before, a copied access JWT survives ordinary logout until expiry
+refresh families. Logout revokes its refresh family and expires legacy device
+cookies. The next password login requires OTP. As before, a copied access JWT survives ordinary logout until expiry
 or credential revocation. No new per-session logout blacklist is introduced.
 
 Authentication uses the production custom site https://ameskinder.com / www.ameskinder.com
@@ -125,7 +123,7 @@ uv run --no-project --python .venv312 python -m backend.migrations.refresh_cooki
 It creates only private auth_refresh_sessions with RLS, a cascading users FK,
 current/previous JTIs, expiry and a 10-second rotation grace. It does not rewrite
 school records. Startup checks 019 and never applies it. Fresh bootstrap includes
-001–019. Keep ACCESS_TOKEN_EXPIRE_MINUTES=30 and REFRESH_TOKEN_EXPIRE_MINUTES=1440.
+001–020. Keep ACCESS_TOKEN_EXPIRE_MINUTES=30 and REFRESH_TOKEN_EXPIRE_MINUTES=1440.
 The access token/user stay only in RAM; refresh JWTs never appear in JSON or web
 storage. Login/OTP/credential replacement set host-only ames_refresh_token with
 HttpOnly; Secure; SameSite=Strict; Path=/api/auth; Max-Age=86400. Only HTTP loopback
@@ -157,3 +155,39 @@ Migration 014 is additive index DDL; run with writers stopped. Startup never
 applies it automatically. See the migration README for lock behavior and checks.
 Frontend pages and portal layouts load on demand with visible loading/recovery
 states. Keep a failed chunk's recovery manual so offline drafts are preserved.
+
+
+## 020: Remove remembered devices after the matching application is live
+
+The application requires OTP for each new production password login and no
+longer reads/writes `user_trusted_devices`. Valid refresh families keep working.
+Old request fields remain accepted but inert; old backup imports discard only
+the retired top-level collection. Browser cleanup preserves pending logout and
+all form/assessment drafts. Keep `api_rate_limits`, refresh storage and their
+security policies.
+
+Target only Render **Apolinario Mabini School System** (`backend.main:app`),
+Vercel **eccd-management-student-information-with-ml** (ameskinder.com), and
+Supabase **AMES_SYSTEM_ML**. Do not operate on AMES-SYSTEM-1 or ames-system.
+
+Deploy and verify the matching backend/frontend first. Retain a protected,
+verified database backup with the original encryption keys. Stop API writers,
+then run against the explicitly verified target database:
+
+```powershell
+uv run --no-project --python .venv312 python -m backend.migrations.remove_trusted_devices --check
+uv run --no-project --python .venv312 python -m backend.migrations.remove_trusted_devices --apply
+uv run --no-project --python .venv312 python -m backend.migrations.remove_trusted_devices --check
+```
+
+Initial check reports pending cleanup; unexpected dependencies must be reviewed.
+Apply locks the ledger/table with a five-second lock timeout and transactionally
+drops only the table using RESTRICT and records `020_remove_trusted_devices`.
+Its own indexes/policies/grants disappear; external views/foreign keys stop the
+upgrade. Repeated apply/check is safe. Startup never runs this destructive step.
+Fresh bootstrap includes 001–020; historical migration schemas remain replayable.
+No other pending cleanup (including 018) is authorized by this operation.
+
+Resume the updated service and verify readiness, rate limiting, password → OTP →
+refresh restoration → logout → OTP-required login. Do not roll back to an old
+backend that queries the dropped table; use a compatible forward fix.

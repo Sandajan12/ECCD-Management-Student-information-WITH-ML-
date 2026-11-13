@@ -34,7 +34,7 @@ On this Windows checkout, use `--python .venv312` to select the installed Python
 `--schema bootstrap_test_...` is available for isolated verification. The command
 does not create databases or change the application's connection settings.
 
-All pending migrations run in order, **001–019**. The current API also requires
+All pending migrations run in order, **001–020**. The current API also requires
 the optional-LRN schema (015). Migration 016 adds the nullable teacher save
 timestamp without backfilling historical records; startup can apply that one
 additive upgrade transactionally. Migration 017 explicitly enforces per-domain
@@ -70,7 +70,7 @@ uv run --no-project --python 3.12 python -m backend.scripts.seed_supabase --appl
 With one Chairman, this may update its email, display name, password and active
 flags. With multiple Chairmen, the email must select the account to update.
 The command never promotes a Parent or Teacher because of an email collision.
-A changed account revokes previous JWTs, OTP challenges and remembered devices;
+A changed account revokes previous JWTs, OTP challenges and refresh families;
 identical credentials cause no writes or password rehash. An archived account is
 reactivated only by this explicit update option.
 

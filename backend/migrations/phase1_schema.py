@@ -1,10 +1,12 @@
 """Retain the Phase 1 compatibility schema for upgrades from the original DB."""
 from sqlalchemy import CheckConstraint, Column, ForeignKeyConstraint, Index, MetaData, String, Table, Text, UniqueConstraint
 from backend.models import Base
+from backend.migrations.trusted_device_schema import trusted_device_table
 
 
 def phase1_metadata() -> MetaData:
     metadata = MetaData()
+    trusted_device_table(metadata)
     affected = {"students", "family_access", "student_eccd_evaluations"}
     for table in Base.metadata.sorted_tables:
         # Cookie session storage is introduced explicitly by migration 019.

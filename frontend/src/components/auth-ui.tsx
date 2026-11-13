@@ -158,48 +158,6 @@ export function AuthAlert({
     </div>
   );
 }
-export function RememberDevice({
-  checked,
-  onChange,
-  compact = false,
-}: {
-  checked: boolean;
-  onChange: (checked: boolean) => void;
-  compact?: boolean;
-}) {
-  return (
-    <label
-      className={`flex cursor-pointer items-center text-left text-[#4b5563] ${compact ? "-ml-2.75 mb-2 text-[0.8rem] leading-[1.43]" : "-ml-2.75 mb-4 text-[0.85rem] leading-[1.43]"}`}
-    >
-      <span
-        className={`relative inline-flex shrink-0 rounded-full text-brand hover:bg-[#4543c0]/4 ${compact ? "p-1" : "p-2.25"}`}
-      >
-        <input
-          type="checkbox"
-          className="peer absolute inset-0 m-0 cursor-pointer opacity-0"
-          checked={checked}
-          onChange={(e) => onChange(e.target.checked)}
-        />
-        <svg
-          aria-hidden="true"
-          viewBox="0 0 24 24"
-          fill="currentColor"
-          className="size-5"
-        >
-          <path
-            d={
-              checked
-                ? "M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2m-9 14-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8z"
-                : "M19 5v14H5V5zm0-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2"
-            }
-          />
-        </svg>
-        <LegacyRipple center />
-      </span>
-      <span>{`Remember this device (${compact ? "Skip OTP on this browser" : "Skip OTP for 30 days"})`}</span>
-    </label>
-  );
-}
 interface OtpFieldsProps {
   value: string;
   onChange: (value: string) => void;

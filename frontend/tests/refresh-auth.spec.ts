@@ -4,7 +4,13 @@ import type { Page } from "@playwright/test";
 const backend = "http://127.0.0.1:8775";
 test.beforeEach(async ({ request }) => {
   expect((await request.post(`${backend}/__test/reset`)).ok()).toBe(true);
-  expect((await request.post(`${backend}/__test/auth/mode`, {data: {enabled: false, access_minutes: 30}})).ok()).toBe(true);
+  expect(
+    (
+      await request.post(`${backend}/__test/auth/mode`, {
+        data: { enabled: false, access_minutes: 30 },
+      })
+    ).ok(),
+  ).toBe(true);
 });
 async function login(page: Page) {
   const result = await page
@@ -27,10 +33,98 @@ async function storage(page: Page) {
   );
 }
 
+test("a reopened browser context restores its persistent refresh cookie", async ({
+  page,
+  browser,
+}) => {
+  await login(page);
+  const cookieJar = await page.context().storageState();
+  const reopened = await browser.newContext({ storageState: cookieJar });
+  try {
+    const nextPage = await reopened.newPage();
+    await nextPage.goto("http://127.0.0.1:5188/teacher/dashboard");
+    await expect(nextPage.locator("main").first()).toBeVisible();
+    await expect(nextPage).toHaveURL(/\/teacher\/dashboard$/);
+    expect(await storage(nextPage)).toEqual(
+      Array.from({ length: 2 }, () => [null, null, null, null]),
+    );
+  } finally {
+    await reopened.close();
+  }
+});
+
+test("offline logout and legacy-key cleanup cannot restore a pending session or erase drafts", async ({
+  page,
+}) => {
+  await login(page);
+  await page.evaluate(() => {
+    localStorage.setItem("ames_draft_2_student", "unsaved form");
+    localStorage.setItem("eccd_draft_1_PRE_1_2", "unsaved assessment");
+    localStorage.setItem("ames_device_token", "retired");
+  });
+  await page.context().setOffline(true);
+  if ((page.viewportSize()?.width ?? 1280) < 900)
+    await page.getByRole("button", { name: "Open navigation" }).click();
+  await page
+    .getByRole("button", { name: "Logout", exact: true })
+    .filter({ visible: true })
+    .first()
+    .click();
+  await expect(page).toHaveURL(/\/login$/);
+  await expect
+    .poll(() =>
+      page.evaluate(() => localStorage.getItem("ames_logout_pending")),
+    )
+    .toBe("true");
+  await page.route("**/api/auth/logout", (route) =>
+    route.abort("internetdisconnected"),
+  );
+  await page.context().setOffline(false);
+  let renewals = 0;
+  page.on("request", (request) => {
+    if (request.url().endsWith("/api/auth/refresh")) renewals++;
+  });
+  await page.reload();
+  await expect(
+    page.getByRole("button", { name: "Log In", exact: true }),
+  ).toBeVisible();
+  expect(renewals).toBe(0);
+  expect(
+    await page.evaluate(() => ({
+      pending: localStorage.getItem("ames_logout_pending"),
+      legacy: localStorage.getItem("ames_device_token"),
+      form: localStorage.getItem("ames_draft_2_student"),
+      assessment: localStorage.getItem("eccd_draft_1_PRE_1_2"),
+    })),
+  ).toEqual({
+    pending: "true",
+    legacy: null,
+    form: "unsaved form",
+    assessment: "unsaved assessment",
+  });
+  await page.unroute("**/api/auth/logout");
+  await page.reload();
+  await expect(
+    page.getByRole("button", { name: "Log In", exact: true }),
+  ).toBeVisible();
+  await expect
+    .poll(() =>
+      page.evaluate(() => localStorage.getItem("ames_logout_pending")),
+    )
+    .toBeNull();
+  expect(
+    (await page.context().request.post(`${backend}/api/auth/refresh`)).status(),
+  ).toBe(401);
+});
+
 test("proactive expiry uses the cookie and server Date without remounting a form", async ({
   page,
 }) => {
-  await page.context().request.post(`${backend}/__test/auth/mode`, {data: {enabled: false, access_minutes: 1}});
+  await page
+    .context()
+    .request.post(`${backend}/__test/auth/mode`, {
+      data: { enabled: false, access_minutes: 1 },
+    });
   await page.clock.install();
   await login(page);
   await page

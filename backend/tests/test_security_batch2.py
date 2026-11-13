@@ -17,7 +17,7 @@ import yaml
 from backend.config.settings import Settings, settings
 from backend.migrations.auth_security_version import apply_auth_security_version, check_auth_security_version
 from backend.migrations.phase1 import MigrationError
-from backend.models import EmailVerification, Teacher, User, UserTrustedDevice
+from backend.models import EmailVerification, Teacher, User
 from backend.models.email_verification import OtpPurpose
 from backend.models.user import UserRole
 from backend.tests import test_phase2
@@ -204,37 +204,29 @@ class AuthenticationSecurityTests(unittest.TestCase):
             db.commit()
         self.assertEqual(self.call("GET", "/api/chairman/teachers", 6).status_code, 401)
 
-    def test_remember_device_hash_lifetime_user_binding_and_no_sliding_expiry(self):
-        result = self.fixture.login(remember_device=True)
-        device = result.json()["deviceToken"]
-        with self.sessions() as db:
-            row = db.query(UserTrustedDevice).filter_by(user_id=2).one()
-            self.assertEqual(row.device_token_hash, digest(device))
-            self.assertNotEqual(row.device_token_hash, device)
-            expiry = row.expires_at
-            self.assertAlmostEqual((expiry - now()).total_seconds(), 30 * 86400, delta=10)
-        self.client.cookies.clear()
-        with patch.object(settings, "ENABLE_OTP", True), patch("backend.routes.auth.send_otp_email", new_callable=AsyncMock):
-            trusted = self.fixture.login(deviceToken=device)
-            self.assertFalse(trusted.json()["requireOtp"])
-            self.client.cookies.clear()
-            self.assertTrue(self.fixture.login("other", deviceToken=device).json()["requireOtp"])
-            self.client.cookies.clear()
-            self.assertTrue(self.fixture.login(deviceToken=device + "tampered").json()["requireOtp"])
-            with self.sessions() as db:
-                self.assertEqual(db.query(UserTrustedDevice).filter_by(user_id=2).one().expires_at, expiry)
-                db.query(UserTrustedDevice).filter_by(user_id=2).update({"expires_at": now() - timedelta(seconds=1)})
-                db.query(EmailVerification).filter_by(user_id=2).delete()
-                db.commit()
-            self.client.cookies.clear()
-            self.assertTrue(self.fixture.login(deviceToken=device).json()["requireOtp"])
+    def test_legacy_fields_headers_and_cookies_always_require_otp(self):
+        with patch.object(settings, 'ENABLE_OTP', True), patch('backend.routes.auth.send_otp_email', new_callable=AsyncMock):
+            for field in ('rememberDevice', 'remember_device', 'rememberMe', 'deviceToken', 'trusted_device_token'):
+                with self.subTest(field=field):
+                    with self.sessions() as db:
+                        db.query(EmailVerification).delete()
+                        db.commit()
+                    self.client.cookies.set('device_token', 'retired')
+                    self.client.cookies.set('trusted_device_token', 'retired')
+                    response = self.client.post('/api/auth/login', headers={'x-device-token': 'retired'}, json={
+                        'email': 'adviser@example.com', 'password': test_phase2.PASSWORD,
+                        field: True if field.startswith('remember') else 'retired'})
+                    self.assertEqual(response.status_code, 200, response.text)
+                    self.assertTrue(response.json()['requireOtp'])
+                    claims = jwt.decode(response.json()['challengeToken'], settings.SECRET_KEY, algorithms=['HS256'])
+                    self.assertNotIn('rememberDevice', claims)
 
     def test_archive_restore_and_handover_permanently_revoke_credentials(self):
         for handover in (False, True):
             with self.subTest(handover=handover):
                 if handover:
                     self.assertEqual(self.call("POST", "/api/chairman/sections/1/assign-teacher", json={"teacher_id": 1}).status_code, 200)
-                device = self.fixture.login(rememberDevice=True).json()["deviceToken"]
+                device = "retired-device-token"
                 with self.sessions() as db:
                     old_token = build_session(db, db.get(User, 2))["token"]
                     challenge, code = issue_challenge(db, db.get(User, 2), OtpPurpose.LOGIN)
@@ -253,12 +245,11 @@ class AuthenticationSecurityTests(unittest.TestCase):
                 with patch.object(settings, "ENABLE_OTP", True), patch("backend.routes.auth.send_otp_email", new_callable=AsyncMock):
                     self.assertTrue(self.fixture.login(deviceToken=device).json()["requireOtp"])
                 with self.sessions() as db:
-                    self.assertEqual(db.query(UserTrustedDevice).filter_by(user_id=2).count(), 0)
                     db.query(EmailVerification).filter_by(user_id=2).delete()
                     db.commit()
 
     def test_password_change_rejects_old_jwt_device_and_challenge(self):
-        device = self.fixture.login(rememberDevice=True).json()["deviceToken"]
+        device = "retired-device-token"
         with self.sessions() as db:
             challenge, code = issue_challenge(db, db.get(User, 2), OtpPurpose.LOGIN)
             db.commit()
@@ -272,7 +263,7 @@ class AuthenticationSecurityTests(unittest.TestCase):
             response = self.client.post("/api/auth/login", json={"email": "adviser@example.com", "password": "Changed456", "deviceToken": device})
             self.assertTrue(response.json()["requireOtp"])
 
-    def test_otp_remember_choice_is_bound_to_hashed_single_use_challenge(self):
+    def test_otp_is_hashed_single_use_and_legacy_choice_is_inert(self):
         codes = []
         async def delivered(address, code):
             codes.append(code)
@@ -286,10 +277,10 @@ class AuthenticationSecurityTests(unittest.TestCase):
                 self.assertAlmostEqual((row.expires_at - now()).total_seconds(), 600, delta=5)
             verified = self.client.post("/api/auth/verify-otp", json={"challengeToken": challenge, "otp": codes[-1], "rememberDevice": False, "terms_accepted": True})
             self.assertEqual(verified.status_code, 200)
-            self.assertIn("deviceToken", verified.json())
+            self.assertNotIn("deviceToken", verified.json())
             self.assertEqual(self.client.post("/api/auth/verify-otp", json={"challengeToken": challenge, "otp": codes[-1]}).status_code, 400)
             self.client.cookies.clear()
-            self.assertFalse(self.fixture.login(deviceToken=verified.json()["deviceToken"]).json()["requireOtp"])
+            self.assertTrue(self.fixture.login(deviceToken="retired").json()["requireOtp"])
 
     def test_otp_resend_cooldown_and_aliases_preserve_existing_challenge(self):
         with patch.object(settings, "ENABLE_OTP", True), patch("backend.routes.auth.send_otp_email", new_callable=AsyncMock) as mail:
@@ -349,22 +340,20 @@ class AuthenticationSecurityTests(unittest.TestCase):
             self.assertEqual(future.result(timeout=10)["message"], "Teacher successfully updated.")
         self.assertIsNone(blocked_account, "Teacher edit locked the account before the assignment mutex: " + str(blocked_account))
 
-    def test_surviving_device_row_cannot_bypass_credential_version(self):
-        device = self.fixture.login(rememberDevice=True).json()["deviceToken"]
+    def test_old_challenge_remember_claim_is_ignored(self):
         with self.sessions() as db:
-            # Simulate a stale device insert racing with revocation cleanup.
-            saved = db.query(UserTrustedDevice).filter_by(user_id=2).one()
-            expiry = saved.expires_at
-            revoke_credentials(db, db.get(User, 2))
-            db.add(UserTrustedDevice(user_id=2, device_token_hash=digest(device), expires_at=expiry))
+            token, code = issue_challenge(db, db.get(User, 2), OtpPurpose.LOGIN)
+            db.flush()
+            row = db.query(EmailVerification).filter_by(challenge_hash=digest(token)).one()
+            claims = jwt.decode(token, settings.SECRET_KEY, algorithms=['HS256'])
+            claims['rememberDevice'] = True
+            token = jwt.encode(claims, settings.SECRET_KEY, algorithm='HS256')
+            row.challenge_hash = digest(token)
             db.commit()
-        self.client.cookies.clear()
-        with patch.object(settings, "ENABLE_OTP", True), patch("backend.routes.auth.send_otp_email", new_callable=AsyncMock):
-            self.assertTrue(self.fixture.login(deviceToken=device + ".é").json()["requireOtp"])
-            with self.sessions() as db:
-                db.query(EmailVerification).delete()
-                db.commit()
-            self.assertTrue(self.fixture.login(deviceToken=device).json()["requireOtp"])
+        response = self.client.post('/api/auth/verify-otp', json={'challengeToken': token, 'otp': code})
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertNotIn('deviceToken', response.json())
+        self.assertTrue(all('Max-Age=0' in cookie for cookie in response.headers.get_list('set-cookie') if cookie.startswith(('device_token=', 'trusted_device_token='))))
 
     def test_email_failure_is_sanitized_and_immediately_retryable(self):
         with patch.object(settings, "ENABLE_OTP", True), patch("backend.routes.auth.send_otp_email", new_callable=AsyncMock, side_effect=RuntimeError("private key and OTP")):
@@ -398,7 +387,7 @@ class AuthenticationSecurityTests(unittest.TestCase):
                 self.assertIn("Max-Age=86400", cookie)
             else:
                 self.assertIn("SameSite=none", cookie)
-                self.assertIn("Max-Age=2592000", cookie)
+                self.assertIn("Max-Age=0", cookie)
 
     def test_version_migration_is_repeatable_and_preserves_accounts(self):
         with self.fixture.test_engine.begin() as connection:

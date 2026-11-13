@@ -26,7 +26,6 @@ export interface SessionResponse {
   user: SessionUser;
   requireOtp: false;
   requiresPasswordChange: boolean;
-  deviceToken?: string;
 }
 export interface ChallengeResponse {
   success: true;

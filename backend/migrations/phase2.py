@@ -14,14 +14,13 @@ RETIRED_SETTINGS_COLUMNS = ("secondary_color", "profile_pic_url", "login_backgro
 
 
 def digest_table(connection: Connection, name: str) -> str:
-    table = Base.metadata.tables[name]
     digest = hashlib.sha256()
     # Digest the actual intermediate schema, independent of later ORM changes.
     columns = [item["name"] for item in inspect(connection).get_columns(name)
                if item["name"] not in ("lrn_number", "student_lrn")]
     q = connection.dialect.identifier_preparer.quote
     projection = ", ".join(q(column) for column in columns)
-    ordering = ", ".join(q(column.name) for column in table.primary_key.columns)
+    ordering = ", ".join(q(column) for column in inspect(connection).get_pk_constraint(name)["constrained_columns"])
     for row in connection.execute(text(f"SELECT {projection} FROM {q(name)} ORDER BY {ordering}")):
         digest.update(serialize_row(row))
     return digest.hexdigest()

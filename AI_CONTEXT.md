@@ -6,7 +6,7 @@ migrations, manifests and tests establish contracts; identify and resolve
 documentation/code conflicts using the relevant implementation.
 
 Authentication and custom-domain guidance updated **2026-11-13** for the
-HttpOnly cookie release; see section 6 and the explicit migration 019 instructions.
+HttpOnly cookie release and remembered-device removal; see section 6 and explicit migrations 019/020.
 
 ## 1. Purpose and account handoff
 
@@ -57,7 +57,7 @@ keys with protected backups; do not regenerate them during routine setup.
 | Backend | FastAPI, Pydantic V2, SQLAlchemy 2 ORM, synchronous PostgreSQL sessions through psycopg2; exact pins in `backend/requirements.txt` |
 | Python | Project requests Python 3.12 in `.python-version`; package management uses Astral uv |
 | Server | Uvicorn; `backend.main:app` is the Socket.IO ASGI wrapper; `backend.main:api` is FastAPI |
-| Security | JWT through python-jose, direct bcrypt hashing, account-bound OTP challenges and remembered devices |
+| Security | JWT through python-jose, direct bcrypt hashing, account-bound OTP challenges and rotating refresh-cookie sessions |
 | Encryption | AES-256-GCM for LRNs, HMAC-SHA256 for exact LRN lookup, Fernet for encrypted JSON backups |
 | Frontend | React 19, TypeScript 6, React Router 7, Vite 8, Axios, Recharts, Socket.IO client |
 | Styling | **MUI 9 and Emotion are active**, alongside Tailwind CSS 4, scoped CSS, native components, and Poppins fonts |
@@ -66,7 +66,7 @@ keys with protected backups; do not regenerate them during routine setup.
 | Workspace | Root `pnpm-workspace.yaml` includes frontend and retains separate lockfiles; frontend has matching pnpm 12 YAML overrides and its own package-manager pin for isolated installs; automatic dependency verification before scripts is disabled |
 | Spreadsheets | openpyxl handles active workbook import/export; pandas is installed |
 | ML | V1 sigmoid-calibrated standalone Random Forest, joblib artifact, 18 PRE/demographic inputs (five household fields excluded), three supported POST outcomes; shared teacher/parent inference |
-| Migrations | Python migrations 001–019; only the nullable teacher timestamp (016) is applied automatically at startup. Other upgrades are explicit; 018 retires three branding columns after the matching app is deployed. No active Alembic setup, pyproject.toml, or uv.lock |
+| Migrations | Python migrations 001–020; only the nullable teacher timestamp (016) is applied automatically at startup. Other upgrades are explicit; 018 retires three branding columns after the matching app is deployed. No active Alembic setup, pyproject.toml, or uv.lock |
 
 Exact dependency versions belong to manifests/lockfiles. Do not assume another
 environment named `.venv` uses Python 3.12. Root and frontend workspace YAML
@@ -195,7 +195,6 @@ do not treat stale graph edges as an exact current caller inventory.
 | system_logs / `models/log.py` | User-linked actions, TEXT details including rollover snapshots/chunks, timestamp |
 | system_settings / `models/settings.py` | Singleton ID 1; title, primary color and logo, school/principal/chairman names, opening month 1-12, current/previous year, rollover timestamp; secondary_color/profile_pic_url/login_background retired by explicit 018 |
 | email_verifications / `models/email_verification.py` | Account/email/purpose-bound hashed challenge/OTP, expiry, attempts; login/registration/password-change/email-change purposes |
-| user_trusted_devices / `models/trusted_device.py` | Account FK, hashed token, user agent, UTC expiry/creation |
 
 Final schema has **no plaintext students.lrn_number or child student_lrn database
 columns**. Hybrid Python compatibility properties in student.py,
@@ -236,6 +235,7 @@ preserve those routes and their protection.
 | 017 | eccd_question_sequence | Unique idx_questions_domain_sequence on (domain_id, sequence_order); explicit upgrade preserving question rows |
 | 018 | settings_cleanup | Explicitly drop secondary_color/profile_pic_url/login_background, preserving every remaining settings field; deploy matching application before upgrading |
 | 019 | refresh_cookie_sessions | Private refresh families, 10-second rotation grace; explicit additive upgrade before deployment |
+| 020 | remove_trusted_devices | Explicit removal of retired OTP-bypass table after matching app deployment |
 
 `backend/main.py::initialize_runtime` checks evaluator provenance first, then
 transactionally applies **only 016** with migration-ledger serialization. The
@@ -277,7 +277,7 @@ are configured, the explicit bootstrap is:
 uv run --no-project --python .venv312 python -m backend.scripts.seed_supabase --apply
 ```
 
-It applies pending **001–019** in order, seeds matching reference data and
+It applies pending **001–020** in order, seeds matching reference data and
 provisions the environment-configured Chairman in one transaction. Repeated
 runs preserve accounts/reference rows; conflicting reference data aborts.
 Existing databases need missing feature upgrades in order; use the migration
@@ -354,7 +354,7 @@ to the custom site: Strict cookies cannot authenticate a cross-site preview.
 Access JWTs use `tokenType: "session"` and a 30-minute lifetime. React/API service
 hold the access token and user profile only in RAM. No token, refresh_token, user
 or role goes into localStorage/sessionStorage; exact legacy keys are purged.
-Durable drafts and ames_device_token remain. Axios sends credentials and the RAM
+Durable drafts remain; retired device-token/preference keys are removed. Axios sends credentials and the RAM
 bearer only to the configured API origin; Socket.IO uses that same RAM token.
 
 Login, registration, OTP and credential replacement return `access_token`, its
@@ -392,7 +392,7 @@ ACCOUNT_INACTIVE revokes while ordinary permission 403s do not log users out.
 No generic form replay is introduced: only authorized teacher ECCD drafts replay.
 
 POST /api/auth/logout revokes the cookie family and deletes the matching cookie
-attributes/path; remembered-device trust remains unless explicitly forgotten.
+attributes/path, and expires both legacy device cookies; the next password login requires OTP.
 An offline logout sets only the non-sensitive ames_logout_pending helper so F5
 cannot resurrect the cookie before server logout succeeds. Credential revocation
 deletes all account refresh families. Copied access JWTs can finish their short
@@ -403,14 +403,26 @@ backups and cleared on restore, never restored as active sessions.
 Migration 019_refresh_cookie_sessions is explicit and additive: apply/check it
 before deploying this backend; startup checks and never auto-applies it. Enable
 RLS and revoke PUBLIC/anon/authenticated access; only the direct database backend
-uses this table. Fresh bootstrap includes 001–019.
+uses this table. Fresh bootstrap includes 001–020.
 
 JWTs bind to live credentials and persistent security version. Inactive/pending
 accounts cannot use protected services. Credential changes, archive/restore and
 adviser deactivation revoke prior sessions. OTP challenges are account/email/
 purpose-bound, hashed, expire after 10 minutes and allow five incorrect attempts.
-Remembered devices use hashed 30-day tokens; ordinary logout preserves them,
-explicit forget-device revokes them. Browser terms acknowledgments persist in
+Every new production password login requires OTP. Device trust and the 30-day
+bypass are removed. Obsolete remember/device/forget fields remain inert API
+inputs. New challenges omit remembered-device claims; older claims are ignored.
+Successful session delivery/logout expires host-only device_token and
+trusted_device_token cookies at their historical root path. Frontend initialization
+deletes only ames_device_token, ames_login_remember_device and
+ames_registration_remember_device (plus legacy credentials) from both browser
+stores, preserving ames_logout_pending and every work draft. Valid refresh
+sessions continue working without another OTP until expiry/revocation.
+Migration 020_remove_trusted_devices is explicit and never run at startup.
+Deploy the matching app first; retain a protected backup, stop API writers, then
+run --check, --apply, --check. DROP TABLE RESTRICT refuses external dependencies;
+only user_trusted_devices and its own objects are removed. The app works before
+and after cleanup. Never run an old backend against the post-020 database. Browser terms acknowledgments persist in
 tab storage; supplied `terms_accepted` values are validated while omission
 remains API-compatible. This is not a stored database consent ledger.
 
@@ -636,10 +648,12 @@ confirmed actions and never automatically replay offline.
 
 Current backups are strict typed JSON in a **Fernet .enc** envelope.
 `utils/backups.py` validates before replacing school data, preserves **live users/
-credentials**, clears OTP/device records, restarts school-data sequences and
+credentials**, clears OTP challenges and refresh families, restarts school-data sequences and
 commits atomically. Invalid keys/relationships abort. Never generate replacement
 keys to bypass failure or accept historical SQL/CBC formats as current restores.
-Backup routes remain Chairman-only.
+Backup routes remain Chairman-only. New backups omit user_trusted_devices;
+old backups discard only that retired top-level collection before strict
+validation. No trusted-device or refresh records are imported.
 
 New encrypted backups omit the three retired branding settings. Older backups
 remain importable: `SettingsBackupRow` discards exactly `secondary_color`,
@@ -829,7 +843,7 @@ inventory, not an executed test count.
 | `playwright.terms-privacy.config.ts` | `terms-privacy.spec.ts` | http://127.0.0.1:5188 | 8775 | Starts disposable API and Vite; desktop/tablet/mobile |
 | `playwright.ml-insights.config.ts` | `ml-insights.spec.ts` | http://localhost:5173 | 8769, started separately | Starts/reuses Vite only; Desktop Chrome project, spec adjusts viewport |
 | `playwright.parent-sync.config.ts` | `parent-sync.spec.ts`, `parent-profile.spec.ts`, `teacher-import.spec.ts`, `offline-scope.spec.ts`, `offline-settings.spec.ts`, `eccd-question-order.spec.ts` | http://127.0.0.1:5190 | Mocked API | Starts Vite; desktop/mobile, no school database |
-| `playwright.auth-security.config.ts` | `auth-security.spec.ts`, `terms-privacy.spec.ts` | http://127.0.0.1:5188 | 8775 | Starts disposable auth-security API and Vite; desktop/mobile |
+| `playwright.auth-security.config.ts` | `auth-security.spec.ts`, `terms-privacy.spec.ts`, `refresh-auth.spec.ts` | http://127.0.0.1:5188 | 8775 | Starts disposable auth-security API and Vite; desktop/mobile |
 | `playwright.messaging.config.ts` | `messaging.spec.ts` | http://127.0.0.1:5191 | 8768 | Starts disposable API and Vite; desktop/mobile |
 | `playwright.performance.config.ts` | `performance.spec.ts` | http://127.0.0.1:5190 | Mocked API | Starts Vite preview of an existing production build; desktop/mobile |
 | `playwright.parent-assessment.config.ts` | `parent-assessment.spec.ts` | http://127.0.0.1:5192 | Mocked API | Starts/reuses Vite; desktop/tablet/mobile |

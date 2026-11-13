@@ -28,7 +28,7 @@ interface AuthState {
   user: SessionUser | null;
   login: (data: SessionResponse) => void;
   updateUser: (data: SessionUser) => void;
-  logout: (forget?: boolean) => Promise<void>;
+  logout: () => Promise<void>;
 }
 const AuthContext = createContext<AuthState | null>(null);
 export function roleHome(role?: string): string {
@@ -48,18 +48,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     (data: SessionUser) => updateSessionUser(data),
     [],
   );
-  const logout = useCallback(async (forget = false) => {
-    const deviceToken = localStorage.getItem("ames_device_token");
+  const logout = useCallback(async () => {
     // An offline logout must not restore its still-present cookie on F5.
     localStorage.setItem("ames_logout_pending", "true");
     clearSession();
-    if (forget) localStorage.removeItem("ames_device_token");
     try {
-      await API.post(
-        "/api/auth/logout",
-        { forgetDevice: forget, deviceToken },
-        { timeout: 5000 },
-      );
+      await API.post("/api/auth/logout", undefined, { timeout: 5000 });
       localStorage.removeItem("ames_logout_pending");
     } catch {
       /* Preserve pending logout for the next online page load. */

@@ -80,7 +80,6 @@ export default function ForceChangePassword() {
             );
             if (!res.data.success)
               throw new Error("Failed to update password.");
-            localStorage.removeItem("ames_device_token");
             confirmPasswordDraft();
             confirmConfirmationDraft();
             login(res.data);

@@ -9,8 +9,9 @@ another code replaces the previous challenge.
 With `ENABLE_OTP=false`, password login and parent registration use the existing
 immediate development bypass. SMTP is skipped. Any challenges issued in this
 mode use the development master code `123456`. This code has no special access
-when OTP is enabled. Remembered devices still skip OTP for their existing
-30-day lifetime in either mode.
+when OTP is enabled. Remembered devices and their 30-day OTP bypass are removed;
+new production password logins always require OTP. Valid refresh cookies
+restore an existing session without a new login. Logout revokes that session.
 
 ## Test with a real account
 
@@ -40,9 +41,8 @@ when OTP is enabled. Remembered devices still skip OTP for their existing
    pnpm.cmd --dir frontend dev
    ```
 
-5. Open `http://localhost:5173/login` in a fresh private browser window, ensuring
-   there is no remembered-device token or cookie. Leave “Remember this device”
-   unchecked and submit the Chairman credentials. The button shows a spinner
+5. Open `http://localhost:5173/login` in a fresh private browser window and
+   submit the Chairman credentials. The button shows a spinner
    while delivery runs. On success the OTP modal opens, and the backend logs
    `[AUTH] OTP sent via email to <target_email>` without the code.
 6. Open that mailbox, including its spam folder. Enter an incorrect six-digit

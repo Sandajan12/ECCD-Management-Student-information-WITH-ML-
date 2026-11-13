@@ -39,7 +39,6 @@ interface RegistrationPayload {
   email: string;
   password: string;
   relationship: string;
-  rememberDevice: boolean;
   terms_accepted: true;
 }
 
@@ -70,10 +69,6 @@ export default function RegisterParentPage() {
       "ames_registration_challenge",
       null,
     );
-  const [remember, setRemember, confirmRemember] = useSessionField(
-    "ames_registration_remember_device",
-    false,
-  );
   const [busy, setBusy] = useState(false);
   const [termsAccepted, setTermsAccepted, confirmTermsAccepted] =
     useSessionField<boolean>("ames_registration_terms_accepted_v1", false);
@@ -92,7 +87,6 @@ export default function RegisterParentPage() {
       email: form.email.trim(),
       password: form.password,
       relationship: form.relationship,
-      rememberDevice: remember,
       terms_accepted: true,
     };
     return (await API.post<AuthResponse>("/api/auth/register-parent", payload))
@@ -113,7 +107,6 @@ export default function RegisterParentPage() {
       confirmForm();
       confirmOtp();
       confirmChallenge();
-      confirmRemember();
       confirmTermsAccepted();
       login(data);
       navigate("/parent/dashboard");
@@ -206,7 +199,6 @@ export default function RegisterParentPage() {
                         challengeToken: challenge.challengeToken,
                         otp,
                         terms_accepted: true,
-                        rememberDevice: remember,
                       })
                     ).data
                   : await register(),
@@ -378,16 +370,6 @@ export default function RegisterParentPage() {
                 />
               </div>
               <PasswordCriteria value={form.password} compact />
-              <label className="mb-2 flex cursor-pointer select-none items-center gap-2 text-left text-sm text-gray-600">
-                <input
-                  type="checkbox"
-                  name="remember_device"
-                  checked={remember}
-                  onChange={(event) => setRemember(event.target.checked)}
-                  className="h-4 w-4 shrink-0 rounded border-gray-300 text-blue-600 accent-blue-600 focus:ring-blue-500"
-                />
-                <span>Remember this device (Skip OTP on this browser)</span>
-              </label>
               <TermsPrivacyAcknowledgment
                 context="registration"
                 checked={termsAccepted}

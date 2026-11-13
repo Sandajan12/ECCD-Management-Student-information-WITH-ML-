@@ -135,11 +135,10 @@ export default function TermsAndPrivacyModal({
             <Typography>
               <strong>Accounts and system activity:</strong> Account names,
               email addresses, roles, protected password and OTP verification
-              records, remembered-device information when enabled,
-              parent-teacher portal messages, assessment release and access
-              permissions, and security audit logs. Form drafts are kept on this
-              browser to recover unsaved work after reloads or connection
-              failures.
+              records, authentication session information, parent-teacher portal
+              messages, assessment release and access permissions, and security
+              audit logs. Form drafts are kept on this browser to recover
+              unsaved work after reloads or connection failures.
             </Typography>
           </NoticeSection>
 

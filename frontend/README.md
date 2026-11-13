@@ -126,3 +126,10 @@ uv run --no-project --python .venv312 python -m backend.tests.serve_phase3
 Stop that server with Ctrl+C when finished so its temporary schema is removed.
 Never deploy the test server. Test screenshots/traces and generated builds are
 ignored by Git.
+
+
+New password logins require email OTP. Remember-device controls are retired;
+refresh cookies restore existing sessions. Initialization removes only legacy
+device preference/token keys and credentials, preserving pending logout and
+all durable drafts. Verify with `pnpm exec playwright test --config
+playwright.auth-security.config.ts` (desktop/mobile OTP, refresh, and storage).

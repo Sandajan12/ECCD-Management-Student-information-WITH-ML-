@@ -23,8 +23,9 @@ from backend.migrations.phase1 import apply_phase1, select_schema
 from backend.migrations.phase2 import apply_phase2, check_phase2
 from backend.migrations.adviser_takeover import apply_adviser_takeover
 from backend.migrations.email_only_identity import apply_email_only_identity
+from backend.migrations.remove_trusted_devices import apply_remove_trusted_devices
 from backend.migrations.refresh_cookie_sessions import apply_refresh_cookie_sessions
-from backend.models import Base, EccdQuestion, EmailVerification, FamilyAccess, Message, Parent, Section, SectionTeacher, Student, StudentEccdEvaluation, SystemLog, SystemSettings, Teacher, User, UserTrustedDevice
+from backend.models import Base, EccdQuestion, EmailVerification, FamilyAccess, Message, Parent, Section, SectionTeacher, Student, StudentEccdEvaluation, SystemLog, SystemSettings, Teacher, User
 from backend.models.eccd import EccdAnswer, TestingPeriod
 from backend.models.user import UserRole
 from backend.utils.authentication import build_session, credential_version, digest
@@ -52,6 +53,7 @@ class BackendTests(unittest.TestCase):
             apply_adviser_takeover(connection, self.schema)
             apply_email_only_identity(connection, self.schema)
             apply_refresh_cookie_sessions(connection, self.schema)
+            apply_remove_trusted_devices(connection, self.schema)
         self.test_engine = create_engine(engine.url, connect_args={'options': f'-csearch_path={self.schema},public'})
         self.sessions = sessionmaker(bind=self.test_engine, autoflush=False)
         with self.sessions() as db:
@@ -263,8 +265,6 @@ class BackendTests(unittest.TestCase):
         self.assertEqual(response.status_code,200)
         self.assertFalse(response.json()['requiresPasswordChange'])
         self.assertEqual(self.client.get('/api/students/all',headers={'Authorization':f'Bearer {token}'}).status_code,401)
-        with self.sessions() as db:
-            self.assertEqual(db.query(UserTrustedDevice).filter_by(user_id=provision.json()['user_id']).count(),0)
 
     def test_bound_otp_attempt_limit_and_replay(self):
         codes=[]
@@ -280,7 +280,7 @@ class BackendTests(unittest.TestCase):
                 challenge=self.login(rememberDevice=True).json()['challengeToken']
             response=self.client.post('/api/auth/verify-otp',json={'challengeToken':challenge,'otp':codes[-1]})
             self.assertEqual(response.status_code,200)
-            self.assertIn('deviceToken',response.json())
+            self.assertNotIn('deviceToken',response.json())
             self.assertEqual(self.client.post('/api/auth/verify-otp',json={'challengeToken':challenge,'otp':codes[-1]}).status_code,400)
         with self.sessions() as db:
             self.assertEqual(db.query(EmailVerification).count(),0)
@@ -340,23 +340,15 @@ class BackendTests(unittest.TestCase):
         with self.sessions() as db:
             self.assertEqual(db.query(User).filter_by(email='pending@example.com').count(),1)
 
-    def test_trusted_device_account_expiry_and_logout(self):
-        device=self.login(rememberDevice=True).json()['deviceToken']
-        with self.sessions() as db:
-            expires=db.query(UserTrustedDevice).filter_by(user_id=2).one().expires_at
-        with patch.object(settings,'ENABLE_OTP',True),patch('backend.routes.auth.send_otp_email',new_callable=AsyncMock):
-            self.assertFalse(self.login(deviceToken=device).json()['requireOtp'])
-            self.client.cookies.clear()
-            self.assertTrue(self.login('other',deviceToken=device).json()['requireOtp'])
-            self.assertEqual(self.client.post('/api/auth/logout',json={'deviceToken':device}).status_code,200)
-            self.assertFalse(self.login(deviceToken=device).json()['requireOtp'])
-            with self.sessions() as db:
-                self.assertEqual(db.query(UserTrustedDevice).filter_by(user_id=2).one().expires_at,expires)
-                db.query(UserTrustedDevice).filter_by(user_id=2).update({'expires_at':datetime.now(timezone.utc)-timedelta(seconds=1)})
-                db.commit()
-            self.assertTrue(self.login(deviceToken=device).json()['requireOtp'])
-        self.client.post('/api/auth/logout',json={'forgetDevice':True,'deviceToken':device})
-        with self.sessions() as db: self.assertEqual(db.query(UserTrustedDevice).count(),0)
+    def test_retired_device_inputs_do_not_bypass_otp(self):
+        with patch.object(settings, 'ENABLE_OTP', True), patch('backend.routes.auth.send_otp_email', new_callable=AsyncMock):
+            for name in ('chairman', 'adviser', 'parent'):
+                with self.subTest(account=name):
+                    result = self.login(name, rememberDevice=True, rememberMe=True, deviceToken='retired', trusted_device_token='retired')
+                    self.assertEqual(result.status_code, 200, result.text)
+                    self.assertTrue(result.json()['requireOtp'])
+                    self.assertNotIn('deviceToken', result.json())
+        self.assertEqual(self.client.post('/api/auth/logout', json={'forgetDevice': True, 'deviceToken': 'retired'}).status_code, 200)
 
     def test_email_change_bound_to_exact_address_and_credentials(self):
         codes=[]

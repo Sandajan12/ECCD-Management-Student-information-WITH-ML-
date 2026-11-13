@@ -1,4 +1,4 @@
-"""Account-bound sessions, challenges and remembered-device business logic."""
+"""Account-bound sessions and single-use verification challenges."""
 from datetime import datetime, timedelta, timezone
 import hashlib
 import hmac
@@ -11,7 +11,7 @@ from fastapi import HTTPException, Request, Response
 from jose import ExpiredSignatureError, JWTError, jwt
 from sqlalchemy.orm import Session
 from backend.config.settings import settings
-from backend.models import EmailVerification, RefreshSession, Section, SectionTeacher, Teacher, User, UserTrustedDevice
+from backend.models import EmailVerification, RefreshSession, Section, SectionTeacher, Teacher, User
 from backend.models.email_verification import OtpPurpose
 from backend.utils.security import create_access_token, create_refresh_token
 from backend.utils.account_identity import account_names
@@ -48,6 +48,7 @@ def refresh_cookie_options(request: Request) -> dict:
 def deliver_session(result: dict, request: Request, response: Response) -> dict:
     response.set_cookie(REFRESH_COOKIE, result.pop("refresh_token"),
                         max_age=settings.REFRESH_TOKEN_EXPIRE_MINUTES * 60, **refresh_cookie_options(request))
+    clear_device_cookies(response)
     response.headers["Cache-Control"] = "no-store"
     return result
 
@@ -70,11 +71,6 @@ def revoke_refresh_cookie(db: Session, token: str | None) -> None:
 def device_cookie_options() -> dict:
     production = settings.production
     return {"httponly": True, "secure": production, "samesite": "none" if production else "lax", "path": "/"}
-
-
-def set_device_cookies(response: Response, token: str) -> None:
-    for name in ("device_token", "trusted_device_token"):
-        response.set_cookie(name, token, max_age=30 * 86400, **device_cookie_options())
 
 
 def clear_device_cookies(response: Response) -> None:
@@ -193,33 +189,8 @@ def refresh_session(db: Session, token: str) -> dict:
     return build_session(db, user, row)
 
 
-def device_tokens(request: Request, supplied: str | None = None, legacy_supplied: str | None = None) -> list[str]:
-    return list(dict.fromkeys(token for token in (supplied, legacy_supplied, request.headers.get("x-device-token"), request.cookies.get("device_token"), request.cookies.get("trusted_device_token")) if isinstance(token, str) and 0 < len(token) <= 512))
-
-
-def trusted_token(db: Session, user: User, tokens: list[str]) -> str | None:
-    for token in tokens:
-        version = token.partition(".")[2]
-        if version:
-            if not hmac.compare_digest(version.encode(), credential_version(user).encode()):
-                continue
-        elif user.security_version:
-            # Old opaque tokens are compatible only before the first revocation.
-            continue
-        if db.query(UserTrustedDevice).filter(UserTrustedDevice.user_id == user.user_id, UserTrustedDevice.device_token_hash == digest(token), UserTrustedDevice.expires_at > now()).first():
-            return token
-    return None
-
-
-def complete_login(db: Session, user: User, remember: bool, request: Request, response: Response) -> dict:
-    result = build_session(db, user)
-    if remember:
-        db.query(UserTrustedDevice).filter(UserTrustedDevice.user_id == user.user_id, UserTrustedDevice.expires_at <= now()).delete()
-        token = secrets.token_hex(32) + "." + credential_version(user)
-        db.add(UserTrustedDevice(user_id=user.user_id, device_token_hash=digest(token), user_agent=request.headers.get("user-agent", "Unknown")[:255], expires_at=now() + timedelta(days=30)))
-        result["deviceToken"] = token
-        set_device_cookies(response, token)
-    return deliver_session(result, request, response)
+def complete_login(db: Session, user: User, request: Request, response: Response) -> dict:
+    return deliver_session(build_session(db, user), request, response)
 
 
 def revoke_credentials(db: Session, user: User) -> None:
@@ -227,13 +198,12 @@ def revoke_credentials(db: Session, user: User) -> None:
     db.refresh(user, attribute_names=["security_version"], with_for_update=True)
     user.security_version += 1
     db.query(RefreshSession).filter_by(user_id=user.user_id).delete()
-    db.query(UserTrustedDevice).filter_by(user_id=user.user_id).delete()
     db.query(EmailVerification).filter_by(user_id=user.user_id).delete()
     user.otp_code = None
     user.otp_expires_at = None
 
 
-def issue_challenge(db: Session, user: User, purpose: OtpPurpose, email: str | None = None, remember: bool = False) -> tuple[str, str]:
+def issue_challenge(db: Session, user: User, purpose: OtpPurpose, email: str | None = None) -> tuple[str, str]:
     # Serialize challenge issuance per account; browser countdowns alone do not
     # constrain direct API calls or requests arriving at different workers.
     db.query(User).filter_by(user_id=user.user_id).populate_existing().with_for_update().one()
@@ -247,7 +217,7 @@ def issue_challenge(db: Session, user: User, purpose: OtpPurpose, email: str | N
     otp = f"{secrets.randbelow(900000) + 100000:06d}" if settings.otp_enabled else "123456"
     expiry = now() + timedelta(minutes=10)
     token = jwt.encode({"tokenType": "otp-challenge", "purpose": purpose.value, "userId": user.user_id, "email": email,
-                       "nonce": nonce, "credentialVersion": credential_version(user), "rememberDevice": remember, "exp": expiry}, settings.SECRET_KEY, algorithm="HS256")
+                       "nonce": nonce, "credentialVersion": credential_version(user), "exp": expiry}, settings.SECRET_KEY, algorithm="HS256")
     db.query(EmailVerification).filter_by(user_id=user.user_id, purpose=purpose).delete()
     db.add(EmailVerification(email=email, otp="", expires_at=expiry, user_id=user.user_id, purpose=purpose, challenge_hash=digest(token), otp_hash=signed_digest(f"{nonce}:{otp}"), attempts=0))
     return token, otp

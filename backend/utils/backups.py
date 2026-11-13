@@ -38,7 +38,7 @@ def restore_backup(db: Session, payload: bytes, audit_user_id: int | None = None
         raise HTTPException(400, "Invalid backup file, incompatible schema or encryption keys.") from None
     # Historical account-only fields are ignored by UserBackupRow, and account
     # snapshots never overwrite the live email-based registry.
-    preserved = {"users", "email_verifications", "user_trusted_devices", "auth_refresh_sessions"}
+    preserved = {"users", "email_verifications", "auth_refresh_sessions"}
     try:
         # No deletion is committed until all replacement data passes FK checks.
         for table in reversed(Base.metadata.sorted_tables):
@@ -64,7 +64,7 @@ def restore_backup(db: Session, payload: bytes, audit_user_id: int | None = None
                 # comes from PostgreSQL's own quoted pg_get_serial_sequence.
                 db.execute(text(f"ALTER SEQUENCE {sequence} RESTART WITH {(maximum or 0) + 1}"))
         if audit_user_id is not None:
-            db.add(SystemLog(user_id=audit_user_id, action_type="BACKUP_RESTORE", details="Restored school data; live user accounts preserved, verification codes and trusted devices cleared."))
+            db.add(SystemLog(user_id=audit_user_id, action_type="BACKUP_RESTORE", details="Restored school data; live user accounts preserved, verification codes and refresh sessions cleared."))
         db.commit()
     except Exception:
         db.rollback()

@@ -8,6 +8,7 @@ from backend.config.database import engine
 from backend.migrations.phase1 import LEDGER, MigrationError, select_schema
 from backend.migrations.email_only_identity import check_email_only_identity
 from backend.models import Base
+from backend.migrations.phase1 import Base as HistoricalBase
 
 VERSION = "014_production_performance"
 # Deliberately explicit: future ORM indexes belong to their own migrations.
@@ -19,15 +20,17 @@ INDEX_NAMES = (
     "idx_logs_user", "idx_logs_action_id", "idx_device_token", "idx_device_user_expiry",
     "idx_otp_user_purpose", "idx_otp_expiry",
 )
-INDEXES = tuple(next(index for table in Base.metadata.tables.values()
+INDEXES = tuple(next(index for table in (*Base.metadata.tables.values(), HistoricalBase.metadata.tables["user_trusted_devices"])
                      for index in table.indexes if index.name == name) for name in INDEX_NAMES)
 
 
 def check_production_performance(connection: Connection, schema: str = "public") -> None:
     select_schema(connection, schema)
     inspector = inspect(connection)
+    devices_removed = connection.execute(text(f"SELECT EXISTS (SELECT 1 FROM {LEDGER} WHERE version='020_remove_trusted_devices')")).scalar_one()
+    required = [index for index in INDEXES if not (devices_removed and index.table.name == "user_trusted_devices")]
     by_table = {}
-    for expected in INDEXES:
+    for expected in required:
         table = expected.table.name
         if table not in by_table:
             by_table[table] = {index["name"]: index for index in inspector.get_indexes(table, schema=schema)}
@@ -41,7 +44,7 @@ def check_production_performance(connection: Connection, schema: str = "public")
         "JOIN pg_namespace n ON n.oid=c.relnamespace JOIN pg_am a ON a.oid=c.relam "
         "WHERE n.nspname=:schema AND i.indisvalid AND i.indisready AND a.amname='btree'"
     ), {"schema": schema}).scalars())
-    if set(INDEX_NAMES) - valid:
+    if {index.name for index in required} - valid:
         raise MigrationError("Production indexes must be valid, ready B-tree indexes")
 
 
@@ -56,6 +59,10 @@ def apply_production_performance(connection: Connection, schema: str = "public")
         check_production_performance(connection, schema)
         return False
     for index in INDEXES:
+        if index.table.name == "user_trusted_devices" and connection.execute(text(
+            f"SELECT EXISTS (SELECT 1 FROM {LEDGER} WHERE version='020_remove_trusted_devices')"
+        )).scalar_one():
+            continue
         if index.name == "idx_questions_domain_sequence":
             # Keep 014's original index; 017 upgrades it after duplicate preflight.
             connection.execute(text("CREATE INDEX IF NOT EXISTS idx_questions_domain_sequence ON eccd_questions (domain_id, sequence_order)"))

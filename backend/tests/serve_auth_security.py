@@ -11,10 +11,8 @@ import uvicorn
 
 from backend.tests.serve_phase3 import fixture, main
 from backend.config.settings import settings
-from backend.models import UserTrustedDevice
+from backend.models import EmailVerification
 from backend.routes import auth, teachers
-from backend.utils.authentication import now
-from datetime import timedelta
 
 codes: dict[str, str] = {}
 
@@ -41,7 +39,7 @@ auth.send_otp_email = teachers.send_otp_email = captured_email
 
 class ModeRequest(BaseModel):
     enabled: bool = True
-    expire_devices: bool = False
+    reset_challenges: bool = False
     access_minutes: int = Field(default=30, ge=1, le=30)
 
 
@@ -64,9 +62,9 @@ def mode(payload: ModeRequest, request: Request):
     settings.ENABLE_OTP = payload.enabled
     settings.ACCESS_TOKEN_EXPIRE_MINUTES = payload.access_minutes
     codes.clear()
-    if payload.expire_devices:
+    if payload.reset_challenges:
         with fixture.sessions() as db:
-            db.query(UserTrustedDevice).update({"expires_at": now() - timedelta(seconds=1)})
+            db.query(EmailVerification).delete()
             db.commit()
     return {"success": True}
 

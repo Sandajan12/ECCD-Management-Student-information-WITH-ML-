@@ -29,7 +29,7 @@ test.beforeEach(async ({ request }) => {
   expect((await request.post(`${backend}/__test/reset`)).ok()).toBe(true);
 });
 
-test("real OTP login remembers this browser, skips OTP, then enforces expired trust", async ({
+test("OTP login clears legacy trust, restores refresh and requires OTP after logout", async ({
   page,
   request,
 }) => {
@@ -37,18 +37,36 @@ test("real OTP login remembers this browser, skips OTP, then enforces expired tr
     data: { enabled: true },
   });
   await page.goto("/login");
+  await page.evaluate(() => {
+    for (const storage of [localStorage, sessionStorage]) {
+      storage.setItem("ames_device_token", "retired");
+      storage.setItem("ames_login_remember_device", "true");
+      storage.setItem("ames_registration_remember_device", "true");
+      storage.setItem("ames_draft_2_student", "keep unsaved work");
+      storage.setItem("eccd_draft_1_PRE_1_2", "keep assessment");
+    }
+  });
   await credentials(page);
-  await page.getByRole("checkbox", { name: /Remember this device/ }).check();
+  await page.reload();
+  await expect(page.getByLabel("Email", { exact: true })).toHaveValue(
+    "adviser@example.com",
+  );
+  await expect(page.getByLabel("Password", { exact: true })).toHaveValue(
+    "Example123",
+  );
+  await expect(
+    page.getByRole("checkbox", { name: /Remember this device/ }),
+  ).toHaveCount(0);
   const challengeResponse = page.waitForResponse((res) =>
     res.url().endsWith("/api/auth/login"),
   );
   await page.getByRole("button", { name: "Log In", exact: true }).click();
   const challenge = await challengeResponse;
   expect((await challenge.json()).requireOtp).toBe(true);
-  expect(challenge.request().postDataJSON()).toMatchObject({
-    rememberDevice: true,
-    terms_accepted: true,
-  });
+  expect(challenge.request().postDataJSON()).not.toHaveProperty(
+    "rememberDevice",
+  );
+  expect(challenge.request().postDataJSON()).not.toHaveProperty("deviceToken");
   const { otp } = (await (
     await request.get(`${backend}/__test/auth/otp?email=adviser@example.com`)
   ).json()) as { otp: string };
@@ -59,35 +77,39 @@ test("real OTP login remembers this browser, skips OTP, then enforces expired tr
   await page.getByRole("button", { name: "Verify & Log In" }).click();
   const verified = await verifiedResponse;
   expect(verified.status()).toBe(200);
-  expect(verified.request().postDataJSON()).toMatchObject({
-    terms_accepted: true,
-  });
+  expect(await verified.json()).not.toHaveProperty("deviceToken");
   await expect(page).toHaveURL(/\/teacher\/dashboard$/);
-  const remembered = await page.evaluate(() =>
-    localStorage.getItem("ames_device_token"),
-  );
-  expect(remembered).toBeTruthy();
-  const cookies = await page.context().cookies(backend);
+  await page.reload();
+  await expect(page).toHaveURL(/\/teacher\/dashboard$/);
+  await expect(page.locator("main").first()).toBeVisible();
   expect(
-    cookies
-      .filter((cookie) => cookie.name.endsWith("device_token"))
-      .every((cookie) => cookie.httpOnly),
-  ).toBe(true);
+    (await page.context().cookies(backend)).filter((cookie) =>
+      cookie.name.endsWith("device_token"),
+    ),
+  ).toEqual([]);
   await logout(page);
-  await credentials(page);
-  const skipResponse = page.waitForResponse((res) =>
-    res.url().endsWith("/api/auth/login"),
+  expect(
+    await page.evaluate(() =>
+      [localStorage, sessionStorage].map((storage) => ({
+        device: storage.getItem("ames_device_token"),
+        login: storage.getItem("ames_login_remember_device"),
+        registration: storage.getItem("ames_registration_remember_device"),
+        draft: storage.getItem("ames_draft_2_student"),
+        assessment: storage.getItem("eccd_draft_1_PRE_1_2"),
+      })),
+    ),
+  ).toEqual(
+    Array.from({ length: 2 }, () => ({
+      device: null,
+      login: null,
+      registration: null,
+      draft: "keep unsaved work",
+      assessment: "keep assessment",
+    })),
   );
-  await page.getByRole("button", { name: "Log In", exact: true }).click();
-  const skip = await skipResponse;
-  expect((await skip.json()).requireOtp).toBe(false);
-  expect(skip.request().postDataJSON()).toMatchObject({
-    deviceToken: remembered,
-  });
-  await expect(page).toHaveURL(/\/teacher\/dashboard$/);
-  await logout(page);
+  // Clear only synthetic challenges between independent login attempts.
   await request.post(`${backend}/__test/auth/mode`, {
-    data: { enabled: true, expire_devices: true },
+    data: { enabled: true, reset_challenges: true },
   });
   await credentials(page);
   await page.getByRole("button", { name: "Log In", exact: true }).click();

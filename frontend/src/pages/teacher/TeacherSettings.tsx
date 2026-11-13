@@ -275,7 +275,6 @@ const TeacherSettings: React.FC = () => {
     if (response.status !== 200 && response.status !== 201)
       throw new Error("The server did not confirm this save.");
     login(response.data);
-    localStorage.removeItem("ames_device_token");
     // A response to an earlier snapshot cannot erase edits made during the request.
     if (
       sessionStorage.getItem(credentialKey + "old") ===

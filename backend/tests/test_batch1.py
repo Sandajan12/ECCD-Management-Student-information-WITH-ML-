@@ -11,7 +11,7 @@ from pydantic import TypeAdapter, ValidationError
 
 from backend.config.settings import settings
 from backend.migrations.parity_batch1 import apply_batch1, check_batch1
-from backend.models import EccdDomain, EccdQuestion, FamilyAccess, Parent, SectionTeacher, Student, StudentEccdEvaluation, SystemLog, Teacher, User, UserTrustedDevice
+from backend.models import EccdDomain, EccdQuestion, FamilyAccess, Parent, SectionTeacher, Student, StudentEccdEvaluation, SystemLog, Teacher, User
 from backend.models.email_verification import OtpPurpose
 from backend.schemas.auth import LoginRequest, LogoutRequest
 from backend.schemas.common import Name
@@ -20,7 +20,7 @@ from backend.schemas.section import SectionCreate
 from backend.schemas.student import EnrollmentRequest, StudentUpdate
 from backend.schemas.teacher import TeacherProvisionRequest, TeacherUpdate
 from backend.tests import test_phase2
-from backend.utils.authentication import digest, issue_challenge
+from backend.utils.authentication import issue_challenge
 from backend.utils.eccd_scorer import calculate_scores
 from backend.utils.excel import parse_date, student_workbook, workbook_bytes
 from backend.utils.lrn import hash_lrn
@@ -80,7 +80,8 @@ class Batch1ValidationTests(unittest.TestCase):
 
     def test_auth_aliases_and_multiple_device_transports(self):
         request = LoginRequest(email="teacher@example.com", password="anything", rememberDevice=False, rememberMe="true", trusted_device_token="legacy")
-        self.assertTrue(request.rememberDevice)
+        self.assertFalse(request.rememberDevice)
+        self.assertTrue(request.rememberMe)
         self.assertEqual(request.trusted_device_token, "legacy")
         self.assertEqual(LogoutRequest(forgetDevice=True, trusted_device_token="legacy").trusted_device_token, "legacy")
 
@@ -122,27 +123,17 @@ class Batch1BackendTests(unittest.TestCase):
             if cleared:
                 self.assertIn("Max-Age=0", cookie)
 
-    def test_login_cookie_modes_alias_token_and_explicit_forgetting(self):
+    def test_success_and_logout_expire_legacy_cookies_in_both_modes(self):
         from backend.utils.rate_limits import limits
-        for environment in ("development", "production"):
-            # Cookie-mode regression does not use production's live counters.
-            # Batch 2 separately verifies real PostgreSQL counters in isolation.
-            with patch.object(settings, "ENVIRONMENT", environment), patch.object(limits, "hit", return_value=0):
+        for environment in ('development', 'production'):
+            with patch.object(settings, 'ENVIRONMENT', environment), patch.object(limits, 'hit', return_value=0):
                 result = self.fixture.login(rememberMe=True)
                 self.assertEqual(result.status_code, 200, result.text)
-                self.assert_cookies(result, production=environment == "production")
-        token = result.json()["deviceToken"]
-        self.fixture.client.cookies.clear()
-        with patch.object(settings, "ENABLE_OTP", True):
-            result = self.fixture.login(deviceToken="stale", trusted_device_token=token)
-            self.assertEqual(result.status_code, 200, result.text)
-            self.assertFalse(result.json()["requireOtp"])
-        self.fixture.client.cookies.clear()
-        result = self.fixture.client.post("/api/auth/logout", json={"forgetDevice": True, "trusted_device_token": token})
-        self.assertEqual(result.status_code, 200)
-        self.assert_cookies(result, cleared=True)
-        with self.sessions() as db:
-            self.assertEqual(db.query(UserTrustedDevice).filter_by(device_token_hash=digest(token)).count(), 0)
+                self.assertNotIn('deviceToken', result.json())
+                self.assert_cookies(result, production=environment == 'production', cleared=True)
+                result = self.fixture.client.post('/api/auth/logout', json={'forgetDevice': True, 'trusted_device_token': 'retired'})
+                self.assertEqual(result.status_code, 200)
+                self.assert_cookies(result, production=environment == 'production', cleared=True)
 
     def test_credential_changes_clear_cookies_and_account_email(self):
         self.fixture.login(rememberMe=True)
@@ -154,8 +145,6 @@ class Batch1BackendTests(unittest.TestCase):
         self.assertEqual(result.json()["email"], "updated@example.com")
         self.assertEqual(result.json()["user"]["email"], "updated@example.com")
         self.assert_cookies(result, cleared=True)
-        with self.sessions() as db:
-            self.assertEqual(db.query(UserTrustedDevice).filter_by(user_id=2).count(), 0)
 
     def test_password_verification_binds_optional_email(self):
         with self.sessions() as db:

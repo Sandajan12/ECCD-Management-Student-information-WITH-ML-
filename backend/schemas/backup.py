@@ -234,15 +234,6 @@ class VerificationBackupRow(BackupRow):
     attempts: int = Field(ge=0)
 
 
-class DeviceBackupRow(BackupRow):
-    id: PositiveId
-    user_id: PositiveId
-    device_token_hash: str = Field(pattern=r"^[0-9a-fA-F]{64}$")
-    user_agent: str | None = Field(max_length=255)
-    expires_at: datetime
-    created_at: datetime
-
-
 class BackupDocument(BackupRow):
     users: list[UserBackupRow]
     teachers: list[TeacherBackupRow]
@@ -258,7 +249,13 @@ class BackupDocument(BackupRow):
     system_logs: list[LogBackupRow]
     system_settings: list[SettingsBackupRow]
     email_verifications: list[VerificationBackupRow]
-    user_trusted_devices: list[DeviceBackupRow]
+
+    @model_validator(mode="before")
+    @classmethod
+    def discard_retired_devices(cls, value: object) -> object:
+        if isinstance(value, dict):
+            return {key: item for key, item in value.items() if key != "user_trusted_devices"}
+        return value
 
     @model_validator(mode="after")
     def validate_student_references(self) -> "BackupDocument":

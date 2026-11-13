@@ -46,7 +46,15 @@ function sessionOwner(): string | null {
 }
 function purgeLegacyCredentials(): void {
   for (const storage of [localStorage, sessionStorage])
-    for (const key of ["token", "refresh_token", "user", "role"])
+    for (const key of [
+      "token",
+      "refresh_token",
+      "user",
+      "role",
+      "ames_device_token",
+      "ames_login_remember_device",
+      "ames_registration_remember_device",
+    ])
       storage.removeItem(key);
 }
 purgeLegacyCredentials();
@@ -102,8 +110,6 @@ export function saveSession(
   sessionUser = data.user;
   localStorage.removeItem("ames_logout_pending");
   purgeLegacyCredentials();
-  if (data.deviceToken)
-    localStorage.setItem("ames_device_token", data.deviceToken);
   window.dispatchEvent(new Event("ames-session-updated"));
   if (broadcast)
     channel?.postMessage({

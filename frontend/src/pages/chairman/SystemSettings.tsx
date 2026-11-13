@@ -105,7 +105,7 @@ function AccountSettings() {
       throw new Error(
         "The server did not confirm this account change. Your inputs have been kept.",
       );
-    localStorage.removeItem("ames_device_token");
+
     login(res.data);
     setCurrent("");
     setPassword("");
@@ -891,7 +891,7 @@ export default function SystemSettings() {
             className={`text-sm leading-[1.43] text-[#777] ${confirmation === "rollover" ? "mb-6" : "mb-8 text-center"}`}
           >
             {confirmation === "restore" ? (
-              "Restoring replaces school records and clears verification codes and remembered devices. Current accounts, passwords, roles and suspension decisions are preserved. Accounts referenced by the backup must already exist. Unbacked-up school progress will be lost."
+              "Restoring replaces school records and clears verification codes and refresh sessions. Current accounts, passwords, roles and suspension decisions are preserved. Accounts referenced by the backup must already exist. Unbacked-up school progress will be lost."
             ) : confirmation === "undo" ? (
               `This will restore the active school year to ${settings.previous_school_year}, restoring only students and messages archived by this rollover. You have ${settings.daysRemaining} days remaining in your 30-day grace period. Do you wish to proceed?`
             ) : (

@@ -12,7 +12,7 @@ from backend.models.user import UserRole
 from backend.models.email_verification import OtpPurpose
 from backend.schemas.auth import LoginRequest, LoginResponse, LogoutRequest, LogoutResponse, OtpChallengeResponse, RegisterParentRequest, UpdatePasswordRequest, VerifyOtpRequest
 from backend.schemas.account import SendOtpRequest, ChallengeResult
-from backend.utils.authentication import build_session, clear_device_cookies, complete_login, consume_challenge, device_tokens, digest, discard_failed_challenge, issue_challenge, refresh_session, require_active, revoke_credentials, set_device_cookies, trusted_token
+from backend.utils.authentication import build_session, clear_device_cookies, complete_login, consume_challenge, discard_failed_challenge, issue_challenge, refresh_session, require_active, revoke_credentials
 from backend.utils.deps import get_first_login_user, verify_role
 from backend.utils.email import send_otp_email
 from backend.utils.security import get_password_hash, verify_password
@@ -33,23 +33,17 @@ def login(data: LoginRequest, request: Request, response: Response, db: Session 
         raise HTTPException(401, "Invalid email or password.")
     require_active(db, user)
     if data.otp is not None:
-        user, decoded, row = consume_challenge(db, data.challengeToken or "", data.otp, (OtpPurpose.LOGIN,), user.user_id)
-        result = complete_login(db, user, decoded["rememberDevice"], request, response)
+        user, _, row = consume_challenge(db, data.challengeToken or "", data.otp, (OtpPurpose.LOGIN,), user.user_id)
+        result = complete_login(db, user, request, response)
         db.delete(row)
         db.commit()
         return result
-    remembered = trusted_token(db, user, device_tokens(request, data.deviceToken, data.trusted_device_token))
-    if remembered:
-        set_device_cookies(response, remembered)
-        result = deliver_session({**build_session(db, user), "deviceToken": remembered}, request, response)
-        db.commit()
-        return result
     if not settings.otp_enabled:
-        result = complete_login(db, user, data.rememberDevice, request, response)
+        result = complete_login(db, user, request, response)
         db.commit()
         logging.getLogger("uvicorn.error").info("[DEV] Bypassed OTP for %s", user.email)
         return result
-    token, otp = issue_challenge(db, user, OtpPurpose.LOGIN, remember=data.rememberDevice)
+    token, otp = issue_challenge(db, user, OtpPurpose.LOGIN)
     db.commit()
     try:
         run_async(send_otp_email, user.email, otp)
@@ -64,7 +58,7 @@ def verify_otp(data: VerifyOtpRequest, request: Request, response: Response, db:
     user, decoded, row = consume_challenge(db, data.challengeToken, data.otp, (OtpPurpose.LOGIN, OtpPurpose.REGISTRATION))
     if decoded["purpose"] == "registration":
         user.is_active, user.is_registration_pending = True, False
-    result = complete_login(db, user, decoded["rememberDevice"], request, response)
+    result = complete_login(db, user, request, response)
     db.delete(row)
     db.commit()
     return {**result, "message": "Verification successful!"}
@@ -94,10 +88,10 @@ def register_parent(data: RegisterParentRequest, request: Request, response: Res
         db.flush()
     if not settings.otp_enabled:
         user.is_active, user.is_registration_pending = True, False
-        result = complete_login(db, user, data.rememberDevice, request, response)
+        result = complete_login(db, user, request, response)
         db.commit()
         return {**result, "message": "Account created. Logging you in..."}
-    token, otp = issue_challenge(db, user, OtpPurpose.REGISTRATION, remember=data.rememberDevice)
+    token, otp = issue_challenge(db, user, OtpPurpose.REGISTRATION)
     db.commit()
     result = {"success": True, "requireOtp": True, "challengeToken": token, "email": user.email, "emailSent": True}
     try:
@@ -119,7 +113,6 @@ def update_password(data: UpdatePasswordRequest, request: Request, response: Res
     db.flush()
     result = build_session(db, user)
     db.commit()
-    clear_device_cookies(response)
     return deliver_session({**result, "message": "Password updated successfully."}, request, response)
 
 
@@ -157,16 +150,9 @@ def refresh(request: Request, response: Response, db: Session = Depends(get_db))
 
 @router.post("/logout", response_model=LogoutResponse)
 def logout(request: Request, response: Response, data: LogoutRequest | None = None, db: Session = Depends(get_db)):
-    data = data or LogoutRequest()
     response.headers["Cache-Control"] = "no-store"
     revoke_refresh_cookie(db, request.cookies.get(REFRESH_COOKIE))
     db.commit()
     clear_refresh_cookie(request, response)
-    if data.forgetDevice:
-        from backend.models import UserTrustedDevice
-        hashes = [digest(token) for token in device_tokens(request, data.deviceToken, data.trusted_device_token)]
-        if hashes:
-            db.query(UserTrustedDevice).filter(UserTrustedDevice.device_token_hash.in_(hashes)).delete()
-            db.commit()
-        clear_device_cookies(response)
+    clear_device_cookies(response)
     return {"success": True}
