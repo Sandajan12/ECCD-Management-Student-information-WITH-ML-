@@ -223,9 +223,11 @@ def checklist_response(db: Session, user: User, identifier: str | int, school_ye
     filename = f"{safe_filename(student.last_name or 'STUDENT').upper()}_{safe_filename(student.school_year or 'RECORD')}.{output_format}"
     workbook = student_workbook(db, student)
     if output_format == "pdf":
-        from backend.utils.pdf import workbook_pdf
+        from backend.utils.pdf import teacher_checklist_pdf, workbook_pdf
         scope = f"Section: {student.section.section_name if student.section else student.section_name or 'Unassigned'} | School year: {student.school_year or 'Unspecified'} | Periods: PRE / MID / POST"
-        return stream_bytes(workbook_pdf(workbook, title="ECCD Individual Checklist", scope=scope, checklist=True), filename, "application/pdf")
+        content = (teacher_checklist_pdf(workbook, scope=scope) if user.role.value == "admin"
+                   else workbook_pdf(workbook, title="ECCD Individual Checklist", scope=scope, checklist=True))
+        return stream_bytes(content, filename, "application/pdf")
     return stream_bytes(workbook_bytes(workbook), filename)
 
 
@@ -264,9 +266,10 @@ def bulk_checklist_response(db: Session, user: User, section_id: int | None = No
             used.add(name)
             workbook = student_workbook(db, student, batch=batch)
             if output_format == "pdf":
-                from backend.utils.pdf import workbook_pdf
+                from backend.utils.pdf import teacher_checklist_pdf, workbook_pdf
                 scope = f"Section: {student.section.section_name if student.section else 'Unassigned'} | School year: {student.school_year or 'Unspecified'} | Periods: PRE / MID / POST"
-                content = workbook_pdf(workbook, title="ECCD Individual Checklist", scope=scope, checklist=True)
+                content = (teacher_checklist_pdf(workbook, scope=scope) if user.role.value == "admin"
+                           else workbook_pdf(workbook, title="ECCD Individual Checklist", scope=scope, checklist=True))
             else:
                 content = workbook_bytes(workbook)
             archive.writestr(name + "." + output_format, content)

@@ -5,6 +5,7 @@ from pathlib import Path
 from fpdf import FPDF
 from fpdf.fonts import FontFace
 from matplotlib import get_data_path
+from openpyxl.cell.cell import MergedCell
 
 from backend.utils.eccd_dates import now_pht
 
@@ -128,21 +129,22 @@ class ReportPDF(FPDF):
                 table.row([label, *(totals if label == "Total" else counts.get(label, ["0"] * 5))])
 
 
-def checklist_tables(sheet):
+def checklist_tables(sheet, *, supplementary_only=False):
     """Unfold the three side-by-side card panels without losing supplementary rows."""
-    rows = [[" | ".join(cell_text(cell) for cell in row if cell.value is not None)]
-            for row in sheet.iter_rows(min_row=2, max_row=29, min_col=21, max_col=29)
-            if any(cell.value is not None for cell in row)]
-    yield "Student and family information", ["Identification and family details"], rows, (1,)
-    rows = [[period, cell_text(sheet.cell(row, 13)), *[cell_text(sheet.cell(row, col)) for col in (17, 18, 19)]]
-            for period, row in (("PRE", 3), ("MID", 4), ("POST", 5))]
-    yield "Official testing dates and age", ["Period", "Testing date", "Years", "Months", "Days"], rows, (1, 3, 1, 1, 1)
-    rows = [[cell_text(sheet.cell(row, 12)), *[cell_text(sheet.cell(row, col)) for col in range(14, 20)]] for row in range(9, 16)]
-    yield "Official domain scores", ["Domain", "PRE raw", "PRE scaled", "MID raw", "MID scaled", "POST raw", "POST scaled"], rows, (4, 1, 1, 1, 1, 1, 1)
-    rows = [[cell_text(sheet.cell(row, 12)), *[cell_text(sheet.cell(row, col)) for col in (14, 16, 18)]] for row in (16, 17)]
-    rows.append(["Interpretation", *[cell_text(sheet.cell(row, 13)) for row in (20, 21, 22)]])
-    yield "Official overall results", ["Result", "PRE", "MID", "POST"], rows, (2, 3, 3, 3)
-    notes = [[cell_text(sheet.cell(row, 12))] for row in (24, 25) if sheet.cell(row, 12).value]
+    if not supplementary_only:
+        rows = [[" | ".join(cell_text(cell) for cell in row if cell.value is not None)]
+                for row in sheet.iter_rows(min_row=2, max_row=29, min_col=21, max_col=29)
+                if any(cell.value is not None for cell in row)]
+        yield "Student and family information", ["Identification and family details"], rows, (1,)
+        rows = [[period, cell_text(sheet.cell(row, 13)), *[cell_text(sheet.cell(row, col)) for col in (17, 18, 19)]]
+                for period, row in (("PRE", 3), ("MID", 4), ("POST", 5))]
+        yield "Official testing dates and age", ["Period", "Testing date", "Years", "Months", "Days"], rows, (1, 3, 1, 1, 1)
+        rows = [[cell_text(sheet.cell(row, 12)), *[cell_text(sheet.cell(row, col)) for col in range(14, 20)]] for row in range(9, 16)]
+        yield "Official domain scores", ["Domain", "PRE raw", "PRE scaled", "MID raw", "MID scaled", "POST raw", "POST scaled"], rows, (4, 1, 1, 1, 1, 1, 1)
+        rows = [[cell_text(sheet.cell(row, 12)), *[cell_text(sheet.cell(row, col)) for col in (14, 16, 18)]] for row in (16, 17)]
+        rows.append(["Interpretation", *[cell_text(sheet.cell(row, 13)) for row in (20, 21, 22)]])
+        yield "Official overall results", ["Result", "PRE", "MID", "POST"], rows, (2, 3, 3, 3)
+    notes = [] if supplementary_only else [[cell_text(sheet.cell(row, 12))] for row in (24, 25) if sheet.cell(row, 12).value]
     # Supplementary result rows span all three original panels; keep their labels.
     spanning = {region.min_row for region in sheet.merged_cells.ranges if region.min_col == 1 and region.max_col == 29}
     supplementary = {row for row in range(70, sheet.max_row + 1)
@@ -152,7 +154,7 @@ def checklist_tables(sheet):
     for first, start, initial in ((1, 2, "Socio-Emotional Domain"), (11, 26, "Self-Help Domain — continued"), (21, 30, "Checklist")):
         rows = []
         title = initial
-        for row in sheet.iter_rows(min_row=start, max_row=sheet.max_row, min_col=first, max_col=first + 8):
+        for row in sheet.iter_rows(min_row=max(start, 70) if supplementary_only else start, max_row=sheet.max_row, min_col=first, max_col=first + 8):
             if row[0].row in spanning or row[0].row in supplementary:
                 continue
             values = [cell_text(cell) for cell in row]
@@ -210,4 +212,118 @@ def workbook_pdf(workbook, *, title: str, scope: str, checklist: bool = False) -
                 pdf.report_table(caption, headings, rows, widths)
         elif sheet.title in ("PR", "M", "PO"):
             pdf.section_summary(sheet)
+    return bytes(pdf.output())
+
+
+class TeacherChecklistPDF(ReportPDF):
+    """Two printed template faces; supplementary content follows without truncation."""
+
+    def header(self):
+        self.set_font("Report", "B", 10)
+        self.cell(0, 5, "Apolinario Mabini Elementary School", new_x="LMARGIN", new_y="NEXT")
+        self.set_font("Report", "B", 8)
+        self.cell(0, 4, f"{self.report_title} — {self.table_title}", new_x="LMARGIN", new_y="NEXT")
+        self.set_font("Report", size=7)
+        self.multi_cell(0, 3.2, self.scope, new_x="LMARGIN", new_y="NEXT")
+        self.ln(2)
+
+    def template_face(self, sheet, first, last, face):
+        self.table_title = face
+        self.add_page()
+        top = self.y
+        bottom = self.h - (35 if face == "Back" else 18)
+        cell_margin = self.c_margin
+        self.c_margin = 0
+        # The Excel template uses Arial Narrow; match its compact horizontal spacing.
+        self.set_stretching(75)
+        widths = []
+        for column in range(1, 30):
+            dimension = next(item for item in sheet.column_dimensions.values() if item.min <= column <= item.max)
+            widths.append(dimension.width * 7 + 5)
+        widths = [width * self.epw / sum(widths) for width in widths]
+        for panel in (0, 10, 20):
+            panel_width = sum(widths[panel:panel + 9])
+            text_width = panel_width - 3.4 - 6 * 4.1
+            ratio = widths[panel + 1] / sum(widths[panel + 1:panel + 3])
+            widths[panel:panel + 9] = [3.4, text_width * ratio, text_width * (1 - ratio), *([4.1] * 6)]
+        merges = {(area.min_row, area.min_col): area for area in sheet.merged_cells.ranges
+                  if first <= area.min_row <= area.max_row <= last and area.max_col <= 29}
+        cells = []
+        for row in sheet.iter_rows(min_row=first, max_row=last, max_col=29):
+            for cell in row:
+                if isinstance(cell, MergedCell):
+                    continue
+                area = merges.get((cell.row, cell.column))
+                end_row = area.max_row if area else cell.row
+                end_column = area.max_col if area else cell.column
+                text = cell_text(cell)
+                if cell.coordinate == "V6":
+                    text = "SCHOOL: Apolinario Mabini Elementary School"
+                cells.append((cell, end_row, end_column, text))
+        # Measure wrapped content first so neither marks nor questions overlap borders.
+        overflow = []
+        while True:
+            for size in (7, 6.5, 6, 5.5):
+                heights = {row: 2.4 for row in range(first, last + 1)}
+                measured = []
+                for cell, end_row, end_column, text in sorted(cells, key=lambda item: item[1] - item[0].row):
+                    self.set_font("Report", "B" if cell.font.bold else "", size)
+                    width = sum(widths[cell.column - 1:end_column])
+                    lines = self.multi_cell(width - 0.6, size * 0.38, text, dry_run=True, output="LINES", wrapmode="WORD") if text else []
+                    needed = len(lines) * size * 0.38 + 0.6
+                    span = range(cell.row, end_row + 1)
+                    extra = max(0, needed - sum(heights[row] for row in span)) / len(span)
+                    for row in span:
+                        heights[row] += extra
+                    measured.append((cell, end_row, end_column, lines))
+                if sum(heights.values()) <= bottom - top:
+                    break
+            else:
+                # Preserve unusually long edited text on a supplement instead of clipping it.
+                index = max(range(len(cells)), key=lambda index: len(cells[index][3]))
+                cell, end_row, end_column, text = cells[index]
+                overflow.append([cell.coordinate, text])
+                cells[index] = (cell, end_row, end_column, f"See supplement: {cell.coordinate}")
+                continue
+            break
+        self.set_draw_color(150, 150, 150)
+        self.set_line_width(0.15)
+        for cell, end_row, end_column, lines in measured:
+            x = self.l_margin + sum(widths[:cell.column - 1])
+            y = top + sum(heights[row] for row in range(first, cell.row))
+            width = sum(widths[cell.column - 1:end_column])
+            height = sum(heights[row] for row in range(cell.row, end_row + 1))
+            for side, coordinates in (
+                (cell.border.top, (x, y, x + width, y)),
+                (cell.border.bottom, (x, y + height, x + width, y + height)),
+                (cell.border.left, (x, y, x, y + height)),
+                (cell.border.right, (x + width, y, x + width, y + height)),
+            ):
+                if side and side.style:
+                    self.line(*coordinates)
+            if lines:
+                self.set_font("Report", "B" if cell.font.bold else "", size)
+                self.set_xy(x + 0.3, y + 0.3)
+                self.multi_cell(width - 0.6, size * 0.38, "\n".join(lines),
+                                align="C" if cell.alignment.horizontal == "center" else "L", padding=0)
+        self.c_margin = cell_margin
+        self.set_stretching(100)
+        if face == "Back":
+            self.set_xy(self.l_margin, self.h - 33)
+            self.set_font("Report", size=7)
+            self.cell(0, 5, "Parent / Teacher Remarks: __________________________________________________________________________________", new_x="LMARGIN", new_y="NEXT")
+            self.cell(0, 7, "Parent / Guardian Signature: ____________________   Teacher Signature: ____________________   Date: ______________")
+        return overflow
+
+
+def teacher_checklist_pdf(workbook, *, scope: str) -> bytes:
+    pdf = TeacherChecklistPDF("ECCD Individual Checklist", scope, landscape=True)
+    sheet = workbook["CHECKLIST"]
+    overflow = pdf.template_face(sheet, 2, 32, "Front") + pdf.template_face(sheet, 34, 68, "Back")
+    if overflow:
+        pdf.report_table("Template text continuation", ["Cell", "Full text"], overflow, (1, 12))
+    # Extra panels, supplementary totals and provenance keep the existing full-content renderer.
+    for caption, headings, rows, widths in checklist_tables(sheet, supplementary_only=True):
+        if rows:
+            pdf.report_table(caption, headings, rows, widths)
     return bytes(pdf.output())

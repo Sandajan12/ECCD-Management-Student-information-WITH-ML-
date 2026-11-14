@@ -1,5 +1,51 @@
 # AMES Context History
 
+## 2026-11-14 — Teacher front/back checklist PDF delivery
+
+On `feat/pdf-export-options`, added a Teacher-only PDF layout selected by the
+existing single/bulk checklist response helpers. The Teacher ECCD File Format
+selector and Section Summary action were already wired: summaries continue to
+use the finalized, unchanged three-page landscape PR/M/PO generator. No frontend
+application, route contract, authentication, Excel template/generator, Chairman
+PDF path or summary layout changed. No dependencies were added.
+
+The user clarified that the PDF must follow the Excel template's exact saved
+row-33 break: Social-Emotional, pupil/family demographics, testing dates/ages and
+official scores on Front; the other six domains on Back. Teacher PDFs use the
+template's landscape three-panel structure, measured merged cells, narrow text
+spacing, compact 5.5–7pt typography and clean borders. The Back reserves bottom
+space for Parent/Teacher Remarks and signatures; both faces retain the Manila
+export timestamp and Page 1 of 2 / Page 2 of 2 footer for a standard checklist.
+The user explicitly approved appended supplementary pages when custom/extra
+questions, saved-mark timestamps or oversized edited text need more space.
+Full content is preserved; supplements use the complete document page count.
+Bulk downloads remain ZIPs of each student's PDF. Existing year-based cohorts
+still include inactive records and retain duplicate-filename suffixes.
+
+Changed only `backend/utils/pdf.py`, the Teacher PDF branches in
+`backend/utils/excel.py`, `backend/tests/test_pdf_exports.py`, the Teacher check
+in `frontend/tests/pdf-exports.spec.ts`, and these three context documents.
+The diff review found no new dependencies, app state or redundant service layer.
+The stale cached graph was consulted and affected callers refreshed from current
+Python ASTs; generated graph files were not changed.
+
+Verified only the authorized targeted tests:
+
+- `uv run --no-project --python .venv312 python -m pytest backend/tests/test_pdf_exports.py -q`: **19 passed**, two existing deprecation warnings (160.22s). The complete reference checklist preserves all 109 questions and 327 PRE/MID/POST checkmarks on two pages, official scores/dates, correct front/back grouping, signatures/footer clearance and workbook cells/styles. Also covers supplements without truncation, Teacher bulk/compatibility routes, existing role/cohort enforcement, unchanged Chairman individual rendering/Excel outputs and prior summary metadata/count/capacity cases.
+- `pnpm.cmd --dir frontend exec playwright test --config playwright.pdf-exports.config.ts`: **3 passed** (1.8m) on the final layout. Only the existing PDF spec ran. The expanded Teacher check covers individual two-page PDFs, three-page landscape summaries, section ZIP members containing two-page PDFs, Excel individual/summary/ZIP downloads, RAM bearer headers and unchanged HttpOnly cookie/session state. Its six downloads receive a 90-second test timeout. Both unchanged Chairman checks passed. Dev-server teardown prints ELIFECYCLE while Playwright exits successfully.
+
+Earlier targeted runs identified narrow-cell wrapping stalling in fpdf2 and
+normal checklist text spilling into supplements; fixed cell margins, word
+wrapping, header height and question/mark column spacing. Corrected new test
+assumptions about inactive cohort members, XLSX empty-string serialization,
+required fixture evaluation dates and PDF text instrumentation before the
+passing run. Interrupted diagnostic attempts and focused `-k teacher_full_template`
+runs stayed within the same targeted pytest file; uv cache access was approved.
+`git diff --check` passed. No other suites, frontend builds, hosting tools,
+database migrations, pushes or merges ran. Browser review/printing and cookie
+renewal/production behavior remain unverified. The unrelated untracked
+`PARENT_HOME_OBSERVATION_REVIEW_PLAN.md` remains untouched.
+
 ## 2026-11-14 — Section Summary PDF header, bottom counts and capacity refinement
 
 On `feat/pdf-export-options`, changed only `backend/utils/pdf.py`, its targeted

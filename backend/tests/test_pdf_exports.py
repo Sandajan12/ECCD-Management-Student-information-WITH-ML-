@@ -1,15 +1,18 @@
 """Local PDF export contracts using the existing isolated SQLite export fixture."""
 from datetime import datetime, timezone
 from io import BytesIO
+import json
+from pathlib import Path
 import re
 from zipfile import ZipFile
 
 import pytest
+import openpyxl
 
 from backend.models import EccdDomain, EccdQuestion, Section, Student, StudentEccdEvaluation, User
 from backend.routes.teachers import router as teachers_router
 from backend.tests import test_eccd_card_exports as fixtures
-from backend.utils.excel import student_workbook, summary_workbook
+from backend.utils.excel import student_workbook, summary_workbook, workbook_bytes
 from backend.utils.pdf import ReportPDF, checklist_tables, summary_tables, workbook_pdf
 
 
@@ -33,10 +36,10 @@ def assert_pdf(content, landscape=False):
 
 
 @pytest.mark.parametrize("path,landscape", [
-    ("/api/eccd/export/card-single?student_id=1&school_year=2026-2027", False),
+    ("/api/eccd/export/card-single?student_id=1&school_year=2026-2027", True),
     ("/api/eccd/export/section-summary?section_id=1&school_year=2026-2027", True),
     ("/api/eccd/section/1/export?school_year=2026-2027", True),
-    ("/api/teachers/download/1?", False),
+    ("/api/teachers/download/1?", True),
 ])
 def test_teacher_pdf_response(cohort, path, landscape):
     response = cohort.client.get(path + "&format=pdf")
@@ -44,8 +47,7 @@ def test_teacher_pdf_response(cohort, path, landscape):
     assert response.headers["content-type"] == "application/pdf"
     assert '.pdf"' in response.headers["content-disposition"]
     assert_pdf(response.content, landscape)
-    if landscape:
-        assert len(re.findall(rb"/Type /Page\b", response.content)) == 3
+    assert len(re.findall(rb"/Type /Page\b", response.content)) == (2 if "card-single" in path or "download/" in path else 3)
 
 
 def test_pdf_bulk_archives_and_chairman_scope(cohort):
@@ -55,7 +57,8 @@ def test_pdf_bulk_archives_and_chairman_scope(cohort):
     with ZipFile(BytesIO(response.content)) as archive:
         assert set(archive.namelist()) == {"ARCHIVED_2025-2026.pdf", "ACTIVE_2025-2026.pdf"}
         for name in archive.namelist():
-            assert_pdf(archive.read(name))
+            assert_pdf(archive.read(name), True)
+            assert len(re.findall(rb"/Type /Page\b", archive.read(name))) == 2
     cohort.user = cohort.db.get(User, 2)
     for path in ("/api/chairman/export-eccd?section=All", "/api/eccd/export-all?"):
         response = cohort.client.get(path + "&format=pdf")
@@ -90,6 +93,134 @@ def test_pdf_access_and_validation_match_excel(cohort):
         "/api/teachers/download-all?",
     ):
         assert cohort.client.get(path + "&format=pdf").status_code == 403
+
+
+@pytest.mark.parametrize("path", [
+    "/api/eccd/export/cards-zip?section_id=1&school_year=2026-2027",
+    "/api/teachers/download-all?",
+])
+def test_teacher_bulk_two_page_pdfs_and_unchanged_excel(cohort, path):
+    response = cohort.client.get(path + "&format=pdf")
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/zip"
+    stems = ["STUDENT_2026-2027", "STUDENT_2026-2027_3"] if "school_year" in path else ["STUDENT_2026-2027"]
+    with ZipFile(BytesIO(response.content)) as archive:
+        assert archive.namelist() == [name + ".pdf" for name in stems]
+        for name in archive.namelist():
+            content = archive.read(name)
+            assert_pdf(content, True)
+            assert len(re.findall(rb"/Type /Page\b", content)) == 2
+    default = cohort.client.get(path)
+    explicit = cohort.client.get(path + "&format=xlsx")
+    assert default.status_code == explicit.status_code == 200
+    with ZipFile(BytesIO(default.content)) as archive, ZipFile(BytesIO(explicit.content)) as other:
+        assert archive.namelist() == other.namelist() == [name + ".xlsx" for name in stems]
+        for name in archive.namelist():
+            with ZipFile(BytesIO(archive.read(name))) as workbook, ZipFile(BytesIO(other.read(name))) as expected:
+                assert workbook.read("xl/worksheets/sheet1.xml") == expected.read("xl/worksheets/sheet1.xml")
+
+
+def test_chairman_individual_pdf_and_excel_keep_existing_renderer(cohort, monkeypatch):
+    from backend.utils import pdf as renderer
+    monkeypatch.setattr(renderer, "teacher_checklist_pdf", lambda *args, **kwargs: pytest.fail("Teacher renderer used for Chairman"))
+    cohort.user = cohort.db.get(User, 2)
+    path = "/api/eccd/export/card-single?student_id=1&school_year=2026-2027"
+    response = cohort.client.get(path + "&format=pdf")
+    assert response.status_code == 200
+    assert_pdf(response.content)
+    default = cohort.client.get(path)
+    explicit = cohort.client.get(path + "&format=xlsx")
+    assert default.status_code == explicit.status_code == 200
+    expected = openpyxl.load_workbook(BytesIO(workbook_bytes(student_workbook(cohort.db, cohort.db.get(Student, 1)))))
+    for content in (default.content, explicit.content):
+        actual = openpyxl.load_workbook(BytesIO(content))
+        assert actual.sheetnames == expected.sheetnames
+        assert [(cell.coordinate, cell.value, cell.style_id) for row in actual.active for cell in row] == [
+            (cell.coordinate, cell.value, cell.style_id) for row in expected.active for cell in row]
+
+
+def test_teacher_full_template_front_back_marks_scores_and_footer(cohort, monkeypatch):
+    from backend.utils import pdf as renderer
+    from backend.utils.checklist_workbook import get_mapping
+    reference = json.loads((Path(__file__).parents[1] / "assets/reference/eccd.json").read_text(encoding="utf-8"))
+    for item in reference["questions"]:
+        question = cohort.db.query(EccdQuestion).filter_by(domain_id=item["domain_id"], sequence_order=item["sequence_order"]).first()
+        if question:
+            question.question_text = item["question_text"]
+        else:
+            question = EccdQuestion(domain_id=item["domain_id"], sequence_order=item["sequence_order"], question_text=item["question_text"], is_home_based=False)
+            cohort.db.add(question)
+            cohort.db.flush()
+            for period, when in (("PRE", "2026-08-01"), ("MID", "2026-09-01"), ("POST", "2026-10-01")):
+                cohort.db.add(StudentEccdEvaluation(student_id=1, question_id=question.question_id, teacher_id=1, testing_period=period,
+                    answer="KAYA" if question.sequence_order % 2 else "DI-KAYA", evaluator_role="teacher",
+                    evaluation_date=datetime.fromisoformat(when).date(), teacher_evaluation_date=datetime.fromisoformat(when).date()))
+    cohort.db.commit()
+    card = student_workbook(cohort.db, cohort.db.get(Student, 1))
+    before = [(cell.coordinate, cell.value, cell.style_id) for row in card.active for cell in row]
+    pdf = renderer.TeacherChecklistPDF("ECCD Individual Checklist", "Section: Diamond | School year: 2026-2027 | PRE / MID / POST", True)
+    pdf.set_compression(False)
+    monkeypatch.setattr(renderer, "TeacherChecklistPDF", lambda *args, **kwargs: pdf)
+    rendered = []
+    original = pdf.multi_cell
+    def measure(w, h, text, *args, **kwargs):
+        if not kwargs.get("dry_run") and kwargs.get("padding") == 0:
+            rendered.append((pdf.page_no(), pdf.x, pdf.y, h * len(text.split("\n")), text))
+        return original(w, h, text, *args, **kwargs)
+    monkeypatch.setattr(pdf, "multi_cell", measure)
+    content = renderer.teacher_checklist_pdf(card, scope=pdf.scope)
+    assert_pdf(content, True)
+    assert len(pdf.pages) == 2
+    front, back = pdf.pages.values()
+    assert text_positions(pdf, front, "SOCIAL-EMOTIONAL", "reportB")
+    assert not text_positions(pdf, back, "SOCIAL-EMOTIONAL", "reportB")
+    assert text_positions(pdf, front, "STUDENT, SAVED", "reportB")
+    for label in ("GROSS MOTOR", "FINE MOTOR", "SELF-HELP", "RECEPTIVE LANGUAGE", "EXPRESSIVE LANGUAGE", "COGNITIVE"):
+        assert text_positions(pdf, back, label, "reportB"), label
+    for label in ("Parent / Teacher Remarks", "Teacher Signature"):
+        assert text_positions(pdf, back, label)[0][1] > 175
+    for number, x, y, height, text in rendered:
+        assert x >= pdf.l_margin
+        assert y + height < pdf.h - (35 if number == 2 else 18) + 0.01
+    texts = [text.replace("\n", "").replace(" ", "") for _, _, _, _, text in rendered]
+    for item in reference["questions"]:
+        mapping = get_mapping(item["domain_id"], item["sequence_order"])
+        value = str(card.active[f"{mapping['text']}{mapping['row']}"].value)
+        assert value.replace(" ", "").replace("\n", "") in texts
+    for coordinate in ("M3", "M4", "M5", "N9", "O9", "N16", "P16", "R16", "N17", "P17", "R17", "M20", "M21", "M22"):
+        assert str(card.active[coordinate].value).replace(" ", "") in texts, coordinate
+    assert sum(len(text_positions(pdf, page, "✓", exact=True)) for page in pdf.pages.values()) == 109 * 3
+    for number, page in pdf.pages.items():
+        assert text_positions(pdf, page, f"Page {number} of ")
+        assert page.contents.content_stream().endswith((pdf.fonts["report"].encode_text("2") + " ET\n").encode("latin1"))
+        assert text_positions(pdf, page, "Philippine Time (Asia/Manila, UTC+8)")
+    assert [(cell.coordinate, cell.value, cell.style_id) for row in card.active for cell in row] == before
+
+
+def test_teacher_supplementary_questions_and_provenance_follow_two_faces(cohort, monkeypatch):
+    from backend.utils.pdf import teacher_checklist_pdf
+    long_text = "Long edited official question, preserved in full. " * 120
+    cohort.db.get(EccdQuestion, 1).question_text = long_text
+    cohort.db.add(EccdDomain(domain_id=8, domain_name="Supplementary"))
+    cohort.db.add(EccdQuestion(domain_id=8, sequence_order=1, question_text="Supplementary skill — ñ", is_home_based=True))
+    cohort.db.query(StudentEccdEvaluation).first().teacher_marked_at = datetime(2026, 11, 13, 2, tzinfo=timezone.utc)
+    cohort.db.commit()
+    card = student_workbook(cohort.db, cohort.db.get(Student, 1))
+    tables = list(checklist_tables(card.active, supplementary_only=True))
+    assert "Supplementary skill — ñ" in str(tables)
+    assert "teacher_marked_at" in str(tables)
+    assert "Skill 1" not in str(tables)
+    supplements = []
+    original = ReportPDF.report_table
+    def record(pdf, caption, headings, rows, widths):
+        supplements.extend(rows)
+        return original(pdf, caption, headings, rows, widths)
+    monkeypatch.setattr(ReportPDF, "report_table", record)
+    content = teacher_checklist_pdf(card, scope="Section: Diamond | PRE / MID / POST")
+    assert_pdf(content, True)
+    assert len(re.findall(rb"/Type /Page\b", content)) > 2
+    assert ["B36", "1. " + long_text.strip()] in supplements
+
 
 
 def test_pdf_tables_preserve_unicode_custom_questions_scores_and_timestamps(cohort):

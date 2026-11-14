@@ -305,12 +305,15 @@ test("Chairman Teacher Management Sections summary downloads PDF and Excel", asy
   await sessionIntact(page, original);
 });
 
-test("Teacher individual checklist and section summary download PDFs with an intact RAM session", async ({
+test("Teacher two-page checklists, bulk ZIP and three-page summary preserve Excel and the RAM session", async ({
   page,
 }) => {
+  test.setTimeout(90000);
   const original = await portal(page, 1);
   await navigate(page, "/teacher/eccdassessment");
-  for (const summary of [false, true]) {
+  for (const kind of ["individual", "summary", "bulk"] as const) {
+    const summary = kind === "summary";
+    const bulk = kind === "bulk";
     for (const format of ["pdf", "xlsx"] as const) {
       await page.getByRole("button", { name: "Download", exact: true }).click();
       await page
@@ -332,8 +335,64 @@ test("Teacher individual checklist and section summary download PDFs with an int
       if (!summary) {
         await dialog.getByRole("combobox", { name: "Select Student" }).click();
         await page
-          .getByRole("option", { name: "Saved Student (Pending)", exact: true })
+          .getByRole("option", {
+            name: bulk ? "All Students in Section (ZIP)" : "Saved Student (Pending)",
+            exact: true,
+          })
           .click();
+      }
+      if (bulk) {
+        const response = page.waitForResponse((item) => {
+          const url = new URL(item.url());
+          return url.pathname === "/api/eccd/export/cards-zip" &&
+            (url.searchParams.get("format") === "pdf") === (format === "pdf");
+        });
+        const event = page.waitForEvent("download");
+        await dialog.getByRole("button", { name: "Download", exact: true }).click();
+        const result = await response;
+        expect(result.status()).toBe(200);
+        expect(result.headers()["content-type"]).toContain("application/zip");
+        expect(await result.request().headerValue("authorization")).toBe(`Bearer ${original.session.access_token}`);
+        const url = new URL(result.url());
+        expect(url.searchParams.get("section_id")).toBe("1");
+        expect(url.searchParams.get("school_year")).toBe(year);
+        if (format === "xlsx") expect(url.searchParams.has("format")).toBe(false);
+        const download = await event;
+        expect(await download.failure()).toBeNull();
+        expect(download.suggestedFilename()).toMatch(/\.zip$/);
+        const file = await download.path();
+        expect(file).not.toBeNull();
+        const archive = await readFile(file!);
+        const members: string[] = [];
+        // The existing backend ZIP writer stores each member without compression.
+        let offset = 0;
+        while (archive.readUInt32LE(offset) === 0x04034b50) {
+          expect(archive.readUInt16LE(offset + 6)).toBe(0);
+          expect(archive.readUInt16LE(offset + 8)).toBe(0);
+          const size = archive.readUInt32LE(offset + 18);
+          const nameLength = archive.readUInt16LE(offset + 26);
+          const extraLength = archive.readUInt16LE(offset + 28);
+          const name = archive.subarray(offset + 30, offset + 30 + nameLength).toString();
+          const start = offset + 30 + nameLength + extraLength;
+          const bytes = archive.subarray(start, start + size);
+          expect(bytes.length).toBeGreaterThan(100);
+          members.push(name);
+          expect(name).toMatch(new RegExp(`\\.${format}$`));
+          if (format === "pdf") {
+            expect(bytes.subarray(0, 5).toString()).toBe("%PDF-");
+            const text = bytes.toString("latin1");
+            expect(text.trimEnd()).toMatch(/%%EOF$/);
+            expect([...text.matchAll(/\/Type \/Page\b/g)]).toHaveLength(2);
+          } else {
+            expect(bytes.subarray(0, 4)).toEqual(Buffer.from([0x50, 0x4b, 3, 4]));
+            expect(bytes.includes(Buffer.from("xl/workbook.xml"))).toBe(true);
+          }
+          offset = start + size;
+        }
+        expect(members).toEqual([`STUDENT_${year}.${format}`, `STUDENT_${year}_3.${format}`]);
+        await expect(dialog).toHaveCount(0);
+        await sessionIntact(page, original);
+        continue;
       }
       const result = await capture(
         page,
@@ -342,12 +401,13 @@ test("Teacher individual checklist and section summary download PDFs with an int
           dialog.getByRole("button", { name: "Download", exact: true }).click(),
         format,
         original.session.access_token,
-        summary,
+        true,
       );
       expect(result.url.searchParams.get("school_year")).toBe(year);
       expect(
         result.url.searchParams.get(summary ? "section_id" : "student_id"),
       ).toBe("1");
+      if (format === "pdf") expect(result.pages).toBe(summary ? 3 : 2);
       await expect(dialog).toHaveCount(0);
       await sessionIntact(page, original);
     }
