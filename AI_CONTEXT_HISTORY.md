@@ -1,6 +1,40 @@
 # AMES Context History
 
+## 2026-11-14 — Section Summary PDF header, bottom counts and capacity refinement
+
+On `feat/pdf-export-options`, changed only `backend/utils/pdf.py`, its targeted
+`backend/tests/test_pdf_exports.py`, and the three context guides. Summary pages
+now consolidate school/optional school number, report/period (PRETEST, MID,
+POSTTEST), section, school year, teacher and official testing date at the top.
+Removed the duplicate metadata beneath the student table. Word wrapping keeps
+column-header words intact. The aligned HA/SA/A/SD/D male/female/total table is
+anchored near the bottom of the period's final page, above the unchanged Manila
+timestamp/page-number footer. Student-table pagination reserves space for that
+box and repeats metadata and column headings on continuation pages.
+
+Renderer-only synthetic inputs verify 1, 26, 30 and 32 pupils produce exactly
+three landscape pages, while 50 pupils produce six pages (two per period),
+preserving every student and placing counts only on the period's final page.
+Assertions read actual PDF text coordinates to check top-only metadata, intact
+headings, aligned count values, clearance between students/counts/footer and
+unchanged workbook cells/styles/tabs. Long wrapped names also repeat headers.
+Actual exports keep existing 30-child workbook/ZIP batching. Excel generation,
+individual checklist PDFs, Teacher download handlers/UI and authentication
+remain unchanged; no new dependencies or Playwright spec changes were needed.
+
+Executed only the two requested targeted checks:
+- `uv run --no-project --python .venv312 python -m pytest backend/tests/test_pdf_exports.py -q`: **14 passed** (72.40s). Two earlier same-file runs exposed mistakes in the new assertions (a fixture teacher-name mismatch and a suffix matching a complete word); corrected the assertions before the passing rerun. uv initially required access to its existing external cache; reran with approved access, without changing dependencies.
+- `pnpm.cmd --dir frontend exec playwright test --config playwright.pdf-exports.config.ts`: **3 passed** (1.3m). The unchanged `frontend/tests/pdf-exports.spec.ts` verified Chairman Student Records' three-page summary, Chairman Sections PDF/Excel downloads, Teacher individual/summary PDF/Excel downloads, RAM bearer requests and session integrity using the isolated synthetic API.
+
+`git diff --check` passed. No unrelated tests, frontend build, hosting tools,
+migrations, school database access, pushes or merges ran. Cookie renewal and
+production behavior remain unverified. The unrelated untracked
+`PARENT_HOME_OBSERVATION_REVIEW_PLAN.md` is preserved outside this commit.
+
 ## 2026-11-14 — Three-page Section Summary PDF scope resolution
+
+The placement of metadata/counts described in this earlier delivery is
+superseded by the layout refinement above; its score-only scope remains active.
 
 The user explicitly selected score-only Section Summary PDFs, superseding the
 earlier full-workbook PDF requirement and resolving the initial 36-versus-3 page

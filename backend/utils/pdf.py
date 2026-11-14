@@ -26,6 +26,7 @@ class ReportPDF(FPDF):
         self.report_title = title
         self.scope = scope
         self.table_title = ""
+        self.summary_header = None
         self.exported_at = now_pht().strftime("%Y-%m-%d %I:%M %p")
         fonts = Path(get_data_path()) / "fonts" / "ttf"
         self.add_font("Report", fname=str(fonts / "DejaVuSans.ttf"))
@@ -36,6 +37,13 @@ class ReportPDF(FPDF):
         self.set_title(title)
 
     def header(self):
+        if self.summary_header:
+            school, title, details = self.summary_header
+            for text, size, style, height in ((school, 11, "B", 6), (title, 10, "B", 5), (details, 8, "", 4)):
+                self.set_font("Report", style, size)
+                self.multi_cell(0, height, text, new_x="LMARGIN", new_y="NEXT")
+            self.ln(3)
+            return
         self.set_font("Report", "B", 11)
         self.multi_cell(0, 6, "Apolinario Mabini Elementary School", new_x="LMARGIN", new_y="NEXT")
         self.set_font("Report", "B", 10)
@@ -80,12 +88,23 @@ class ReportPDF(FPDF):
                         row.cell("\n".join(chunk))
 
     def section_summary(self, sheet):
-        caption, headings, rows, widths = next(summary_tables(sheet))
-        self.table_title = caption
+        _, headings, rows, widths = next(summary_tables(sheet))
+        period = {"PR": "PRETEST", "M": "MID", "PO": "POSTTEST"}[sheet.title]
+        school = "Apolinario Mabini Elementary School"
+        if cell_text(sheet["E8"]):
+            school += f" | School Number: {cell_text(sheet['E8'])}"
+        year = cell_text(sheet["J8"]).partition(":")[2].strip() or cell_text(sheet["J8"])
+        self.summary_header = (
+            school, f"ECCD Section Summary — {period}",
+            f"Section: {cell_text(sheet['N10'])} | School Year: {year} | Teacher: {cell_text(sheet['T10'])} | Testing Date: {cell_text(sheet['U8'])}",
+        )
+        bottom_margin = self.b_margin
+        # Reserve the counts box and clearance even on continuation pages.
+        self.set_auto_page_break(True, margin=43)
         self.add_page()
         self.set_font("Report", size=7)
-        with self.table(col_widths=widths, line_height=3.2, padding=0.4,
-                        text_align="CENTER", wrapmode="CHAR", borders_layout="HORIZONTAL_LINES",
+        with self.table(col_widths=widths, line_height=3.2, padding=0.3,
+                        text_align="CENTER", wrapmode="WORD", borders_layout="HORIZONTAL_LINES",
                         headings_style=FontFace(emphasis="B", fill_color=(232, 238, 247))) as table:
             header = table.row()
             for value in headings:
@@ -94,19 +113,19 @@ class ReportPDF(FPDF):
                 row = table.row()
                 for index, value in enumerate(values):
                     row.cell(value, align="LEFT" if index in (2, 16) else "CENTER")
-        self.ln(2)
-        school = cell_text(sheet["B3"]) or cell_text(sheet["D10"])
-        details = [
-            " | ".join(filter(None, [f"School: {school}" if school else "",
-                                    f"School Number: {cell_text(sheet['E8'])}", cell_text(sheet["J8"])])),
-            f"Section: {cell_text(sheet['N10'])} | Teacher: {cell_text(sheet['T10'])} | Testing Date: {cell_text(sheet['U8'])}",
-            "Interpretation counts (HA / SA / A / SD / D)",
-        ]
-        counts = [[cell_text(sheet.cell(row, column)) or "0" for column in range(4, 9)] for row in (45, 46)]
-        totals = [str(sum(int(values[index]) for values in counts)) for index in range(5)]
-        details.append(" | ".join(f"{label}: {' / '.join(values)}" for label, values in zip(("Male", "Female", "Total"), [*counts, totals])))
-        for detail in details:
-            self.multi_cell(0, 3.5, detail, new_x="LMARGIN", new_y="NEXT", wrapmode="CHAR")
+        self.set_auto_page_break(True, margin=bottom_margin)
+        counts = {cell_text(sheet.cell(row, 2)): [cell_text(sheet.cell(row, column)) or "0" for column in range(4, 9)]
+                  for row in range(14, sheet.max_row + 1) if cell_text(sheet.cell(row, 2)) in ("Male", "Female")}
+        totals = [str(sum(int(values[index]) for values in counts.values())) for index in range(5)]
+        self.set_y(self.h - 39)
+        self.set_x(self.w - self.r_margin - 110)
+        self.cell(110, 4, "Interpretation counts (HA / SA / A / SD / D)", new_x="LMARGIN", new_y="NEXT")
+        with self.table(width=110, align="RIGHT", col_widths=(2, 1, 1, 1, 1, 1), line_height=3.2,
+                        padding=0.4, text_align="CENTER",
+                        headings_style=FontFace(emphasis="B", fill_color=(232, 238, 247))) as table:
+            table.row(["", "HA", "SA", "A", "SD", "D"])
+            for label in ("Male", "Female", "Total"):
+                table.row([label, *(totals if label == "Total" else counts.get(label, ["0"] * 5))])
 
 
 def checklist_tables(sheet):
@@ -171,8 +190,8 @@ def summary_tables(sheet):
                 "GM R/S", "FM R/S", "SH R/S", "RL R/S", "EL R/S", "C R/S", "SE R/S",
                 "Total Scaled", "Std Score", "Interpretation"]
     rows = []
-    for row in range(14, 44):
-        if not sheet.cell(row, 4).value:
+    for row in range(14, sheet.max_row + 1):
+        if type(sheet.cell(row, 2).value) is not int or not sheet.cell(row, 4).value:
             continue
         values = [cell_text(sheet.cell(row, column)) for column in (2, 3, 4, 7, 8, 9, 10)]
         for column in range(11, 25, 2):

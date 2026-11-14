@@ -664,11 +664,17 @@ for a normal 30-child part. Omit all domain question-mark tabs (including custom
 and continuation tabs) from summary PDFs; Excel keeps every original tab.
 Use 7pt text, tight cell padding and one 17-column table without horizontal
 slicing: identity/dates/age, seven raw/scaled pairs, total scaled, standard score
-and interpretation. Stack deduplicated school/section/adviser details and
-HA/SA/A/SD/D interpretation counts below each table on that same page. Permit
-vertical overflow with repeated period/table headers when rows cannot fit.
-Headers identify Apolinario Mabini Elementary School, report and
-section/year/all-period scope; each page has Page X of Y and an export timestamp
+and interpretation; wrap headers at words. Summary metadata appears only at
+the top of every page: school and optional school number; report and
+PRETEST/MID/POSTTEST; section, school year, teacher and official testing date.
+Do not repeat metadata below the student table. Anchor the aligned male/female/
+total HA/SA/A/SD/D counts table near the bottom of each period's final page,
+above the footer. Reserve bottom space so student rows cannot collide with it.
+The renderer fits ordinary 26–32-row inputs on one page per period and supports
+50-row vertical overflow with repeated metadata/column headers and counts only
+on the final continuation. Actual export cohort batching remains 30 children;
+these larger inputs are renderer capacity tests, not a change to downloads.
+Each page has Page X of Y and an export timestamp
 in Philippine Time (Asia/Manila, UTC+8). PDFs reformat reports rather than
 reproducing spreadsheet geometry. Targeted checks are
 `backend/tests/test_pdf_exports.py` and the non-browser
@@ -682,6 +688,9 @@ is mocked. The original 2026-11-14 run exposed a 36-versus-3 page conflict;
 the user resolved it in favor of score-only, three-page section summaries. The
 focused rerun passed all three Playwright checks, including the exact page count,
 PDF/Excel downloads and RAM bearer/session integrity.
+The header/bottom-count refinement also passed all three focused browser checks;
+14 targeted backend PDF tests verify placement, 26–32-row fit, safe 50-row
+continuations and unchanged workbook content/styles.
 This check does not verify cookie renewal or production data/deployments.
 
 ## 9. Messaging, settings, rollover and backups

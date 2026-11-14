@@ -117,17 +117,50 @@ def test_pdf_tables_preserve_unicode_custom_questions_scores_and_timestamps(coho
     assert len(re.findall(rb"/Type /Page\b", content)) == 3
 
 
-def test_summary_fits_30_pupils_per_period_without_changing_excel(cohort):
+def summary_pupils(cohort, count):
     workbook = summary_workbook(cohort.db, cohort.db.get(Section, 1), [cohort.db.get(Student, 1)])
-    official_sheets = [workbook[name] for name in ("PR", "M", "PO")]
-    for sheet in official_sheets:
-        for row in range(14, 44):
+    for name in ("PR", "M", "PO"):
+        sheet = workbook[name]
+        extra = max(0, count - 30)
+        if extra:
+            # Extend only this synthetic input; real Excel exports still batch at 30.
+            for region in list(sheet.merged_cells):
+                if region.min_row >= 44:
+                    sheet.unmerge_cells(str(region))
+            sheet.insert_rows(44, extra)
+        for row in range(14, 14 + count):
             for column in (3, 7, 8, 9, 10, *range(11, 28)):
                 sheet.cell(row, column).value = sheet.cell(14, column).value
             sheet.cell(row, 2).value = row - 13
             sheet.cell(row, 3).value = "123456789012"
             sheet.cell(row, 4).value = f"DELA CRUZ, NIÑA MARIA {row - 13}"
-        sheet["H45"] = 30
+        sheet.cell(45 + extra, 8).value = count
+    return workbook
+
+
+def text_positions(pdf, page, text, font="report", exact=False):
+    """Read actual PDF text coordinates (mm from top), without a new PDF dependency."""
+    encoded = pdf.fonts[font].encode_text(text)[1:-4].encode("latin1")
+    if exact:
+        encoded = b"(" + encoded + b")"
+    positions = []
+    current_font = None
+    for block in re.findall(rb"BT\s.*?\sET", page.contents.content_stream(), re.DOTALL):
+        font_changes = re.findall(rb"/F(\d+) [\d.]+ Tf", block)
+        if font_changes:
+            current_font = int(font_changes[-1])
+        if encoded in block and current_font == pdf.fonts[font].i:
+            match = re.search(rb"([-\d.]+) ([-\d.]+) Td", block)
+            assert match, block
+            x, y = map(float, match.groups())
+            positions.append((x / pdf.k, pdf.h - y / pdf.k))
+    return positions
+
+
+@pytest.mark.parametrize("count", [1, 26, 30, 32])
+def test_summary_single_page_capacity_metadata_and_bottom_counts(cohort, count):
+    workbook = summary_pupils(cohort, count)
+    official_sheets = [workbook[name] for name in ("PR", "M", "PO")]
     before = [(sheet.title, [(cell.coordinate, cell.value, cell.style_id) for row in sheet for cell in row]) for sheet in workbook]
     pdf = ReportPDF("ECCD Section Summary", "Section: Diamond | School year: 2026-2027 | PRE / MID / POST", True)
     pdf.set_compression(False)
@@ -139,7 +172,7 @@ def test_summary_fits_30_pupils_per_period_without_changing_excel(cohort):
         assert headings == ["No.", "LRN", "Name of Pupils", "Sex", "Birthday", "Test Date", "Age",
                             "GM R/S", "FM R/S", "SH R/S", "RL R/S", "EL R/S", "C R/S", "SE R/S",
                             "Total Scaled", "Std Score", "Interpretation"]
-        assert len(rows) == 30
+        assert len(rows) == count
         for index, values in enumerate(rows, 14):
             assert len(values) == 17
             assert values[1] == "123456789012"
@@ -148,15 +181,42 @@ def test_summary_fits_30_pupils_per_period_without_changing_excel(cohort):
         pdf.section_summary(sheet)
     assert len(pdf.pages) == 3
     assert_pdf(bytes(pdf.output()), True)
-    regular, bold = pdf.fonts["report"], pdf.fonts["reportB"]
-    for page, period in zip(pdf.pages.values(), ("PRE", "MID", "POST")):
+    for page, sheet, period in zip(pdf.pages.values(), official_sheets, ("PRETEST", "MID", "POSTTEST")):
         stream = page.contents.content_stream()
-        for text in (f"{period} — official section summary", "DELA CRUZ, NIÑA MARIA 30",
-                     "123456789012", "Interpretation counts (HA / SA / A / SD / D)",
-                     "Male: 0 / 0 / 0 / 0 / 30", "Female: 0 / 0 / 0 / 0 / 0"):
-            assert regular.encode_text(text)[1:-4].encode("latin1") in stream
-        assert bold.encode_text("Interpretation")[1:-4].encode("latin1") in stream
-        assert stream.count(regular.encode_text("<SCRIPT>SCHOOL</SCRIPT>")[1:-4].encode("latin1")) == 1
+        for text, font in (("Apolinario Mabini Elementary School", "reportB"),
+                           ("School Number: 136481", "reportB"),
+                           (f"ECCD Section Summary — {period}", "reportB"),
+                           ("Section: DIAMOND", "report"), ("School Year: 2026-2027", "report"),
+                           ("Teacher: TEST TEACHER", "report"),
+                           (f"Testing Date: {sheet['U8'].value:%m/%d/%Y}", "report")):
+            positions = text_positions(pdf, page, text, font)
+            assert len(positions) == 1, text
+            assert positions[0][1] < 28, (text, positions)
+        assert not text_positions(pdf, page, "School:")
+        assert not text_positions(pdf, page, "<SCRIPT>SCHOOL</SCRIPT>")
+        assert text_positions(pdf, page, "123456789012")
+        for text in ("C R/S", "Total", "Scaled", "Std", "Score", "Interpretation"):
+            assert text_positions(pdf, page, text, "reportB"), text
+        for fragment in ("Total Sc", "aled", "Std Scor"):
+            assert not text_positions(pdf, page, fragment, "reportB", exact=True), fragment
+        counts_y = text_positions(pdf, page, "Interpretation counts (HA / SA / A / SD / D)")[0][1]
+        assert 171 < counts_y < 175
+        for index in range(1, count + 1):
+            positions = text_positions(pdf, page, f"DELA CRUZ, NIÑA MARIA {index}", exact=True)
+            assert len(positions) == 1
+            assert 30 < positions[0][1] < counts_y - 5
+        count_rows = [text_positions(pdf, page, label)[0][1] for label in ("Male", "Female", "Total")]
+        assert count_rows[0] > counts_y + 6
+        assert count_rows[1] - count_rows[0] == pytest.approx(4, abs=0.01)
+        assert count_rows[2] - count_rows[1] == pytest.approx(4, abs=0.01)
+        assert count_rows[2] < 192
+        left = pdf.w - pdf.r_margin - 110
+        for y, values in zip(count_rows, ([0, 0, 0, 0, count], [0] * 5, [0, 0, 0, 0, count])):
+            for column, value in enumerate(values):
+                assert any(abs(cell_y - y) < 0.01 and left + 110 * (2 + column) / 7 < x < left + 110 * (3 + column) / 7
+                           for x, cell_y in text_positions(pdf, page, str(value), exact=True))
+        footer_y = text_positions(pdf, page, "Exported ")[0][1]
+        assert footer_y > count_rows[2] + 7
         assert re.search(rb"/F\d+ 7\.00 Tf", stream)
     assert [(sheet.title, [(cell.coordinate, cell.value, cell.style_id) for row in sheet for cell in row]) for sheet in workbook] == before
     # Domain tabs remain available to Excel but never become PDF pages.
@@ -164,23 +224,46 @@ def test_summary_fits_30_pupils_per_period_without_changing_excel(cohort):
     assert all(not list(summary_tables(workbook[name])) for name in workbook.sheetnames[3:])
 
 
-def test_summary_vertical_overflow_repeats_period_and_table_headers(cohort):
-    workbook = summary_workbook(cohort.db, cohort.db.get(Section, 1), [cohort.db.get(Student, 1)])
-    sheet = workbook["PR"]
-    for row in range(14, 44):
-        sheet.cell(row, 2).value = row - 13
-        sheet.cell(row, 4).value = "LONG LEARNER NAME " * 20
+def test_summary_50_pupils_overflow_without_overlapping_counts_or_footer(cohort):
+    workbook = summary_pupils(cohort, 50)
     pdf = ReportPDF("ECCD Section Summary", "Section: Diamond | School year: 2026-2027", True)
+    pdf.set_compression(False)
+    for name in ("PR", "M", "PO"):
+        assert len(next(summary_tables(workbook[name]))[2]) == 50
+        pdf.section_summary(workbook[name])
+    assert len(pdf.pages) == 6
+    assert_pdf(bytes(pdf.output()), True)
+    pages = list(pdf.pages.values())
+    for offset, period in zip((0, 2, 4), ("PRETEST", "MID", "POSTTEST")):
+        period_pages = pages[offset:offset + 2]
+        for page in period_pages:
+            assert text_positions(pdf, page, f"ECCD Section Summary — {period}", "reportB")[0][1] < 24
+            assert text_positions(pdf, page, "Teacher: TEST TEACHER")[0][1] < 28
+            assert text_positions(pdf, page, "Interpretation", "reportB")[0][1] < 36
+            assert text_positions(pdf, page, "Exported ")[0][1] > 198
+        assert not text_positions(pdf, period_pages[0], "Interpretation counts")
+        counts_y = text_positions(pdf, period_pages[1], "Interpretation counts")[0][1]
+        assert 171 < counts_y < 175
+        assert text_positions(pdf, period_pages[1], "Total")[0][1] < 192
+        for index in range(1, 51):
+            positions = [position for page in period_pages
+                         for position in text_positions(pdf, page, f"DELA CRUZ, NIÑA MARIA {index}", exact=True)]
+            assert len(positions) == 1, index
+            assert 30 < positions[0][1] < counts_y - 5
+
+
+def test_summary_long_names_repeat_headers_on_vertical_overflow(cohort):
+    sheet = summary_pupils(cohort, 30)["PR"]
+    for row in range(14, 44):
+        sheet.cell(row, 4).value = "LONG LEARNER NAME " * 6
+    pdf = ReportPDF("ECCD Section Summary", "Section: Diamond", True)
     pdf.set_compression(False)
     pdf.section_summary(sheet)
     assert len(pdf.pages) > 1
     assert_pdf(bytes(pdf.output()), True)
     for page in pdf.pages.values():
-        stream = page.contents.content_stream()
-        assert pdf.fonts["report"].encode_text("PRE — official section summary")[1:-4].encode("latin1") in stream
-    # Every continuation with pupils repeats the column headings.
-    for page in list(pdf.pages.values())[:-1]:
-        assert pdf.fonts["reportB"].encode_text("Interpretation")[1:-4].encode("latin1") in page.contents.content_stream()
+        assert text_positions(pdf, page, "ECCD Section Summary — PRETEST", "reportB")
+        assert text_positions(pdf, page, "Interpretation", "reportB")
 
 
 def test_wrapping_repeated_headers_and_philippine_footer(monkeypatch):
