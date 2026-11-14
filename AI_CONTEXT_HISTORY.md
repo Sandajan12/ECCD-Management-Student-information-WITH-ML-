@@ -1,5 +1,34 @@
 # AMES Context History
 
+## 2026-11-14 — PDF/Teacher ML release readiness
+
+The user authorized committing the remaining plan, checking/merging the feature
+branch into main, publishing and verifying both production deployments. Committed
+`PARENT_HOME_OBSERVATION_REVIEW_PLAN.md` as proposed documentation only (`2738c49`);
+none of its pending-observation schema/API behavior is implemented by this release.
+Fetched origin and simulated the feature merge with `git merge-tree --write-tree`:
+no conflicts. Reviewed changed export routes, cohort/role gates, PDF renderers,
+Teacher modal/list callers and the pinned pure-Python fpdf2 dependency. No schema
+migration or model artifact changes are part of this feature release.
+
+Release checks found the older browser-free PDF test still mocked every MUI export
+as a component and assumed the old selected-student default. Updated that test
+to use the real existing `createFilterOptions` helper, assert the ZIP default,
+then select an individual through Autocomplete; no runtime code changed.
+
+Executed local release checks:
+
+- Targeted pytest files `test_pdf_exports.py`, `test_eccd_card_exports.py`,
+  `test_eccd_exports.py`: **35 passed** (259.71s), existing deprecation/collection warnings.
+- `node --test frontend/tests/ml-student-list.test.cjs frontend/tests/pdf-export-options.test.cjs`: **6 passed** after correcting the stale test.
+- `pnpm.cmd --dir frontend exec playwright test --config playwright.pdf-exports.config.ts`: **3 passed** (1.7m), real JWT/role validation with synthetic SQLite data, RAM sessions, downloads, Teacher modal and PDF page counts.
+- `pnpm.cmd --dir frontend run build`: **passed**, including both TypeScript projects.
+
+Confirmed the intended existing Render Python service on main in the user-approved
+My Workspace and the Vercel Vite project under its owning Personal connection.
+Both production platforms were on `d8de176` before publishing. Deployment results
+are recorded separately after observing their actual terminal states.
+
 ## 2026-11-14 — Teacher ML Insights pagination and Ready PRE filter
 
 Source inspection confirmed Student Evaluation previously rendered the entire

@@ -27,7 +27,9 @@ function dialog(kind = "records") {
           return [states[slot], (value) => { states[slot] = value; }];
         },
       };
-      if (name === "@mui/material") return new Proxy({}, { get: (_, key) => String(key) });
+      if (name === "@mui/material") return new Proxy({}, { get: (_, key) =>
+        key === "createFilterOptions" ? frontendRequire("@mui/material").createFilterOptions : String(key)
+      });
       return frontendRequire(name);
     },
   });
@@ -54,6 +56,10 @@ test("individual checklist defaults to the unchanged Excel request and can selec
   const view = dialog();
   let elements = view.render();
   assert.equal(elements.find((e) => e.props?.label === "File Format").props.value, "xlsx");
+  const students = elements.find((e) => e.type === "Autocomplete");
+  assert.equal(students.props.value.id, "all");
+  students.props.onChange(null, students.props.options.find((option) => option.id === "8"));
+  elements = view.render();
   elements.find((e) => e.type === "Button" && e.props.variant === "contained").props.onClick();
   assert.equal(view.downloads[0][0], "/api/eccd/export/card-single?school_year=2026-2027&student_id=8");
   assert.equal(view.downloads[0][1], "ECCD_Assessment_2026-2027.xlsx");
