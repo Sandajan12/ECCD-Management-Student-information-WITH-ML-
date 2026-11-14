@@ -1,6 +1,7 @@
 import { useState } from "react";
 import {
   Alert,
+  Autocomplete,
   Button,
   Dialog,
   DialogActions,
@@ -11,11 +12,19 @@ import {
   MenuItem,
   Select,
   Stack,
+  TextField,
   Typography,
+  createFilterOptions,
 } from "@mui/material";
 import type { Section, Student } from "../../types";
 
 export type EccdDownloadKind = "records" | "summary";
+
+interface StudentOption {
+  id: string;
+  label: string;
+  search: string;
+}
 
 interface EccdDownloadDialogProps {
   kind: EccdDownloadKind;
@@ -39,13 +48,12 @@ export default function EccdDownloadDialog({
   students,
   currentSchoolYear,
   schoolYears,
-  initialStudentId,
   downloading,
   onClose,
   onDownload,
 }: EccdDownloadDialogProps) {
   const [selectedYear, setSelectedYear] = useState<string>("");
-  const [studentId, setStudentId] = useState<string>(initialStudentId);
+  const [studentId, setStudentId] = useState<string>("all");
   const [error, setError] = useState<string>("");
   const [format, setFormat] = useState<"xlsx" | "pdf">("xlsx");
   const years = [...new Set([currentSchoolYear, ...schoolYears])]
@@ -64,6 +72,18 @@ export default function EccdDownloadDialog({
   const validStudent = currentStudents.some(
     (student) => String(student.student_id) === studentId,
   );
+  const studentOptions: StudentOption[] = [
+    {
+      id: "all",
+      label: "All Students in Section (ZIP)",
+      search: "All Students in Section (ZIP)",
+    },
+    ...currentStudents.map((student) => ({
+      id: String(student.student_id),
+      label: `${student.first_name} ${student.last_name} (${student.masked_lrn})`,
+      search: `${student.first_name} ${student.middle_name || ""} ${student.last_name} ${student.masked_lrn} ${student.lrn_number || ""}`,
+    })),
+  ];
   const canDownload =
     Boolean(currentSchoolYear) &&
     years.includes(schoolYear) &&
@@ -117,21 +137,82 @@ export default function EccdDownloadDialog({
       </DialogTitle>
       <DialogContent>
         <Stack sx={{ pt: 1, gap: 2 }}>
-          <FormControl fullWidth size="small" disabled={downloading}>
-            <InputLabel id="teacher-export-format-label">File Format</InputLabel>
-            <Select
-              labelId="teacher-export-format-label"
-              label="File Format"
-              value={format}
-              onChange={(event) =>
-                setFormat(event.target.value === "pdf" ? "pdf" : "xlsx")
-              }
-              sx={{ borderRadius: 3 }}
+          <Stack direction={{ xs: "column", sm: "row" }} sx={{ gap: 2 }}>
+            <FormControl fullWidth size="small" disabled={downloading}>
+              <InputLabel id="teacher-export-format-label">
+                File Format
+              </InputLabel>
+              <Select
+                labelId="teacher-export-format-label"
+                label="File Format"
+                value={format}
+                onChange={(event) =>
+                  setFormat(event.target.value === "pdf" ? "pdf" : "xlsx")
+                }
+                sx={{ borderRadius: 3 }}
+              >
+                <MenuItem value="xlsx">Excel (.xlsx)</MenuItem>
+                <MenuItem value="pdf">PDF (.pdf)</MenuItem>
+              </Select>
+            </FormControl>
+            <FormControl
+              fullWidth
+              size="small"
+              disabled={downloading || !currentSchoolYear}
             >
-              <MenuItem value="xlsx">Excel (.xlsx)</MenuItem>
-              <MenuItem value="pdf">PDF (.pdf)</MenuItem>
-            </Select>
-          </FormControl>
+              <InputLabel id="teacher-export-year-label">
+                School Year
+              </InputLabel>
+              <Select
+                labelId="teacher-export-year-label"
+                label="School Year"
+                value={years.includes(schoolYear) ? schoolYear : ""}
+                onChange={(event) => {
+                  setSelectedYear(event.target.value);
+                  setStudentId("all");
+                  setError("");
+                }}
+                sx={{ borderRadius: 3 }}
+              >
+                {years.map((year) => (
+                  <MenuItem key={year} value={year}>
+                    {year}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </Stack>
+          {!currentSchoolYear && (
+            <Alert severity="info" sx={{ borderRadius: 3 }}>
+              School year options are unavailable. Try refreshing the page.
+            </Alert>
+          )}
+          {!isSummary && isCurrentYear && currentSchoolYear && (
+            <Autocomplete<StudentOption>
+              fullWidth
+              size="small"
+              disabled={downloading}
+              options={studentOptions}
+              value={
+                studentOptions.find((option) => option.id === studentId) || null
+              }
+              isOptionEqualToValue={(option, value) => option.id === value.id}
+              filterOptions={createFilterOptions<StudentOption>({
+                stringify: (option) => option.search,
+              })}
+              onChange={(_, value) => {
+                setStudentId(value?.id || "");
+                setError("");
+              }}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  label="Select Student"
+                  sx={{ "& .MuiOutlinedInput-root": { borderRadius: 3 } }}
+                />
+              )}
+            />
+          )}
           <Typography variant="body2" sx={{ color: "text.secondary" }}>
             {isSummary
               ? "Download the consolidated section summary for the selected school year."
@@ -139,63 +220,6 @@ export default function EccdDownloadDialog({
                 ? "Select one student's checklist or download all section records as a ZIP."
                 : "Download all section checklists for the selected school year."}
           </Typography>
-          <FormControl
-            fullWidth
-            size="small"
-            disabled={downloading || !currentSchoolYear}
-          >
-            <InputLabel id="teacher-export-year-label">School Year</InputLabel>
-            <Select
-              labelId="teacher-export-year-label"
-              label="School Year"
-              value={years.includes(schoolYear) ? schoolYear : ""}
-              onChange={(event) => {
-                setSelectedYear(event.target.value);
-                setStudentId("");
-                setError("");
-              }}
-              sx={{ borderRadius: 3 }}
-            >
-              {years.map((year) => (
-                <MenuItem key={year} value={year}>
-                  {year}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-          {!currentSchoolYear && (
-            <Alert severity="info" sx={{ borderRadius: 3 }}>
-              School year options are unavailable. Try refreshing the page.
-            </Alert>
-          )}
-          {!isSummary && isCurrentYear && currentSchoolYear && (
-            <FormControl fullWidth size="small" disabled={downloading}>
-              <InputLabel id="teacher-export-student-label">
-                Select Student
-              </InputLabel>
-              <Select
-                labelId="teacher-export-student-label"
-                label="Select Student"
-                value={studentId === "all" || validStudent ? studentId : ""}
-                onChange={(event) => {
-                  setStudentId(event.target.value);
-                  setError("");
-                }}
-                sx={{ borderRadius: 3 }}
-              >
-                <MenuItem value="all">All Students in Section (ZIP)</MenuItem>
-                {currentStudents.map((student) => (
-                  <MenuItem
-                    key={student.student_id}
-                    value={String(student.student_id)}
-                  >
-                    {student.first_name} {student.last_name} (
-                    {student.masked_lrn})
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-          )}
           {!isSummary && !isCurrentYear && (
             <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-600 flex items-center gap-2">
               <span>

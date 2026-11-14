@@ -664,16 +664,23 @@ and official raw/scaled/overall scores; the back contains the other six domains
 and a bottom Parent/Teacher Remarks & Signature block. Preserve every KAYA /
 DI-KAYA mark and all official scores. Measure merged cells and wrap text within
 clean borders using compact 5.5-7pt type so the standard 109-question checklist
-occupies exactly two pages. As explicitly approved, append supplementary pages
-for custom/extra questions, saved-mark timestamps or unusually long edited text;
-never truncate content to enforce two total pages. Teacher bulk exports remain
+occupies exactly two pages. The latest two-page-only requirement supersedes the
+earlier supplement approval: omit custom/extra panels and saved-mark timestamp
+appendices from Teacher PDFs. Keep header words intact (DI-KAYA breaks only at
+its hyphen; RAW/SCALED SCORE break between words). Unusually long edited text may
+use an ellipsis in the print copy to enforce the cap; stored data and Excel
+content remain intact. Teacher bulk exports remain
 ZIPs of each student's PDF, using the identical Excel authorization/cohort rules
 (including inactive records when a school-year cohort is selected). Only Teacher
 PDF branches in `utils/excel.py` select `teacher_checklist_pdf`; Chairman PDFs,
 Excel generation and the shared Section Summary renderer remain unchanged.
-The existing Teacher ECCD File Format selector already routes individual,
-All Students in Section (ZIP), and Section Summary Record downloads through the
-RAM bearer/blob client; no frontend application changes were necessary.
+The Teacher Download ECCD Records modal places File Format and School Year
+side-by-side on desktop and stacked on mobile. A full-width searchable student
+Autocomplete defaults to All Students in Section (ZIP), shows all eligible
+current-year students in the section when opened, and filters by name or
+available LRN (including the displayed masked suffix). Clearing search restores
+all choices. Archived years retain section ZIP-only behavior. Individual,
+section ZIP and summary downloads continue through the RAM bearer/blob client.
 Chairman and Teacher Section Summary PDFs contain only the three official
 score-summary sheets PR/PRE, M/MID and PO/POST, one landscape A4 page per period
 for a normal 30-child part. Omit all domain question-mark tabs (including custom
@@ -691,8 +698,8 @@ The renderer fits ordinary 26–32-row inputs on one page per period and support
 on the final continuation. Actual export cohort batching remains 30 children;
 these larger inputs are renderer capacity tests, not a change to downloads.
 Each page has Page X of Y and an export timestamp
-in Philippine Time (Asia/Manila, UTC+8). Normal Teacher checklists show Page 1 of 2 /
-Page 2 of 2; appended supplements use the complete document page count. Targeted checks are
+in Philippine Time (Asia/Manila, UTC+8). Every Teacher checklist, including each
+bulk ZIP member, shows Page 1 of 2 / Page 2 of 2. Targeted checks are
 `backend/tests/test_pdf_exports.py` and the non-browser
 `node --test frontend/tests/pdf-export-options.test.cjs`.
 
@@ -705,11 +712,15 @@ the user resolved it in favor of score-only, three-page section summaries. The
 focused rerun passed all three Playwright checks, including the exact page count,
 PDF/Excel downloads and RAM bearer/session integrity.
 The header/bottom-count refinement also passed all three focused browser checks.
-The Teacher front/back delivery passed all three browser checks (including individual,
-summary and bulk PDF/Excel downloads, ZIP member page counts and session integrity).
+The strict two-page/modal refinement passed all three browser checks, including
+desktop side-by-side/mobile stacked format/year fields, ZIP-default student
+selection, live name/LRN search and clearing, individual/summary/bulk PDF/Excel
+downloads, ZIP member page counts and session integrity. Frontend app TypeScript
+checking (`tsc --noEmit -p tsconfig.app.json`) also passed.
 `backend/tests/test_pdf_exports.py` passed 19 tests: summary placement/capacity,
 all 109 official checklist questions and 327 period checkmarks on exactly two
-pages, scores/dates/footer/signature clearance, supplements, ZIP scope, role
+pages, scores/dates/footer/signature clearance, omitted Teacher custom/timestamp
+appendices (including oversized edited text), ZIP scope, role
 checks, unchanged Chairman rendering and unchanged workbook content/styles.
 This check does not verify cookie renewal or production data/deployments.
 

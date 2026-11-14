@@ -100,6 +100,10 @@ def test_pdf_access_and_validation_match_excel(cohort):
     "/api/teachers/download-all?",
 ])
 def test_teacher_bulk_two_page_pdfs_and_unchanged_excel(cohort, path):
+    cohort.db.add(EccdDomain(domain_id=8, domain_name="Supplementary"))
+    cohort.db.add(EccdQuestion(domain_id=8, sequence_order=1, question_text="Extra custom skill", is_home_based=True))
+    cohort.db.query(StudentEccdEvaluation).first().teacher_marked_at = datetime(2026, 11, 13, 2, tzinfo=timezone.utc)
+    cohort.db.commit()
     response = cohort.client.get(path + "&format=pdf")
     assert response.status_code == 200
     assert response.headers["content-type"] == "application/zip"
@@ -118,6 +122,7 @@ def test_teacher_bulk_two_page_pdfs_and_unchanged_excel(cohort, path):
         for name in archive.namelist():
             with ZipFile(BytesIO(archive.read(name))) as workbook, ZipFile(BytesIO(other.read(name))) as expected:
                 assert workbook.read("xl/worksheets/sheet1.xml") == expected.read("xl/worksheets/sheet1.xml")
+                assert b"Extra custom skill" in workbook.read("xl/worksheets/sheet1.xml")
 
 
 def test_chairman_individual_pdf_and_excel_keep_existing_renderer(cohort, monkeypatch):
@@ -166,11 +171,15 @@ def test_teacher_full_template_front_back_marks_scores_and_footer(cohort, monkey
     def measure(w, h, text, *args, **kwargs):
         if not kwargs.get("dry_run") and kwargs.get("padding") == 0:
             rendered.append((pdf.page_no(), pdf.x, pdf.y, h * len(text.split("\n")), text))
+            assert pdf.x + w < pdf.w - pdf.r_margin
+            assert all(pdf.get_string_width(line) <= w + 0.01 for line in text.split("\n"))
         return original(w, h, text, *args, **kwargs)
     monkeypatch.setattr(pdf, "multi_cell", measure)
     content = renderer.teacher_checklist_pdf(card, scope=pdf.scope)
     assert_pdf(content, True)
     assert len(pdf.pages) == 2
+    for heading in ("PRETEST", "MID", "POSTTEST", "KAYA", "DI-\nKAYA", "RAW\nSCORE", "SCALED\nSCORE"):
+        assert any(text == heading for _, _, _, _, text in rendered), heading
     front, back = pdf.pages.values()
     assert text_positions(pdf, front, "SOCIAL-EMOTIONAL", "reportB")
     assert not text_positions(pdf, back, "SOCIAL-EMOTIONAL", "reportB")
@@ -197,8 +206,8 @@ def test_teacher_full_template_front_back_marks_scores_and_footer(cohort, monkey
     assert [(cell.coordinate, cell.value, cell.style_id) for row in card.active for cell in row] == before
 
 
-def test_teacher_supplementary_questions_and_provenance_follow_two_faces(cohort, monkeypatch):
-    from backend.utils.pdf import teacher_checklist_pdf
+def test_teacher_custom_questions_and_timestamps_never_append_pages(cohort, monkeypatch):
+    from backend.utils import pdf as renderer
     long_text = "Long edited official question, preserved in full. " * 120
     cohort.db.get(EccdQuestion, 1).question_text = long_text
     cohort.db.add(EccdDomain(domain_id=8, domain_name="Supplementary"))
@@ -210,16 +219,21 @@ def test_teacher_supplementary_questions_and_provenance_follow_two_faces(cohort,
     assert "Supplementary skill — ñ" in str(tables)
     assert "teacher_marked_at" in str(tables)
     assert "Skill 1" not in str(tables)
-    supplements = []
-    original = ReportPDF.report_table
-    def record(pdf, caption, headings, rows, widths):
-        supplements.extend(rows)
-        return original(pdf, caption, headings, rows, widths)
-    monkeypatch.setattr(ReportPDF, "report_table", record)
-    content = teacher_checklist_pdf(card, scope="Section: Diamond | PRE / MID / POST")
+    before = [(cell.coordinate, cell.value, cell.comment.text if cell.comment else None) for row in card.active for cell in row]
+    pdf = renderer.TeacherChecklistPDF("ECCD Individual Checklist", "Section: Diamond | PRE / MID / POST", True)
+    pdf.set_compression(False)
+    monkeypatch.setattr(renderer, "TeacherChecklistPDF", lambda *args, **kwargs: pdf)
+    monkeypatch.setattr(ReportPDF, "report_table", lambda *args, **kwargs: pytest.fail("Teacher appendix rendered"))
+    content = renderer.teacher_checklist_pdf(card, scope=pdf.scope)
     assert_pdf(content, True)
-    assert len(re.findall(rb"/Type /Page\b", content)) > 2
-    assert ["B36", "1. " + long_text.strip()] in supplements
+    assert len(re.findall(rb"/Type /Page\b", content)) == len(pdf.pages) == 2
+    for number, page in pdf.pages.items():
+        assert text_positions(pdf, page, f"Page {number} of ")
+        assert page.contents.content_stream().endswith((pdf.fonts["report"].encode_text("2") + " ET\n").encode("latin1"))
+        for omitted in ("Supplementary", "Saved-mark timestamps", "teacher_marked_at", "See supplement"):
+            assert not text_positions(pdf, page, omitted)
+    assert text_positions(pdf, pdf.pages[2], "…")
+    assert [(cell.coordinate, cell.value, cell.comment.text if cell.comment else None) for row in card.active for cell in row] == before
 
 
 

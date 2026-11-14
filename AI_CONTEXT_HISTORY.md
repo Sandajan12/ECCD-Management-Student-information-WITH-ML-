@@ -1,5 +1,49 @@
 # AMES Context History
 
+## 2026-11-14 ? Strict two-page Teacher checklist and searchable download modal
+
+On `feat/pdf-export-options`, the latest user instruction supersedes the earlier
+Teacher supplement approval: individual checklists and each section ZIP PDF
+member now contain exactly two landscape front/back pages, with Page 1 of 2 /
+Page 2 of 2 and Manila export timestamps. Custom/extra panels and saved-mark
+provenance appendices are omitted from Teacher PDFs. Unusually long edited text
+is shortened with an ellipsis only in this print copy when necessary to fit.
+The full standard 109-question checklist and 327 PRE/MID/POST marks remain on
+its two faces; stored content, every Excel output, Chairman PDFs and the finalized
+three-page Section Summary generator remain unchanged.
+
+Narrow Teacher header labels now preserve words: PRETEST/MID/POSTTEST stay
+intact, DI-KAYA breaks at its hyphen, and RAW SCORE / SCALED SCORE break between
+words. Header-specific text spacing and measured cell bounds prevent text from
+crossing panel borders, including the Back's Self-Help questions.
+
+`EccdDownloadDialog.tsx` now places File Format and School Year side-by-side
+from the small breakpoint and stacks them on mobile. The next row uses MUI
+Autocomplete, defaulting to All Students in Section (ZIP), showing all eligible
+current-year section students, filtering case-insensitively by name or available
+LRN, and restoring all options when search is cleared. Archived cohorts retain
+the existing ZIP-only restriction. API routes, RAM bearer/blob downloads and
+HttpOnly refresh-cookie handling are unchanged; no dependencies were added.
+
+Changed only `backend/utils/pdf.py`,
+`frontend/src/components/teacher/EccdDownloadDialog.tsx`,
+`backend/tests/test_pdf_exports.py`, the Teacher check in
+`frontend/tests/pdf-exports.spec.ts`, and these three context documents. Consulted
+the stale cached graph and refreshed affected Python callers from current ASTs;
+confirmed the modal's existing caller without modifying generated graph files.
+Diff review found no unnecessary abstraction, state or dependency.
+
+Executed only the authorized checks:
+
+- `uv run --no-project --python .venv312 python -m pytest backend/tests/test_pdf_exports.py -q`: **19 passed**, two existing Starlette/AnyIO deprecation warnings (108.46s). Includes standard checklist questions/marks/scores, word wrapping and cell bounds, two-page footers, custom/timestamp exclusion even with oversized text, two-page ZIP members while Excel retains custom content, role/cohort gates and unchanged Chairman/summary behavior.
+- `pnpm.cmd --dir frontend exec tsc --noEmit -p tsconfig.app.json`: **passed**. The first attempt caught a direct MUI Stack gap prop; moved it into sx and reran successfully.
+- `pnpm.cmd --dir frontend exec playwright test --config playwright.pdf-exports.config.ts`: **3 passed** (1.5m). Teacher check verifies desktop field alignment, mobile stacking, default ZIP selection, initial roster options, name/LRN/ZIP/no-match/cleared searches, individual two-page PDFs, ZIP member page counts, unchanged three-page summaries, Excel downloads and RAM bearer/session integrity. Both unchanged Chairman checks also pass. Uses only the existing loopback synthetic SQLite fixture; no live school database.
+
+`git diff --check` passed. No other tests, builds, hosting tools, migrations,
+pushes or merges ran. Physical printing, production behavior and cookie renewal
+are outside these checks. The unrelated untracked
+`PARENT_HOME_OBSERVATION_REVIEW_PLAN.md` remains untouched.
+
 ## 2026-11-14 — Teacher front/back checklist PDF delivery
 
 On `feat/pdf-export-options`, added a Teacher-only PDF layout selected by the

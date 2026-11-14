@@ -310,6 +310,20 @@ test("Teacher two-page checklists, bulk ZIP and three-page summary preserve Exce
 }) => {
   test.setTimeout(90000);
   const original = await portal(page, 1);
+  await page.route("**/api/eccd/students*", (route) =>
+    route.fulfill({
+      json: [
+        student,
+        {
+          ...student,
+          student_id: 99,
+          first_name: "Other",
+          last_name: "Learner",
+          masked_lrn: "••••••••4321",
+        },
+      ],
+    }),
+  );
   await navigate(page, "/teacher/eccdassessment");
   for (const kind of ["individual", "summary", "bulk"] as const) {
     const summary = kind === "summary";
@@ -325,6 +339,24 @@ test("Teacher two-page checklists, bulk ZIP and three-page summary preserve Exce
       const dialog = page.getByRole("dialog");
       const selector = dialog.getByRole("combobox", { name: "File Format" });
       await expect(selector).toHaveText("Excel (.xlsx)");
+      const yearSelector = dialog.getByRole("combobox", {
+        name: "School Year",
+      });
+      if (kind === "individual" && format === "pdf") {
+        const formatBox = await selector.boundingBox();
+        const yearBox = await yearSelector.boundingBox();
+        expect(Math.abs(formatBox!.y - yearBox!.y)).toBeLessThan(2);
+        expect(yearBox!.x).toBeGreaterThan(formatBox!.x + formatBox!.width);
+        await page.setViewportSize({ width: 375, height: 812 });
+        await expect
+          .poll(
+            async () =>
+              (await yearSelector.boundingBox())!.y -
+              (await selector.boundingBox())!.y,
+          )
+          .toBeGreaterThan(40);
+        await page.setViewportSize({ width: 1280, height: 900 });
+      }
       await selector.click();
       await page
         .getByRole("option", {
@@ -333,10 +365,39 @@ test("Teacher two-page checklists, bulk ZIP and three-page summary preserve Exce
         })
         .click();
       if (!summary) {
-        await dialog.getByRole("combobox", { name: "Select Student" }).click();
+        const students = dialog.getByRole("combobox", {
+          name: "Select Student",
+        });
+        await expect(students).toHaveValue("All Students in Section (ZIP)");
+        await students.click();
+        if (kind === "individual" && format === "pdf") {
+          await expect(page.getByRole("option")).toHaveText([
+            "All Students in Section (ZIP)",
+            "Saved Student (Pending)",
+            "Other Learner (••••••••4321)",
+          ]);
+          await students.fill("sAvEd");
+          await expect(page.getByRole("option")).toHaveText([
+            "Saved Student (Pending)",
+          ]);
+          await students.fill("4321");
+          await expect(page.getByRole("option")).toHaveText([
+            "Other Learner (••••••••4321)",
+          ]);
+          await students.fill("ZIP");
+          await expect(page.getByRole("option")).toHaveText([
+            "All Students in Section (ZIP)",
+          ]);
+          await students.fill("no student matches");
+          await expect(page.getByRole("option")).toHaveCount(0);
+          await students.fill("");
+          await expect(page.getByRole("option")).toHaveCount(3);
+        }
         await page
           .getByRole("option", {
-            name: bulk ? "All Students in Section (ZIP)" : "Saved Student (Pending)",
+            name: bulk
+              ? "All Students in Section (ZIP)"
+              : "Saved Student (Pending)",
             exact: true,
           })
           .click();
@@ -344,19 +405,26 @@ test("Teacher two-page checklists, bulk ZIP and three-page summary preserve Exce
       if (bulk) {
         const response = page.waitForResponse((item) => {
           const url = new URL(item.url());
-          return url.pathname === "/api/eccd/export/cards-zip" &&
-            (url.searchParams.get("format") === "pdf") === (format === "pdf");
+          return (
+            url.pathname === "/api/eccd/export/cards-zip" &&
+            (url.searchParams.get("format") === "pdf") === (format === "pdf")
+          );
         });
         const event = page.waitForEvent("download");
-        await dialog.getByRole("button", { name: "Download", exact: true }).click();
+        await dialog
+          .getByRole("button", { name: "Download", exact: true })
+          .click();
         const result = await response;
         expect(result.status()).toBe(200);
         expect(result.headers()["content-type"]).toContain("application/zip");
-        expect(await result.request().headerValue("authorization")).toBe(`Bearer ${original.session.access_token}`);
+        expect(await result.request().headerValue("authorization")).toBe(
+          `Bearer ${original.session.access_token}`,
+        );
         const url = new URL(result.url());
         expect(url.searchParams.get("section_id")).toBe("1");
         expect(url.searchParams.get("school_year")).toBe(year);
-        if (format === "xlsx") expect(url.searchParams.has("format")).toBe(false);
+        if (format === "xlsx")
+          expect(url.searchParams.has("format")).toBe(false);
         const download = await event;
         expect(await download.failure()).toBeNull();
         expect(download.suggestedFilename()).toMatch(/\.zip$/);
@@ -372,7 +440,9 @@ test("Teacher two-page checklists, bulk ZIP and three-page summary preserve Exce
           const size = archive.readUInt32LE(offset + 18);
           const nameLength = archive.readUInt16LE(offset + 26);
           const extraLength = archive.readUInt16LE(offset + 28);
-          const name = archive.subarray(offset + 30, offset + 30 + nameLength).toString();
+          const name = archive
+            .subarray(offset + 30, offset + 30 + nameLength)
+            .toString();
           const start = offset + 30 + nameLength + extraLength;
           const bytes = archive.subarray(start, start + size);
           expect(bytes.length).toBeGreaterThan(100);
@@ -384,12 +454,17 @@ test("Teacher two-page checklists, bulk ZIP and three-page summary preserve Exce
             expect(text.trimEnd()).toMatch(/%%EOF$/);
             expect([...text.matchAll(/\/Type \/Page\b/g)]).toHaveLength(2);
           } else {
-            expect(bytes.subarray(0, 4)).toEqual(Buffer.from([0x50, 0x4b, 3, 4]));
+            expect(bytes.subarray(0, 4)).toEqual(
+              Buffer.from([0x50, 0x4b, 3, 4]),
+            );
             expect(bytes.includes(Buffer.from("xl/workbook.xml"))).toBe(true);
           }
           offset = start + size;
         }
-        expect(members).toEqual([`STUDENT_${year}.${format}`, `STUDENT_${year}_3.${format}`]);
+        expect(members).toEqual([
+          `STUDENT_${year}.${format}`,
+          `STUDENT_${year}_3.${format}`,
+        ]);
         await expect(dialog).toHaveCount(0);
         await sessionIntact(page, original);
         continue;

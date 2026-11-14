@@ -216,7 +216,7 @@ def workbook_pdf(workbook, *, title: str, scope: str, checklist: bool = False) -
 
 
 class TeacherChecklistPDF(ReportPDF):
-    """Two printed template faces; supplementary content follows without truncation."""
+    """Teacher print copy: exactly the two official template faces."""
 
     def header(self):
         self.set_font("Report", "B", 10)
@@ -257,11 +257,16 @@ class TeacherChecklistPDF(ReportPDF):
                 end_row = area.max_row if area else cell.row
                 end_column = area.max_col if area else cell.column
                 text = cell_text(cell)
+                if text in ("PRE-TEST", "POST-TEST"):
+                    text = text.replace("-", "")
+                elif text in ("RAW SCORE", "SCALED SCORE"):
+                    text = text.replace(" ", "\n")
+                elif text == "DI-KAYA":
+                    text = "DI-\nKAYA"
                 if cell.coordinate == "V6":
                     text = "SCHOOL: Apolinario Mabini Elementary School"
                 cells.append((cell, end_row, end_column, text))
         # Measure wrapped content first so neither marks nor questions overlap borders.
-        overflow = []
         while True:
             for size in (7, 6.5, 6, 5.5):
                 heights = {row: 2.4 for row in range(first, last + 1)}
@@ -269,26 +274,33 @@ class TeacherChecklistPDF(ReportPDF):
                 for cell, end_row, end_column, text in sorted(cells, key=lambda item: item[1] - item[0].row):
                     self.set_font("Report", "B" if cell.font.bold else "", size)
                     width = sum(widths[cell.column - 1:end_column])
+                    self.set_stretching(75)
+                    stretch = 75
+                    if text in ("PRETEST", "MID", "POSTTEST", "KAYA", "DI-\nKAYA", "RAW\nSCORE", "SCALED\nSCORE"):
+                        # Keep header words intact inside the template's narrow mark columns.
+                        longest = max(self.get_string_width(word) for word in text.split())
+                        stretch = min(75, 75 * (width - 0.6) / longest)
+                        self.set_stretching(stretch)
                     lines = self.multi_cell(width - 0.6, size * 0.38, text, dry_run=True, output="LINES", wrapmode="WORD") if text else []
                     needed = len(lines) * size * 0.38 + 0.6
                     span = range(cell.row, end_row + 1)
                     extra = max(0, needed - sum(heights[row] for row in span)) / len(span)
                     for row in span:
                         heights[row] += extra
-                    measured.append((cell, end_row, end_column, lines))
+                    measured.append((cell, end_row, end_column, lines, stretch))
                 if sum(heights.values()) <= bottom - top:
                     break
             else:
-                # Preserve unusually long edited text on a supplement instead of clipping it.
+                # Bound unusually long edited text in this two-page print copy only.
                 index = max(range(len(cells)), key=lambda index: len(cells[index][3]))
                 cell, end_row, end_column, text = cells[index]
-                overflow.append([cell.coordinate, text])
-                cells[index] = (cell, end_row, end_column, f"See supplement: {cell.coordinate}")
+                text = text[:len(text) // 2].rsplit(" ", 1)[0].rstrip("…") + "…"
+                cells[index] = (cell, end_row, end_column, text)
                 continue
             break
         self.set_draw_color(150, 150, 150)
         self.set_line_width(0.15)
-        for cell, end_row, end_column, lines in measured:
+        for cell, end_row, end_column, lines, stretch in measured:
             x = self.l_margin + sum(widths[:cell.column - 1])
             y = top + sum(heights[row] for row in range(first, cell.row))
             width = sum(widths[cell.column - 1:end_column])
@@ -303,6 +315,7 @@ class TeacherChecklistPDF(ReportPDF):
                     self.line(*coordinates)
             if lines:
                 self.set_font("Report", "B" if cell.font.bold else "", size)
+                self.set_stretching(stretch)
                 self.set_xy(x + 0.3, y + 0.3)
                 self.multi_cell(width - 0.6, size * 0.38, "\n".join(lines),
                                 align="C" if cell.alignment.horizontal == "center" else "L", padding=0)
@@ -313,17 +326,11 @@ class TeacherChecklistPDF(ReportPDF):
             self.set_font("Report", size=7)
             self.cell(0, 5, "Parent / Teacher Remarks: __________________________________________________________________________________", new_x="LMARGIN", new_y="NEXT")
             self.cell(0, 7, "Parent / Guardian Signature: ____________________   Teacher Signature: ____________________   Date: ______________")
-        return overflow
 
 
 def teacher_checklist_pdf(workbook, *, scope: str) -> bytes:
     pdf = TeacherChecklistPDF("ECCD Individual Checklist", scope, landscape=True)
     sheet = workbook["CHECKLIST"]
-    overflow = pdf.template_face(sheet, 2, 32, "Front") + pdf.template_face(sheet, 34, 68, "Back")
-    if overflow:
-        pdf.report_table("Template text continuation", ["Cell", "Full text"], overflow, (1, 12))
-    # Extra panels, supplementary totals and provenance keep the existing full-content renderer.
-    for caption, headings, rows, widths in checklist_tables(sheet, supplementary_only=True):
-        if rows:
-            pdf.report_table(caption, headings, rows, widths)
+    pdf.template_face(sheet, 2, 32, "Front")
+    pdf.template_face(sheet, 34, 68, "Back")
     return bytes(pdf.output())
