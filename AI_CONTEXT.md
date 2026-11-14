@@ -648,24 +648,41 @@ All existing staff Excel routes also accept validated `format=pdf`: Chairman
 `/section/{section_id}/export` and `/export-all`, plus teacher compatibility
 `/api/teachers/download/{lrn}` and `/download-all` (shortened paths retain their
 family prefix). Authorization and cohort selection run before PDF generation.
-PDF scope matches Excel, including all PRE/MID/POST periods, archived-year
+PDF cohort scope matches Excel, including all PRE/MID/POST periods, archived-year
 rules, and section/year cohorts with 30-child summary parts. Chairman Student
 Records' export remains independent of roster year/search filters. Bulk
 downloads remain ZIPs containing PDFs; a single summary part for a specific
 section is a PDF, while multiple parts/cohorts remain a ZIP.
 
 `utils/pdf.py` uses fpdf2 and the already-installed Matplotlib DejaVu fonts,
-without OS font packages. It reads populated Excel workbooks, preserving
-official scores, blank/unanswered marks, custom supplementary domains,
-continuations and saved-mark timestamp comments. Individual checklists are
-portrait A4; summaries are landscape A4 with split wide matrices, repeated
-learner identity/table headers, wrapped text and continuation rows for long
-content. Headers identify Apolinario Mabini Elementary School, report and
+without OS font packages. It reads populated Excel workbooks without modifying
+them. Individual portrait A4 checklists retain full per-question marks, custom
+supplementary domains, continuations and saved-mark timestamp comments.
+Chairman and Teacher Section Summary PDFs contain only the three official
+score-summary sheets PR/PRE, M/MID and PO/POST, one landscape A4 page per period
+for a normal 30-child part. Omit all domain question-mark tabs (including custom
+and continuation tabs) from summary PDFs; Excel keeps every original tab.
+Use 7pt text, tight cell padding and one 17-column table without horizontal
+slicing: identity/dates/age, seven raw/scaled pairs, total scaled, standard score
+and interpretation. Stack deduplicated school/section/adviser details and
+HA/SA/A/SD/D interpretation counts below each table on that same page. Permit
+vertical overflow with repeated period/table headers when rows cannot fit.
+Headers identify Apolinario Mabini Elementary School, report and
 section/year/all-period scope; each page has Page X of Y and an export timestamp
 in Philippine Time (Asia/Manila, UTC+8). PDFs reformat reports rather than
 reproducing spreadsheet geometry. Targeted checks are
 `backend/tests/test_pdf_exports.py` and the non-browser
 `node --test frontend/tests/pdf-export-options.test.cjs`.
+
+The focused browser spec is `frontend/tests/pdf-exports.spec.ts`, run with
+`pnpm.cmd --dir frontend exec playwright test --config playwright.pdf-exports.config.ts`.
+It uses synthetic SQLite records, real signed bearer validation/PDF/XLSX routes,
+the existing RAM session helper and HttpOnly cookie delivery; unrelated UI data
+is mocked. The original 2026-11-14 run exposed a 36-versus-3 page conflict;
+the user resolved it in favor of score-only, three-page section summaries. The
+focused rerun passed all three Playwright checks, including the exact page count,
+PDF/Excel downloads and RAM bearer/session integrity.
+This check does not verify cookie renewal or production data/deployments.
 
 ## 9. Messaging, settings, rollover and backups
 
@@ -880,8 +897,8 @@ git diff --check
 Do not collect pytest from the repository root; archived modules can collide.
 The frontend root tsconfig only references projects; plain `tsc --noEmit`
 does not check them. Use explicit browser configurations: there is no
-`frontend/playwright.config.ts`. There are **14 tracked configurations**
-selecting **19 distinct specs**; some configurations share specs. This is an
+`frontend/playwright.config.ts`. There are **15 tracked configurations**
+selecting **20 distinct specs**; some configurations share specs. This is an
 inventory, not an executed test count.
 
 | Configuration | Spec | UI origin | Test API | Server management |
@@ -898,6 +915,7 @@ inventory, not an executed test count.
 | `playwright.performance.config.ts` | `performance.spec.ts` | http://127.0.0.1:5190 | Mocked API | Starts Vite preview of an existing production build; desktop/mobile |
 | `playwright.parent-assessment.config.ts` | `parent-assessment.spec.ts` | http://127.0.0.1:5192 | Mocked API | Starts/reuses Vite; desktop/tablet/mobile |
 | `playwright.eccd-exports.config.ts` | `teacher-eccd-exports.spec.ts` | http://127.0.0.1:5191 | Mocked API | Starts Vite; desktop/tablet/mobile |
+| `playwright.pdf-exports.config.ts` | `pdf-exports.spec.ts` | http://127.0.0.1:5195 | 8776, synthetic SQLite | Starts isolated export API and Vite; Chromium desktop; real export/auth checks, mocked unrelated UI data |
 | `playwright.teacher-dashboard.config.ts` | `teacher-dashboard.spec.ts` | http://127.0.0.1:5194 | Mocked API | Starts/reuses Vite; desktop/laptop/tablet/small-tablet/mobile |
 | `playwright.chairman-dashboard.config.ts` | `chairman-dashboard.spec.ts` | http://127.0.0.1:5193 | Mocked API | Starts/reuses Vite; desktop/laptop/tablet/small-tablet/mobile |
 

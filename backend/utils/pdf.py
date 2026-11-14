@@ -79,6 +79,35 @@ class ReportPDF(FPDF):
                             chunk = value
                         row.cell("\n".join(chunk))
 
+    def section_summary(self, sheet):
+        caption, headings, rows, widths = next(summary_tables(sheet))
+        self.table_title = caption
+        self.add_page()
+        self.set_font("Report", size=7)
+        with self.table(col_widths=widths, line_height=3.2, padding=0.4,
+                        text_align="CENTER", wrapmode="CHAR", borders_layout="HORIZONTAL_LINES",
+                        headings_style=FontFace(emphasis="B", fill_color=(232, 238, 247))) as table:
+            header = table.row()
+            for value in headings:
+                header.cell(value)
+            for values in rows:
+                row = table.row()
+                for index, value in enumerate(values):
+                    row.cell(value, align="LEFT" if index in (2, 16) else "CENTER")
+        self.ln(2)
+        school = cell_text(sheet["B3"]) or cell_text(sheet["D10"])
+        details = [
+            " | ".join(filter(None, [f"School: {school}" if school else "",
+                                    f"School Number: {cell_text(sheet['E8'])}", cell_text(sheet["J8"])])),
+            f"Section: {cell_text(sheet['N10'])} | Teacher: {cell_text(sheet['T10'])} | Testing Date: {cell_text(sheet['U8'])}",
+            "Interpretation counts (HA / SA / A / SD / D)",
+        ]
+        counts = [[cell_text(sheet.cell(row, column)) or "0" for column in range(4, 9)] for row in (45, 46)]
+        totals = [str(sum(int(values[index]) for values in counts)) for index in range(5)]
+        details.append(" | ".join(f"{label}: {' / '.join(values)}" for label, values in zip(("Male", "Female", "Total"), [*counts, totals])))
+        for detail in details:
+            self.multi_cell(0, 3.5, detail, new_x="LMARGIN", new_y="NEXT", wrapmode="CHAR")
+
 
 def checklist_tables(sheet):
     """Unfold the three side-by-side card panels without losing supplementary rows."""
@@ -135,46 +164,31 @@ def checklist_tables(sheet):
 
 
 def summary_tables(sheet):
-    if sheet.title in ("PR", "M", "PO"):
-        period = {"PR": "PRE", "M": "MID", "PO": "POST"}[sheet.title]
-        # Split horizontally, repeating learner identity in every score table.
-        identity = [2, 3, 4]
-        columns = [7, 8, 9, 10, *range(11, 28)]
-        for offset in range(0, len(columns), 6):
-            selected = identity + columns[offset:offset + 6]
-            headings = [cell_text(sheet.cell(12, column)) for column in selected]
-            headings = [f"{cell_text(sheet.cell(12, column - 1))} scaled" if column in range(12, 25, 2) else value for column, value in zip(selected, headings)]
-            rows = [[cell_text(sheet.cell(row, column)) for column in selected] for row in range(14, 44) if sheet.cell(row, 4).value]
-            yield f"{period} — official section summary ({offset // 6 + 1})", headings, rows, [1, 2.5, 4] + [2] * (len(selected) - 3)
-        rows = [[" | ".join(cell_text(cell) for cell in sheet[row] if cell.value is not None)] for row in [3, 8, 10, 13, 44, 45, 46]]
-        yield f"{period} — report details and interpretation counts", ["Workbook details"], rows, (1,)
+    if sheet.title not in ("PR", "M", "PO"):
         return
-    slots = [cell for cell in sheet[5] if type(cell.value) is int and sheet.cell(6, cell.column).value is not None]
-    blocks = [cell.column for cell in sheet[5] if cell.value == "No."]
-    totals = [cell.column for cell in sheet[6] if str(cell.value).startswith("RAW SCORE")]
-    for offset in range(0, len(slots), 3):
-        selected = slots[offset:offset + 3]
-        headings = ["Student"] + [f"Question {cell.value}\nPRE K/D | MID K/D | POST K/D" for cell in selected]
-        rows = []
-        for row in range(9, 39):
-            if not sheet.cell(row, blocks[0] + 1).value:
-                continue
-            values = [cell_text(sheet.cell(row, blocks[0] + 1))]
-            for cell in selected:
-                values.append(" | ".join("/".join(cell_text(sheet.cell(row, cell.column + index * 2 + answer)) or "—" for answer in range(2)) for index in range(3)))
-            rows.append(values)
-        question_key = "\n".join(f"Question {cell.value}: {cell_text(sheet.cell(6, cell.column))}" for cell in selected)
-        yield f"{sheet.title} — question marks (K = KAYA, D = DI-KAYA; — = blank)\n{question_key}", headings, rows, [3] + [4] * len(selected)
-    rows = [[cell_text(sheet.cell(row, blocks[0] + 1)), *[cell_text(sheet.cell(row, column)) for column in totals]] for row in range(9, 39) if sheet.cell(row, blocks[0] + 1).value]
-    yield f"{sheet.title} — whole-domain raw scores", ["Student", "PRE", "MID", "POST"], rows, (4, 1, 1, 1)
-    rows = [[" | ".join(cell_text(cell) for cell in sheet[row] if cell.value is not None)] for row in (1, 2, 3)]
-    yield f"{sheet.title} — report details", ["Workbook details"], rows, (1,)
+    period = {"PR": "PRE", "M": "MID", "PO": "POST"}[sheet.title]
+    headings = ["No.", "LRN", "Name of Pupils", "Sex", "Birthday", "Test Date", "Age",
+                "GM R/S", "FM R/S", "SH R/S", "RL R/S", "EL R/S", "C R/S", "SE R/S",
+                "Total Scaled", "Std Score", "Interpretation"]
+    rows = []
+    for row in range(14, 44):
+        if not sheet.cell(row, 4).value:
+            continue
+        values = [cell_text(sheet.cell(row, column)) for column in (2, 3, 4, 7, 8, 9, 10)]
+        for column in range(11, 25, 2):
+            raw, scaled = (cell_text(sheet.cell(row, index)) for index in (column, column + 1))
+            values.append(f"{raw} / {scaled}" if raw or scaled else "")
+        values.extend(cell_text(sheet.cell(row, column)) for column in (25, 26, 27))
+        rows.append(values)
+    yield f"{period} — official section summary", headings, rows, (7, 19, 43, 10, 18, 18, 10, 11, 11, 11, 11, 11, 11, 11, 13, 13, 39)
 
 
 def workbook_pdf(workbook, *, title: str, scope: str, checklist: bool = False) -> bytes:
     pdf = ReportPDF(title, scope, landscape=not checklist)
     for sheet in workbook:
-        tables = checklist_tables(sheet) if checklist else summary_tables(sheet)
-        for caption, headings, rows, widths in tables:
-            pdf.report_table(caption, headings, rows, widths)
+        if checklist:
+            for caption, headings, rows, widths in checklist_tables(sheet):
+                pdf.report_table(caption, headings, rows, widths)
+        elif sheet.title in ("PR", "M", "PO"):
+            pdf.section_summary(sheet)
     return bytes(pdf.output())

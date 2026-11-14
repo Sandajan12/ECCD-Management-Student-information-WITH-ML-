@@ -1,5 +1,71 @@
 # AMES Context History
 
+## 2026-11-14 — Three-page Section Summary PDF scope resolution
+
+The user explicitly selected score-only Section Summary PDFs, superseding the
+earlier full-workbook PDF requirement and resolving the initial 36-versus-3 page
+failure below. Changed only `backend/utils/pdf.py`, its targeted
+`backend/tests/test_pdf_exports.py` and the three context guides during this
+resolution. The previously prepared PDF-only Playwright spec/configuration and
+synthetic API fixture remain part of the local verification changes.
+
+Both Chairman and Teacher section-summary PDFs now render only PR/PRE, M/MID
+and PO/POST: one landscape page per period for a normal 30-child summary part.
+The 7pt, tightly padded table combines seven raw/scaled score pairs into the
+requested 17 columns without horizontal slices. Deduplicated school/section/
+adviser details and male/female/total HA/SA/A/SD/D interpretation counts follow
+the table on the same page. Vertical overflow repeats the period and table
+headings. Domain question-mark tabs, custom tabs and domain continuations are
+omitted only from summary PDFs. Individual portrait PDFs retain full checklists;
+Excel generation and all workbook tabs remain unchanged. Existing role checks,
+cohort selection, 30-child batching, ZIP behavior and RAM bearer downloads remain
+in place. No dependencies or frontend application changes were needed.
+
+Executed only the requested targeted checks:
+- `uv run --no-project --python .venv312 python -m pytest backend/tests/test_pdf_exports.py -q`: **10 passed** (126.31s). An initial run had 9 passes and one new overflow assertion reading compressed bytes; corrected that test's compression setup before this passing rerun. Tests cover valid PDF responses, role/cohort enforcement, three-page output, a complete 30-pupil table with official scores/counts on each page, unchanged workbook cells/styles/tabs, full individual custom checklists and repeating vertical-overflow headers.
+- `pnpm.cmd --dir frontend exec playwright test --config playwright.pdf-exports.config.ts`: **3 passed** (1.8m), selecting only `frontend/tests/pdf-exports.spec.ts`. Chairman Student Records passed the exact three-landscape-page assertion; Chairman Sections and Teacher individual/section downloads passed for both PDF and Excel. Checked file signatures, response types, RAM bearer authorization, protected follow-up access, unchanged HttpOnly cookies and absent stored credentials.
+
+`git diff --check` passed. No unrelated specs, full backend suite, frontend build,
+hosting tools, migrations, school database access, remote pushes or merges ran.
+Cookie renewal and production behavior remain unverified. Kept the unrelated
+untracked `PARENT_HOME_OBSERVATION_REVIEW_PLAN.md` out of the commit.
+
+## 2026-11-14 — Initial focused PDF Playwright verification (superseded scope)
+
+The scope conflict and pending decision recorded in this initial run were
+resolved by the user's score-summary-only instruction documented above. These
+original results remain historical evidence, not the current PDF specification.
+
+On `feat/pdf-export-options`, added only a PDF-specific Chromium configuration,
+`frontend/tests/pdf-exports.spec.ts`, and a loopback-only synthetic SQLite API
+fixture. Reused `tests/helpers/session.ts::setRamSession` with real signed
+sessions and HttpOnly/Strict refresh-cookie delivery. Export handlers, workbook
+generation, PDF rendering, JWT validation and role checks run without export
+mocks; unrelated roster/dashboard responses are mocked. The fixture overrides
+the configured database URL with an unused loopback address and never imports
+the production API startup or connects to school data.
+
+Executed only the new spec via `pnpm.cmd --dir frontend exec playwright test
+tests/pdf-exports.spec.ts --config playwright.pdf-exports.config.ts`, with
+same-spec filtered reruns while correcting fixture navigation, menu interaction
+and teacher access-control data. The complete run produced **2 passed, 1 failed**:
+Chairman Sections PDF/Excel and Teacher checklist/summary PDF/Excel passed.
+Chairman Student Records downloaded a valid PDF, but its requested page-count
+assertion found **36 landscape pages instead of 3**. A filtered rerun using a
+soft assertion also completed its Excel download and session checks; the page
+count remained its sole failure. Checked response types, non-empty download
+bytes, PDF signature/EOF/orientation, XLSX ZIP members, RAM bearer headers,
+protected follow-up API access, unchanged HttpOnly cookies and absence of stored
+credentials. The full report includes all PRE/MID/POST and domain marks, matching
+the earlier approved Excel-content scope. Asked whether to preserve that scope
+or omit detail for three score-summary pages; no application change or commit
+was made while clarification is pending.
+
+`git diff --check` passed. No other Playwright specs/configurations, regression
+suites, hosting tools, migrations, school databases, remote pushes or merges ran.
+Cookie renewal and production behavior were not verified. Preserved the unrelated
+untracked `PARENT_HOME_OBSERVATION_REVIEW_PLAN.md`.
+
 ## 2026-11-13 — PDF dependency environment correction
 
 Investigated `ModuleNotFoundError: No module named 'fpdf'` locally on
@@ -32,6 +98,8 @@ custom/overflow questions and timestamp comments; bulk PDF downloads remain
 ZIPs and summary parts retain the 30-child limit. Printable tables use portrait
 checklists, landscape summaries, repeated headers, long-row continuations,
 school/report/scope headers, page totals and Philippine-Time export timestamps.
+The later 2026-11-14 scope resolution supersedes full question-mark content in
+Section Summary PDFs only; full individual checklists and Excel tabs remain.
 
 Executed only local targeted verification: the combined
 `test_pdf_exports.py`, `test_eccd_exports.py`, `test_eccd_card_exports.py` run
