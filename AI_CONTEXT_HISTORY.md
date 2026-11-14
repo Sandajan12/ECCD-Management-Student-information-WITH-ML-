@@ -1,5 +1,31 @@
 # AMES Context History
 
+## 2026-11-14 — Teacher ML Insights pagination and Ready PRE filter
+
+Source inspection confirmed Student Evaluation previously rendered the entire
+section in one scrolling table. Added local pagination at 10 learners per page
+and a Ready PRE only switch in `frontend/src/pages/teacher/MlInsights.tsx`.
+The default remains all learners. Filter on the API's existing `pre_complete`
+flag before slicing pages; show filtered range/count and a readiness-specific
+empty state. Reset to page 1 when filtering or refreshing the roster. Preserve
+selected learner drafts, results, section authorization and Predict All's
+complete PRE-ready cohort across pages. No API/model/readiness/export changes.
+
+Reused existing MUI controls and the repository's browser-free TypeScript
+component-control test pattern; no dependencies or shared abstractions added.
+Consulted the cached graph and verified the active page/component/API callers
+against source; did not regenerate ignored graph files.
+
+Verified `node --test frontend/tests/ml-student-list.test.cjs`: **3 passed**,
+covering 31 learners across four pages without omissions, filter/reset/counts,
+the full Predict All cohort, empty results and shrinking refreshed rosters.
+Both `pnpm.cmd --dir frontend exec tsc --noEmit -p tsconfig.app.json` and
+`pnpm.cmd --dir frontend exec tsc --noEmit -p tsconfig.node.json` passed.
+No backend suites, browser checks, builds, live services, model training,
+pushes or merges ran. Browser layout remains for local review. Work stays on
+`feat/pdf-export-options`; the unrelated untracked parent observation plan is
+untouched.
+
 ## 2026-11-14 ? Strict two-page Teacher checklist and searchable download modal
 
 On `feat/pdf-export-options`, the latest user instruction supersedes the earlier

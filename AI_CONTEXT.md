@@ -873,6 +873,16 @@ scores/features; item identifiers for guides are local positions within each
 domain. Teacher Predict All orchestrates bounded concurrent individual requests;
 there is no batch API or persistent prediction table.
 
+Teacher ML Insights paginates Student Evaluation locally at 10 learners per page,
+using the complete authorized `/api/ml/students` response. The default shows all
+learners; the Ready PRE only switch filters on the existing `pre_complete` flag,
+not prediction-result availability. Apply filtering before pagination, show the
+filtered range/count and a specific empty state, and reset to page 1 on filter
+changes or roster refresh. Predict All still processes every PRE-ready learner
+in the section across all pages. Page/filter changes never run predictions or
+clear selected-student drafts/results. The focused non-browser control tests are
+`node --test frontend/tests/ml-student-list.test.cjs`.
+
 Parent prediction additionally requires SYNCED/active eligible child access,
 `allow_parent_predictions`, PRE readiness and independent
 `allow_parent_view_eccd_pre`. Disabled access/unreleased scores return 403;

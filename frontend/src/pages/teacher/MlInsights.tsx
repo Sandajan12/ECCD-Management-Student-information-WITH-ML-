@@ -12,8 +12,11 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
+  FormControlLabel,
   Modal,
+  Pagination,
   Stack,
+  Switch,
   Typography,
 } from "@mui/material";
 import ExpandMoreRounded from "@mui/icons-material/ExpandMoreRounded";
@@ -486,8 +489,24 @@ function StudentEvaluation({
     Partial<Record<number, Prediction>>
   >({});
   const [refresh, setRefresh] = useState<number>(0);
+  const [listView, setListView] = useState<{
+    readyOnly: boolean;
+    page: number;
+  }>({
+    readyOnly: false,
+    page: 1,
+  });
   const running = batchStudents.length > 0;
   const readyStudents = students.filter((student) => student.pre_complete);
+  const filteredStudents = listView.readyOnly ? readyStudents : students;
+  const pageSize = 10;
+  const pageCount = Math.max(1, Math.ceil(filteredStudents.length / pageSize));
+  const page = Math.min(listView.page, pageCount);
+  const pageStart = (page - 1) * pageSize;
+  const visibleStudents = filteredStudents.slice(
+    pageStart,
+    pageStart + pageSize,
+  );
   const selected =
     students.find(
       (student) => student.student_id === selectedStudentModal?.student_id,
@@ -513,6 +532,7 @@ function StudentEvaluation({
       .then(({ data }) => {
         if (!controller.signal.aborted) {
           setStudents(data);
+          setListView((previous) => ({ ...previous, page: 1 }));
           setError("");
         }
       })
@@ -627,6 +647,40 @@ function StudentEvaluation({
         hidden={!active}
         className="min-w-0 overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-xs"
       >
+        <Stack
+          direction={{ xs: "column", sm: "row" }}
+          sx={{
+            px: 2,
+            py: 1,
+            gap: 1,
+            alignItems: { sm: "center" },
+            justifyContent: "space-between",
+          }}
+        >
+          <FormControlLabel
+            label="Ready PRE only"
+            control={
+              <Switch
+                checked={listView.readyOnly}
+                disabled={loading}
+                onChange={(_, checked) =>
+                  setListView({ readyOnly: checked, page: 1 })
+                }
+              />
+            }
+          />
+          <Typography
+            variant="body2"
+            sx={{ color: "text.secondary" }}
+            aria-live="polite"
+          >
+            {loading
+              ? "Loading learners…"
+              : filteredStudents.length > 0
+                ? `Showing ${pageStart + 1}–${pageStart + visibleStudents.length} of ${filteredStudents.length} learners`
+                : "0 learners"}
+          </Typography>
+        </Stack>
         <div className="overflow-x-auto">
           <table
             className="w-full table-fixed text-left text-sm"
@@ -668,7 +722,7 @@ function StudentEvaluation({
                   </td>
                 </tr>
               ) : (
-                students.map((student) => {
+                visibleStudents.map((student) => {
                   const active =
                     values.studentId === String(student.student_id);
                   const pending =
@@ -717,19 +771,35 @@ function StudentEvaluation({
                   );
                 })
               )}
-              {!loading && students.length === 0 && (
+              {!loading && filteredStudents.length === 0 && (
                 <tr>
                   <td
                     colSpan={3}
                     className="px-4 py-8 text-center text-slate-500"
                   >
-                    No active learners in this section yet.
+                    {listView.readyOnly && students.length > 0
+                      ? "No learners with a Ready PRE assessment in this section."
+                      : "No active learners in this section yet."}
                   </td>
                 </tr>
               )}
             </tbody>
           </table>
         </div>
+        {!loading && filteredStudents.length > 0 && (
+          <Pagination
+            count={pageCount}
+            page={page}
+            onChange={(_, nextPage) =>
+              setListView((previous) => ({ ...previous, page: nextPage }))
+            }
+            aria-label="Student list pages"
+            color="primary"
+            shape="rounded"
+            size="small"
+            sx={{ p: 2, "& .MuiPagination-ul": { justifyContent: "center" } }}
+          />
+        )}
         {error && (
           <div
             role="alert"
