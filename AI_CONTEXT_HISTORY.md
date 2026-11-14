@@ -1,5 +1,49 @@
 # AMES Context History
 
+## 2026-11-14 — PDF/Teacher ML merge and production verification
+
+Fast-forwarded main to `21094967ad65124eb1b58cd05a766a813335b216` after a fresh
+origin fetch and conflict-free merge simulation, then pushed main. The proposed
+parent observation plan is committed; its future table, Unsure answers and review
+workflow are not implemented. No database migration, model retraining or provider
+configuration change was run.
+
+Observed both Git-triggered production deployments at that source commit:
+
+- Render Apolinario Mabini School System, `dep-dbs4neu8bjmc73e4ao00`: **live** at
+  11:55:40 UTC. Build logs confirm `fpdf2-2.9.0` installed and application startup
+  completed. Used the user's explicitly confirmed My Workspace, only the approved
+  Python service. No duplicate manual deploy was triggered.
+- Vercel `dpl_2DHs9RajGpym6ggKcMSuHhAhDPh5`: **READY**, production, with
+  `ameskinder.com` and `www.ameskinder.com` aliases and the matching Git SHA.
+
+Read-only HTTPS checks against the real production origins passed: API health and
+database readiness **200**, nine export routes advertise validated xlsx/pdf with
+xlsx default, no-token export/ML requests return **401**, credentialed Bearer CORS
+preflight succeeds, and login/Teacher ML/Teacher ECCD/Chairman student deep links
+return **200**. The deployed ML chunk contains the Ready filter and pagination.
+
+Browser smoke used production JS/CSS with synthetic API/session responses and
+locally generated synthetic workbook/PDF payloads; no school records were read.
+Passed 31-learner pagination (four pages), 16-ready filtering/reset, 320px overflow
+check, desktop/mobile modal placement, ZIP default, live name/LRN filtering,
+Teacher individual two-page/summary three-page/ZIP/Excel blob downloads, Chairman
+PDF/Excel selector/downloads and absence of web-storage credentials. **Zero page
+errors**. Local ignored reports: `.tools/pdf-release-browser.json` and
+`.tools/pdf-release-http.json`. Initial sandbox network denials were rerun with
+approved network access, without changing app code.
+
+Render error and request-5xx scans returned no entries from 11:55:40 through
+11:57:05 UTC; the Vercel production error/fatal query returned no entries. Vercel
+is a static SPA, so empty function logs do not prove browser behavior. No signed-in
+production staff session was available: actual school-data PDFs and production ML
+inference were not exercised. The local focused Playwright run separately covered
+real JWT/role enforcement and PDF generation against synthetic SQLite records.
+
+The following documentation-only verification commit uses `[skip render]` to
+avoid another backend deployment; its runtime source is identical to the checked
+release. Any Vercel documentation rebuild is monitored separately.
+
 ## 2026-11-14 — PDF/Teacher ML release readiness
 
 The user authorized committing the remaining plan, checking/merging the feature

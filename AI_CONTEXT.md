@@ -724,6 +724,13 @@ appendices (including oversized edited text), ZIP scope, role
 checks, unchanged Chairman rendering and unchanged workbook content/styles.
 This check does not verify cookie renewal or production data/deployments.
 
+Release `2109496` was merged into main and observed live on Render and Vercel on
+2026-11-14. Production health/readiness, export schemas, unauthenticated role
+protection and CORS passed; deployed UI smoke passed with synthetic API/PDF data.
+No authenticated school-data downloads or production inference were tested.
+See the dated production-verification entry in AI_CONTEXT_HISTORY.md for exact
+deployment IDs, log windows and the distinction from real-JWT local PDF checks.
+
 ## 9. Messaging, settings, rollover and backups
 
 Messaging requires active teacher/parent accounts linked through an active child
