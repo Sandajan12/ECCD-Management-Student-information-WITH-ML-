@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, View } from "react-native";
 import type { Assessment, Child, Dashboard, Period, User } from "./contracts";
 import { session } from "./session";
@@ -6,7 +6,9 @@ import { messageOf } from "./sessionCore";
 import { drafts, useDraft } from "./drafts";
 import { homeKey, HomeObservations } from "./homeObservations";
 import type { HomeValues } from "./homeObservations";
-import { homeLock, visibleMark, WINDOWS } from "./policy";
+import { homeLock, WINDOWS } from "./policy";
+import { homeScope, remainingHomeDomains, TEACHER_LOCK } from "./presentation";
+import type { HomeConfirmations } from "./presentation";
 import { Feedback, useResource } from "./resources";
 import { OverviewSummary } from "./AssessmentScreens";
 import {
@@ -45,10 +47,7 @@ function HomeDomain({
     user.id,
   );
   const [expanded, setExpanded] = useState(false);
-  const questions = domain.questions
-    .filter((q) => q.is_home_based)
-    .sort((a, b) => a.sequence_order - b.sequence_order);
-  if (!questions.length) return null;
+  const questions = domain.questions;
   return (
     <Card>
       <Pressable
@@ -65,10 +64,7 @@ function HomeDomain({
       {!!storageError && <Notice error>{storageError}</Notice>}
       {snapshot?.is_pending_sync && (
         <Notice>
-          Your draft is saved on this device. Reconnect and submit again. A
-          previous submission is unconfirmed. Drafts never send automatically.
-          Pull down to refresh the saved answers, then submit eligible
-          observations manually.
+          Your draft is saved on this device. Reconnect and submit again.
         </Notice>
       )}
       {!!snapshot?.error && <Notice error>{snapshot.error}</Notice>}
@@ -76,9 +72,6 @@ function HomeDomain({
         questions.map((question) => {
           const lock = homeLock(child, assessment, question, period);
           const value = snapshot?.values.answers[String(question.question_id)];
-          const saved = visibleMark(child, assessment, question, period)
-            ? question.answers[period]
-            : null;
           return (
             <View
               key={question.question_id}
@@ -87,27 +80,11 @@ function HomeDomain({
               <Label>
                 {question.sequence_order}. {question.question_text}
               </Label>
-              {saved && (
-                <Badge
-                  icon="check"
-                  color={saved === "KAYA" ? "#15803d" : "#b45309"}
-                >
-                  Saved observation: {saved}
+              {!!lock && (
+                <Badge icon="lock" color="#64748b">
+                  {lock}
                 </Badge>
               )}
-              {!!lock && (
-                <>
-                  <Badge icon="lock" color="#64748b">
-                    {question.parent_locked[period]
-                      ? question.evaluator_roles[period] === "teacher"
-                        ? "Teacher-verified · Locked"
-                        : "Submitted · Locked"
-                      : "Editing locked"}
-                  </Badge>
-                  <Copy>{lock}</Copy>
-                </>
-              )}
-              <Copy>Local draft: {value || "Not answered"}</Copy>
               <View style={styles.row}>
                 {(["KAYA", "DI-KAYA"] as const).map((answer) => (
                   <Button
@@ -115,7 +92,7 @@ function HomeDomain({
                     title={answer}
                     icon={answer === "KAYA" ? "check" : "support"}
                     color={answer === "KAYA" ? "#15803d" : "#b45309"}
-                    secondary={(value || saved) !== answer}
+                    secondary={value !== answer}
                     disabled={!ready || !!lock || busy}
                     onPress={() => {
                       void service
@@ -160,6 +137,8 @@ export function OverviewScreen({
   header,
   insights,
   results,
+  confirmed,
+  onConfirmed,
 }: {
   child: Child;
   user: User;
@@ -167,6 +146,8 @@ export function OverviewScreen({
   header: React.ReactNode;
   insights: () => void;
   results: () => void;
+  confirmed: HomeConfirmations;
+  onConfirmed: (period: Period, ids: readonly number[]) => void;
 }) {
   const state = useResource<Assessment>(
     `/api/eccd/parent/assessment/${child.student_id}`,
@@ -181,6 +162,30 @@ export function OverviewScreen({
   const [notice, setNotice] = useState("");
   const [confirming, setConfirming] = useState(false);
   const [expanded, setExpanded] = useState(false);
+  const mounted = useRef(true);
+  useEffect(
+    () => () => {
+      mounted.current = false;
+    },
+    [],
+  );
+  const confirmedIds =
+    confirmed[homeScope(user.id, child.student_id, period)] || [];
+  const remaining = state.data
+    ? remainingHomeDomains(state.data, period, confirmedIds)
+    : [];
+  const homeCount =
+    state.data?.domains.reduce(
+      (total, domain) =>
+        total + domain.questions.filter((q) => q.is_home_based).length,
+      0,
+    ) || 0;
+  const editable =
+    !!state.data &&
+    child.allow_parent_edit_home_based_eccd &&
+    state.data.permissions.allow_parent_edit_home_based_eccd &&
+    state.data.can_edit_home_based &&
+    state.data.parent_assessment_access[WINDOWS[period]];
   const service = useMemo(
     () =>
       new HomeObservations(drafts, user.id, child.student_id, (payload) =>
@@ -193,29 +198,24 @@ export function OverviewScreen({
     setBusy(true);
     setNotice("");
     try {
-      await service.submit(child, state.data, period);
-      setNotice("Observations saved. Confirmed answers are now locked.");
-      const refreshed = await Promise.allSettled([
-        state.reload(),
-        dashboard.reload(),
-      ]);
-      if (refreshed.some((result) => result.status === "rejected"))
-        setNotice(
-          "Observations saved. Reconnect and pull down to refresh Overview.",
-        );
+      const saved = await service.submit(
+        child,
+        state.data,
+        period,
+        confirmedIds,
+      );
+      onConfirmed(period, saved.questionIds);
+      if (!mounted.current) return;
+      setNotice(saved.cleanupWarning || "Observations saved.");
+      await Promise.all([state.reload(), dashboard.reload()]);
     } catch (error) {
-      setNotice(messageOf(error));
+      if (mounted.current) setNotice(messageOf(error));
     } finally {
-      setBusy(false);
+      if (mounted.current) setBusy(false);
     }
   };
-  const disabled =
-    busy ||
-    !state.data ||
-    !child.allow_parent_edit_home_based_eccd ||
-    !state.data.permissions.allow_parent_edit_home_based_eccd ||
-    !state.data.can_edit_home_based ||
-    !state.data.parent_assessment_access[WINDOWS[period]];
+  const disabled = busy || !editable || !remaining.length;
+  const toggle = () => setExpanded((value) => !value);
   return (
     <Screen
       onRefresh={async () => {
@@ -226,64 +226,45 @@ export function OverviewScreen({
         ]);
       }}
       footer={
-        expanded && (
-          <>
-            <Copy>Local drafts · Saved separately from school records</Copy>
-            {!!notice && <Notice>{notice}</Notice>}
-            <Button
-              icon="save"
-              title={busy ? "Submitting…" : "Submit Observations"}
-              disabled={disabled}
-              onPress={() => setConfirming(true)}
-            />
-          </>
+        expanded &&
+        remaining.length > 0 && (
+          <Button
+            icon="save"
+            title={busy ? "Submitting…" : "Submit Observations"}
+            disabled={disabled}
+            onPress={() => setConfirming(true)}
+          />
         )
       }
     >
       {header}
-      <Card>
+      <Card style={{ padding: 0 }}>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Home-Based Observations"
+          accessibilityLabel="Assess Home-Based Questions"
           accessibilityState={{ expanded, disabled: busy }}
           disabled={busy}
-          onPress={() => setExpanded((value) => !value)}
-          style={[styles.row, { minHeight: 44, flexWrap: "nowrap" }]}
+          onPress={toggle}
+          style={[
+            styles.row,
+            { minHeight: 56, flexWrap: "nowrap", padding: 16 },
+          ]}
         >
           <Icon name="home" />
-          <Label style={{ flex: 1 }}>Home-Based Observations</Label>
+          <Label style={{ flex: 1 }}>Assess Home-Based Questions</Label>
           <Icon name={expanded ? "up" : "down"} />
         </Pressable>
-        <Copy>
-          Everyday moments. Meaningful milestones.{" "}
-          {expanded ? "Hide" : "Expand to answer"} the home checklist.
-        </Copy>
       </Card>
       {expanded && (
         <>
           <Card>
             <Feedback {...state} />
             <Copy>
-              Choose KAYA or DI-KAYA for home-based indicators. You may edit or
-              remove local answers before submitting. Saved school observations
-              cannot be changed here.
+              Choose KAYA or DI-KAYA for each home-based question, then tap
+              Submit Observations.
             </Copy>
-            <Notice>
-              Drafts stay on this device across logout and connection loss.
-              Every submission requires a tap on Submit Observations.
-            </Notice>
-            {state.data &&
-              (!child.allow_parent_edit_home_based_eccd ||
-              !state.data.permissions.allow_parent_edit_home_based_eccd ||
-              !state.data.can_edit_home_based ? (
-                <Notice>
-                  Home observations are locked by the Class Adviser.
-                </Notice>
-              ) : !state.data.parent_assessment_access[WINDOWS[period]] ? (
-                <Notice>
-                  The {period} editing window is closed by the teacher.
-                </Notice>
-              ) : null)}
+            {state.data && !editable && <Notice>{TEACHER_LOCK}</Notice>}
+            {!!notice && <Notice>{notice}</Notice>}
             <PeriodTabs
               value={period}
               disabled={busy}
@@ -293,7 +274,14 @@ export function OverviewScreen({
               }}
             />
           </Card>
-          {state.data?.domains.map((domain) => (
+          {editable && !remaining.length && (
+            <Notice tone="success">
+              {homeCount
+                ? "All home observations submitted"
+                : "No home-based questions available."}
+            </Notice>
+          )}
+          {remaining.map((domain) => (
             <HomeDomain
               key={`${domain.domain_id}_${period}`}
               domain={domain}
@@ -310,6 +298,7 @@ export function OverviewScreen({
       <OverviewSummary
         child={child}
         state={dashboard}
+        assessment={state.data}
         insights={insights}
         results={results}
       />

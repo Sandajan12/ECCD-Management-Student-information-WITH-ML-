@@ -1,4 +1,82 @@
-import type { Child } from "./contracts";
+import type { Assessment, Child, Dashboard, Period } from "./contracts";
+import { released, VIEW_FLAGS, visibleMark } from "./policy.ts";
+
+export const TEACHER_LOCK = "Locked by teacher";
+export type ChecklistFilter = "All" | "DI-KAYA" | "KAYA";
+
+export function checklistDomains(
+  child: Child,
+  assessment: Assessment,
+  period: Period,
+  filter: ChecklistFilter,
+): Assessment["domains"] {
+  const answer = (q: Assessment["domains"][number]["questions"][number]) =>
+    visibleMark(child, assessment, q, period) ? q.answers[period] : null;
+  const rank = (q: Assessment["domains"][number]["questions"][number]) =>
+    answer(q) === "DI-KAYA" ? 0 : answer(q) === "KAYA" ? 1 : 2;
+  return assessment.domains
+    .map((domain) => ({
+      ...domain,
+      questions: domain.questions
+        .filter((q) => filter === "All" || answer(q) === filter)
+        .sort(
+          (a, b) => rank(a) - rank(b) || a.sequence_order - b.sequence_order,
+        ),
+    }))
+    .filter((domain) => domain.questions.length > 0);
+}
+
+export function overviewStatus(
+  child: Child,
+  dashboard: Dashboard | null,
+  assessment: Assessment | null,
+): "loading" | "locked" | "empty" | "available" {
+  if (!dashboard || !assessment) return "loading";
+  const phase = dashboard.latestPhase;
+  if (phase === "PRE" || phase === "MID" || phase === "POST")
+    return dashboard.is_published && released(child, assessment, phase)
+      ? "available"
+      : "locked";
+  return dashboard.currentPhase === "Not Started" &&
+    Object.values(VIEW_FLAGS).some(
+      (flag) => child[flag] && assessment.permissions[flag],
+    )
+    ? "empty"
+    : "locked";
+}
+
+export type HomeConfirmations = Record<string, readonly number[]>;
+export const homeScope = (owner: number, student: number, period: Period) =>
+  `${owner}_${student}_${period}`;
+export function confirmHomeQuestions(
+  current: HomeConfirmations,
+  owner: number,
+  student: number,
+  period: Period,
+  ids: readonly number[],
+): HomeConfirmations {
+  const key = homeScope(owner, student, period);
+  return { ...current, [key]: [...new Set([...(current[key] || []), ...ids])] };
+}
+export function remainingHomeDomains(
+  assessment: Assessment,
+  period: Period,
+  confirmed: readonly number[],
+): Assessment["domains"] {
+  return assessment.domains
+    .map((domain) => ({
+      ...domain,
+      questions: domain.questions
+        .filter(
+          (q) =>
+            q.is_home_based &&
+            !q.parent_locked[period] &&
+            !confirmed.includes(q.question_id),
+        )
+        .sort((a, b) => a.sequence_order - b.sequence_order),
+    }))
+    .filter((domain) => domain.questions.length > 0);
+}
 
 export function adviserName(
   child: Pick<Child, "teacher_fname" | "teacher_lname" | "adviser_name">,

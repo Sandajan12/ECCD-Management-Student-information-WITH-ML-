@@ -1,4 +1,82 @@
-# Pull-to-refresh and relationship correction — local release verification
+# Assessment UX update — local release verification
+
+Date: **2026-11-15**. Branch: **feat/parent-native-android**.
+Foundation: `b2af2c7`. App: **AMES Parent 1.2.3 (version code 6)**.
+
+## Executed assessment release checks
+
+| Check | Result |
+| --- | --- |
+| `pnpm.cmd exec tsc --noEmit` | Passed |
+| `pnpm.cmd test` | 45 tests passed, six focused assessment suites, no failures/skips; includes existing auth/profile/draft/messaging regressions |
+| Focused assessment coverage | Permission-safe filtering/order/counts; aggregate release gates; partial saves and tuple isolation; stale/failed refresh; revision/failure retention/manual-only behavior; real component handlers with mocked hooks/hosts |
+| `gradlew.bat testReleaseUnitTest assembleRelease` | BUILD SUCCESSFUL in 3m 53s; 161 tasks (29 executed/132 current); 4 native tests passed, no failures/errors/skips |
+| Native test evidence | RefreshCookieJarTest XML timestamp `2026-11-15T15:43:30.571Z` |
+| Release lint / R8 | Passed; existing upstream deprecations only |
+| `apksigner.bat verify --verbose --print-certs` | Verifies, APK v2, one RSA-4096 signer; unchanged certificate |
+| `zipalign.exe -c -P 16 4` | Passed, exit 0 |
+| APK badging | AMES Parent; `com.ameskinder.parent.native`; 1.2.3/code 6; min 26/target 35/compile 36; ARM64 + ARMv7 |
+| Packaged source/assets | 1,284,728-byte Hermes bundle equals generated output; sourcemap matches all 19 current application files; five fonts match source; both Hermes ABIs present |
+
+Signed APK (ignored by Git):
+
+```text
+C:\Users\user\Desktop\AMES with ML\mobile\parent-native-android\android\app\build\outputs\apk\release\app-release.apk
+```
+
+Size: **24,855,999 bytes**. SHA-256:
+
+```text
+d9a2c0b2e3033d5e77aa96e499a4654470ef20ecca62bdfd51d5d4991a1954fc
+```
+
+Unchanged signer certificate SHA-256:
+
+```text
+a58b8be298272fd4ebc9b15764fb269a36373d630bf321bbdc17d62980574fa8
+```
+
+Used the existing external `ames-parent-native-release-backup.jks` and protected
+signing properties under `C:\Users\user\AMES-Android-Keys\parent-native-android`.
+Neither credentials nor keys were edited or copied into Git. Install over the
+existing app without uninstalling or clearing data. Rebuild commands remain in README.
+
+ECCD filters apply mark visibility before grouping/counting/order. Overview
+highlights use latest-period server aggregates across home/school answers under
+both current child/assessment release gates, without older-period fallback.
+Home confirmation IDs are RAM-only and scoped to account/child/period in the
+portal; logout clears them and rejects late callbacks. Successful POSTs return
+confirmed IDs even if local cleanup fails, while surfacing a storage warning.
+Server locks and confirmations hide completed home rows/domains; newer revisions,
+other owners and failed submissions retain their drafts. No replay was added.
+
+The whole collapsed assessment card is the tap target; expanded content is a
+sibling of the header so domain/answer handlers have no outer toggle ancestor.
+Only bottom Messages retains its unread shortcut. Titles are compact, the home
+instruction is one sentence, and permission/window locks say Locked by teacher.
+Actual incomplete assessments, pending child links and network failures stay distinct.
+
+Isolation checks: backend/frontend have no modified or untracked additions; no
+tracked changes exist in the older Android app. Its pre-existing untracked tree
+was neither edited nor staged: all **38,582 files** match before/after SHA-256
+fingerprint `49013298f91c9c7e3e077c57d6aa512b73159582de3670ccb84fc65a070a7f9b`.
+This is the current checkout's baseline, separate from historical release counts.
+Protected refs remain main `c5d9279ccfe453fa3fb7e7f3240d366d53ba15c0` and
+feat/parent-android-app `0f4629cfb6c7b458de032cb200dbee630da08bb2`.
+Only this app and AI_CONTEXT.md/AI_CONTEXT_HISTORY.md are included in the commit.
+
+Tests execute component handlers with mocked hooks and host components, not a
+native renderer. No phone/emulator touch, layout, real Keystore/AsyncStorage,
+account/OTP, live socket or school-data acceptance was performed. UI_PARITY.md
+contains the pending device scenarios. No dependency, backend/frontend change,
+provider/database call, Playwright/pytest, push, uninstall or data clearing occurred.
+
+---
+
+# Historical pull-to-refresh and relationship correction — local release verification
+
+The shared output path now holds the release above. The following version/hash
+describes the previous 1.2.2/code 5 artifact only.
 
 Date: **2026-11-15**. Branch: **feat/parent-native-android**.
 Foundation: `214a324`. App: **AMES Parent 1.2.2 (version code 5)**.

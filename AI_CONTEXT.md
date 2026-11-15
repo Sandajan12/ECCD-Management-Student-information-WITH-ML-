@@ -77,6 +77,13 @@ from the current detail's teacher first/last name, with a nonblank fallback.
 Data screens use pull-to-refresh without refresh buttons, preserving drafts and
 live updates; ML refresh reloads readiness only. Registration offers Father/Mother/
 Guardian, and LRN linking omits relationship so the server inherits the account's.
+ECCD filtering is read-only (All/DI-KAYA/KAYA, DI-KAYA first per domain) and uses
+only permitted marks. Overview highlights retain latest-period server aggregates
+across home/school questions and teacher release gates. Assess Home-Based Questions
+hides confirmed rows/domains with account/child/period RAM confirmations cleared
+on logout; drafts remain revision-safe/manual-only. Only its header collapses the
+expanded form. Native permission locks say Locked by teacher; unread remains on
+bottom Messages, with compact titles and one home instruction.
 Backend routes, schema, scoring, ML artifacts and website behavior are unchanged.
 
 | Layer | Implementation / authority |

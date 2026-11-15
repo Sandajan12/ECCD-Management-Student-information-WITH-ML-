@@ -4,6 +4,7 @@ import {ApiError, messageOf} from './sessionCore.ts';
 import {draft, DraftStore, OFFLINE_MESSAGE} from './draftStore.ts';
 import type {Draft} from './draftStore.ts';
 export interface HomeValues { answers: Record<string, Answer>; }
+export interface HomeSubmission { questionIds: number[]; cleanupWarning?: string; }
 export const homeKey = (student: number, period: Period, domain: number, owner: number) => `eccd_draft_${student}_${period}_${domain}_home_${owner}`;
 export class HomeObservations {
   constructor(private store: DraftStore, private owner: number, private student: number,
@@ -18,7 +19,7 @@ export class HomeObservations {
     return this.store.put(key, draft(this.owner, {answers}));
   }
   /** Called only from the Submit button; loading or reconnecting never calls this method. */
-  async submit(child: Child, assessment: Assessment, period: Period): Promise<void> {
+  async submit(child: Child, assessment: Assessment, period: Period, confirmed: readonly number[] = []): Promise<HomeSubmission> {
     await this.load(assessment, period);
     const snapshots: Array<{key: string; snapshot: Draft<HomeValues>; answers: Record<string, Answer>}> = [];
     const payload: HomePayload = {student_id: this.student, testing_period: period, evaluations: []};
@@ -29,7 +30,7 @@ export class HomeObservations {
       const answers: Record<string, Answer> = {};
       for (const question of domain.questions) {
         const answer = snapshot.values.answers[String(question.question_id)];
-        if (answer && !homeLock(child, assessment, question, period)) {
+        if (answer && !confirmed.includes(question.question_id) && !homeLock(child, assessment, question, period)) {
           answers[String(question.question_id)] = answer;
           payload.evaluations.push({question_id: question.question_id, testing_period: period, answer});
         }
@@ -48,10 +49,14 @@ export class HomeObservations {
         current => ({...current, is_pending_sync: false, error: messageOf(error)}))));
       throw new Error(network ? OFFLINE_MESSAGE : messageOf(error));
     }
-    await Promise.all(snapshots.map(({key, snapshot, answers}) => this.store.confirm<HomeValues>(key, this.owner, snapshot.revision, current => {
+    const cleanup = await Promise.allSettled(snapshots.map(({key, snapshot, answers}) => this.store.confirm<HomeValues>(key, this.owner, snapshot.revision, current => {
       const remaining = {...current.values.answers};
       for (const [question, answer] of Object.entries(answers)) if (remaining[question] === answer) delete remaining[question];
       return Object.keys(remaining).length ? {...current, values: {answers: remaining}, is_pending_sync: false, request: undefined, error: undefined} : null;
     })));
+    // A local cleanup failure must not turn a confirmed server save into a retry.
+    return {questionIds: payload.evaluations.map(item => item.question_id),
+      ...(cleanup.some(result => result.status === 'rejected')
+        ? {cleanupWarning: 'Observations saved. Local draft cleanup could not be completed on this device.'} : {})};
   }
 }

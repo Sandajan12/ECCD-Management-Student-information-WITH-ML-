@@ -1,5 +1,30 @@
 # AMES Context History
 
+## 2026-11-15 — Native assessment filters and compact Overview (local)
+
+Implemented the approved PARENT_ASSESSMENT_UX_PLAN.md over `b2af2c7` on
+`feat/parent-native-android`, version 1.2.3/code 6. ECCD is read-only with
+permission-safe All/DI-KAYA/KAYA filters and DI-KAYA-first ordering per domain.
+Overview highlights retain server home/school latest-period aggregates and
+teacher release gates without older-period fallback. Assess Home-Based Questions
+uses a full collapsed-card tap with isolated expanded controls, one instruction,
+and hidden confirmed questions/empty domains. Confirmation IDs are account/child/
+period RAM state cleared on logout; stale refreshes cannot reintroduce saved rows.
+Draft envelopes/revision checks/manual-only submission remain intact, including
+retention of newer edits/failures and warnings after confirmed-save cleanup errors.
+Removed the header Messages shortcut and decorative descriptions; permission
+locks say Locked by teacher, while real pending/incomplete states stay distinct.
+
+Executed: TypeScript, 45 Node tests (six focused suites plus existing regressions),
+four native JVM tests, release build/R8/lint, signature and 16 KiB alignment passed.
+Same signing certificate; APK SHA-256
+`d9a2c0b2e3033d5e77aa96e499a4654470ef20ecca62bdfd51d5d4991a1954fc`.
+Packaged source/assets matched. Component handlers were tested with mocked hooks/
+hosts; phone gestures/layout, real account/OTP/storage and live socket acceptance
+remain pending. No dependency/provider/database operation, frontend/backend tests,
+push, uninstall or data clearing. Protected folders/refs and the pre-existing
+untracked older TWA were preserved; release documentation records isolation evidence.
+
 ## 2026-11-15 — Native pull-to-refresh and parent relationship forms (local)
 
 Updated `214a324` on `feat/parent-native-android` to 1.2.2/code 5. Data refresh

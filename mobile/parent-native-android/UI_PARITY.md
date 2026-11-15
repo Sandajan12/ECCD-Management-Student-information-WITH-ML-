@@ -2,7 +2,8 @@
 
 Implemented from read-only source inspection on 2026-11-15, based on Phase 2
 `7c882bc`; navigation/adviser refinements follow UI release `6b7a467`, and
-pull-to-refresh/relationship refinements follow `214a324`.
+pull-to-refresh/relationship refinements follow `214a324`; assessment UX refinements
+follow `b2af2c7` and the approved PARENT_ASSESSMENT_UX_PLAN.md.
 This is native React Native UI, with no browser/WebView or web imports.
 Frontend/backend files were neither generated nor changed.
 
@@ -14,8 +15,8 @@ Frontend/backend files were neither generated nor changed.
 | `pages/parent/Dashboard.tsx` | Overview greeting, school-year pill, child/adviser summary, phase/status, strengths/support, collapsed progress; home editor inline, no Overview message card |
 | `pages/parent/ChildManagement.tsx` | Avatar, completeness bar, protected identity/enrollment summary, current-detail teacher first/last name for Adviser, household sections, sticky green save action |
 | Dashboard Link LRN dialog | LRN-only native dialog, 12 ASCII digits, inline validation, SYNCED/PENDING badges, retained local input; relationship inherited by the server |
-| `components/parent/HomeAssessmentForm.tsx` | Collapsed Home-Based Observations in Overview; period segments, home domain accordions, KAYA/DI-KAYA choices, locks, local drafts and confirmation; submit bar only while expanded |
-| `pages/parent/ParentEccdAssessment.tsx`, `components/parent/ReadOnlyDomainChecklist.tsx` | Exclusively read-only official/checklist segments, period summaries, masked states, scaled matrix, both home/school indicators and attribution; no home-edit shortcut |
+| `components/parent/HomeAssessmentForm.tsx` | Assess Home-Based Questions in Overview; full collapsed card tap, isolated expanded header, period/domain accordions, one instruction, confirmed questions/domains hidden, manual submission and revision-safe drafts |
+| `pages/parent/ParentEccdAssessment.tsx`, `components/parent/ReadOnlyDomainChecklist.tsx` | Read-only official/checklist segments, period summaries, teacher-lock states, scaled matrix, home/school indicators and attribution; permission-safe All/DI-KAYA/KAYA filters, DI-KAYA-first per domain |
 | `pages/parent/ParentMlInsights.tsx` | Readiness, POST outcome and confidence bars, baseline tier badges, expandable green intervention cards, interpretation/research callouts |
 | `components/ChatInterface.tsx` | Mobile contact-to-thread flow, avatars, parent indigo/teacher white bubbles, Philippine-time timestamps, read status, virtualized history and keyboard-safe composer |
 
@@ -40,7 +41,8 @@ count; the contacts contract does not supply per-contact unread totals.
   Home confirmation adds a deliberate tap before a server save that locks answers.
 - Overview uses one scroll container. Home/progress sections start collapsed;
   collapsing home preserves the selected period and device drafts. Selecting a
-  different child starts collapsed. Dedicated Messages and its global badge remain.
+  different child starts collapsed. Messages and unread remain in bottom navigation;
+  its redundant header shortcut is removed.
 - Data pages use native pull-to-refresh with the school-color spinner and no
   refresh buttons. Overview reloads children, assessment and dashboard together;
   other pages reload children and their current data. Messages reloads contacts/
@@ -75,9 +77,11 @@ website and app with the same account, child, settings and release permissions:
 3. Check Overview status/progress and every unreleased/marks-disabled state;
    verify profile locks, current-child adviser display/fallback, draft recovery
    and changed-field saves. ECCD must have no edit or submit controls.
-4. Expand/collapse Home-Based Observations within Overview, retain its period and
-   draft, switch siblings and confirm collapsed state; verify the submit bar is
-   hidden when collapsed. Scroll a long home domain; verify period/window/question locks,
+4. Tap the full Assess Home-Based Questions card in Overview, including its
+   whitespace/title, to expand. Once open, only its header may collapse it;
+   tapping domains or either answer must not. Retain its period and draft,
+   switch siblings and confirm collapsed state; verify the submit bar is
+   hidden when collapsed or complete. Scroll a long home domain; verify period/window/question locks,
    confirmation cancel/Back, offline message, restart recovery and manual resubmit.
    Reconnection must never submit any parent draft.
 5. Compare all three summaries/matrix and insights tiers, confidence/interventions
@@ -92,6 +96,26 @@ website and app with the same account, child, settings and release permissions:
 8. With a Father/Mother account, sync using LRN only and verify the inherited
    relationship. Reopen a pre-update link draft and confirm its LRN is preserved;
    an old local relationship must not override the registered value.
+9. Check All / DI-KAYA / KAYA in each ECCD period. All starts with DI-KAYA within
+   each domain, original numbers remain, empty filtered domains disappear, and
+   restricted answers never affect order/counts. Check marks independently of scores.
+10. Manually submit one home answer, then the rest of a domain. Confirm only saved
+    rows disappear, empty domains disappear, and other periods/children are intact.
+    Fail the following refresh: confirmed rows must stay hidden. Fail the save:
+    rows/drafts must remain. At completion show All home observations submitted
+    without a submit action; a teacher lock must never be called completion.
+11. Verify Overview highlights against the same child's server results, including
+    school and home questions in the latest period. Lock that period while an
+    older period remains released: show Locked by teacher without old highlights.
+    Mark visibility/home editing must not independently release or block aggregates.
+    Check compact titles, one home instruction, no static draft explanation,
+    and only the bottom Messages unread indicator. Logout must clear in-memory
+    confirmations while preserving device drafts.
+
+The six assessment UX suites exercise presentation/service behavior and actual
+component handlers using mocked hooks/hosts, without a new test dependency.
+They do not simulate Android touch dispatch, layout or accessibility services;
+the device scenarios above remain necessary.
 
 The review checkpoint asked: “Did this change introduce unnecessary abstractions,
 extra state, or new dependencies that existing code already handles?” Shared

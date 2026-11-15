@@ -1,7 +1,7 @@
 import React, { useContext, useEffect, useRef, useState } from "react";
 import { BackHandler, Keyboard, Pressable, Text, View } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import type { Child, User } from "./contracts";
+import type { Child, Period, User } from "./contracts";
 import {
   Avatar,
   Badge,
@@ -27,7 +27,8 @@ import { LinkChild, ProfileScreen } from "./ProfileScreen";
 import { OverviewScreen } from "./OverviewScreen";
 import { MessagesScreen, useMessaging } from "./MessagesScreen";
 import { InsightsTab, ResultsTab } from "./AssessmentScreens";
-import { adviserName } from "./presentation";
+import { adviserName, confirmHomeQuestions } from "./presentation";
+import type { HomeConfirmations } from "./presentation";
 
 type Tab =
   "Overview" | "Child Profile" | "ECCD Results" | "ML Insights" | "Messages";
@@ -76,6 +77,29 @@ export function ChildPortal({
     [tab, setTab] = useState<Tab>("Overview");
   const [linking, setLinking] = useState(false),
     [choosing, setChoosing] = useState(false);
+  const [confirmed, setConfirmed] = useState<HomeConfirmations>({});
+  const active = useRef(true);
+  useEffect(
+    () => () => {
+      active.current = false;
+    },
+    [],
+  );
+  const confirmQuestions = (
+    student: number,
+    period: Period,
+    ids: readonly number[],
+  ) => {
+    if (active.current)
+      setConfirmed((current) =>
+        confirmHomeQuestions(current, user.id, student, period, ids),
+      );
+  };
+  const signOut = () => {
+    active.current = false;
+    setConfirmed({});
+    logout();
+  };
   const messaging = useMessaging(),
     brand = useContext(SchoolBrand),
     primary = useContext(BrandColor);
@@ -144,10 +168,7 @@ export function ChildPortal({
   };
   const overviewHeader = (
     <>
-      <Heading
-        title={`Hello, ${user.full_name || "Parent"}`}
-        subtitle="Small steps today. Growing confidence for tomorrow."
-      />
+      <Heading title={`Hello, ${user.full_name || "Parent"}`} />
       <Badge>
         {child?.school_year ? `SY ${child.school_year} · ` : ""}Kindergarten
       </Badge>
@@ -214,20 +235,11 @@ export function ChildPortal({
         >
           {brand.school_name}
         </Text>
-        <View>
-          <IconButton
-            name="messages"
-            label={`Messages, ${messaging.state.unread} unread`}
-            color="#fff"
-            onPress={() => setTab("Messages")}
-          />
-          <Unread count={messaging.state.unread} />
-        </View>
         <IconButton
           name="logout"
           label="Logout"
           color="#cbd5e1"
-          onPress={logout}
+          onPress={signOut}
         />
       </View>
       {tab !== "Messages" && (
@@ -293,6 +305,10 @@ export function ChildPortal({
               refreshChildren={state.reload}
               insights={() => setTab("ML Insights")}
               results={() => setTab("ECCD Results")}
+              confirmed={confirmed}
+              onConfirmed={(period, ids) =>
+                confirmQuestions(child.student_id, period, ids)
+              }
             />
           ) : (
             <Screen onRefresh={state.reload}>

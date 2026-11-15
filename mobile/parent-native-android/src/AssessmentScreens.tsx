@@ -11,7 +11,7 @@ import type {
   Readiness,
 } from "./contracts";
 import { PERIODS } from "./contracts";
-import { canPredict, released, VIEW_FLAGS, visibleMark } from "./policy";
+import { canPredict, released, visibleMark } from "./policy";
 import {
   BrandColor,
   Badge,
@@ -31,35 +31,48 @@ import {
 } from "./ui";
 import { Feedback, useResource } from "./resources";
 import type { Resource } from "./resources";
-import { statusColor, tierColor } from "./presentation";
+import {
+  checklistDomains,
+  overviewStatus,
+  TEACHER_LOCK,
+  statusColor,
+  tierColor,
+} from "./presentation";
+import type { ChecklistFilter } from "./presentation";
 
 export function OverviewSummary({
   child,
   state,
+  assessment,
   insights,
   results,
 }: {
   child: Child;
   state: Resource<Dashboard>;
+  assessment: Assessment | null;
   insights: () => void;
   results: () => void;
 }) {
   const data = state.data,
     primary = useContext(BrandColor);
   const [progressExpanded, setProgressExpanded] = useState(false);
-  const phase = data?.latestPhase || data?.currentPhase;
-  const allowed =
-    phase === "PRE" || phase === "MID" || phase === "POST"
-      ? child[VIEW_FLAGS[phase]] && data?.is_published
-      : false;
+  const status = overviewStatus(child, data, assessment);
+  const allowed = status === "available";
+  const placeholder =
+    status === "locked"
+      ? TEACHER_LOCK
+      : status === "empty"
+        ? "Not evaluated"
+        : "Loading assessment…";
   return (
     <>
       <Card>
         <View style={[styles.row, { justifyContent: "space-between" }]}>
           <Heading title="ECCD Phase" icon="checklist" />
-          <Badge icon="clock">{data?.currentPhase || "Awaiting results"}</Badge>
+          <Badge icon={status === "locked" ? "lock" : "clock"}>
+            {allowed ? data?.currentPhase : placeholder}
+          </Badge>
         </View>
-        <Copy>Latest recorded developmental checklist period.</Copy>
         <Feedback {...state} />
       </Card>
       {data && (
@@ -70,7 +83,7 @@ export function OverviewSummary({
               icon={allowed ? "check" : "lock"}
               color={allowed ? statusColor(data.overallStatusColor) : "#64748b"}
             >
-              {allowed ? data.overallStatus : "Pending Adviser Release"}
+              {allowed ? data.overallStatus : placeholder}
             </Badge>
             {allowed ? (
               <>
@@ -85,27 +98,21 @@ export function OverviewSummary({
                   </Notice>
                 )}
               </>
-            ) : (
-              <Notice>Results Pending Adviser Release</Notice>
-            )}
+            ) : null}
           </Card>
           <Card>
             <Icon name="star" color={primary} />
             <Copy>Excels In · Strongest Area</Copy>
             <Title style={{ fontSize: 16 }}>
-              {allowed ? data.excelsIn : "Results Pending Adviser Release"}
+              {allowed ? data.excelsIn : placeholder}
             </Title>
-            <Copy>A strength to celebrate in everyday play.</Copy>
           </Card>
           <Card>
             <Icon name="support" color="#b45309" />
             <Copy>Needs Support In</Copy>
             <Title style={{ fontSize: 16 }}>
-              {allowed
-                ? data.needsSupportIn
-                : "Results Pending Adviser Release"}
+              {allowed ? data.needsSupportIn : placeholder}
             </Title>
-            <Copy>A little extra practice, encouragement and time.</Copy>
           </Card>
         </>
       )}
@@ -114,10 +121,6 @@ export function OverviewSummary({
           title="Early Developmental Insights & Home Activities"
           icon="insights"
         />
-        <Copy>
-          Review milestone forecasts and recommended home support activities for
-          your child.
-        </Copy>
         <Button title="View ML Insights" icon="insights" onPress={insights} />
       </Card>
       <Card>
@@ -131,10 +134,7 @@ export function OverviewSummary({
           <Label style={{ flex: 1 }}>Assessment Progress</Label>
           <Icon name={progressExpanded ? "up" : "down"} />
         </Pressable>
-        <Copy>Checklist completion, not an academic score percentage.</Copy>
-        {progressExpanded && !allowed && (
-          <Notice>Results Pending Adviser Release</Notice>
-        )}
+        {progressExpanded && !allowed && <Notice>{placeholder}</Notice>}
         {progressExpanded &&
           allowed &&
           data?.domainCards.map((domain) => (
@@ -178,18 +178,16 @@ export function ResultsTab({
   const [period, setPeriod] = useState<Period>("PRE"),
     [expanded, setExpanded] = useState<number | null>(null);
   const [tab, setTab] = useState<"official" | "checklist">("official");
+  const [filter, setFilter] = useState<ChecklistFilter>("All");
   const data = state.data;
+  const domains = data ? checklistDomains(child, data, period, filter) : [];
   return (
     <Screen
       onRefresh={async () => {
         await Promise.all([state.reload(), refreshChildren()]);
       }}
     >
-      <Heading
-        title="ECCD Assessment & Results"
-        subtitle="Official evaluation summary and saved checklist observations."
-        icon="checklist"
-      />
+      <Heading title="ECCD Assessment & Results" icon="checklist" />
       <Feedback {...state} />
       <Segments
         options={[
@@ -225,7 +223,7 @@ export function ResultsTab({
                       }
                     >
                       {!allowed
-                        ? "Unreleased"
+                        ? TEACHER_LOCK
                         : summary.isEvaluated
                           ? "Evaluated"
                           : "Not Evaluated"}
@@ -240,13 +238,7 @@ export function ResultsTab({
                       }}
                     >
                       <Icon name="lock" size={36} />
-                      <Label style={styles.center}>
-                        Results Pending Adviser Release
-                      </Label>
-                      <Copy style={styles.center}>
-                        The class adviser has not yet published the evaluation
-                        results for this testing window.
-                      </Copy>
+                      <Label style={styles.center}>{TEACHER_LOCK}</Label>
                     </View>
                   ) : (
                     <>
@@ -278,10 +270,7 @@ export function ResultsTab({
               );
             })}
             <Card>
-              <Heading
-                title="DepEd Official ECCD Summary Matrix"
-                subtitle="Standardized domain scaled scores across PRE, MID and POST."
-              />
+              <Heading title="DepEd Official ECCD Summary Matrix" />
               <View style={styles.row}>
                 <Label style={{ flex: 2 }}>Domain</Label>
                 {PERIODS.map((p) => (
@@ -322,13 +311,23 @@ export function ResultsTab({
         ) : (
           <>
             <PeriodTabs value={period} onChange={setPeriod} />
-            {!child.allow_parent_view_eccd_marks && (
-              <Notice>
-                Recorded marks are restricted by the adviser. Only your eligible
-                home observations may appear.
-              </Notice>
+            <Segments
+              options={(["All", "DI-KAYA", "KAYA"] as const).map((value) => ({
+                value,
+                label: value,
+              }))}
+              value={filter}
+              onChange={setFilter}
+            />
+            {!(
+              child.allow_parent_view_eccd_marks &&
+              data.permissions.allow_parent_view_eccd_marks &&
+              data.allow_parent_view_eccd_marks
+            ) && <Notice>{TEACHER_LOCK}</Notice>}
+            {!domains.length && (
+              <Notice>No visible indicators match this filter.</Notice>
             )}
-            {data.domains.map((domain) => (
+            {domains.map((domain) => (
               <Card key={domain.domain_id}>
                 <Pressable
                   accessibilityRole="button"
@@ -348,86 +347,86 @@ export function ResultsTab({
                   <Icon name={expanded === domain.domain_id ? "up" : "down"} />
                 </Pressable>
                 {expanded === domain.domain_id &&
-                  [...domain.questions]
-                    .sort((a, b) => a.sequence_order - b.sequence_order)
-                    .map((q) => {
-                      const visible = visibleMark(child, data, q, period);
-                      return (
-                        <View
-                          key={q.question_id}
-                          style={{
-                            gap: 8,
-                            paddingVertical: 12,
-                            borderTopWidth: 1,
-                            borderTopColor: "#f1f5f9",
-                          }}
+                  domain.questions.map((q) => {
+                    const visible = visibleMark(child, data, q, period);
+                    return (
+                      <View
+                        key={q.question_id}
+                        style={{
+                          gap: 8,
+                          paddingVertical: 12,
+                          borderTopWidth: 1,
+                          borderTopColor: "#f1f5f9",
+                        }}
+                      >
+                        <Label>
+                          {q.sequence_order}. {q.question_text}
+                        </Label>
+                        <Badge
+                          icon={q.is_home_based ? "home" : "school"}
+                          color="#64748b"
                         >
-                          <Label>
-                            {q.sequence_order}. {q.question_text}
-                          </Label>
-                          <Badge
-                            icon={q.is_home_based ? "home" : "school"}
-                            color="#64748b"
-                          >
-                            {q.is_home_based
-                              ? "Home-based indicator"
-                              : "School indicator"}
-                          </Badge>
-                          <Badge
-                            icon={visible ? "check" : "lock"}
-                            color={
-                              visible && q.answers[period] === "KAYA"
-                                ? "#15803d"
+                          {q.is_home_based
+                            ? "Home-based indicator"
+                            : "School indicator"}
+                        </Badge>
+                        <Badge
+                          icon={visible ? "check" : "lock"}
+                          color={
+                            visible && q.answers[period] === "KAYA"
+                              ? "#15803d"
+                              : visible && q.answers[period] === "DI-KAYA"
+                                ? "#b45309"
                                 : "#64748b"
-                            }
-                          >
-                            {visible
-                              ? (q.answers[period] ?? "Not yet marked")
-                              : "Recorded answer withheld by adviser"}
-                          </Badge>
-                          {visible && (
-                            <>
+                          }
+                        >
+                          {visible
+                            ? (q.answers[period] ?? "Not yet marked")
+                            : TEACHER_LOCK}
+                        </Badge>
+                        {visible && (
+                          <>
+                            <Copy>
+                              {q.evaluator_roles[period]
+                                ? `Recorded by ${q.evaluator_roles[period]}`
+                                : "Not evaluated"}
+                            </Copy>
+                            {!!q.parent_submitted_at[period] && (
                               <Copy>
-                                {q.evaluator_roles[period]
-                                  ? `Recorded by ${q.evaluator_roles[period]}`
-                                  : "Not evaluated"}
+                                Parent submitted:{" "}
+                                {q.parent_submitted_at[period]}
                               </Copy>
-                              {!!q.parent_submitted_at[period] && (
-                                <Copy>
-                                  Parent submitted:{" "}
-                                  {q.parent_submitted_at[period]}
-                                </Copy>
-                              )}
-                              {!!q.teacher_marked_at[period] && (
-                                <Copy>
-                                  Teacher saved: {q.teacher_marked_at[period]}
-                                </Copy>
-                              )}
-                            </>
-                          )}
-                        </View>
-                      );
-                    })}
+                            )}
+                            {!!q.teacher_marked_at[period] && (
+                              <Copy>
+                                Teacher saved: {q.teacher_marked_at[period]}
+                              </Copy>
+                            )}
+                          </>
+                        )}
+                      </View>
+                    );
+                  })}
               </Card>
             ))}
           </>
         ))}
       {data && (
         <Card>
-          <Label>Adviser access</Label>
+          <Label>Teacher access</Label>
           <Copy>
             Student information:{" "}
             {child.allow_parent_view_student_info &&
             data.permissions.allow_parent_view_student_info
               ? "Available"
-              : "Locked"}
+              : TEACHER_LOCK}
           </Copy>
           <Copy>
             Profile editing:{" "}
             {child.allow_parent_edit_student_info &&
             data.permissions.allow_parent_edit_student_info
-              ? "Allowed by adviser"
-              : "Locked by adviser"}
+              ? "Allowed"
+              : TEACHER_LOCK}
           </Copy>
           <Copy>
             Home observations:{" "}
@@ -435,14 +434,14 @@ export function ResultsTab({
             data.permissions.allow_parent_edit_home_based_eccd &&
             data.can_edit_home_based
               ? "Enabled in open period windows"
-              : "Read-only / locked"}
+              : TEACHER_LOCK}
           </Copy>
           <Copy>
             Prediction access:{" "}
             {child.allow_parent_predictions &&
             data.permissions.allow_parent_predictions
               ? "Enabled; PRE readiness and release also required"
-              : "Locked"}
+              : TEACHER_LOCK}
           </Copy>
         </Card>
       )}
@@ -526,26 +525,28 @@ export function InsightsTab({
         await Promise.all([state.reload(), refreshChildren()]);
       }}
     >
-      <Heading
-        title="Early Developmental Insights"
-        subtitle="Milestone forecasts and supportive activities for home."
-        icon="insights"
-      />
+      <Heading title="Early Developmental Insights" icon="insights" />
       <Card>
         <Feedback {...state} />
         <Badge
           color={allowed ? "#15803d" : "#b45309"}
           icon={allowed ? "check" : "lock"}
         >
-          {allowed ? "PRE ready for insights" : "Awaiting readiness & release"}
+          {allowed
+            ? "PRE ready for insights"
+            : !child.allow_parent_predictions ||
+                !child.allow_parent_view_eccd_pre ||
+                (state.data &&
+                  (!state.data.allow_parent_predictions ||
+                    !state.data.is_published))
+              ? TEACHER_LOCK
+              : "PRE assessment incomplete"}
         </Badge>
-        {state.data && <Copy>{state.data.readiness_note}</Copy>}
-        {!allowed && (
-          <Notice>
-            Insights require adviser prediction permission, released PRE
-            results, and complete teacher-confirmed PRE data.
-          </Notice>
-        )}
+        {state.data &&
+          child.allow_parent_predictions &&
+          child.allow_parent_view_eccd_pre &&
+          state.data.allow_parent_predictions &&
+          state.data.is_published && <Copy>{state.data.readiness_note}</Copy>}
         <Button
           icon="insights"
           title={busy ? "Generating insights…" : "Generate insights"}
@@ -578,10 +579,7 @@ export function InsightsTab({
             <Notice>{prediction.interpretation_note}</Notice>
             <Notice tone="warning">{prediction.research_notice}</Notice>
           </Card>
-          <Heading
-            title="Baseline Development Profile"
-            subtitle="PRE scaled scores · Domain support tiers are separate from the overall PRE interpretation."
-          />
+          <Heading title="Baseline Development Profile" />
           {prediction.baseline_domains.map((d) => (
             <Card key={d.domain}>
               <Copy>{d.name}</Copy>
@@ -593,10 +591,7 @@ export function InsightsTab({
               </View>
             </Card>
           ))}
-          <Heading
-            title="Prescriptive Intervention Guides"
-            subtitle="Small home activities for areas needing extra care. Discuss them with your child’s teacher."
-          />
+          <Heading title="Prescriptive Intervention Guides" />
           {!prediction.interventions.length && (
             <Notice tone="success">
               Continue playful daily routines and check in with your child’s

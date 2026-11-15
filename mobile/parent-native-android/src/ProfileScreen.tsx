@@ -15,7 +15,7 @@ import {
 } from "./profile";
 import type { ProfileField, ProfileValues } from "./profile";
 import { Feedback, useResource } from "./resources";
-import { adviserName } from "./presentation";
+import { adviserName, TEACHER_LOCK } from "./presentation";
 import {
   Avatar,
   Badge,
@@ -258,21 +258,12 @@ export function ProfileScreen({
         )
       }
     >
-      <Heading
-        title="Child Information"
-        subtitle="View official school records and family background details."
-        icon="child"
-      />
+      <Heading title="Child Information" icon="child" />
       <Feedback {...state} />
       <Card>
         {!visible ? (
           <>
-            <Heading title="Access Restricted" icon="lock" />
-            <Notice>
-              Student information viewing is disabled by your teacher. Please
-              contact your child’s adviser via the Messages tab if you have any
-              questions. Saved drafts are preserved on this device.
-            </Notice>
+            <Heading title={TEACHER_LOCK} icon="lock" />
           </>
         ) : (
           record && (
@@ -324,9 +315,7 @@ export function ProfileScreen({
       </Card>
       {visible && (
         <>
-          {!editable && (
-            <Notice>Profile editing is locked by the adviser.</Notice>
-          )}
+          {!editable && <Notice>{TEACHER_LOCK}</Notice>}
           {!!storageError && <Notice error>{storageError}</Notice>}
           {sections.map((section) => (
             <Card key={section.title}>

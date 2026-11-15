@@ -1,7 +1,7 @@
 # AMES Parent — React Native Android, Phases 1–2
 
 Standalone React Native **0.86.3** / React **19.2.3** / TypeScript app. Android
-package `com.ameskinder.parent.native`, version **1.2.2 (5)**, minimum Android 8
+package `com.ameskinder.parent.native`, version **1.2.3 (6)**, minimum Android 8
 (API 26), compile SDK 36, target SDK 35. The APK bundles Hermes and JavaScript;
 Metro and a browser are not required on the phone. Both ARM64 and ARMv7 phones
 are supported. The Java/Kotlin namespace ends in `nativeapp` because `native` is
@@ -21,10 +21,20 @@ structured household forms, sticky saves, and contact/thread chat. See
 [UI_PARITY.md](UI_PARITY.md) for source references, Android adjustments and the
 explicit phone acceptance boundary. There are no new npm dependencies.
 
-Overview is the default tab. Home-Based Observations expands inside Overview,
-with a submit bar only while expanded; Assessment Progress also starts collapsed.
-Overview has no Messages card. ECCD is exclusively read-only (official results
-and both home/school indicators). Child Information displays the current profile's
+Overview is the default tab. Tap the whole **Assess Home-Based Questions** card
+to expand; once open, its header alone collapses it. Domain and answer controls
+do not toggle the outer section. Confirmed home questions disappear from that
+period's editable list, with empty domains hidden and no submit action after
+completion. Session-only confirmation IDs are account/child/period-scoped and
+cleared at logout; stale refreshes cannot reintroduce a confirmed row. Existing
+draft revisions and manual-only submission remain intact, including storage warnings.
+Assessment Progress also starts collapsed. Overview highlights use server
+aggregates for home and school answers in the latest period under teacher release
+controls, without fallback to older released periods. ECCD is exclusively read-only
+with All / DI-KAYA / KAYA filters and DI-KAYA-first ordering per domain; hidden
+answers never enter filter counts or ordering. Permission locks say Locked by
+teacher. Messages/unread lives only in the bottom navigation, and decorative
+page descriptions are removed. Child Information displays the current profile's
 teacher first/last name, with the optional adviser name or Not assigned fallback.
 
 Pull down from the top of any authenticated data page (including empty states,

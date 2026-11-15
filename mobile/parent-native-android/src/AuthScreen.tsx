@@ -277,7 +277,6 @@ export function AuthScreen() {
         <Title style={{ fontSize: 17 }}>
           {register ? "Create your parent account" : "Welcome back"}
         </Title>
-        <Copy>Sign in to follow your child’s learning journey.</Copy>
         {register && (
           <>
             <Input
