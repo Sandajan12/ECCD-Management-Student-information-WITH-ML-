@@ -1,133 +1,460 @@
-import React, {useEffect, useRef, useState} from 'react';
-import {Linking, View} from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import {session} from './session';
-import {messageOf} from './sessionCore';
-import type {Assessment, Child, Dashboard, Period, Prediction, Readiness, User} from './contracts';
-import {PERIODS} from './contracts';
-import {canPredict, released, VIEW_FLAGS, visibleMark} from './policy';
-import {Button, Card, Copy, Label, Notice, Title, styles} from './ui';
-import {Feedback, useResource} from './resources';
-import {LinkChild, ProfileScreen} from './ProfileScreen';
-import {HomeScreen} from './HomeScreen';
-import {MessagesScreen, useMessaging} from './MessagesScreen';
+import React, { useContext, useEffect, useRef, useState } from "react";
+import { BackHandler, Keyboard, Pressable, Text, View } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import type { Child, User } from "./contracts";
+import {
+  Avatar,
+  Badge,
+  BrandColor,
+  Button,
+  Card,
+  Copy,
+  Dialog,
+  fonts,
+  Heading,
+  Icon,
+  IconButton,
+  Label,
+  Notice,
+  SchoolBrand,
+  Screen,
+  Seal,
+  styles,
+} from "./ui";
+import type { IconName } from "./ui";
+import { Feedback, useResource } from "./resources";
+import { LinkChild, ProfileScreen } from "./ProfileScreen";
+import { HomeScreen } from "./HomeScreen";
+import { MessagesScreen, useMessaging } from "./MessagesScreen";
+import { DashboardTab, InsightsTab, ResultsTab } from "./AssessmentScreens";
 
-function DashboardTab({child, revision}: {child: Child; revision: number}) {
-  const state = useResource<Dashboard>(`/api/eccd/parent/dashboard-stats/${child.student_id}`, `${JSON.stringify(child)}_${revision}`);
-  const data = state.data;
-  const phase = data?.latestPhase || data?.currentPhase;
-  const allowed = phase === 'PRE' || phase === 'MID' || phase === 'POST' ? child[VIEW_FLAGS[phase]] && data?.is_published : false;
-  return <><Card><Title>Learning dashboard</Title><Feedback {...state}/>{data && <><Label>Current phase: {data.currentPhase}</Label>
-    {!allowed ? <Notice>Results Pending Adviser Release</Notice> : <><Label>{data.overallStatus}</Label><Copy>{data.interpretation}</Copy>
-      <Copy>Excels in: {data.excelsIn}</Copy><Copy>Needs support in: {data.needsSupportIn}</Copy>
-      <Copy>KAYA: {data.totalKaya ?? '—'} · DI-KAYA: {data.totalDiKaya ?? '—'}</Copy>
-      {data.assessmentMastered && <Notice>All indicators in this assessment have been mastered.</Notice>}</>}
-  </>}</Card>{allowed && data?.domainCards.map(domain => <Card key={domain.domain_id}><Label>{domain.domain_name}</Label><Copy>{domain.scoreText} · {domain.progress ?? '—'}%</Copy><Copy>{domain.statusText}</Copy></Card>)}</>;
+type Tab =
+  | "Dashboard"
+  | "Child Profile"
+  | "Home Observations"
+  | "ECCD Results"
+  | "ML Insights"
+  | "Messages";
+const navigation: Array<{ tab: Tab; title: string; icon: IconName }> = [
+  { tab: "Dashboard", title: "Dashboard", icon: "home" },
+  { tab: "Child Profile", title: "Child", icon: "child" },
+  { tab: "ECCD Results", title: "ECCD", icon: "checklist" },
+  { tab: "ML Insights", title: "Insights", icon: "insights" },
+  { tab: "Messages", title: "Messages", icon: "messages" },
+];
+const childName = (child: Child) =>
+  child.full_name ||
+  `${child.first_name || ""} ${child.last_name || ""}`.trim() ||
+  `Child ${child.student_id}`;
+function Unread({ count }: { count: number }) {
+  return count > 0 ? (
+    <View
+      accessible
+      accessibilityLabel={`${count} unread messages`}
+      style={{
+        position: "absolute",
+        right: -4,
+        top: -5,
+        backgroundColor: "#ef4444",
+        borderRadius: 12,
+        minWidth: 16,
+        paddingHorizontal: 4,
+        alignItems: "center",
+      }}
+    >
+      <Text style={{ fontFamily: fonts.semibold, color: "#fff", fontSize: 9 }}>
+        {count > 99 ? "99+" : count}
+      </Text>
+    </View>
+  ) : null;
 }
-function ResultsTab({child}: {child: Child}) {
-  const state = useResource<Assessment>(`/api/eccd/parent/assessment/${child.student_id}`, JSON.stringify(child));
-  const [period, setPeriod] = useState<Period>('PRE');
-  const [expanded, setExpanded] = useState<number | null>(null);
-  const data = state.data;
-  const summary = data?.summary[period];
-  const isReleased = data ? released(child, data, period) : false;
-  return <><Card><Title>ECCD results</Title><Feedback {...state}/><View style={styles.row}>{PERIODS.map(p => <Button key={p} title={p} secondary={p !== period} onPress={() => setPeriod(p)}/>)}</View>
-    {data && summary && (isReleased ? <><Label>{summary.interpretation || 'Not yet evaluated'}</Label>
-      <Copy>Assessment date: {summary.assessmentDate ?? '—'}</Copy><Copy>Decimal age: {summary.decimalAge ?? '—'}</Copy>
-      <Copy>Standard score: {summary.standardScore ?? '—'}</Copy><Copy>Sum of scaled scores: {summary.sumOfScaledScores ?? '—'}</Copy>
-      {Object.keys(summary.rawScores || {}).map(code => <Copy key={code}>{code} · Raw {summary.rawScores?.[code] ?? '—'} · Scaled {summary.scaledScores?.[code] ?? '—'}</Copy>)}
-    </> : <Notice>Results Pending Adviser Release</Notice>)}
-  </Card>{data && <><Card><Label>Scaled scores by period</Label>{data.matrix.map(row => <View key={row.domain_id}><Label>{row.domain_name}</Label>
-    <Copy>{PERIODS.map(p => `${p}: ${released(child, data, p) ? row.scores[p] ?? '—' : 'Pending release'}`).join('  ·  ')}</Copy></View>)}</Card>
-    <Card><Label>Adviser access</Label>
-      <Copy>Student information: {child.allow_parent_view_student_info && data.permissions.allow_parent_view_student_info ? 'Available' : 'Locked'}</Copy>
-      <Copy>Profile editing: {child.allow_parent_edit_student_info && data.permissions.allow_parent_edit_student_info ? 'Allowed by adviser' : 'Locked by adviser'}</Copy>
-      <Copy>Home observations: {child.allow_parent_edit_home_based_eccd && data.permissions.allow_parent_edit_home_based_eccd && data.can_edit_home_based ? 'Enabled in open period windows' : 'Read-only / locked'}</Copy>
-      <Copy>Prediction access: {child.allow_parent_predictions && data.permissions.allow_parent_predictions ? 'Enabled; PRE readiness and release also required' : 'Locked'}</Copy>
-      <Copy>Recorded marks: {child.allow_parent_view_eccd_marks && data.permissions.allow_parent_view_eccd_marks && data.allow_parent_view_eccd_marks ? 'Available independently of score release' : 'Restricted; only your own eligible home observations may appear'}</Copy>
-    </Card>
-    {data.domains.map(domain => <Card key={domain.domain_id}><Button secondary title={`${expanded === domain.domain_id ? 'Hide' : 'Show'} ${domain.domain_name} indicators (${domain.questions.length})`} onPress={() => setExpanded(expanded === domain.domain_id ? null : domain.domain_id)}/>
-      {expanded === domain.domain_id && [...domain.questions].sort((a, b) => a.sequence_order - b.sequence_order).map(q => {
-        const visible = visibleMark(child, data, q, period);
-        return <View key={q.question_id} style={{gap: 4}}><Label>{q.sequence_order}. {q.question_text}</Label><Copy>{q.is_home_based ? 'Home-based indicator' : 'School indicator'}</Copy>
-          <Copy>{visible ? `${q.answers[period] ?? 'Not yet marked'}${q.evaluator_roles[period] ? ` · ${q.evaluator_roles[period]}` : ''}` : 'Recorded answer withheld by adviser'}</Copy>
-          {visible && q.parent_submitted_at[period] && <Copy>Parent submitted: {q.parent_submitted_at[period]}</Copy>}
-          {visible && q.teacher_marked_at[period] && <Copy>Teacher saved: {q.teacher_marked_at[period]}</Copy>}
-        </View>;
-      })}
-    </Card>)}</>}</>;
-}
-function InsightsTab({child}: {child: Child}) {
-  const state = useResource<Readiness>(`/api/ml/parent/readiness/${child.student_id}`, JSON.stringify(child));
-  const [prediction, setPrediction] = useState<Prediction | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-  const mounted = useRef(true);
-  const version = useRef(0);
-  useEffect(() => () => { mounted.current = false; version.current++; }, []);
-  const allowed = state.data ? canPredict(child, state.data) : false;
-  useEffect(() => { version.current++; setPrediction(null); }, [allowed, child.student_id]);
-  const predict = async () => {
-    if (!allowed || busy) return;
-    const request = ++version.current; setBusy(true); setError('');
-    try { const result = await session.request<Prediction>(`/api/ml/parent/predict/${child.student_id}`, 'POST'); if (mounted.current && request === version.current) setPrediction(result); }
-    catch (e) { if (mounted.current && request === version.current) setError(messageOf(e)); }
-    finally { if (mounted.current) setBusy(false); }
-  };
-  return <><Card><Title>ML insights</Title><Feedback {...state}/>{state.data && <Copy>{state.data.readiness_note}</Copy>}
-    {!allowed && <Notice>Insights require adviser prediction permission, released PRE results, and complete teacher-confirmed PRE data.</Notice>}
-    <Button title={busy ? 'Generating insights…' : 'Generate insights'} disabled={!allowed || busy} onPress={() => void predict()}/>{!!error && <Notice error>{error}</Notice>}
-  </Card>{allowed && prediction && <><Card><Label>Predicted POST interpretation</Label><Title>{prediction.predicted_post_interpretation ?? 'Unavailable'}</Title>
-    {Object.entries(prediction.confidence_percentages).map(([label, value]) => <Copy key={label}>{label}: {value.toFixed(1)}%</Copy>)}
-    <Notice>{prediction.interpretation_note}</Notice><Notice>{prediction.research_notice}</Notice>
-  </Card><Card><Label>PRE baseline</Label>{prediction.baseline_domains.map(d => <Copy key={d.domain}>{d.name}: {d.pre_scaled_score} · {d.tier}</Copy>)}</Card>
-    {prediction.interventions.map((d, index) => <Card key={`${d.domain}_${index}`}><Label>{d.name} · {d.tier}</Label><Copy>Goal: {d.goal}</Copy>
-      <Copy>At home: {d.home_activity}</Copy><Copy>Practice: {d.practice}</Copy><Copy>Support: {d.scaffolding}</Copy>
-      <Copy>Review after {d.review_days} days</Copy><Copy>Success check: {d.success_check}</Copy>
-      {d.source_url.startsWith('https://') && <Button secondary title="Read activity source" onPress={() => { void Linking.openURL(d.source_url).catch(e => setError(messageOf(e))); }}/>}</Card>)}
-  </>}</>;
-}
-export function ChildPortal({user}: {user: User}) {
-  const state = useResource<Child[]>('/api/students/my-child');
-  const [selected, setSelected] = useState<number>(0);
-  const [tab, setTab] = useState<'Dashboard' | 'Child Profile' | 'Home Observations' | 'ECCD Results' | 'ML Insights' | 'Messages'>('Dashboard');
-  const [linking, setLinking] = useState(false);
-  const [revision, setRevision] = useState(0);
-  const messaging = useMessaging();
-  const [storageError, setStorageError] = useState('');
-  const [selectionReady, setSelectionReady] = useState(false);
-  const storageVersion = useRef(0);
-  const key = `ames_child_${user.id}`;
+export function ChildPortal({
+  user,
+  logout,
+}: {
+  user: User;
+  logout: () => void;
+}) {
+  const state = useResource<Child[]>("/api/students/my-child");
+  const [selected, setSelected] = useState<number>(0),
+    [tab, setTab] = useState<Tab>("Dashboard");
+  const [linking, setLinking] = useState(false),
+    [choosing, setChoosing] = useState(false),
+    [revision, setRevision] = useState(0);
+  const messaging = useMessaging(),
+    brand = useContext(SchoolBrand),
+    primary = useContext(BrandColor);
+  const [storageError, setStorageError] = useState(""),
+    [selectionReady, setSelectionReady] = useState(false),
+    [keyboard, setKeyboard] = useState(false);
+  const storageVersion = useRef(0),
+    key = `ames_child_${user.id}`;
   useEffect(() => {
     const version = ++storageVersion.current;
-    void AsyncStorage.getItem(key).then(value => { if (version === storageVersion.current) setSelected(Number(value) || 0); }).catch(() => setStorageError('Child selection could not be restored on this device.')).finally(() => { if (version === storageVersion.current) setSelectionReady(true); });
-    return () => { storageVersion.current++; };
+    void AsyncStorage.getItem(key)
+      .then((value) => {
+        if (version === storageVersion.current) setSelected(Number(value) || 0);
+      })
+      .catch(() =>
+        setStorageError(
+          "Child selection could not be restored on this device.",
+        ),
+      )
+      .finally(() => {
+        if (version === storageVersion.current) setSelectionReady(true);
+      });
+    return () => {
+      storageVersion.current++;
+    };
   }, [key]);
-  const children = state.data || [];
-  const child = selectionReady ? children.find(c => c.student_id === selected) || children[0] : undefined;
+  const children = state.data || [],
+    child = selectionReady
+      ? children.find((c) => c.student_id === selected) || children[0]
+      : undefined;
   useEffect(() => {
     if (!child) return;
     if (selected !== child.student_id) setSelected(child.student_id);
-    void AsyncStorage.setItem(key, String(child.student_id)).catch(() => setStorageError('Child selection will last for this session only.'));
+    void AsyncStorage.setItem(key, String(child.student_id)).catch(() =>
+      setStorageError("Child selection will last for this session only."),
+    );
   }, [key, child?.student_id, selected]);
+  useEffect(() => {
+    const show = Keyboard.addListener("keyboardDidShow", () =>
+        setKeyboard(true),
+      ),
+      hide = Keyboard.addListener("keyboardDidHide", () => setKeyboard(false));
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, []);
+  useEffect(() => {
+    if (tab === "Messages") return;
+    const listener = BackHandler.addEventListener("hardwareBackPress", () => {
+      if (tab !== "Dashboard") {
+        setTab("Dashboard");
+        return true;
+      }
+      return false;
+    });
+    return () => listener.remove();
+  }, [tab]);
   const select = (id: number) => {
-    storageVersion.current++; setSelected(id);
-    void AsyncStorage.setItem(key, String(id)).catch(() => setStorageError('Child selection will last for this session only.'));
+    storageVersion.current++;
+    setSelected(id);
+    setChoosing(false);
+    void AsyncStorage.setItem(key, String(id)).catch(() =>
+      setStorageError("Child selection will last for this session only."),
+    );
   };
-  return <><Card><Title>My children</Title><Copy>Hello, {user.full_name || 'Parent'}</Copy><Feedback {...state}/>{!!storageError && <Notice>{storageError}</Notice>}
-    <Button title="Link Child" onPress={() => setLinking(true)}/>
-    {!state.loading && !children.length && <Notice>No eligible linked children are available. Ask your child’s adviser to confirm the family link and active section assignment.</Notice>}
-    {children.map(c => <View key={c.student_id} style={{gap: 8}}><Button disabled={!selectionReady} title={`${child?.student_id === c.student_id ? '✓ ' : ''}${c.full_name || `${c.first_name || ''} ${c.last_name || ''}`.trim() || `Child ${c.student_id}`}`} secondary={child?.student_id !== c.student_id} onPress={() => select(c.student_id)}/>
-      <Copy>Section: {c.section_name || c.class_name || '—'} · School year: {c.school_year || '—'}</Copy>
-      <Copy>Adviser: {c.adviser_name || `${c.teacher_fname || ''} ${c.teacher_lname || ''}`.trim() || '—'} · {c.is_active ? 'Active' : 'Inactive'}</Copy>
-      {child?.student_id === c.student_id && (c.allow_parent_view_student_info ? <Copy>Birth date: {c.date_of_birth ?? '—'} · Gender: {c.gender ?? '—'} · LRN: {c.masked_lrn}</Copy> : <Notice>Student information is locked by the adviser.</Notice>)}
-    </View>)}
-  </Card>{linking && <LinkChild user={user} close={() => setLinking(false)} linked={async id => {await state.reload(); select(id); setTab('Dashboard');}}/>}
-    <View style={styles.row}>{(['Dashboard', 'Child Profile', 'Home Observations', 'ECCD Results', 'ML Insights', 'Messages'] as const).map(t => <Button key={t}
-      title={t === 'Messages' ? `Messages (${messaging.state.unread})` : t} disabled={!child && t !== 'Messages'} secondary={tab !== t} onPress={() => setTab(t)}/>)}</View>
-    {tab === 'Messages' ? <MessagesScreen user={user} client={messaging.client}/> : child && <View key={`${user.id}_${child.student_id}_${tab}`} style={{gap: 16}}>
-      {tab === 'Dashboard' ? <DashboardTab child={child} revision={revision}/> : tab === 'Child Profile' ? <ProfileScreen child={child} user={user} changed={state.reload}/> :
-        tab === 'Home Observations' ? <HomeScreen child={child} user={user} changed={() => setRevision(n => n + 1)}/> : tab === 'ECCD Results' ? <ResultsTab child={child}/> : <InsightsTab child={child}/>}
-    </View>}
-  </>;
+  return (
+    <View style={{ flex: 1, backgroundColor: "#f8fafc" }}>
+      <View
+        style={{
+          backgroundColor: "#111827",
+          paddingHorizontal: 12,
+          paddingVertical: 6,
+          flexDirection: "row",
+          gap: 10,
+          alignItems: "center",
+        }}
+      >
+        <Seal size={32} />
+        <Text
+          numberOfLines={1}
+          style={{
+            flex: 1,
+            fontFamily: fonts.bold,
+            color: "#fff",
+            fontSize: 14,
+          }}
+        >
+          {brand.school_name}
+        </Text>
+        <View>
+          <IconButton
+            name="messages"
+            label={`Messages, ${messaging.state.unread} unread`}
+            color="#fff"
+            onPress={() => setTab("Messages")}
+          />
+          <Unread count={messaging.state.unread} />
+        </View>
+        <IconButton
+          name="logout"
+          label="Logout"
+          color="#cbd5e1"
+          onPress={logout}
+        />
+      </View>
+      {tab !== "Messages" && (
+        <View
+          style={{
+            paddingHorizontal: 14,
+            paddingVertical: 9,
+            gap: 7,
+            backgroundColor: "#fff",
+            borderBottomWidth: 1,
+            borderBottomColor: "#e2e8f0",
+          }}
+        >
+          <View style={[styles.row, { flexWrap: "nowrap" }]}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Select child"
+              disabled={!selectionReady}
+              onPress={() => setChoosing(true)}
+              style={{
+                flex: 1,
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 8,
+                minHeight: 44,
+                borderWidth: 1,
+                borderColor: "#e2e8f0",
+                borderRadius: 12,
+                padding: 8,
+              }}
+            >
+              <Avatar name={child ? childName(child) : "?"} size={28} />
+              <Label style={{ flex: 1 }}>
+                {child ? childName(child) : "Select child"}
+              </Label>
+              <Icon name="down" size={18} />
+            </Pressable>
+            <IconButton
+              name="add"
+              label="Link Child via LRN"
+              color={primary}
+              onPress={() => setLinking(true)}
+            />
+          </View>
+          {!!storageError && <Notice>{storageError}</Notice>}
+        </View>
+      )}
+      <View style={{ flex: 1 }}>
+        {tab === "Messages" ? (
+          <MessagesScreen
+            user={user}
+            client={messaging.client}
+            back={() => setTab("Dashboard")}
+          />
+        ) : tab === "Dashboard" ? (
+          <Screen>
+            <Heading
+              title={`Hello, ${user.full_name || "Parent"}`}
+              subtitle="Small steps today. Growing confidence for tomorrow."
+            />
+            <Badge>
+              {child?.school_year ? `SY ${child.school_year} · ` : ""}
+              Kindergarten
+            </Badge>
+            <Feedback {...state} />
+            {child ? (
+              <>
+                <Card>
+                  <View
+                    style={[
+                      styles.row,
+                      { alignItems: "flex-start", flexWrap: "nowrap" },
+                    ]}
+                  >
+                    <Avatar name={childName(child)} />
+                    <View style={{ flex: 1, gap: 4 }}>
+                      <TitleName name={childName(child)} />
+                      <Copy>
+                        {child.section_name ||
+                          child.class_name ||
+                          "Section not assigned"}
+                      </Copy>
+                      <Copy>
+                        Adviser:{" "}
+                        {child.adviser_name ||
+                          `${child.teacher_fname || ""} ${child.teacher_lname || ""}`.trim() ||
+                          "Not assigned"}
+                      </Copy>
+                      {child.allow_parent_view_student_info && (
+                        <Copy>LRN: {child.masked_lrn}</Copy>
+                      )}
+                      <Badge
+                        icon="check"
+                        color={child.is_active ? "#15803d" : "#64748b"}
+                      >
+                        {child.is_active ? "Active" : "Inactive"}
+                      </Badge>
+                    </View>
+                  </View>
+                  <Button
+                    title="Link Child · SYNC"
+                    icon="sync"
+                    secondary
+                    onPress={() => setLinking(true)}
+                  />
+                </Card>
+                <DashboardTab
+                  child={child}
+                  revision={revision}
+                  home={() => setTab("Home Observations")}
+                  insights={() => setTab("ML Insights")}
+                  results={() => setTab("ECCD Results")}
+                  messages={() => setTab("Messages")}
+                />
+              </>
+            ) : (
+              !state.loading && (
+                <Card>
+                  <Heading title="Awaiting Connection…" icon="child" />
+                  <Copy>
+                    No eligible linked children are available. Ask your child’s
+                    adviser to confirm the family link and active section
+                    assignment.
+                  </Copy>
+                  <Button
+                    title="Link Child"
+                    icon="add"
+                    onPress={() => setLinking(true)}
+                  />
+                </Card>
+              )
+            )}
+          </Screen>
+        ) : child ? (
+          <View
+            key={`${user.id}_${child.student_id}_${tab}`}
+            style={{ flex: 1 }}
+          >
+            {tab === "Child Profile" ? (
+              <ProfileScreen child={child} user={user} changed={state.reload} />
+            ) : tab === "Home Observations" ? (
+              <HomeScreen
+                child={child}
+                user={user}
+                changed={() => setRevision((n) => n + 1)}
+              />
+            ) : tab === "ECCD Results" ? (
+              <ResultsTab
+                child={child}
+                home={() => setTab("Home Observations")}
+              />
+            ) : (
+              <InsightsTab child={child} />
+            )}
+          </View>
+        ) : (
+          <Screen>
+            <Notice>
+              No eligible linked child selected. Return to Dashboard to link a
+              child.
+            </Notice>
+          </Screen>
+        )}
+      </View>
+      {!keyboard && (
+        <View
+          accessibilityRole="tablist"
+          style={{
+            flexDirection: "row",
+            backgroundColor: "#fff",
+            borderTopWidth: 1,
+            borderTopColor: "#e2e8f0",
+            paddingVertical: 4,
+            elevation: 6,
+          }}
+        >
+          {navigation.map((item) => {
+            const active =
+              tab === item.tab ||
+              (item.tab === "ECCD Results" && tab === "Home Observations");
+            return (
+              <Pressable
+                key={item.tab}
+                accessibilityRole="tab"
+                accessibilityLabel={item.title}
+                accessibilityState={{ selected: active }}
+                onPress={() => setTab(item.tab)}
+                style={{
+                  flex: 1,
+                  minHeight: 52,
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 4,
+                  paddingHorizontal: 2,
+                }}
+              >
+                <View>
+                  <Icon
+                    name={item.icon}
+                    color={active ? primary : "#64748b"}
+                    size={22}
+                  />
+                  {item.tab === "Messages" && (
+                    <Unread count={messaging.state.unread} />
+                  )}
+                </View>
+                <Text
+                  style={{
+                    fontFamily: active ? fonts.bold : fonts.medium,
+                    fontSize: 10,
+                    color: active ? primary : "#64748b",
+                    textAlign: "center",
+                  }}
+                >
+                  {item.title}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      )}
+      {choosing && (
+        <Dialog title="My Children" close={() => setChoosing(false)}>
+          <Copy>{children.length} children synced · Select Child</Copy>
+          {children.map((c) => (
+            <Card key={c.student_id}>
+              <Button
+                secondary={child?.student_id !== c.student_id}
+                title={childName(c)}
+                onPress={() => select(c.student_id)}
+              />
+              <Copy>
+                {c.section_name || c.class_name || "Section not assigned"} ·{" "}
+                {c.school_year || "School year not assigned"}
+              </Copy>
+              <Copy>
+                Adviser:{" "}
+                {c.adviser_name ||
+                  `${c.teacher_fname || ""} ${c.teacher_lname || ""}`.trim() ||
+                  "Not assigned"}
+              </Copy>
+              <Badge color={c.is_active ? "#15803d" : "#64748b"}>
+                {c.is_active ? "Active" : "Inactive"}
+              </Badge>
+            </Card>
+          ))}
+          <Button
+            icon="add"
+            title="Link Child"
+            onPress={() => {
+              setChoosing(false);
+              setLinking(true);
+            }}
+          />
+        </Dialog>
+      )}
+      {linking && (
+        <LinkChild
+          user={user}
+          close={() => setLinking(false)}
+          linked={async (id) => {
+            await state.reload();
+            select(id);
+            setTab("Dashboard");
+          }}
+        />
+      )}
+    </View>
+  );
+}
+function TitleName({ name }: { name: string }) {
+  return <Label style={{ fontSize: 16 }}>{name}</Label>;
 }

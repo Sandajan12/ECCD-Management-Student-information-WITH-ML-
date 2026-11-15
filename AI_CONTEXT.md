@@ -66,6 +66,11 @@ section-period and per-question gates. Messaging payloads use contacts.myId as
 parent profile ID, not the account ID; socket auth uses only the RAM access JWT
 and reconnects on renewal. Build/signing instructions, API configuration and
 validation boundaries are in that directory's README.
+Its native UI follows the responsive parent website: bundled Poppins/vector icons,
+dynamic school branding, dark header, five bottom tabs, child/link dialogs,
+permission-aware status/results cards, structured household forms, sticky manual
+saves and keyboard-safe chat. UI_PARITY.md records source references and phone
+acceptance limits; native storage/auth/permission services retain their contracts.
 Backend routes, schema, scoring, ML artifacts and website behavior are unchanged.
 
 | Layer | Implementation / authority |

@@ -1,4 +1,72 @@
-# Phase 2 local release verification
+# Parent web UI parity — local release verification
+
+Date: **2026-11-15**. Branch: **feat/parent-native-android**.
+Foundation: Phase 2 `7c882bc`. App: **AMES Parent 1.2.0 (version code 3)**.
+
+## Executed UI release checks
+
+| Check | Result |
+| --- | --- |
+| `pnpm.cmd exec tsc --noEmit` | Passed, including the final UI feedback refinements |
+| `pnpm.cmd test` | 27 passed; existing auth/permission/profile/draft/messaging coverage plus Philippine timestamp/status presentation checks |
+| `gradlew.bat testReleaseUnitTest assembleRelease` | First build passed in 4m 50s, 4 native tests passed; final bundle rebuild passed in 1m 29s (161 tasks, 9 executed/152 current, unchanged native tests reused) |
+| Native release lint / R8 | Passed; existing upstream deprecation warnings only |
+| `apksigner.bat verify --verbose --print-certs` | Verifies, APK v2, one RSA-4096 signer; same certificate as Phases 1–2 |
+| `zipalign.exe -c -P 16 4` | Passed, exit 0 |
+| APK badging | AMES Parent; `com.ameskinder.parent.native`; 1.2.0/code 3; min 26/target 35/compile 36; ARM64 + ARMv7 |
+| Packaged assets | Hermes bundle 1,279,880 bytes matches generated output; sourcemap matches all 19 application files; all five fonts match source bytes; all 30 referenced icon glyphs exist |
+| Isolation | No tracked or untracked changes in backend/frontend; protected branch refs unchanged; existing untracked TWA unchanged by a recursive 10,079-file SHA-256 fingerprint |
+
+Signed APK (ignored by Git):
+
+```text
+C:\Users\user\Desktop\AMES with ML\mobile\parent-native-android\android\app\build\outputs\apk\release\app-release.apk
+```
+
+Size: **24,851,151 bytes**. SHA-256:
+
+```text
+a8b8083415df735c2401edcb722eb626fa4145dd0eadab91c0e4b51a439c273f
+```
+
+Signer certificate SHA-256:
+
+```text
+a58b8be298272fd4ebc9b15764fb269a36373d630bf321bbdc17d62980574fa8
+```
+
+Built with the existing external backup (credentials remain outside Git):
+
+```text
+C:\Users\user\AMES-Android-Keys\parent-native-android\ames-parent-native-release-backup.jks
+```
+
+Rebuild commands remain in README.md. Install as an update without uninstalling
+or clearing data. Main remains `c5d9279`, older Android branch remains `0f4629c`.
+The requested completely clean older TWA status was impossible at session start:
+its pre-existing untracked files were preserved, neither added nor removed.
+The folder fingerprint before/after is
+`aff4ddcd81040c4fadcf7d49df3cc19169d872e91779fe4877c3569dda085365`.
+
+UI source mapping, native adjustments and phone acceptance scenarios are in
+[UI_PARITY.md](UI_PARITY.md). No new npm package, service architecture or replay
+mechanism was added. Cookie bridge, session, storage, permission, home-submission,
+profile validation/diff and messaging service files are unchanged from Phase 2.
+The composer additionally checks its captured recipient after persisting input
+so navigating to another thread cannot redirect that pending send.
+
+No emulator is installed locally. There was no phone rendering/pixel comparison,
+real account/OTP, live authenticated Socket.IO or school data verification. Unit
+tests do not prove actual Android storage/Keystore or keyboard/Back behavior.
+No backend/frontend build/tests, Playwright, pytest, provider operation, database
+operation, push, app uninstall or data clearing was performed.
+
+---
+
+# Historical Phase 2 local release verification
+
+The APK path below has been replaced by the UI release above; historical hashes
+and version numbers describe the previous build only.
 
 Date: **2026-11-15**. Branch: **feat/parent-native-android**.
 Foundation: `4766901`. App: **AMES Parent 1.1.0 (version code 2)**.

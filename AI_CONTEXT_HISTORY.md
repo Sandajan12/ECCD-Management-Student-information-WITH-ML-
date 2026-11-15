@@ -1,5 +1,25 @@
 # AMES Context History
 
+## 2026-11-15 — Native parent mobile UI parity (local)
+
+Upgraded Phase 2 `7c882bc` on `feat/parent-native-android` to AMES Parent
+1.2.0/code 3. Read-only web references informed bundled Poppins/Material Icons,
+dynamic branding, dark header/five bottom tabs, child and LRN dialogs, auth/OTP,
+dashboard progress, structured household forms, sticky home/profile actions,
+release-aware summaries/matrix, insights and keyboard-safe contact/thread chat.
+Existing cookie/session/permission/draft/messaging services remain unchanged;
+manual submission and revision cleanup are preserved. No npm dependency added.
+
+Executed: TypeScript and 27 Node tests passed; 4 native JVM tests passed; signed
+release/R8/lint succeeded. Signature, unchanged certificate and 16 KiB ZIP
+alignment verified; bundled source/fonts matched. APK SHA-256 is
+`a8b8083415df735c2401edcb722eb626fa4145dd0eadab91c0e4b51a439c273f`.
+Exact APK/key paths and limits are in the app's RELEASE_VERIFICATION.md and
+UI_PARITY.md. No phone/emulator rendering or live-account acceptance occurred.
+Backend/frontend/protected refs unchanged; a recursive fingerprint confirms the
+pre-existing untracked older TWA was preserved. No provider/database operations,
+Playwright/pytest, push, uninstall or data clearing.
+
 ## 2026-11-15 — React Native Android parent app, Phase 2 (local)
 
 Extended `4766901` on `feat/parent-native-android` only inside the isolated native

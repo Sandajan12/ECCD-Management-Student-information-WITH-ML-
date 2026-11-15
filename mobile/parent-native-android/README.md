@@ -1,7 +1,7 @@
 # AMES Parent — React Native Android, Phases 1–2
 
 Standalone React Native **0.86.3** / React **19.2.3** / TypeScript app. Android
-package `com.ameskinder.parent.native`, version **1.1.0 (2)**, minimum Android 8
+package `com.ameskinder.parent.native`, version **1.2.0 (3)**, minimum Android 8
 (API 26), compile SDK 36, target SDK 35. The APK bundles Hermes and JavaScript;
 Metro and a browser are not required on the phone. Both ARM64 and ARMv7 phones
 are supported. The Java/Kotlin namespace ends in `nativeapp` because `native` is
@@ -13,6 +13,13 @@ steps are involved. The school seal was copied through `git show` from
 `feat/parent-android-app`, without switching or changing that branch.
 
 ## Implemented
+
+The native presentation now mirrors the parent website's mobile design: bundled
+Poppins/Material Icons, dark school header and five bottom tabs, child switcher,
+auth cards/OTP cells, native link/submit dialogs, compact status/progress cards,
+structured household forms, sticky saves, and contact/thread chat. See
+[UI_PARITY.md](UI_PARITY.md) for source references, Android adjustments and the
+explicit phone acceptance boundary. There are no new npm dependencies.
 
 - Parent login, registration, email OTP and explicit staff account switching.
   Registration matches server name/combined-name/password/UTF-8 limits. The
