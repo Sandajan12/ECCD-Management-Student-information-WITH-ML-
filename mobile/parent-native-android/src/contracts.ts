@@ -5,7 +5,9 @@ export interface SessionResponse { success: true; access_token: string; user: Us
 export interface Challenge { success: true; requireOtp: true; challengeToken: string; email: string; emailSent?: boolean; code?: string; message?: string; }
 export type AuthResponse = SessionResponse | Challenge;
 export interface Credentials { email: string; password: string; terms_accepted: true; }
-export interface Registration extends Credentials { firstName: string; lastName: string; relationship: string; }
+export const RELATIONSHIPS = ['Father', 'Mother', 'Guardian'] as const;
+export type Relationship = (typeof RELATIONSHIPS)[number];
+export interface Registration extends Credentials { firstName: string; lastName: string; relationship: Relationship; }
 export interface Permissions {
   allow_parent_view_student_info: boolean;
   allow_parent_view_eccd_pre: boolean;

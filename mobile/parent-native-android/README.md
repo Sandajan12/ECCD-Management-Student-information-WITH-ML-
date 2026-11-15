@@ -1,7 +1,7 @@
 # AMES Parent — React Native Android, Phases 1–2
 
 Standalone React Native **0.86.3** / React **19.2.3** / TypeScript app. Android
-package `com.ameskinder.parent.native`, version **1.2.1 (4)**, minimum Android 8
+package `com.ameskinder.parent.native`, version **1.2.2 (5)**, minimum Android 8
 (API 26), compile SDK 36, target SDK 35. The APK bundles Hermes and JavaScript;
 Metro and a browser are not required on the phone. Both ARM64 and ARMv7 phones
 are supported. The Java/Kotlin namespace ends in `nativeapp` because `native` is
@@ -26,6 +26,13 @@ with a submit bar only while expanded; Assessment Progress also starts collapsed
 Overview has no Messages card. ECCD is exclusively read-only (official results
 and both home/school indicators). Child Information displays the current profile's
 teacher first/last name, with the optional adviser name or Not assigned fallback.
+
+Pull down from the top of any authenticated data page (including empty states,
+contacts and chat history) to refresh. Refresh buttons are removed; polling/live
+messages remain active. Refresh preserves inputs and never submits drafts or runs
+ML inference. Registration offers Father/Mother/Guardian (Guardian initially).
+Link Child asks only for the LRN: the backend inherits the registered relationship
+when the optional field is omitted, including for accounts created before this app.
 
 - Parent login, registration, email OTP and explicit staff account switching.
   Registration matches server name/combined-name/password/UTF-8 limits. The
@@ -87,7 +94,7 @@ failures retain the pending request and show the audited reconnect/manual-submit
 message. No storage enumerator, startup replay or reconnection replay exists.
 Logout/access loss preserves drafts. Storage failures warn that only RAM remains;
 unreadable saved data is retained and editing is blocked until it can be loaded.
-Use Refresh to recover a confirmed send with an uncertain HTTP result before
+Pull down to refresh history after a send with an uncertain HTTP result before
 manually retrying: the existing message API has no client idempotency key.
 
 ## Authentication boundary

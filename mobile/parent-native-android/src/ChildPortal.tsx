@@ -26,7 +26,7 @@ import { Feedback, useResource } from "./resources";
 import { LinkChild, ProfileScreen } from "./ProfileScreen";
 import { OverviewScreen } from "./OverviewScreen";
 import { MessagesScreen, useMessaging } from "./MessagesScreen";
-import { OverviewSummary, InsightsTab, ResultsTab } from "./AssessmentScreens";
+import { InsightsTab, ResultsTab } from "./AssessmentScreens";
 import { adviserName } from "./presentation";
 
 type Tab =
@@ -75,8 +75,7 @@ export function ChildPortal({
   const [selected, setSelected] = useState<number>(0),
     [tab, setTab] = useState<Tab>("Overview");
   const [linking, setLinking] = useState(false),
-    [choosing, setChoosing] = useState(false),
-    [revision, setRevision] = useState(0);
+    [choosing, setChoosing] = useState(false);
   const messaging = useMessaging(),
     brand = useContext(SchoolBrand),
     primary = useContext(BrandColor);
@@ -281,6 +280,7 @@ export function ChildPortal({
           <MessagesScreen
             user={user}
             client={messaging.client}
+            refreshChildren={state.reload}
             back={() => setTab("Overview")}
           />
         ) : tab === "Overview" ? (
@@ -290,17 +290,12 @@ export function ChildPortal({
               child={child}
               user={user}
               header={overviewHeader}
-              changed={() => setRevision((n) => n + 1)}
-            >
-              <OverviewSummary
-                child={child}
-                revision={revision}
-                insights={() => setTab("ML Insights")}
-                results={() => setTab("ECCD Results")}
-              />
-            </OverviewScreen>
+              refreshChildren={state.reload}
+              insights={() => setTab("ML Insights")}
+              results={() => setTab("ECCD Results")}
+            />
           ) : (
-            <Screen>
+            <Screen onRefresh={state.reload}>
               {overviewHeader}
               {!state.loading && (
                 <Card>
@@ -327,13 +322,13 @@ export function ChildPortal({
             {tab === "Child Profile" ? (
               <ProfileScreen child={child} user={user} changed={state.reload} />
             ) : tab === "ECCD Results" ? (
-              <ResultsTab child={child} />
+              <ResultsTab child={child} refreshChildren={state.reload} />
             ) : (
-              <InsightsTab child={child} />
+              <InsightsTab child={child} refreshChildren={state.reload} />
             )}
           </View>
         ) : (
-          <Screen>
+          <Screen onRefresh={state.reload}>
             <Notice>
               No eligible linked child selected. Return to Overview to link a
               child.

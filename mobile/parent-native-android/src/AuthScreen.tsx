@@ -6,6 +6,7 @@ import {
   Button,
   Card,
   Copy,
+  Dialog,
   Icon,
   Input,
   Label,
@@ -17,12 +18,28 @@ import {
 } from "./ui";
 import { session } from "./session";
 import { ApiError, messageOf } from "./sessionCore";
-import { registrationError } from "./policy";
-import type { Challenge, Credentials, Registration } from "./contracts";
+import { registrationError, registrationPayload } from "./policy";
+import { RELATIONSHIPS } from "./contracts";
+import type {
+  Challenge,
+  Credentials,
+  Registration,
+  Relationship,
+} from "./contracts";
+
+interface AuthForm {
+  email: string;
+  password: string;
+  firstName: string;
+  lastName: string;
+  relationship: Relationship;
+  confirm: string;
+  accepted: boolean;
+}
 
 export function AuthScreen() {
   const [register, setRegister] = useState(false);
-  const [form, setForm] = useState({
+  const [form, setForm] = useState<AuthForm>({
     email: "",
     password: "",
     firstName: "",
@@ -35,6 +52,7 @@ export function AuthScreen() {
   const [otp, setOtp] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [choosingRelationship, setChoosingRelationship] = useState(false);
   const [retryAt, setRetryAt] = useState(0);
   const [now, setNow] = useState(Date.now());
   const [submitted, setSubmitted] = useState<{
@@ -66,7 +84,7 @@ export function AuthScreen() {
     return () => clearInterval(timer);
   }, []);
   const seconds = Math.max(0, Math.ceil((retryAt - now) / 1000));
-  const field = (key: keyof typeof form, value: string | boolean) =>
+  const field = <K extends keyof AuthForm>(key: K, value: AuthForm[K]) =>
     setForm((old) => ({ ...old, [key]: value }));
   const fail = (e: unknown) => {
     setError(messageOf(e));
@@ -125,14 +143,7 @@ export function AuthScreen() {
       }
     }
     const body: Credentials | Registration = register
-      ? {
-          email,
-          password: form.password,
-          firstName: form.firstName.trim(),
-          lastName: form.lastName.trim(),
-          relationship: form.relationship.trim() || "Guardian",
-          terms_accepted: true,
-        }
+      ? registrationPayload(form)
       : { email, password: form.password, terms_accepted: true };
     setBusy(true);
     setError("");
@@ -295,14 +306,59 @@ export function AuthScreen() {
               autoComplete="family-name"
               editable={!busy}
             />
-            <Input
-              icon="home"
-              label="Relationship to child"
-              value={form.relationship}
-              onChangeText={(v) => field("relationship", v)}
-              maxLength={50}
-              editable={!busy}
-            />
+            <View style={{ gap: 6 }}>
+              <Label>Relationship to child</Label>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Choose relationship to child"
+                accessibilityValue={{ text: form.relationship }}
+                accessibilityState={{
+                  expanded: choosingRelationship,
+                  disabled: busy,
+                }}
+                disabled={busy}
+                onPress={() => setChoosingRelationship(true)}
+                style={[styles.inputBox, { minHeight: 48 }]}
+              >
+                <Icon name="home" />
+                <Label style={{ flex: 1 }}>{form.relationship}</Label>
+                <Icon name="down" />
+              </Pressable>
+            </View>
+            {choosingRelationship && (
+              <Dialog
+                title="Relationship to child"
+                close={() => setChoosingRelationship(false)}
+                locked={busy}
+              >
+                <View accessibilityRole="radiogroup">
+                  {RELATIONSHIPS.map((value) => (
+                    <Pressable
+                      key={value}
+                      accessibilityRole="radio"
+                      accessibilityState={{
+                        checked: form.relationship === value,
+                        disabled: busy,
+                      }}
+                      disabled={busy}
+                      onPress={() => {
+                        field("relationship", value);
+                        setChoosingRelationship(false);
+                      }}
+                      style={[
+                        styles.row,
+                        { minHeight: 48, justifyContent: "space-between" },
+                      ]}
+                    >
+                      <Label>{value}</Label>
+                      {form.relationship === value && (
+                        <Icon name="check" color={color} />
+                      )}
+                    </Pressable>
+                  ))}
+                </View>
+              </Dialog>
+            )}
           </>
         )}
         <Input

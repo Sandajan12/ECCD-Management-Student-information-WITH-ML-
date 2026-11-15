@@ -33,3 +33,6 @@ export function profilePayload(values: ProfileValues, baseline: ProfileValues): 
     .map(key => [key, normalize(key, values[key])])) as ProfilePayload;
 }
 export function linkError(lrn: string): string { return /^[0-9]{12}$/.test(lrn.trim()) ? '' : 'Enter exactly 12 ASCII digits for the LRN.'; }
+export function linkPayload(values: {lrn_number: string}): {lrn_number: string} {
+  return {lrn_number: values.lrn_number.trim()};
+}

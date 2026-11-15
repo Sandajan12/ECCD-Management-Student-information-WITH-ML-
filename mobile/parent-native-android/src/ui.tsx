@@ -1,4 +1,10 @@
-import React, { createContext, useContext, useRef, useState } from "react";
+import React, {
+  createContext,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import {
   ActivityIndicator,
   Image,
@@ -6,6 +12,7 @@ import {
   Modal,
   Platform,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -63,7 +70,6 @@ const glyphs = {
   logout: "\ue9ba",
   send: "\ue163",
   save: "\ue161",
-  refresh: "\ue5d5",
   school: "\ue80c",
   star: "\ue838",
   support: "\ue8b4",
@@ -549,17 +555,57 @@ export function Segments<T extends string>({
     </View>
   );
 }
+export function usePullRefresh(action?: () => Promise<void>) {
+  const [refreshing, setRefreshing] = useState(false);
+  const flight = useRef<Promise<void> | null>(null),
+    mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+  const onRefresh = () => {
+    if (!action || flight.current) return;
+    setRefreshing(true);
+    // Resource and messaging loaders surface their own error/permission states.
+    flight.current = Promise.resolve()
+      .then(action)
+      .catch(() => {})
+      .finally(() => {
+        flight.current = null;
+        if (mounted.current) setRefreshing(false);
+      });
+  };
+  return { refreshing, onRefresh };
+}
 export function Screen({
   children,
   footer,
+  onRefresh,
 }: {
   children: React.ReactNode;
   footer?: React.ReactNode;
+  onRefresh?: () => Promise<void>;
 }) {
+  const color = useContext(BrandColor),
+    pull = usePullRefresh(onRefresh);
   return (
     <View style={{ flex: 1 }}>
       <ScrollView
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[styles.content, { flexGrow: 1 }]}
+        alwaysBounceVertical
+        refreshControl={
+          onRefresh ? (
+            <RefreshControl
+              refreshing={pull.refreshing}
+              onRefresh={pull.onRefresh}
+              colors={[color]}
+              tintColor={color}
+              accessibilityLabel="Pull down to refresh"
+            />
+          ) : undefined
+        }
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
       >

@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from "react";
 import { Pressable, View } from "react-native";
-import type { Assessment, Child, Period, User } from "./contracts";
+import type { Assessment, Child, Dashboard, Period, User } from "./contracts";
 import { session } from "./session";
 import { messageOf } from "./sessionCore";
 import { drafts, useDraft } from "./drafts";
@@ -8,6 +8,7 @@ import { homeKey, HomeObservations } from "./homeObservations";
 import type { HomeValues } from "./homeObservations";
 import { homeLock, visibleMark, WINDOWS } from "./policy";
 import { Feedback, useResource } from "./resources";
+import { OverviewSummary } from "./AssessmentScreens";
 import {
   Badge,
   Button,
@@ -66,7 +67,8 @@ function HomeDomain({
         <Notice>
           Your draft is saved on this device. Reconnect and submit again. A
           previous submission is unconfirmed. Drafts never send automatically.
-          Refresh the saved answers, then submit eligible observations manually.
+          Pull down to refresh the saved answers, then submit eligible
+          observations manually.
         </Notice>
       )}
       {!!snapshot?.error && <Notice error>{snapshot.error}</Notice>}
@@ -154,18 +156,24 @@ function HomeDomain({
 export function OverviewScreen({
   child,
   user,
-  changed,
+  refreshChildren,
   header,
-  children,
+  insights,
+  results,
 }: {
   child: Child;
   user: User;
-  changed: () => void;
+  refreshChildren: () => Promise<void>;
   header: React.ReactNode;
-  children: React.ReactNode;
+  insights: () => void;
+  results: () => void;
 }) {
   const state = useResource<Assessment>(
     `/api/eccd/parent/assessment/${child.student_id}`,
+    JSON.stringify(child),
+  );
+  const dashboard = useResource<Dashboard>(
+    `/api/eccd/parent/dashboard-stats/${child.student_id}`,
     JSON.stringify(child),
   );
   const [period, setPeriod] = useState<Period>("PRE");
@@ -187,14 +195,13 @@ export function OverviewScreen({
     try {
       await service.submit(child, state.data, period);
       setNotice("Observations saved. Confirmed answers are now locked.");
-      changed();
       const refreshed = await Promise.allSettled([
         state.reload(),
-        session.request(`/api/eccd/parent/dashboard-stats/${child.student_id}`),
+        dashboard.reload(),
       ]);
       if (refreshed.some((result) => result.status === "rejected"))
         setNotice(
-          "Observations saved. Reconnect and refresh to load the latest dashboard.",
+          "Observations saved. Reconnect and pull down to refresh Overview.",
         );
     } catch (error) {
       setNotice(messageOf(error));
@@ -211,6 +218,13 @@ export function OverviewScreen({
     !state.data.parent_assessment_access[WINDOWS[period]];
   return (
     <Screen
+      onRefresh={async () => {
+        await Promise.all([
+          refreshChildren(),
+          state.reload(),
+          dashboard.reload(),
+        ]);
+      }}
       footer={
         expanded && (
           <>
@@ -293,7 +307,12 @@ export function OverviewScreen({
           ))}
         </>
       )}
-      {children}
+      <OverviewSummary
+        child={child}
+        state={dashboard}
+        insights={insights}
+        results={results}
+      />
       {confirming && (
         <Dialog title="Submit Answers" close={() => setConfirming(false)}>
           <Copy>

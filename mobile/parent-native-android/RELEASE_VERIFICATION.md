@@ -1,4 +1,72 @@
-# Overview and adviser correction — local release verification
+# Pull-to-refresh and relationship correction — local release verification
+
+Date: **2026-11-15**. Branch: **feat/parent-native-android**.
+Foundation: `214a324`. App: **AMES Parent 1.2.2 (version code 5)**.
+
+## Executed refresh/form release checks
+
+| Check | Result |
+| --- | --- |
+| `pnpm.cmd exec tsc --noEmit` | Passed |
+| `pnpm.cmd test` | 30 passed; includes all three registration relationship payloads, password-byte preservation and legacy link-draft LRN preservation/relationship omission |
+| `gradlew.bat testReleaseUnitTest assembleRelease` | BUILD SUCCESSFUL in 3m 4s; 161 tasks (29 executed/132 current); 4 native tests passed, no failures/errors/skips |
+| Release lint / R8 | Passed; existing upstream deprecations only |
+| `apksigner.bat verify --verbose --print-certs` | Verifies, APK v2, one RSA-4096 signer; unchanged certificate |
+| `zipalign.exe -c -P 16 4` | Passed, exit 0 |
+| APK badging | AMES Parent; `com.ameskinder.parent.native`; 1.2.2/code 5; min 26/target 35/compile 36; ARM64 + ARMv7 |
+| Packaged source/assets | 1,284,180-byte Hermes bundle matches generated output; sourcemap matches all 19 application files; five fonts match source |
+| Static UI review | Every data Screen has an onRefresh handler; chat history has RefreshControl; no refresh button/icon; Overview dashboard loading owned by its screen, without a duplicate summary loader |
+| Isolation | Backend/frontend unchanged, no untracked additions there; protected refs unchanged; existing older untracked TWA matched its original fingerprint |
+
+Signed APK (ignored by Git):
+
+```text
+C:\Users\user\Desktop\AMES with ML\mobile\parent-native-android\android\app\build\outputs\apk\release\app-release.apk
+```
+
+Size: **24,855,451 bytes**. SHA-256:
+
+```text
+bfad34910f38716d8edcef6a4c86c90366dcb544c5165c4431e9a551dfabee1c
+```
+
+Same signer certificate SHA-256:
+
+```text
+a58b8be298272fd4ebc9b15764fb269a36373d630bf321bbdc17d62980574fa8
+```
+
+Reused the existing external backup keystore and signing properties documented
+below/in README; no key or credential changes. Install over the existing app
+without clearing data. Older TWA fingerprint (10,079 files) before/after:
+`aff4ddcd81040c4fadcf7d49df3cc19169d872e91779fe4877c3569dda085365`.
+
+Pull-to-refresh reloads the current GET resources/eligible children, keeps valid
+cached data on transient failure and preserves drafts/view state. ML reloads
+readiness without inference; messaging refreshes contacts/unread/history without
+composer submission. Existing read receipts, polling, socket updates and token
+renewal remain. A shared hook guards overlapping gestures and clears loading in
+finally; unmounted screens do not receive loading-state updates.
+
+Registration dropdown sends Father/Mother/Guardian (Guardian initially). Linking
+sends only LRN and restores old LRN drafts while ignoring their relationship.
+Read-only source tracing confirmed `/api/parents/children/link` excludes unset
+fields before forwarding and inherits the stored parent relationship. No backend
+change or live account/database operation was needed. No npm dependency added.
+
+Gesture/loading/dropdown interactions were not exercised on a phone/emulator;
+static review and service tests do not prove native interaction acceptance.
+UI_PARITY.md lists empty/short pages, repeated gestures, failures, child/tab
+switches, input preservation and existing-account relationship checks. No live
+OTP/school account/socket acceptance, provider calls, Playwright/pytest, push,
+uninstall or data clearing occurred.
+
+---
+
+# Historical Overview and adviser correction — local release verification
+
+The shared output path now holds the release above; the following version/hash
+describes the previous 1.2.1/code 4 artifact only.
 
 Date: **2026-11-15**. Branch: **feat/parent-native-android**.
 Foundation: UI release `6b7a467`. App: **AMES Parent 1.2.1 (version code 4)**.

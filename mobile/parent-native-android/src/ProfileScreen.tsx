@@ -7,6 +7,7 @@ import { draft, OFFLINE_MESSAGE } from "./draftStore";
 import { drafts, useDraft } from "./drafts";
 import {
   linkError,
+  linkPayload,
   PROFILE_FIELDS,
   profilePayload,
   profileValues,
@@ -34,7 +35,6 @@ import {
 
 interface LinkValues {
   lrn_number: string;
-  relationship_type: string;
 }
 export function LinkChild({
   user,
@@ -47,10 +47,7 @@ export function LinkChild({
 }) {
   const key = `ames_draft_${user.id}_parent_link`;
   const { snapshot, ready, storageError } = useDraft<LinkValues>(key, user.id);
-  const values = snapshot?.values || {
-    lrn_number: "",
-    relationship_type: "Guardian",
-  };
+  const values: LinkValues = { lrn_number: snapshot?.values.lrn_number || "" };
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
   const [status, setStatus] = useState<"SYNCED" | "PENDING" | null>(null);
@@ -77,10 +74,7 @@ export function LinkChild({
       const response = await session.request<LinkResponse>(
         "/api/parents/children/link",
         "POST",
-        {
-          lrn_number: values.lrn_number.trim(),
-          relationship_type: values.relationship_type.trim() || "Guardian",
-        },
+        linkPayload(values),
       );
       await drafts.confirm(key, user.id, saved.revision);
       setAttempted(false);
@@ -113,15 +107,6 @@ export function LinkChild({
         keyboardType="number-pad"
         editable={ready && !busy}
         onChangeText={(lrn_number) => change({ ...values, lrn_number })}
-      />
-      <Input
-        icon="child"
-        label="Relationship (optional)"
-        value={values.relationship_type}
-        editable={ready && !busy}
-        onChangeText={(relationship_type) =>
-          change({ ...values, relationship_type })
-        }
       />
       {status && (
         <Badge
@@ -252,6 +237,9 @@ export function ProfileScreen({
   };
   return (
     <Screen
+      onRefresh={async () => {
+        await Promise.all([state.reload(), changed()]);
+      }}
       footer={
         visible && (
           <>

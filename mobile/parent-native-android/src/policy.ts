@@ -1,4 +1,4 @@
-import type {Assessment, Child, Period, Question, Readiness} from './contracts';
+import type {Assessment, Child, Period, Question, Readiness, Registration} from './contracts';
 
 export const VIEW_FLAGS = {PRE: 'allow_parent_view_eccd_pre', MID: 'allow_parent_view_eccd_mid', POST: 'allow_parent_view_eccd_post'} as const;
 export const WINDOWS = {PRE: 'pre_test_parent_editable', MID: 'mid_test_parent_editable', POST: 'post_test_parent_editable'} as const;
@@ -24,6 +24,9 @@ export function canPredict(child: Child, readiness: Readiness): boolean {
   return child.allow_parent_predictions && child.allow_parent_view_eccd_pre && readiness.allow_parent_predictions && readiness.is_published && readiness.pre_complete;
 }
 const length = (s: string) => [...s].length;
+export function registrationPayload(value: Pick<Registration, 'email' | 'password' | 'firstName' | 'lastName' | 'relationship'>): Registration {
+  return {email: value.email.trim().toLowerCase(), password: value.password, firstName: value.firstName.trim(), lastName: value.lastName.trim(), relationship: value.relationship, terms_accepted: true};
+}
 export function registrationError(first: string, last: string, password: string): string | null {
   for (const name of [first.trim(), last.trim()]) {
     if (!name || length(name) > 100 || !/\p{L}/u.test(name) || /[^\p{L}\p{M} .'-]/u.test(name))

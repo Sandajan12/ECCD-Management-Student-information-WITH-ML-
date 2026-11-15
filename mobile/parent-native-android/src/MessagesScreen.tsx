@@ -1,4 +1,5 @@
 import React, {
+  useContext,
   useEffect,
   useRef,
   useState,
@@ -11,6 +12,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Pressable,
+  RefreshControl,
   Text,
   View,
 } from "react-native";
@@ -24,6 +26,7 @@ import { draft, OFFLINE_MESSAGE } from "./draftStore";
 import {
   Avatar,
   Badge,
+  BrandColor,
   Copy,
   Heading,
   Icon,
@@ -35,6 +38,7 @@ import {
   Screen,
   fonts,
   styles,
+  usePullRefresh,
 } from "./ui";
 import { displayTime } from "./presentation";
 export function useMessaging() {
@@ -118,7 +122,7 @@ function Composer({
       sent();
     } catch (failure) {
       setError(
-        `${messageOf(failure)} ${OFFLINE_MESSAGE} If the send result is uncertain, refresh history before retrying to avoid a duplicate.`,
+        `${messageOf(failure)} ${OFFLINE_MESSAGE} If the send result is uncertain, pull down to refresh history before retrying to avoid a duplicate.`,
       );
     } finally {
       setBusy(false);
@@ -175,16 +179,22 @@ export function MessagesScreen({
   user,
   client,
   back,
+  refreshChildren,
 }: {
   user: User;
   client: MessagingClient;
   back: () => void;
+  refreshChildren: () => Promise<void>;
 }) {
   const state = useSyncExternalStore(client.subscribe, client.snapshot);
   const [thread, setThread] = useState(false);
   const list = useRef<FlatList<Message>>(null),
     nearBottom = useRef(true);
   const showThread = Boolean(thread && state.teacher && state.contacts.myId);
+  const color = useContext(BrandColor);
+  const pull = usePullRefresh(async () => {
+    await Promise.all([client.recover(), refreshChildren()]);
+  });
   useEffect(() => {
     client.setViewing(showThread && AppState.currentState === "active");
     const listener = AppState.addEventListener("change", (value) =>
@@ -208,7 +218,11 @@ export function MessagesScreen({
   )?.name;
   if (!showThread)
     return (
-      <Screen>
+      <Screen
+        onRefresh={async () => {
+          await Promise.all([client.refresh(), refreshChildren()]);
+        }}
+      >
         <View style={[styles.row, { justifyContent: "space-between" }]}>
           <Heading title="Messages" icon="messages" />
           <Badge color="#4f46e5">{state.unread} unread</Badge>
@@ -217,13 +231,8 @@ export function MessagesScreen({
           <Copy>
             {state.connected
               ? "Live updates connected"
-              : "Offline · Refresh to check saved messages"}
+              : "Offline · Pull down to refresh saved messages"}
           </Copy>
-          <IconButton
-            name="refresh"
-            label="Refresh conversations"
-            onPress={() => void client.recover()}
-          />
         </View>
         {!!state.error && <Notice error>{state.error}</Notice>}
         {!state.contacts.contacts.length && (
@@ -292,14 +301,18 @@ export function MessagesScreen({
           <Label>{name || "Adviser"}</Label>
           <Copy style={{ fontSize: 10 }}>Active Message Thread</Copy>
         </View>
-        <IconButton
-          name="refresh"
-          label="Refresh message history"
-          onPress={() => void client.recover()}
-        />
       </View>
       {!!state.error && <Notice error>{state.error}</Notice>}
       <FlatList
+        refreshControl={
+          <RefreshControl
+            refreshing={pull.refreshing}
+            onRefresh={pull.onRefresh}
+            colors={[color]}
+            tintColor={color}
+            accessibilityLabel="Pull down to refresh messages"
+          />
+        }
         ref={list}
         data={state.messages}
         keyExtractor={(message) => String(message.message_id)}

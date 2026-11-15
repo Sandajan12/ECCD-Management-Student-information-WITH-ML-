@@ -74,6 +74,9 @@ acceptance limits; native storage/auth/permission services retain their contract
 Overview owns collapsed home-based editing and assessment progress; ECCD is
 read-only, and messaging stays in its own tab. Child Information derives Adviser
 from the current detail's teacher first/last name, with a nonblank fallback.
+Data screens use pull-to-refresh without refresh buttons, preserving drafts and
+live updates; ML refresh reloads readiness only. Registration offers Father/Mother/
+Guardian, and LRN linking omits relationship so the server inherits the account's.
 Backend routes, schema, scoring, ML artifacts and website behavior are unchanged.
 
 | Layer | Implementation / authority |

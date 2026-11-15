@@ -30,23 +30,20 @@ import {
   styles,
 } from "./ui";
 import { Feedback, useResource } from "./resources";
+import type { Resource } from "./resources";
 import { statusColor, tierColor } from "./presentation";
 
 export function OverviewSummary({
   child,
-  revision,
+  state,
   insights,
   results,
 }: {
   child: Child;
-  revision: number;
+  state: Resource<Dashboard>;
   insights: () => void;
   results: () => void;
 }) {
-  const state = useResource<Dashboard>(
-    `/api/eccd/parent/dashboard-stats/${child.student_id}`,
-    `${JSON.stringify(child)}_${revision}`,
-  );
   const data = state.data,
     primary = useContext(BrandColor);
   const [progressExpanded, setProgressExpanded] = useState(false);
@@ -167,7 +164,13 @@ export function OverviewSummary({
     </>
   );
 }
-export function ResultsTab({ child }: { child: Child }) {
+export function ResultsTab({
+  child,
+  refreshChildren,
+}: {
+  child: Child;
+  refreshChildren: () => Promise<void>;
+}) {
   const state = useResource<Assessment>(
     `/api/eccd/parent/assessment/${child.student_id}`,
     JSON.stringify(child),
@@ -177,7 +180,11 @@ export function ResultsTab({ child }: { child: Child }) {
   const [tab, setTab] = useState<"official" | "checklist">("official");
   const data = state.data;
   return (
-    <Screen>
+    <Screen
+      onRefresh={async () => {
+        await Promise.all([state.reload(), refreshChildren()]);
+      }}
+    >
       <Heading
         title="ECCD Assessment & Results"
         subtitle="Official evaluation summary and saved checklist observations."
@@ -466,7 +473,13 @@ function Metric({
     </View>
   );
 }
-export function InsightsTab({ child }: { child: Child }) {
+export function InsightsTab({
+  child,
+  refreshChildren,
+}: {
+  child: Child;
+  refreshChildren: () => Promise<void>;
+}) {
   const state = useResource<Readiness>(
     `/api/ml/parent/readiness/${child.student_id}`,
     JSON.stringify(child),
@@ -508,7 +521,11 @@ export function InsightsTab({ child }: { child: Child }) {
     }
   };
   return (
-    <Screen>
+    <Screen
+      onRefresh={async () => {
+        await Promise.all([state.reload(), refreshChildren()]);
+      }}
+    >
       <Heading
         title="Early Developmental Insights"
         subtitle="Milestone forecasts and supportive activities for home."

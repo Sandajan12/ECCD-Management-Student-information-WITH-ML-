@@ -62,7 +62,7 @@ export class MessagingClient {
     const live = () => generation === this.generation;
     socket.on('connect', () => {if (live()) {this.publish({connected: true, error: ''}); this.join(); void this.recover();}});
     socket.on('disconnect', () => {if (live()) this.publish({connected: false});});
-    socket.on('connect_error', error => {if (live()) this.publish({connected: false, error: `Live messaging unavailable: ${error.message}. Refresh to check messages.`});});
+    socket.on('connect_error', error => {if (live()) this.publish({connected: false, error: `Live messaging unavailable: ${error.message}. Pull down to refresh messages.`});});
     socket.on('receive_message', message => {
       if (!live() || message.parent_id !== this.state.contacts.myId) return;
       if (message.teacher_id === this.state.teacher) {

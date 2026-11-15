@@ -1,5 +1,24 @@
 # AMES Context History
 
+## 2026-11-15 — Native pull-to-refresh and parent relationship forms (local)
+
+Updated `214a324` on `feat/parent-native-android` to 1.2.2/code 5. Data refresh
+buttons were replaced with native pull-to-refresh for all data pages, empty
+states and message history. Overview owns assessment/dashboard loading together;
+gestures preserve local inputs/state and never send drafts or trigger inference.
+Polling/socket updates and auth/session security remain. Registration now offers
+Father/Mother/Guardian; LRN syncing omits relationship, inheriting it through the
+existing backend. Old LRN drafts retain input while legacy relationship overrides
+are ignored. Added two payload/upgrade-compatibility service tests; no dependency.
+
+Executed: TypeScript, 30 Node tests and 4 native JVM tests passed; release/R8/lint,
+signature and 16 KiB ZIP alignment passed with the existing signing identity.
+APK SHA-256: `bfad34910f38716d8edcef6a4c86c90366dcb544c5165c4431e9a551dfabee1c`.
+Source/assets matched the packaged build. Release documentation records paths
+and untested phone gestures/dropdown scenarios. Backend/frontend/protected refs
+and the existing untracked TWA remained unchanged (fingerprint matched). No live
+account/device acceptance, provider/database calls, Playwright/pytest or push.
+
 ## 2026-11-15 — Native Overview/ECCD organization and adviser display (local)
 
 Refined UI release `6b7a467` on `feat/parent-native-android` to 1.2.1/code 4.

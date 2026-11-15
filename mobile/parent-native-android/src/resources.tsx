@@ -2,8 +2,12 @@ import React, {useCallback, useEffect, useRef, useState} from 'react';
 import {AppState} from 'react-native';
 import {session} from './session';
 import {messageOf, transient} from './sessionCore';
-import {Button, Loading, Notice} from './ui';
-export function useResource<T>(path: string, revision = '') {
+import {Loading, Notice} from './ui';
+export interface Resource<T> {
+  data: T | null; error: string; loading: boolean;
+  reload: () => Promise<void>; update: (data: T) => void;
+}
+export function useResource<T>(path: string, revision = ''): Resource<T> {
   const [state, setState] = useState<{data: T | null; error: string; loading: boolean}>({data: null, error: '', loading: true});
   const version = useRef(0);
   const load = useCallback(async () => {
@@ -19,7 +23,6 @@ export function useResource<T>(path: string, revision = '') {
   }, [load, revision]);
   return {...state, reload: load, update: (data: T) => setState({data, error: '', loading: false})};
 }
-export function Feedback({error, loading, reload}: {error: string; loading: boolean; reload: () => Promise<void>}) {
-  return <>{loading && <Loading/>}{!!error && <Notice error>{error}</Notice>}
-    <Button secondary title="Refresh" disabled={loading} onPress={() => void reload()}/></>;
+export function Feedback({error, loading}: {error: string; loading: boolean}) {
+  return <>{loading && <Loading/>}{!!error && <Notice error>{error}</Notice>}</>;
 }
