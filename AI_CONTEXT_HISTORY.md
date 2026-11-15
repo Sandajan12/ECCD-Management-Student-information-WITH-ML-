@@ -1,5 +1,33 @@
 # AMES Context History
 
+## 2026-11-15 — React Native Android parent app, Phase 1 (local)
+
+Replaced only the partial Kotlin scaffold in `mobile/parent-native-android` with
+an isolated React Native 0.86.3 / TypeScript Android app on
+`feat/parent-native-android`, based on main `c5d9279`. Backend, frontend and the
+existing untracked TWA were not edited. Main and the older Android feature branch
+were not advanced; no push or provider operation was performed.
+
+Implemented parent registration/login/OTP, explicit staff-role switching, linked
+children, eight-permission ECCD dashboard/results and manual parent ML insights.
+The native OkHttp bridge stores the refresh cookie in Keystore-backed encrypted
+preferences, binds it to its original origin/path, adds the audited authentication
+Origin/Referer, and strips Set-Cookie from JavaScript responses. Access/user state
+remains in RAM; AsyncStorage holds only selection/logout-pending presentation
+state. Parent CRUD, observation drafts and messaging remain Phase 2 work.
+
+Installed checksum-verified x64 Temurin 17.0.21+9, reused SDK 36 and cached Gradle
+9.3.1, and installed required NDK 27.1/CMake 3.22.1. App-local CMake path hashing
+resolved Windows' long-path failure; four generated optional-annotation rules
+resolved Tink/R8 references without disabling shrinking. TypeScript passed, nine
+Node checks passed and four native JVM checks passed. Release assembly/lint,
+APK v2 signature verification and 16-KiB zip alignment passed. The new RSA-4096
+key, backup and passwords remain outside Git. Exact artifact hash/paths and
+phone acceptance steps are in `mobile/parent-native-android/RELEASE_VERIFICATION.md`.
+These local checks do not establish real-device Keystore/session restoration or
+production account/OTP acceptance. No production data, database, browser,
+Playwright or pytest suite was used.
+
 ## 2026-11-14 — PDF/Teacher ML merge and production verification
 
 Fast-forwarded main to `21094967ad65124eb1b58cd05a766a813335b216` after a fresh

@@ -52,6 +52,17 @@ keys with protected backups; do not regenerate them during routine setup.
 
 ## 2. Stack and operation
 
+The isolated Android parent client is now React Native + TypeScript under
+`mobile/parent-native-android`; it does not reuse or modify the web frontend or
+the older `mobile/parent-android` TWA. Phase 1 covers authentication/OTP, eligible
+child selection, permission-aware ECCD results/dashboard and manual ML insights.
+Its native OkHttp bridge persists only the refresh cookie in Keystore-backed
+encrypted preferences; access JWT/user state remains in RAM. AsyncStorage holds
+only child selection and a logout-pending marker. No parent CRUD, observation
+drafts or messaging are implemented in this phase. Build/signing instructions,
+API configuration and validation boundaries are in that directory's README.
+Backend routes, schema, scoring, ML artifacts and website behavior are unchanged.
+
 | Layer | Implementation / authority |
 | --- | --- |
 | Backend | FastAPI, Pydantic V2, SQLAlchemy 2 ORM, synchronous PostgreSQL sessions through psycopg2; exact pins in `backend/requirements.txt` |

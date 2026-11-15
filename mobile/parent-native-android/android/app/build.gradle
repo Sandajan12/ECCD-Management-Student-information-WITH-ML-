@@ -1,0 +1,59 @@
+import groovy.json.JsonOutput
+apply plugin: 'com.android.application'
+apply plugin: 'org.jetbrains.kotlin.android'
+apply plugin: 'com.facebook.react'
+react { autolinkLibrariesWithApp(); extraPackagerArgs = ['--max-workers', '2'] }
+def signingFile = providers.gradleProperty('amesSigningProperties').orNull
+def signing = new Properties()
+if (signingFile) file(signingFile).withInputStream { signing.load(it) }
+def apiUrl = providers.gradleProperty('amesApiUrl').getOrElse('https://api.ameskinder.com')
+def api = new URI(apiUrl)
+if (api.userInfo || api.query || api.fragment || !(api.path in ['', '/']) ||
+    !(api.scheme == 'https' || (api.scheme == 'http' && api.host in ['localhost', '127.0.0.1', '10.0.2.2']))) {
+    throw new GradleException('amesApiUrl must be an HTTPS origin or loopback development origin')
+}
+android {
+    ndkVersion rootProject.ext.ndkVersion
+    buildToolsVersion rootProject.ext.buildToolsVersion
+    compileSdk rootProject.ext.compileSdkVersion
+    namespace 'com.ameskinder.parent.nativeapp'
+    defaultConfig {
+        applicationId 'com.ameskinder.parent.native'
+        minSdkVersion rootProject.ext.minSdkVersion
+        targetSdkVersion rootProject.ext.targetSdkVersion
+        versionCode 1
+        versionName '1.0.0'
+        buildConfigField 'String', 'AMES_API_URL', JsonOutput.toJson(apiUrl.replaceAll('/$', ''))
+        manifestPlaceholders = [usesCleartextTraffic: api.scheme == 'http' ? 'true' : 'false']
+        externalNativeBuild { cmake { arguments '-DCMAKE_OBJECT_PATH_MAX=256' } }
+    }
+    signingConfigs {
+        release {
+            if (signingFile) {
+                storeFile file(signing.getProperty('storeFile'))
+                storePassword signing.getProperty('storePassword')
+                keyAlias signing.getProperty('keyAlias')
+                keyPassword signing.getProperty('keyPassword')
+            }
+        }
+    }
+    buildTypes {
+        release {
+            signingConfig signingConfigs.release
+            minifyEnabled true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+    testOptions { unitTests.returnDefaultValues = true }
+    externalNativeBuild { cmake { buildStagingDirectory file('../../.cxx') } }
+}
+tasks.matching { it.name == 'validateSigningRelease' }.configureEach {
+    doFirst { if (!signingFile) throw new GradleException('Pass -PamesSigningProperties=<external properties path>') }
+}
+dependencies {
+    implementation 'com.facebook.react:react-android'
+    implementation 'com.facebook.react:hermes-android'
+    implementation 'androidx.security:security-crypto:1.1.0'
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'com.squareup.okhttp3:mockwebserver:4.12.0'
+}
