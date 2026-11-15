@@ -32,20 +32,16 @@ import {
 import { Feedback, useResource } from "./resources";
 import { statusColor, tierColor } from "./presentation";
 
-export function DashboardTab({
+export function OverviewSummary({
   child,
   revision,
-  home,
   insights,
   results,
-  messages,
 }: {
   child: Child;
   revision: number;
-  home: () => void;
   insights: () => void;
   results: () => void;
-  messages: () => void;
 }) {
   const state = useResource<Dashboard>(
     `/api/eccd/parent/dashboard-stats/${child.student_id}`,
@@ -53,6 +49,7 @@ export function DashboardTab({
   );
   const data = state.data,
     primary = useContext(BrandColor);
+  const [progressExpanded, setProgressExpanded] = useState(false);
   const phase = data?.latestPhase || data?.currentPhase;
   const allowed =
     phase === "PRE" || phase === "MID" || phase === "POST"
@@ -67,20 +64,6 @@ export function DashboardTab({
         </View>
         <Copy>Latest recorded developmental checklist period.</Copy>
         <Feedback {...state} />
-      </Card>
-      <Card>
-        <Icon name="home" color={primary} />
-        <Copy>Home Checklist</Copy>
-        <Title style={{ fontSize: 16 }}>
-          {child.allow_parent_edit_home_based_eccd
-            ? "Home observations"
-            : "Read-only checklist"}
-        </Title>
-        <Copy>
-          Small observations at home help your adviser understand your child’s
-          growth.
-        </Copy>
-        <Button icon="home" title="View Home Checklist" onPress={home} />
       </Card>
       {data && (
         <>
@@ -140,49 +123,51 @@ export function DashboardTab({
         </Copy>
         <Button title="View ML Insights" icon="insights" onPress={insights} />
       </Card>
-      <Heading
-        title="ECCD Assessment Progress"
-        subtitle="Checklist completion, not an academic score percentage."
-      />
-      {allowed &&
-        data?.domainCards.map((domain) => (
-          <Card key={domain.domain_id}>
-            <Label>{domain.domain_name}</Label>
-            <View style={[styles.row, { justifyContent: "space-between" }]}>
-              <Copy>{domain.scoreText}</Copy>
-              <Badge color={statusColor(domain.statusColor)}>
-                {domain.statusText}
-              </Badge>
-            </View>
-            <Progress
-              value={domain.progress}
-              color={statusColor(domain.statusColor)}
-              label={`${domain.domain_name} completion`}
-            />
-            <Copy>{domain.progress ?? "—"}% completion</Copy>
-          </Card>
-        ))}
+      <Card>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityState={{ expanded: progressExpanded }}
+          onPress={() => setProgressExpanded((value) => !value)}
+          style={[styles.row, { minHeight: 44, flexWrap: "nowrap" }]}
+        >
+          <Icon name="checklist" />
+          <Label style={{ flex: 1 }}>Assessment Progress</Label>
+          <Icon name={progressExpanded ? "up" : "down"} />
+        </Pressable>
+        <Copy>Checklist completion, not an academic score percentage.</Copy>
+        {progressExpanded && !allowed && (
+          <Notice>Results Pending Adviser Release</Notice>
+        )}
+        {progressExpanded &&
+          allowed &&
+          data?.domainCards.map((domain) => (
+            <Card key={domain.domain_id}>
+              <Label>{domain.domain_name}</Label>
+              <View style={[styles.row, { justifyContent: "space-between" }]}>
+                <Copy>{domain.scoreText}</Copy>
+                <Badge color={statusColor(domain.statusColor)}>
+                  {domain.statusText}
+                </Badge>
+              </View>
+              <Progress
+                value={domain.progress}
+                color={statusColor(domain.statusColor)}
+                label={`${domain.domain_name} completion`}
+              />
+              <Copy>{domain.progress ?? "—"}% completion</Copy>
+            </Card>
+          ))}
+      </Card>
       <Button
         secondary
         icon="checklist"
         title="View ECCD Checklist"
         onPress={results}
       />
-      <Card>
-        <Heading title="Messages" icon="messages" />
-        <Copy>Reach out to your child’s adviser anytime.</Copy>
-        <Button secondary title="Message Teacher" onPress={messages} />
-      </Card>
     </>
   );
 }
-export function ResultsTab({
-  child,
-  home,
-}: {
-  child: Child;
-  home: () => void;
-}) {
+export function ResultsTab({ child }: { child: Child }) {
   const state = useResource<Assessment>(
     `/api/eccd/parent/assessment/${child.student_id}`,
     JSON.stringify(child),
@@ -330,11 +315,6 @@ export function ResultsTab({
         ) : (
           <>
             <PeriodTabs value={period} onChange={setPeriod} />
-            <Button
-              icon="home"
-              title="Answer Home Observations"
-              onPress={home}
-            />
             {!child.allow_parent_view_eccd_marks && (
               <Notice>
                 Recorded marks are restricted by the adviser. Only your eligible

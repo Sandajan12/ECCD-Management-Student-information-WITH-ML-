@@ -14,6 +14,7 @@ import {
 } from "./profile";
 import type { ProfileField, ProfileValues } from "./profile";
 import { Feedback, useResource } from "./resources";
+import { adviserName } from "./presentation";
 import {
   Avatar,
   Badge,
@@ -314,7 +315,7 @@ export function ProfileScreen({
                 ["Age", record.age],
                 ["Section", record.section_name],
                 ["School year", record.school_year],
-                ["Adviser", record.adviser_name],
+                ["Adviser", adviserName(record)],
               ].map(([label, value]) => (
                 <View
                   key={label}

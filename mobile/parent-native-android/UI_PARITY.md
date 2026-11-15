@@ -1,7 +1,8 @@
 # Parent mobile design reference
 
 Implemented from read-only source inspection on 2026-11-15, based on Phase 2
-`7c882bc`. This is native React Native UI, with no browser/WebView or web imports.
+`7c882bc`; navigation/adviser refinements follow UI release `6b7a467`.
+This is native React Native UI, with no browser/WebView or web imports.
 Frontend/backend files were neither generated nor changed.
 
 | Web reference | Native presentation |
@@ -9,11 +10,11 @@ Frontend/backend files were neither generated nor changed.
 | `layouts/ParentLayout.tsx`, `layouts/MainLayout.tsx` | Dark `#111827` school header, seal, account logout, five white bottom tabs, unread badge, selected-child dialog |
 | `components/teacher/theme.ts`, `context/SettingsContext.tsx` | Poppins Regular/Medium/SemiBold/Bold, school primary color/name/data-URL seal; `#4543c0` fallback, `#1e1e2f`, `#f4f5f7`/`#f8fafc`, slate text, 12px cards, soft shadows |
 | `pages/LoginPage.tsx`, `pages/RegisterParentPage.tsx`, `components/auth-ui.tsx` | Same bundled school background, indigo seal panel, elevated centered card, outlined fields/icons, password visibility, inline feedback, six OTP cells, resend cooldown |
-| `pages/parent/Dashboard.tsx` | Greeting, school-year pill, child/adviser summary, phase/status, strengths/support, completion bars, home/results/insights/message actions |
-| `pages/parent/ChildManagement.tsx` | Avatar, completeness bar, protected identity/enrollment summary, contact and Father/Mother/Legal Guardian sections, sticky green save action |
+| `pages/parent/Dashboard.tsx` | Overview greeting, school-year pill, child/adviser summary, phase/status, strengths/support, collapsed progress; home editor inline, no Overview message card |
+| `pages/parent/ChildManagement.tsx` | Avatar, completeness bar, protected identity/enrollment summary, current-detail teacher first/last name for Adviser, household sections, sticky green save action |
 | Dashboard Link LRN dialog | Native centered scrollable dialog, 12 ASCII digits, inline validation, SYNCED/PENDING approval badges, retained local input |
-| `components/parent/HomeAssessmentForm.tsx` | Period segments, expandable home domains, green/amber KAYA/DI-KAYA choices, lock badges, local-draft feedback, sticky manual submit and irreversible-submit confirmation |
-| `pages/parent/ParentEccdAssessment.tsx`, `components/parent/ReadOnlyDomainChecklist.tsx` | Official/checklist segments, three period summary cards, masked unreleased states, PRE/MID/POST scaled matrix, expandable indicators and attribution |
+| `components/parent/HomeAssessmentForm.tsx` | Collapsed Home-Based Observations in Overview; period segments, home domain accordions, KAYA/DI-KAYA choices, locks, local drafts and confirmation; submit bar only while expanded |
+| `pages/parent/ParentEccdAssessment.tsx`, `components/parent/ReadOnlyDomainChecklist.tsx` | Exclusively read-only official/checklist segments, period summaries, masked states, scaled matrix, both home/school indicators and attribution; no home-edit shortcut |
 | `pages/parent/ParentMlInsights.tsx` | Readiness, POST outcome and confidence bars, baseline tier badges, expandable green intervention cards, interpretation/research callouts |
 | `components/ChatInterface.tsx` | Mobile contact-to-thread flow, avatars, parent indigo/teacher white bubbles, Philippine-time timestamps, read status, virtualized history and keyboard-safe composer |
 
@@ -28,13 +29,16 @@ count; the contacts contract does not supply per-contact unread totals.
 - Android safe-area padding and `adjustResize` keep actions above system bars and
   the keyboard. Bottom navigation hides while the keyboard is open.
 - Hardware Back dismisses dialogs without clearing drafts, returns a conversation
-  to contacts, a portal tab to Dashboard, and OTP/registration to account entry.
+  to contacts, a portal tab to Overview, and OTP/registration to account entry.
 - Interactive controls have at least 44dp touch targets. Font scaling stays enabled;
   cards/forms scroll and wrap rather than fixing their height. Scores fit the
   three-column matrix; long domain names wrap.
 - The six visible OTP cells share one native input for paste, autofill and deletion.
 - Link/home dialogs retain the existing manual-only storage/submission behavior.
   Home confirmation adds a deliberate tap before a server save that locks answers.
+- Overview uses one scroll container. Home/progress sections start collapsed;
+  collapsing home preserves the selected period and device drafts. Selecting a
+  different child starts collapsed. Dedicated Messages and its global badge remain.
 - No navigation, UI, font-loader or icon npm dependency was added. Fonts are bundled
   in Android assets and work offline. Licenses are in `assets/` (Poppins OFL and
   Material Icons Apache 2.0). Fonts originate from the official Google Fonts
@@ -55,9 +59,12 @@ website and app with the same account, child, settings and release permissions:
    autofill/paste, cooldown, inline errors and staff-account switching.
 2. Switch siblings, open/dismiss Link Child with keyboard and Back, and reopen its
    draft. Check both approval statuses and no validation error after a successful link.
-3. Check dashboard status/progress and every unreleased/marks-disabled state;
-   verify profile view/edit locks, household draft recovery and changed-field saves.
-4. Scroll a long home domain; verify the submit bar, period/window/question locks,
+3. Check Overview status/progress and every unreleased/marks-disabled state;
+   verify profile locks, current-child adviser display/fallback, draft recovery
+   and changed-field saves. ECCD must have no edit or submit controls.
+4. Expand/collapse Home-Based Observations within Overview, retain its period and
+   draft, switch siblings and confirm collapsed state; verify the submit bar is
+   hidden when collapsed. Scroll a long home domain; verify period/window/question locks,
    confirmation cancel/Back, offline message, restart recovery and manual resubmit.
    Reconnection must never submit any parent draft.
 5. Compare all three summaries/matrix and insights tiers, confidence/interventions

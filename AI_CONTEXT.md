@@ -55,7 +55,7 @@ keys with protected backups; do not regenerate them during routine setup.
 The isolated Android parent client is now React Native + TypeScript under
 `mobile/parent-native-android`; it does not reuse or modify the web frontend or
 the older `mobile/parent-android` TWA. Phases 1–2 cover authentication/OTP, eligible
-child selection, permission-aware ECCD results/dashboard, manual ML insights,
+child selection, permission-aware ECCD results/Overview, manual ML insights,
 LRN linking, changed-field household profiles, home observations and messaging.
 Its native OkHttp bridge persists only the refresh cookie in Keystore-backed
 encrypted preferences; access JWT/user state remains in RAM. AsyncStorage holds
@@ -71,6 +71,9 @@ dynamic school branding, dark header, five bottom tabs, child/link dialogs,
 permission-aware status/results cards, structured household forms, sticky manual
 saves and keyboard-safe chat. UI_PARITY.md records source references and phone
 acceptance limits; native storage/auth/permission services retain their contracts.
+Overview owns collapsed home-based editing and assessment progress; ECCD is
+read-only, and messaging stays in its own tab. Child Information derives Adviser
+from the current detail's teacher first/last name, with a nonblank fallback.
 Backend routes, schema, scoring, ML artifacts and website behavior are unchanged.
 
 | Layer | Implementation / authority |

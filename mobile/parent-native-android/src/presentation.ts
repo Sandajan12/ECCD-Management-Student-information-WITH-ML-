@@ -1,3 +1,17 @@
+import type { Child } from "./contracts";
+
+export function adviserName(
+  child: Pick<Child, "teacher_fname" | "teacher_lname" | "adviser_name">,
+): string {
+  return (
+    [child.teacher_fname?.trim(), child.teacher_lname?.trim()]
+      .filter(Boolean)
+      .join(" ") ||
+    child.adviser_name?.trim() ||
+    "Not assigned"
+  );
+}
+
 export const statusColor = (value: string): string =>
   ({
     success: "#15803d",

@@ -1,6 +1,40 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { displayTime, statusColor, tierColor } from "../src/presentation.ts";
+import {
+  adviserName,
+  displayTime,
+  statusColor,
+  tierColor,
+} from "../src/presentation.ts";
+
+test("adviser uses the current profile teacher fields before the optional legacy name", () => {
+  assert.equal(
+    adviserName({
+      teacher_fname: " Ana ",
+      teacher_lname: " Cruz ",
+      adviser_name: "Old name",
+    }),
+    "Ana Cruz",
+  );
+  assert.equal(
+    adviserName({ teacher_fname: " Ana ", teacher_lname: null }),
+    "Ana",
+  );
+  assert.equal(adviserName({ teacher_lname: " Cruz " }), "Cruz");
+  assert.equal(
+    adviserName({
+      teacher_fname: " ",
+      teacher_lname: "",
+      adviser_name: " Ana Cruz ",
+    }),
+    "Ana Cruz",
+  );
+  assert.equal(
+    adviserName({ teacher_fname: null, teacher_lname: " ", adviser_name: " " }),
+    "Not assigned",
+  );
+  assert.equal(adviserName({}), "Not assigned");
+});
 
 test("message timestamps use Philippine time and preserve missing/invalid states", () => {
   assert.equal(displayTime(null), "No messages yet");

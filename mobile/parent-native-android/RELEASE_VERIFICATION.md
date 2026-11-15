@@ -1,4 +1,68 @@
-# Parent web UI parity — local release verification
+# Overview and adviser correction — local release verification
+
+Date: **2026-11-15**. Branch: **feat/parent-native-android**.
+Foundation: UI release `6b7a467`. App: **AMES Parent 1.2.1 (version code 4)**.
+
+## Executed correction release checks
+
+| Check | Result |
+| --- | --- |
+| `pnpm.cmd exec tsc --noEmit` | Passed |
+| `pnpm.cmd test` | 28 passed; includes current-profile adviser name/partial names/whitespace/fallback and unchanged auth, permissions, drafts and messaging coverage |
+| `gradlew.bat testReleaseUnitTest assembleRelease` | BUILD SUCCESSFUL in 3m 6s; 161 tasks (29 executed/132 current); 4 native tests passed, no failures/errors/skips |
+| Release lint / R8 | Passed; existing upstream deprecations only |
+| `apksigner.bat verify --verbose --print-certs` | Verifies, APK v2, one RSA-4096 signer; unchanged certificate |
+| `zipalign.exe -c -P 16 4` | Passed, exit 0 |
+| APK badging | AMES Parent; `com.ameskinder.parent.native`; 1.2.1/code 4; min 26/target 35/compile 36; ARM64 + ARMv7 |
+| Packaged source/assets | 1,279,960-byte Hermes bundle matches generated output; sourcemap matches all 19 application files, including renamed OverviewScreen; five fonts match source |
+| Source inspection | Overview default/back destination; one main Screen/scroll container; home/progress initially collapsed; conditional submit bar; no ECCD home-edit entry or Overview Messages card |
+| Isolation | Backend/frontend unchanged, no new untracked files there; protected branch refs unchanged; older untracked TWA retains its original 10,079-file fingerprint |
+
+Signed APK (ignored by Git):
+
+```text
+C:\Users\user\Desktop\AMES with ML\mobile\parent-native-android\android\app\build\outputs\apk\release\app-release.apk
+```
+
+Size: **24,851,231 bytes**. SHA-256:
+
+```text
+36dd0c1cf856dd4efe9fd03fd175e37562d984ad5d68e6de8ea81bcebabadad5
+```
+
+Same signer certificate SHA-256:
+
+```text
+a58b8be298272fd4ebc9b15764fb269a36373d630bf321bbdc17d62980574fa8
+```
+
+The build reused the external `AMES-Android-Keys\parent-native-android\`
+`ames-parent-native-release-backup.jks` and its external signing properties.
+Credentials, native cookie bridge, RAM session, services, API contracts and draft
+keys were not changed. No new dependency or automatic draft replay was added.
+Existing TWA fingerprint remains
+`aff4ddcd81040c4fadcf7d49df3cc19169d872e91779fe4877c3569dda085365`.
+
+Source review confirms collapsing the home section leaves the period state in
+the mounted Overview owner; per-domain drafts persist in the unchanged store.
+Changing children keys a fresh collapsed Overview. Profile Adviser reads only
+the current detail record, combines teacher first/last names, then uses the
+optional adviser name or Not assigned; its read permission gate is unchanged.
+ECCD retains independent score/mark permissions and the own-observation exception.
+
+No device/emulator rendering, UI interaction automation, live school account/OTP
+or authenticated socket acceptance was performed. Source checks and unit tests
+are not phone acceptance. Follow UI_PARITY.md to check collapse/reopen, period
+and sibling switching, submit confirmation/drafts, locked states and current-child
+adviser display. Install over the existing app without clearing data. Backend/
+frontend were only read; no provider/database calls, Playwright/pytest or push.
+
+---
+
+# Historical parent web UI parity — local release verification
+
+The shared APK output path now contains the correction release above. The
+following hash/version describes the previous 1.2.0/code 3 artifact only.
 
 Date: **2026-11-15**. Branch: **feat/parent-native-android**.
 Foundation: Phase 2 `7c882bc`. App: **AMES Parent 1.2.0 (version code 3)**.

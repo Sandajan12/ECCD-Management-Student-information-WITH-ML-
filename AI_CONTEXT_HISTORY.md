@@ -1,5 +1,23 @@
 # AMES Context History
 
+## 2026-11-15 — Native Overview/ECCD organization and adviser display (local)
+
+Refined UI release `6b7a467` on `feat/parent-native-android` to 1.2.1/code 4.
+Dashboard is now Overview, with home-based editing inside a collapsed section,
+a conditional manual-submit bar and collapsed assessment progress. Removed its
+Messages card and all ECCD home-edit navigation; ECCD remains read-only under
+existing independent permissions. Child Information now resolves Adviser from
+the current detail's teacher first/last name, with optional-name/Not assigned
+fallback. Draft/session/permission/messaging services and API contracts unchanged.
+
+Executed: TypeScript, 28 Node tests and 4 native JVM tests passed; release/R8/lint,
+signature and 16 KiB ZIP alignment passed. Same signing identity, no new dependency.
+APK SHA-256: `36dd0c1cf856dd4efe9fd03fd175e37562d984ad5d68e6de8ea81bcebabadad5`.
+App release documentation records paths/source checks and untested phone scenarios.
+Backend/frontend/protected refs and pre-existing untracked TWA unchanged; folder
+fingerprint matched. No device/live-account acceptance, provider/database calls,
+Playwright/pytest, push, uninstall or data clearing.
+
 ## 2026-11-15 — Native parent mobile UI parity (local)
 
 Upgraded Phase 2 `7c882bc` on `feat/parent-native-android` to AMES Parent

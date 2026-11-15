@@ -24,19 +24,15 @@ import {
 import type { IconName } from "./ui";
 import { Feedback, useResource } from "./resources";
 import { LinkChild, ProfileScreen } from "./ProfileScreen";
-import { HomeScreen } from "./HomeScreen";
+import { OverviewScreen } from "./OverviewScreen";
 import { MessagesScreen, useMessaging } from "./MessagesScreen";
-import { DashboardTab, InsightsTab, ResultsTab } from "./AssessmentScreens";
+import { OverviewSummary, InsightsTab, ResultsTab } from "./AssessmentScreens";
+import { adviserName } from "./presentation";
 
 type Tab =
-  | "Dashboard"
-  | "Child Profile"
-  | "Home Observations"
-  | "ECCD Results"
-  | "ML Insights"
-  | "Messages";
+  "Overview" | "Child Profile" | "ECCD Results" | "ML Insights" | "Messages";
 const navigation: Array<{ tab: Tab; title: string; icon: IconName }> = [
-  { tab: "Dashboard", title: "Dashboard", icon: "home" },
+  { tab: "Overview", title: "Overview", icon: "home" },
   { tab: "Child Profile", title: "Child", icon: "child" },
   { tab: "ECCD Results", title: "ECCD", icon: "checklist" },
   { tab: "ML Insights", title: "Insights", icon: "insights" },
@@ -77,7 +73,7 @@ export function ChildPortal({
 }) {
   const state = useResource<Child[]>("/api/students/my-child");
   const [selected, setSelected] = useState<number>(0),
-    [tab, setTab] = useState<Tab>("Dashboard");
+    [tab, setTab] = useState<Tab>("Overview");
   const [linking, setLinking] = useState(false),
     [choosing, setChoosing] = useState(false),
     [revision, setRevision] = useState(0);
@@ -131,8 +127,8 @@ export function ChildPortal({
   useEffect(() => {
     if (tab === "Messages") return;
     const listener = BackHandler.addEventListener("hardwareBackPress", () => {
-      if (tab !== "Dashboard") {
-        setTab("Dashboard");
+      if (tab !== "Overview") {
+        setTab("Overview");
         return true;
       }
       return false;
@@ -147,6 +143,54 @@ export function ChildPortal({
       setStorageError("Child selection will last for this session only."),
     );
   };
+  const overviewHeader = (
+    <>
+      <Heading
+        title={`Hello, ${user.full_name || "Parent"}`}
+        subtitle="Small steps today. Growing confidence for tomorrow."
+      />
+      <Badge>
+        {child?.school_year ? `SY ${child.school_year} · ` : ""}Kindergarten
+      </Badge>
+      <Feedback {...state} />
+      {child && (
+        <Card>
+          <View
+            style={[
+              styles.row,
+              { alignItems: "flex-start", flexWrap: "nowrap" },
+            ]}
+          >
+            <Avatar name={childName(child)} />
+            <View style={{ flex: 1, gap: 4 }}>
+              <Label style={{ fontSize: 16 }}>{childName(child)}</Label>
+              <Copy>
+                {child.section_name ||
+                  child.class_name ||
+                  "Section not assigned"}
+              </Copy>
+              <Copy>Adviser: {adviserName(child)}</Copy>
+              {child.allow_parent_view_student_info && (
+                <Copy>LRN: {child.masked_lrn}</Copy>
+              )}
+              <Badge
+                icon="check"
+                color={child.is_active ? "#15803d" : "#64748b"}
+              >
+                {child.is_active ? "Active" : "Inactive"}
+              </Badge>
+            </View>
+          </View>
+          <Button
+            title="Link Child · SYNC"
+            icon="sync"
+            secondary
+            onPress={() => setLinking(true)}
+          />
+        </Card>
+      )}
+    </>
+  );
   return (
     <View style={{ flex: 1, backgroundColor: "#f8fafc" }}>
       <View
@@ -237,71 +281,28 @@ export function ChildPortal({
           <MessagesScreen
             user={user}
             client={messaging.client}
-            back={() => setTab("Dashboard")}
+            back={() => setTab("Overview")}
           />
-        ) : tab === "Dashboard" ? (
-          <Screen>
-            <Heading
-              title={`Hello, ${user.full_name || "Parent"}`}
-              subtitle="Small steps today. Growing confidence for tomorrow."
-            />
-            <Badge>
-              {child?.school_year ? `SY ${child.school_year} · ` : ""}
-              Kindergarten
-            </Badge>
-            <Feedback {...state} />
-            {child ? (
-              <>
-                <Card>
-                  <View
-                    style={[
-                      styles.row,
-                      { alignItems: "flex-start", flexWrap: "nowrap" },
-                    ]}
-                  >
-                    <Avatar name={childName(child)} />
-                    <View style={{ flex: 1, gap: 4 }}>
-                      <TitleName name={childName(child)} />
-                      <Copy>
-                        {child.section_name ||
-                          child.class_name ||
-                          "Section not assigned"}
-                      </Copy>
-                      <Copy>
-                        Adviser:{" "}
-                        {child.adviser_name ||
-                          `${child.teacher_fname || ""} ${child.teacher_lname || ""}`.trim() ||
-                          "Not assigned"}
-                      </Copy>
-                      {child.allow_parent_view_student_info && (
-                        <Copy>LRN: {child.masked_lrn}</Copy>
-                      )}
-                      <Badge
-                        icon="check"
-                        color={child.is_active ? "#15803d" : "#64748b"}
-                      >
-                        {child.is_active ? "Active" : "Inactive"}
-                      </Badge>
-                    </View>
-                  </View>
-                  <Button
-                    title="Link Child · SYNC"
-                    icon="sync"
-                    secondary
-                    onPress={() => setLinking(true)}
-                  />
-                </Card>
-                <DashboardTab
-                  child={child}
-                  revision={revision}
-                  home={() => setTab("Home Observations")}
-                  insights={() => setTab("ML Insights")}
-                  results={() => setTab("ECCD Results")}
-                  messages={() => setTab("Messages")}
-                />
-              </>
-            ) : (
-              !state.loading && (
+        ) : tab === "Overview" ? (
+          child ? (
+            <OverviewScreen
+              key={`${user.id}_${child.student_id}`}
+              child={child}
+              user={user}
+              header={overviewHeader}
+              changed={() => setRevision((n) => n + 1)}
+            >
+              <OverviewSummary
+                child={child}
+                revision={revision}
+                insights={() => setTab("ML Insights")}
+                results={() => setTab("ECCD Results")}
+              />
+            </OverviewScreen>
+          ) : (
+            <Screen>
+              {overviewHeader}
+              {!state.loading && (
                 <Card>
                   <Heading title="Awaiting Connection…" icon="child" />
                   <Copy>
@@ -315,9 +316,9 @@ export function ChildPortal({
                     onPress={() => setLinking(true)}
                   />
                 </Card>
-              )
-            )}
-          </Screen>
+              )}
+            </Screen>
+          )
         ) : child ? (
           <View
             key={`${user.id}_${child.student_id}_${tab}`}
@@ -325,17 +326,8 @@ export function ChildPortal({
           >
             {tab === "Child Profile" ? (
               <ProfileScreen child={child} user={user} changed={state.reload} />
-            ) : tab === "Home Observations" ? (
-              <HomeScreen
-                child={child}
-                user={user}
-                changed={() => setRevision((n) => n + 1)}
-              />
             ) : tab === "ECCD Results" ? (
-              <ResultsTab
-                child={child}
-                home={() => setTab("Home Observations")}
-              />
+              <ResultsTab child={child} />
             ) : (
               <InsightsTab child={child} />
             )}
@@ -343,7 +335,7 @@ export function ChildPortal({
         ) : (
           <Screen>
             <Notice>
-              No eligible linked child selected. Return to Dashboard to link a
+              No eligible linked child selected. Return to Overview to link a
               child.
             </Notice>
           </Screen>
@@ -362,9 +354,7 @@ export function ChildPortal({
           }}
         >
           {navigation.map((item) => {
-            const active =
-              tab === item.tab ||
-              (item.tab === "ECCD Results" && tab === "Home Observations");
+            const active = tab === item.tab;
             return (
               <Pressable
                 key={item.tab}
@@ -420,12 +410,7 @@ export function ChildPortal({
                 {c.section_name || c.class_name || "Section not assigned"} ·{" "}
                 {c.school_year || "School year not assigned"}
               </Copy>
-              <Copy>
-                Adviser:{" "}
-                {c.adviser_name ||
-                  `${c.teacher_fname || ""} ${c.teacher_lname || ""}`.trim() ||
-                  "Not assigned"}
-              </Copy>
+              <Copy>Adviser: {adviserName(c)}</Copy>
               <Badge color={c.is_active ? "#15803d" : "#64748b"}>
                 {c.is_active ? "Active" : "Inactive"}
               </Badge>
@@ -448,13 +433,10 @@ export function ChildPortal({
           linked={async (id) => {
             await state.reload();
             select(id);
-            setTab("Dashboard");
+            setTab("Overview");
           }}
         />
       )}
     </View>
   );
-}
-function TitleName({ name }: { name: string }) {
-  return <Label style={{ fontSize: 16 }}>{name}</Label>;
 }

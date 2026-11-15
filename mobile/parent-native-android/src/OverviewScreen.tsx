@@ -14,7 +14,6 @@ import {
   Card,
   Copy,
   Dialog,
-  Heading,
   Icon,
   Label,
   Notice,
@@ -152,14 +151,18 @@ function HomeDomain({
     </Card>
   );
 }
-export function HomeScreen({
+export function OverviewScreen({
   child,
   user,
   changed,
+  header,
+  children,
 }: {
   child: Child;
   user: User;
   changed: () => void;
+  header: React.ReactNode;
+  children: React.ReactNode;
 }) {
   const state = useResource<Assessment>(
     `/api/eccd/parent/assessment/${child.student_id}`,
@@ -169,6 +172,7 @@ export function HomeScreen({
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
   const [confirming, setConfirming] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const service = useMemo(
     () =>
       new HomeObservations(drafts, user.id, child.student_id, (payload) =>
@@ -208,65 +212,88 @@ export function HomeScreen({
   return (
     <Screen
       footer={
-        <>
-          <Copy>Local drafts · Saved separately from school records</Copy>
-          {!!notice && <Notice>{notice}</Notice>}
-          <Button
-            icon="save"
-            title={busy ? "Submitting…" : "Submit Observations"}
-            disabled={disabled}
-            onPress={() => setConfirming(true)}
-          />
-        </>
+        expanded && (
+          <>
+            <Copy>Local drafts · Saved separately from school records</Copy>
+            {!!notice && <Notice>{notice}</Notice>}
+            <Button
+              icon="save"
+              title={busy ? "Submitting…" : "Submit Observations"}
+              disabled={disabled}
+              onPress={() => setConfirming(true)}
+            />
+          </>
+        )
       }
     >
-      <Heading
-        title="Home-Based Observations"
-        subtitle="Everyday moments. Meaningful milestones."
-        icon="home"
-      />
+      {header}
       <Card>
-        <Feedback {...state} />
-        <Copy>
-          Choose KAYA or DI-KAYA for home-based indicators. You may edit or
-          remove local answers before submitting. Saved school observations
-          cannot be changed here.
-        </Copy>
-        <Notice>
-          Drafts stay on this device across logout and connection loss. Every
-          submission requires a tap on Submit Observations.
-        </Notice>
-        {state.data &&
-          (!child.allow_parent_edit_home_based_eccd ||
-          !state.data.permissions.allow_parent_edit_home_based_eccd ||
-          !state.data.can_edit_home_based ? (
-            <Notice>Home observations are locked by the Class Adviser.</Notice>
-          ) : !state.data.parent_assessment_access[WINDOWS[period]] ? (
-            <Notice>
-              The {period} editing window is closed by the teacher.
-            </Notice>
-          ) : null)}
-        <PeriodTabs
-          value={period}
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Home-Based Observations"
+          accessibilityState={{ expanded, disabled: busy }}
           disabled={busy}
-          onChange={(p) => {
-            setPeriod(p);
-            setNotice("");
-          }}
-        />
+          onPress={() => setExpanded((value) => !value)}
+          style={[styles.row, { minHeight: 44, flexWrap: "nowrap" }]}
+        >
+          <Icon name="home" />
+          <Label style={{ flex: 1 }}>Home-Based Observations</Label>
+          <Icon name={expanded ? "up" : "down"} />
+        </Pressable>
+        <Copy>
+          Everyday moments. Meaningful milestones.{" "}
+          {expanded ? "Hide" : "Expand to answer"} the home checklist.
+        </Copy>
       </Card>
-      {state.data?.domains.map((domain) => (
-        <HomeDomain
-          key={`${domain.domain_id}_${period}`}
-          domain={domain}
-          child={child}
-          user={user}
-          assessment={state.data!}
-          period={period}
-          service={service}
-          busy={busy}
-        />
-      ))}
+      {expanded && (
+        <>
+          <Card>
+            <Feedback {...state} />
+            <Copy>
+              Choose KAYA or DI-KAYA for home-based indicators. You may edit or
+              remove local answers before submitting. Saved school observations
+              cannot be changed here.
+            </Copy>
+            <Notice>
+              Drafts stay on this device across logout and connection loss.
+              Every submission requires a tap on Submit Observations.
+            </Notice>
+            {state.data &&
+              (!child.allow_parent_edit_home_based_eccd ||
+              !state.data.permissions.allow_parent_edit_home_based_eccd ||
+              !state.data.can_edit_home_based ? (
+                <Notice>
+                  Home observations are locked by the Class Adviser.
+                </Notice>
+              ) : !state.data.parent_assessment_access[WINDOWS[period]] ? (
+                <Notice>
+                  The {period} editing window is closed by the teacher.
+                </Notice>
+              ) : null)}
+            <PeriodTabs
+              value={period}
+              disabled={busy}
+              onChange={(p) => {
+                setPeriod(p);
+                setNotice("");
+              }}
+            />
+          </Card>
+          {state.data?.domains.map((domain) => (
+            <HomeDomain
+              key={`${domain.domain_id}_${period}`}
+              domain={domain}
+              child={child}
+              user={user}
+              assessment={state.data!}
+              period={period}
+              service={service}
+              busy={busy}
+            />
+          ))}
+        </>
+      )}
+      {children}
       {confirming && (
         <Dialog title="Submit Answers" close={() => setConfirming(false)}>
           <Copy>

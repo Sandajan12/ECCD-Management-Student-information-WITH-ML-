@@ -1,7 +1,7 @@
 # AMES Parent — React Native Android, Phases 1–2
 
 Standalone React Native **0.86.3** / React **19.2.3** / TypeScript app. Android
-package `com.ameskinder.parent.native`, version **1.2.0 (3)**, minimum Android 8
+package `com.ameskinder.parent.native`, version **1.2.1 (4)**, minimum Android 8
 (API 26), compile SDK 36, target SDK 35. The APK bundles Hermes and JavaScript;
 Metro and a browser are not required on the phone. Both ARM64 and ARMv7 phones
 are supported. The Java/Kotlin namespace ends in `nativeapp` because `native` is
@@ -21,6 +21,12 @@ structured household forms, sticky saves, and contact/thread chat. See
 [UI_PARITY.md](UI_PARITY.md) for source references, Android adjustments and the
 explicit phone acceptance boundary. There are no new npm dependencies.
 
+Overview is the default tab. Home-Based Observations expands inside Overview,
+with a submit bar only while expanded; Assessment Progress also starts collapsed.
+Overview has no Messages card. ECCD is exclusively read-only (official results
+and both home/school indicators). Child Information displays the current profile's
+teacher first/last name, with the optional adviser name or Not assigned fallback.
+
 - Parent login, registration, email OTP and explicit staff account switching.
   Registration matches server name/combined-name/password/UTF-8 limits. The
   backend remains authoritative for email validation. Failed registration email
@@ -30,7 +36,7 @@ explicit phone acceptance boundary. There are no new npm dependencies.
 - Linked children and adviser/section/year/status cards, with selection in
   `ames_child_${user.id}`. Visible views refresh every 20 seconds and on resume;
   a hidden/unlinked child falls back to an eligible sibling.
-- Dashboard, PRE/MID/POST summaries, raw/scaled/standard scores, domain matrix
+- Overview, PRE/MID/POST summaries, raw/scaled/standard scores, domain matrix
   and expandable indicators. The eight granular permission fields remain
   independent; unreleased periods show placeholders. Mark access never releases
   scores. Restricted marks show only the server-masked parent's own home
