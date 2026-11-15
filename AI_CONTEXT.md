@@ -54,13 +54,18 @@ keys with protected backups; do not regenerate them during routine setup.
 
 The isolated Android parent client is now React Native + TypeScript under
 `mobile/parent-native-android`; it does not reuse or modify the web frontend or
-the older `mobile/parent-android` TWA. Phase 1 covers authentication/OTP, eligible
-child selection, permission-aware ECCD results/dashboard and manual ML insights.
+the older `mobile/parent-android` TWA. Phases 1–2 cover authentication/OTP, eligible
+child selection, permission-aware ECCD results/dashboard, manual ML insights,
+LRN linking, changed-field household profiles, home observations and messaging.
 Its native OkHttp bridge persists only the refresh cookie in Keystore-backed
 encrypted preferences; access JWT/user state remains in RAM. AsyncStorage holds
-only child selection and a logout-pending marker. No parent CRUD, observation
-drafts or messaging are implemented in this phase. Build/signing instructions,
-API configuration and validation boundaries are in that directory's README.
+child selection, logout pending and account-scoped link/profile/composer/home
+drafts using the audited keys/envelopes. Parent drafts never auto-submit or replay;
+confirmed saves clean only matching revisions/answers. Home edits require global,
+section-period and per-question gates. Messaging payloads use contacts.myId as
+parent profile ID, not the account ID; socket auth uses only the RAM access JWT
+and reconnects on renewal. Build/signing instructions, API configuration and
+validation boundaries are in that directory's README.
 Backend routes, schema, scoring, ML artifacts and website behavior are unchanged.
 
 | Layer | Implementation / authority |

@@ -1,35 +1,19 @@
-import React, {useCallback, useEffect, useRef, useState} from 'react';
-import {AppState, Linking, Text, View} from 'react-native';
+import React, {useEffect, useRef, useState} from 'react';
+import {Linking, View} from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {session} from './session';
-import {messageOf, transient} from './sessionCore';
+import {messageOf} from './sessionCore';
 import type {Assessment, Child, Dashboard, Period, Prediction, Readiness, User} from './contracts';
 import {PERIODS} from './contracts';
 import {canPredict, released, VIEW_FLAGS, visibleMark} from './policy';
-import {Button, Card, Copy, Label, Loading, Notice, Title, styles} from './ui';
+import {Button, Card, Copy, Label, Notice, Title, styles} from './ui';
+import {Feedback, useResource} from './resources';
+import {LinkChild, ProfileScreen} from './ProfileScreen';
+import {HomeScreen} from './HomeScreen';
+import {MessagesScreen, useMessaging} from './MessagesScreen';
 
-function useResource<T>(path: string, revision = '') {
-  const [state, setState] = useState<{data: T | null; error: string; loading: boolean}>({data: null, error: '', loading: true});
-  const version = useRef(0);
-  const load = useCallback(async () => {
-    const request = ++version.current;
-    try { const data = await session.request<T>(path); if (version.current === request) setState({data, error: '', loading: false}); }
-    catch (e) { if (version.current === request) setState(old => ({data: transient(e) ? old.data : null, error: messageOf(e), loading: false})); }
-  }, [path]);
-  useEffect(() => {
-    setState({data: null, error: '', loading: true}); void load();
-    const timer = setInterval(() => { if (AppState.currentState === 'active') void load(); }, 20000);
-    const listener = AppState.addEventListener('change', value => { if (value === 'active') void load(); });
-    return () => { version.current++; clearInterval(timer); listener.remove(); };
-  }, [load, revision]);
-  return {...state, reload: load};
-}
-function Feedback({error, loading, reload}: {error: string; loading: boolean; reload: () => Promise<void>}) {
-  return <>{loading && <Loading/>}{!!error && <Notice error>{error}<Text onPress={() => void reload()}> Tap Refresh to retry.</Text></Notice>}
-    <Button secondary title="Refresh" disabled={loading} onPress={() => void reload()}/></>;
-}
-function DashboardTab({child}: {child: Child}) {
-  const state = useResource<Dashboard>(`/api/eccd/parent/dashboard-stats/${child.student_id}`, JSON.stringify(child));
+function DashboardTab({child, revision}: {child: Child; revision: number}) {
+  const state = useResource<Dashboard>(`/api/eccd/parent/dashboard-stats/${child.student_id}`, `${JSON.stringify(child)}_${revision}`);
   const data = state.data;
   const phase = data?.latestPhase || data?.currentPhase;
   const allowed = phase === 'PRE' || phase === 'MID' || phase === 'POST' ? child[VIEW_FLAGS[phase]] && data?.is_published : false;
@@ -61,7 +45,6 @@ function ResultsTab({child}: {child: Child}) {
       <Copy>Home observations: {child.allow_parent_edit_home_based_eccd && data.permissions.allow_parent_edit_home_based_eccd && data.can_edit_home_based ? 'Enabled in open period windows' : 'Read-only / locked'}</Copy>
       <Copy>Prediction access: {child.allow_parent_predictions && data.permissions.allow_parent_predictions ? 'Enabled; PRE readiness and release also required' : 'Locked'}</Copy>
       <Copy>Recorded marks: {child.allow_parent_view_eccd_marks && data.permissions.allow_parent_view_eccd_marks && data.allow_parent_view_eccd_marks ? 'Available independently of score release' : 'Restricted; only your own eligible home observations may appear'}</Copy>
-      <Copy>This release displays results. Profile and home-observation editing arrive in Phase 2.</Copy>
     </Card>
     {data.domains.map(domain => <Card key={domain.domain_id}><Button secondary title={`${expanded === domain.domain_id ? 'Hide' : 'Show'} ${domain.domain_name} indicators (${domain.questions.length})`} onPress={() => setExpanded(expanded === domain.domain_id ? null : domain.domain_id)}/>
       {expanded === domain.domain_id && [...domain.questions].sort((a, b) => a.sequence_order - b.sequence_order).map(q => {
@@ -107,7 +90,10 @@ function InsightsTab({child}: {child: Child}) {
 export function ChildPortal({user}: {user: User}) {
   const state = useResource<Child[]>('/api/students/my-child');
   const [selected, setSelected] = useState<number>(0);
-  const [tab, setTab] = useState<'Dashboard' | 'ECCD Results' | 'ML Insights'>('Dashboard');
+  const [tab, setTab] = useState<'Dashboard' | 'Child Profile' | 'Home Observations' | 'ECCD Results' | 'ML Insights' | 'Messages'>('Dashboard');
+  const [linking, setLinking] = useState(false);
+  const [revision, setRevision] = useState(0);
+  const messaging = useMessaging();
   const [storageError, setStorageError] = useState('');
   const [selectionReady, setSelectionReady] = useState(false);
   const storageVersion = useRef(0);
@@ -129,13 +115,19 @@ export function ChildPortal({user}: {user: User}) {
     void AsyncStorage.setItem(key, String(id)).catch(() => setStorageError('Child selection will last for this session only.'));
   };
   return <><Card><Title>My children</Title><Copy>Hello, {user.full_name || 'Parent'}</Copy><Feedback {...state}/>{!!storageError && <Notice>{storageError}</Notice>}
+    <Button title="Link Child" onPress={() => setLinking(true)}/>
     {!state.loading && !children.length && <Notice>No eligible linked children are available. Ask your child’s adviser to confirm the family link and active section assignment.</Notice>}
     {children.map(c => <View key={c.student_id} style={{gap: 8}}><Button disabled={!selectionReady} title={`${child?.student_id === c.student_id ? '✓ ' : ''}${c.full_name || `${c.first_name || ''} ${c.last_name || ''}`.trim() || `Child ${c.student_id}`}`} secondary={child?.student_id !== c.student_id} onPress={() => select(c.student_id)}/>
       <Copy>Section: {c.section_name || c.class_name || '—'} · School year: {c.school_year || '—'}</Copy>
       <Copy>Adviser: {c.adviser_name || `${c.teacher_fname || ''} ${c.teacher_lname || ''}`.trim() || '—'} · {c.is_active ? 'Active' : 'Inactive'}</Copy>
       {child?.student_id === c.student_id && (c.allow_parent_view_student_info ? <Copy>Birth date: {c.date_of_birth ?? '—'} · Gender: {c.gender ?? '—'} · LRN: {c.masked_lrn}</Copy> : <Notice>Student information is locked by the adviser.</Notice>)}
     </View>)}
-  </Card>{child && <><View style={styles.row}>{(['Dashboard', 'ECCD Results', 'ML Insights'] as const).map(t => <Button key={t} title={t} secondary={tab !== t} onPress={() => setTab(t)}/>)}</View>
-    <View key={`${user.id}_${child.student_id}_${tab}`} style={{gap: 16}}>{tab === 'Dashboard' ? <DashboardTab child={child}/> : tab === 'ECCD Results' ? <ResultsTab child={child}/> : <InsightsTab child={child}/>}</View>
-  </>}</>;
+  </Card>{linking && <LinkChild user={user} close={() => setLinking(false)} linked={async id => {await state.reload(); select(id); setTab('Dashboard');}}/>}
+    <View style={styles.row}>{(['Dashboard', 'Child Profile', 'Home Observations', 'ECCD Results', 'ML Insights', 'Messages'] as const).map(t => <Button key={t}
+      title={t === 'Messages' ? `Messages (${messaging.state.unread})` : t} disabled={!child && t !== 'Messages'} secondary={tab !== t} onPress={() => setTab(t)}/>)}</View>
+    {tab === 'Messages' ? <MessagesScreen user={user} client={messaging.client}/> : child && <View key={`${user.id}_${child.student_id}_${tab}`} style={{gap: 16}}>
+      {tab === 'Dashboard' ? <DashboardTab child={child} revision={revision}/> : tab === 'Child Profile' ? <ProfileScreen child={child} user={user} changed={state.reload}/> :
+        tab === 'Home Observations' ? <HomeScreen child={child} user={user} changed={() => setRevision(n => n + 1)}/> : tab === 'ECCD Results' ? <ResultsTab child={child}/> : <InsightsTab child={child}/>}
+    </View>}
+  </>;
 }

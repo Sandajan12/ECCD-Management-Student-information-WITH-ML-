@@ -1,7 +1,7 @@
-# AMES Parent — React Native Android, Phase 1
+# AMES Parent — React Native Android, Phases 1–2
 
 Standalone React Native **0.86.3** / React **19.2.3** / TypeScript app. Android
-package `com.ameskinder.parent.native`, version **1.0.0 (1)**, minimum Android 8
+package `com.ameskinder.parent.native`, version **1.1.0 (2)**, minimum Android 8
 (API 26), compile SDK 36, target SDK 35. The APK bundles Hermes and JavaScript;
 Metro and a browser are not required on the phone. Both ARM64 and ARMv7 phones
 are supported. The Java/Kotlin namespace ends in `nativeapp` because `native` is
@@ -33,9 +33,49 @@ steps are involved. The school seal was copied through `git show` from
 - Dynamic school name/color/data-URL PNG/JPEG/WebP logo from `/api/settings`.
   The bundled seal is the fallback for unavailable/unsupported logo formats.
 
-Phase 2 profile/home-observation CRUD, durable answer drafts and messaging are
-not implemented. This release does not create, delete, migrate or replay any
-website drafts. Assessment data is held in RAM and requires connectivity.
+- Link Child validates 12 ASCII LRN digits and preserves its form until confirmed;
+  SYNCED links refresh/select the child, PENDING links explain adviser approval.
+- Child Profile shows masked/restricted states and separately gates household
+  editing. Only normalized changed fields are sent, including legal guardian
+  fields; required existing guardian names cannot be cleared.
+- Home Observations supports per-period/domain KAYA/DI-KAYA local drafts,
+  local answer removal and manual submission. Global permission, section window
+  and individual saved-answer locks remain independent. The backend has no
+  parent endpoint for deleting or changing a submitted observation.
+- Messages uses contacts' `myId` as the parent profile ID, REST persistence/read
+  receipts, unread counts, and Socket.IO 4.8.3 live updates. The access-token-only
+  handshake uses `/socket.io/`; token rotation reconnects without remounting
+  forms. Reconnect fetches server state and never sends composer drafts. REST
+  already pushes committed messages, so no duplicate socket send is emitted.
+
+Assessment reference data/history stays in RAM and requires connectivity; saved
+drafts alone do not provide offline login or a fully offline portal. Native drafts
+are independent of the website's localStorage; no website data is migrated.
+
+## Draft durability
+
+AsyncStorage uses the exact owner/student/domain keys from the audit:
+
+```text
+ames_draft_${user.id}_parent_link
+ames_draft_${user.id}_parent_profile_${studentId}
+ames_draft_${user.id}_message_${teacherId}_${parentId}
+eccd_draft_${studentId}_${PRE|MID|POST}_${domainId}_home_${user.id}
+```
+
+`user.id` is the account ID. Only messaging API payloads use `contacts.myId` as
+the parent profile ID. Home envelopes contain `owner_id`, `values.answers`, a
+UUID revision and `is_pending_sync`; attempted submissions add the exact audited
+request envelope. Profile envelopes also retain a baseline for field diffing.
+Writes are serialized per key. HTTP 200/201 clears only confirmed matching
+revisions/question values; new edits and other owners survive. Non-network
+rejections retain the snapshot with `error` and nonpending status. Network
+failures retain the pending request and show the audited reconnect/manual-submit
+message. No storage enumerator, startup replay or reconnection replay exists.
+Logout/access loss preserves drafts. Storage failures warn that only RAM remains;
+unreadable saved data is retained and editing is blocked until it can be loaded.
+Use Refresh to recover a confirmed send with an uncertain HTTP result before
+manually retrying: the existing message API has no client idempotency key.
 
 ## Authentication boundary
 
@@ -63,8 +103,8 @@ Date compensation. No parent form is replayed automatically.
 Logout attempts server revocation, clears the native cookie and RAM, and uses
 the non-sensitive `ames_logout_pending` marker to prevent offline logout from
 restoring a session. There are no persisted access tokens, user objects, roles
-or credentials in AsyncStorage. Child selection and logout pending are the only
-AsyncStorage values used in Phase 1.
+or credentials in AsyncStorage. AsyncStorage holds child selection, logout
+pending, and the owner-scoped Phase 2 work drafts described above.
 
 ## Local Windows setup
 
@@ -91,9 +131,11 @@ pnpm.cmd exec tsc --noEmit
 pnpm.cmd test
 $env:JAVA_HOME='C:\Users\user\.jdks\temurin-17-x64'
 $env:ANDROID_HOME='C:\Users\user\.bubblewrap\android_sdk'
+$env:GRADLE_USER_HOME='C:\Users\user\.gradle'
 Set-Location android
-./gradlew.bat assembleRelease testReleaseUnitTest '-PamesSigningProperties=C:/Users/user/AMES-Android-Keys/parent-native-android/release-signing.properties' --console=plain
+./gradlew.bat assembleRelease testReleaseUnitTest '-PamesSigningProperties=C:/Users/user/AMES-Android-Keys/parent-native-android/release-signing.properties' '-PamesSigningStoreFile=C:/Users/user/AMES-Android-Keys/parent-native-android/ames-parent-native-release-backup.jks' --console=plain
 & "$env:ANDROID_HOME\build-tools\36.0.0\apksigner.bat" verify --verbose --print-certs app/build/outputs/apk/release/app-release.apk
+& "$env:ANDROID_HOME\build-tools\36.0.0\zipalign.exe" -c -P 16 4 app/build/outputs/apk/release/app-release.apk
 ```
 
 The two tests are app-only Node tests and Android JVM tests with MockWebServer;

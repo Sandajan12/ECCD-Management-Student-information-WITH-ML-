@@ -1,7 +1,14 @@
 import type {Assessment, Child, Period, Question, Readiness} from './contracts';
 
 export const VIEW_FLAGS = {PRE: 'allow_parent_view_eccd_pre', MID: 'allow_parent_view_eccd_mid', POST: 'allow_parent_view_eccd_post'} as const;
-const WINDOWS = {PRE: 'pre_test_parent_editable', MID: 'mid_test_parent_editable', POST: 'post_test_parent_editable'} as const;
+export const WINDOWS = {PRE: 'pre_test_parent_editable', MID: 'mid_test_parent_editable', POST: 'post_test_parent_editable'} as const;
+export function homeLock(child: Child, assessment: Assessment, question: Question, period: Period): string {
+  if (!child.allow_parent_edit_home_based_eccd || !assessment.permissions.allow_parent_edit_home_based_eccd || !assessment.can_edit_home_based)
+    return 'Home observations are locked by the Class Adviser.';
+  if (!assessment.parent_assessment_access[WINDOWS[period]]) return `The ${period} editing window is closed by the teacher.`;
+  if (question.parent_locked[period]) return 'This observation is already submitted or teacher-confirmed and cannot be changed.';
+  return question.is_home_based ? '' : 'Only home-based indicators can be observed here.';
+}
 export function released(child: Child, assessment: Assessment, period: Period): boolean {
   return child[VIEW_FLAGS[period]] === true && assessment.permissions[VIEW_FLAGS[period]] === true &&
     assessment.summary[period].isReleased === true && assessment.summary[period].is_published === true;

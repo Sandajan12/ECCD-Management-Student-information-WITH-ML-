@@ -5,6 +5,24 @@ import type {SessionResponse} from '../src/contracts.ts';
 
 const response = (value: unknown, status = 200) => new Response(JSON.stringify(value), {status, headers: {'Content-Type': 'application/json'}});
 const sessionValue = (id = 1): SessionResponse => ({success: true, user: {id, role: 'user', full_name: 'Parent'}, access_token: `header.${Buffer.from(JSON.stringify({tokenType: 'session', exp: Math.floor(Date.now() / 1000) + 1800, id})).toString('base64url')}.signature`});
+test('protected JSON payloads survive a single 401 refresh; only numeric local queries are allowed', async () => {
+  const calls: Array<{url: string; init: RequestInit}> = []; let denied = true;
+  const manager = new SessionManager({baseUrl: 'https://api.ameskinder.com', readPending: async () => false, writePending: async () => {}, clearCookie: async () => {},
+    fetch: (async (url: string, init: RequestInit) => {
+      calls.push({url, init});
+      if (url.includes('/api/auth/')) return response(sessionValue());
+      if (denied) {denied = false; return response({detail: 'Expired'}, 401);}
+      return response({success: true});
+    }) as typeof fetch});
+  await manager.restore();
+  await manager.request('/api/parents/children/7', 'PUT', {address: 'New Home'});
+  const puts = calls.filter(c => c.init.method === 'PUT'); assert.equal(puts.length, 2);
+  assert.equal(puts[0].init.body, JSON.stringify({address: 'New Home'})); assert.equal(puts[1].init.body, puts[0].init.body);
+  await manager.request('/api/messages/history?teacher_id=9&parent_id=88');
+  await assert.rejects(manager.request('https://example.com/api/messages/history'), /Invalid API path/);
+  await assert.rejects(manager.request('/api/messages/history?token=secret'), /Invalid API path/);
+  await assert.rejects(manager.request('/api/../settings'), /Invalid API path/);
+});
 function setup(handler: (path: string, init: RequestInit) => Promise<Response>) {
   let pending = false; let cleared = 0;
   const manager = new SessionManager({baseUrl: 'https://api.ameskinder.com', fetch: ((url: string, init: RequestInit) => handler(new URL(url).pathname, init)) as typeof fetch,

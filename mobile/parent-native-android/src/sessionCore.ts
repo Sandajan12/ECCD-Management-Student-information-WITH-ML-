@@ -50,7 +50,7 @@ export class SessionManager {
     this.publish({session: value, message: ''});
   }
   private async wire<T>(path: string, method: string, data?: unknown, token?: string): Promise<T> {
-    if (!/^\/api\/[a-zA-Z0-9/_-]+$/.test(path)) throw new Error('Invalid API path.');
+    if (!/^\/api\/[a-zA-Z0-9/_-]+(?:\?[a-z_]+=[0-9]+(?:&[a-z_]+=[0-9]+)*)?$/.test(path)) throw new Error('Invalid API path.');
     const response = await this.deps.fetch(this.deps.baseUrl + path, {
       method, credentials: 'include', headers: {Accept: 'application/json', ...(data === undefined ? {} : {'Content-Type': 'application/json'}),
         ...(token ? {Authorization: `Bearer ${token}`} : {})}, ...(data === undefined ? {} : {body: JSON.stringify(data)}),
@@ -67,6 +67,7 @@ export class SessionManager {
       const retryMs = /^\d+$/.test(retry) ? Number(retry) * 1000 : Math.max(0, Date.parse(retry) - Date.now() - this.clockOffset) || 0;
       throw new ApiError(message || `Request failed (${response.status}).`, response.status, error.code, retryMs);
     }
+    if (method !== 'GET' && ![200, 201].includes(response.status)) throw new ApiError('The server did not confirm this save.', 502);
     return body as T;
   }
   async restore(): Promise<void> {
@@ -111,12 +112,12 @@ export class SessionManager {
     if ('access_token' in response) { await this.deps.writePending(false); this.accept(response); this.nextRefresh = 0; this.failures = 0; }
     return response;
   }
-  async request<T>(path: string, method = 'GET'): Promise<T> {
+  async request<T>(path: string, method = 'GET', data?: unknown): Promise<T> {
     if (path.startsWith('/api/auth/')) throw new Error('Use the authentication flow.');
     const generation = this.generation;
     const token = this.state.session?.access_token;
     if (!token) throw new ApiError('Please sign in.', 401);
-    try { return await this.wire<T>(path, method, undefined, token); }
+    try { return await this.wire<T>(path, method, data, token); }
     catch (e) {
       if (!(e instanceof ApiError) || generation !== this.generation) throw e;
       if (['SESSION_REVOKED', 'INVALID_TOKEN', 'ACCOUNT_INACTIVE'].includes(e.code)) {
@@ -125,7 +126,7 @@ export class SessionManager {
       if (e.status !== 401) throw e;
       if (this.state.session?.access_token === token) await this.refresh();
       if (generation !== this.generation || !this.state.session) throw e;
-      return await this.wire<T>(path, method, undefined, this.state.session.access_token);
+      return await this.wire<T>(path, method, data, this.state.session.access_token);
     }
   }
   async logout(): Promise<void> {

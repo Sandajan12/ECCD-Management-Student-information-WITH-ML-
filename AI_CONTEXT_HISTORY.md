@@ -1,5 +1,28 @@
 # AMES Context History
 
+## 2026-11-15 — React Native Android parent app, Phase 2 (local)
+
+Extended `4766901` on `feat/parent-native-android` only inside the isolated native
+app, plus these concise context updates. Added LRN linking/pending approval,
+permission-gated child/household profiles with changed-field updates, home-based
+observations with audited owner-scoped AsyncStorage envelopes, and REST/Socket.IO
+messaging. Drafts survive logout/access loss; parent forms never auto-replay.
+Confirmed saves clean only matching revisions/questions. Messaging uses the
+parent profile ID from contacts.myId; RAM access-token rotation reconnects sockets
+without remounting forms. Existing refresh-cookie security remains unchanged.
+
+Executed: TypeScript checking, 25 Node service/unit tests and 4 Android native JVM
+tests passed; release assembly/R8/lint succeeded. APK signature and 16 KiB ZIP
+alignment verified; AMES Parent 1.1.0/code 2 uses the unchanged Phase 1 signing
+certificate and existing external backup keystore. Bundled Hermes/JavaScript
+checked; exact APK path/hash and repeatable commands are recorded in the app's
+RELEASE_VERIFICATION.md and README.md. Install as a same-key update, preserving
+data. Backend/frontend/older TWA/audit/AGENTS and protected branch refs unchanged;
+the existing untracked TWA remains untracked. No push/provider/database/school
+account operations, Playwright or pytest. Mocked service/socket tests and local
+HTTP/native tests do not prove real-device Keystore, offline storage or live
+authenticated messaging acceptance; phone scenarios remain explicitly listed.
+
 ## 2026-11-15 — React Native Android parent app, Phase 1 (local)
 
 Replaced only the partial Kotlin scaffold in `mobile/parent-native-android` with
