@@ -9,7 +9,7 @@ from sqlalchemy.exc import IntegrityError
 
 from backend.migrations.adviser_takeover import VERSION, apply_adviser_takeover, check_adviser_takeover
 from backend.migrations.phase1 import MigrationError
-from backend.models import FamilyAccess, Section, SectionTeacher, Student, StudentEccdEvaluation, Teacher, User
+from backend.models import EccdQuestion, FamilyAccess, Section, SectionTeacher, Student, StudentEccdEvaluation, Teacher, User
 from backend.schemas.backup import BackupDocument
 from backend.tests import test_phase2
 from backend.utils.backups import cipher, export_backup, restore_backup
@@ -35,8 +35,10 @@ class AdviserTakeoverTests(unittest.TestCase):
                 for model in (Student, StudentEccdEvaluation, FamilyAccess)]
 
     def test_takeover_preserves_records_windows_and_teacher_permission_matrix(self):
+        with self.sessions() as db:
+            answers = {str(q): 1 for (q,) in db.query(EccdQuestion.question_id)}
         for period, when in (("PRE", "2026-08-10"), ("MID", "2026-09-10"), ("POST", "2026-10-10")):
-            self.assertEqual(self.fixture.evaluate(period, when).status_code, 200)
+            self.assertEqual(self.fixture.evaluate(period, when, answers=answers).status_code, 200)
         flags = {"pre_test_parent_editable": False, "mid_test_parent_editable": True, "post_test_parent_editable": True}
         self.assertEqual(self.call("PUT", WINDOWS, 2, params={"section_id": 1}, json=flags).status_code, 200)
         # Keep the outgoing teacher active in another section to test ownership

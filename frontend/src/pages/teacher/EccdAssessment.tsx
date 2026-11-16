@@ -12,6 +12,10 @@ import {
   Snackbar,
   Chip,
   Stack,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
 } from "@mui/material";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import DownloadIcon from "@mui/icons-material/Download";
@@ -39,6 +43,7 @@ import {
 } from "../../utils/eccdDrafts";
 import type { TeacherAssessmentDraft } from "../../utils/eccdDrafts";
 import { assessmentRefreshScheduler } from "../../hooks/assessmentRefresh";
+import { unfinishedPrerequisite } from "../../utils/periodGates";
 import EccdCardPreviewDialog from "../../components/teacher/EccdCardPreviewDialog";
 import EccdDownloadDialog from "../../components/teacher/EccdDownloadDialog";
 import type { EccdDownloadKind } from "../../components/teacher/EccdDownloadDialog";
@@ -48,6 +53,7 @@ import type {
   Assessment,
   Period,
   Student,
+  SectionPeriodGates,
 } from "../../types";
 
 const attributionDate = (value: string | null | undefined): string => {
@@ -86,7 +92,24 @@ const EccdAssessment: React.FC = () => {
     typeof assessmentRefreshScheduler
   > | null>(null);
   const [pageError, setPageError] = useState("");
-  const progressScope = `${user?.id}_${section?.section_id}`;
+  const sectionId = section?.section_id;
+  const progressScope = `${user?.id}_${sectionId}`;
+  const [periodGates, setPeriodGates] = useState<{
+    scope: string;
+    data: SectionPeriodGates;
+  } | null>(null);
+  const [requestedPeriod, setRequestedPeriod] = useState<Period | null>(null);
+  const gates = periodGates?.scope === progressScope ? periodGates.data : null;
+  const periodLocked = (period: Period) =>
+    period !== "PRE" && (!gates || !!unfinishedPrerequisite(gates, period));
+  const activePeriodLocked = periodLocked(activePeriod);
+  const prerequisite = requestedPeriod
+    ? unfinishedPrerequisite(gates, requestedPeriod)
+    : null;
+  const choosePeriod = (period: Period) => {
+    if (periodLocked(period)) setRequestedPeriod(period);
+    else setActivePeriod(period);
+  };
   const [classAssessments, setClassAssessments] = useState<{
     scope: string;
     records: Assessment[];
@@ -99,21 +122,35 @@ const EccdAssessment: React.FC = () => {
       progressController.current = controller;
       if (!quiet) setLoading(true);
       try {
-        const res = await api.get<Domain[]>("/api/eccd/domains-progress", {
-          signal: controller.signal,
-        });
+        const [res, gateResponse] = await Promise.allSettled([
+          api.get<Domain[]>("/api/eccd/domains-progress", {
+            signal: controller.signal,
+          }),
+          api.get<SectionPeriodGates>(
+            `/api/eccd/section/${sectionId}/period-gates`,
+            { signal: controller.signal },
+          ),
+        ]);
         if (controller.signal.aborted || version !== progressVersion.current)
           return;
-        const progress = res.data;
+        if (res.status === "rejected") throw res.reason;
+        const progress = res.value.data;
+        setPeriodGates(
+          gateResponse.status === "fulfilled"
+            ? { scope: progressScope, data: gateResponse.value.data }
+            : null,
+        );
         setDomains(progress);
         setPageError("");
         localStorage.setItem(
           "ames_teacher_domains_" + progressScope,
           JSON.stringify(progress),
         );
+        if (gateResponse.status === "rejected") throw gateResponse.reason;
       } catch (err) {
         if (controller.signal.aborted || version !== progressVersion.current)
           return;
+        setPeriodGates(null);
         if (isNetworkError(err)) {
           try {
             setDomains(
@@ -131,7 +168,7 @@ const EccdAssessment: React.FC = () => {
         if (version === progressVersion.current) setLoading(false);
       }
     },
-    [progressScope],
+    [progressScope, sectionId],
   );
   const scheduleProgressRefresh = useCallback(() => {
     progressRefresh.current?.schedule();
@@ -165,6 +202,11 @@ const EccdAssessment: React.FC = () => {
     activeDomain,
     activePeriod,
     scheduleProgressRefresh,
+    !activePeriodLocked,
+    async (period) => {
+      await fetchDomainsProgress(true);
+      setRequestedPeriod(period);
+    },
   );
   useEffect(() => {
     if (!selectedAssessment) return;
@@ -253,6 +295,9 @@ const EccdAssessment: React.FC = () => {
     setActiveDomain(null);
     setDomains([]);
     setClassAssessments(null);
+    setPeriodGates(null);
+    setRequestedPeriod(null);
+    setActivePeriod("PRE");
     setLoading(false);
     setDownloadKind(null);
     setDownloadMenuAnchor(null);
@@ -313,6 +358,7 @@ const EccdAssessment: React.FC = () => {
       } else reload();
     };
     window.addEventListener("online", reload);
+    window.addEventListener("focus", reload);
     window.addEventListener("ames-record-synced", synced);
     return () => {
       ++requestVersion.current;
@@ -322,6 +368,7 @@ const EccdAssessment: React.FC = () => {
       scheduler.cancel();
       progressRefresh.current = null;
       window.removeEventListener("online", reload);
+      window.removeEventListener("focus", reload);
       window.removeEventListener("ames-record-synced", synced);
     };
   }, [section?.section_id, user?.id, fetchDomainsProgress]);
@@ -338,6 +385,7 @@ const EccdAssessment: React.FC = () => {
           student.section_id === section?.section_id,
       ) ||
       !domains.length ||
+      (period !== "PRE" && !gates) ||
       (period !== "PRE" && period !== "MID" && period !== "POST")
     )
       return;
@@ -348,8 +396,16 @@ const EccdAssessment: React.FC = () => {
       domains.find((domain) => domain.domain_id === domainId) || domains[0],
     );
     setSelectedLrn(String(studentId));
-    setActivePeriod(period);
-  }, [students, domains, searchParams, section?.section_id, progressScope]);
+    if (unfinishedPrerequisite(gates, period)) setRequestedPeriod(period);
+    else setActivePeriod(period);
+  }, [
+    students,
+    domains,
+    searchParams,
+    section?.section_id,
+    progressScope,
+    gates,
+  ]);
   const handleDomainClick = (domain: Domain) => {
     setActiveDomain(domain);
     setSelectedLrn("");
@@ -758,9 +814,7 @@ const EccdAssessment: React.FC = () => {
                     <div className="relative min-w-[130px]">
                       <select
                         value={activePeriod}
-                        onChange={(e) =>
-                          setActivePeriod(e.target.value as Period)
-                        }
+                        onChange={(e) => choosePeriod(e.target.value as Period)}
                         className="w-full text-xs sm:text-sm py-1.5 px-3 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all cursor-pointer"
                       >
                         {(["PRE", "MID", "POST"] as Period[]).map((p) => (
@@ -770,6 +824,7 @@ const EccdAssessment: React.FC = () => {
                               : p === "MID"
                                 ? "Mid-Test"
                                 : "Post-Test"}
+                            {periodLocked(p) ? " — Locked" : ""}
                             {` (Saved: ${periodProgress[p].savedCount} / ${periodProgress[p].total})`}
                             {periodProgress[p].draftCount > 0 ||
                             periodProgress[p].hasDateChange
@@ -972,7 +1027,8 @@ const EccdAssessment: React.FC = () => {
                         )}
                       </td>
                       {["PRE", "MID", "POST"].map((period) => {
-                        const isCurrentPeriod = period === activePeriod;
+                        const isCurrentPeriod =
+                          period === activePeriod && !activePeriodLocked;
                         const answer = getAnswer(q.question_id, period);
                         return (
                           <td
@@ -1035,8 +1091,8 @@ const EccdAssessment: React.FC = () => {
                             {evaluations[period as Period].inheritedAnswers[
                               q.question_id
                             ] && (
-                              <span className="text-xs text-slate-500">
-                                Carried forward — not saved
+                              <span className="text-xs text-slate-500 whitespace-nowrap">
+                                draft-not save
                               </span>
                             )}
                           </td>
@@ -1110,7 +1166,7 @@ const EccdAssessment: React.FC = () => {
               <button
                 type="button"
                 onClick={handleSave}
-                disabled={saving || !!dateError}
+                disabled={saving || !!dateError || activePeriodLocked}
                 className="py-2 px-6 text-xs sm:text-sm font-bold text-white bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 disabled:cursor-not-allowed rounded-xl shadow-md transition-all flex items-center gap-2 cursor-pointer active:scale-95"
               >
                 {saving ? (
@@ -1132,6 +1188,80 @@ const EccdAssessment: React.FC = () => {
           No assessment domains found.
         </Alert>
       )}
+
+      <Dialog
+        open={!!requestedPeriod && (!gates || !!prerequisite)}
+        onClose={() => setRequestedPeriod(null)}
+        fullWidth
+        maxWidth="sm"
+        aria-labelledby="period-prerequisite-title"
+        slotProps={{ paper: { sx: { borderRadius: 3 } } }}
+      >
+        <DialogTitle id="period-prerequisite-title">
+          {prerequisite === "PRE"
+            ? "Finish Pre-Test first"
+            : prerequisite === "MID"
+              ? "Finish Mid-Test first"
+              : "Checking section assessments"}
+        </DialogTitle>
+        <DialogContent>
+          {gates && prerequisite ? (
+            <Stack sx={{ gap: 2 }}>
+              <Typography color="text.secondary">
+                Complete {prerequisite === "PRE" ? "Pre-Test" : "Mid-Test"} for{" "}
+                {gates.prerequisites[prerequisite].length} remaining active
+                student(s) before{" "}
+                {requestedPeriod === "MID" ? "Mid-Test" : "Post-Test"}.
+              </Typography>
+              {gates.prerequisites[prerequisite].map((student) => (
+                <Stack
+                  key={student.student_id}
+                  sx={{ gap: 1, p: 2, borderRadius: 3, bgcolor: "grey.50" }}
+                >
+                  <Typography sx={{ fontWeight: 600 }}>
+                    {student.full_name}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    {student.masked_lrn}
+                  </Typography>
+                  <Typography variant="body2">
+                    Saved: {student.saved_count} /{" "}
+                    {gates.required_question_count}
+                    {student.missing_testing_date
+                      ? " · Missing testing date"
+                      : ""}
+                  </Typography>
+                  <Button
+                    variant="outlined"
+                    sx={{ borderRadius: 3, alignSelf: "flex-start" }}
+                    onClick={() => {
+                      setSelectedLrn(String(student.student_id));
+                      setActivePeriod(prerequisite);
+                      setRequestedPeriod(null);
+                    }}
+                  >
+                    Assess Student
+                  </Button>
+                </Stack>
+              ))}
+            </Stack>
+          ) : (
+            <Typography color="text.secondary">
+              Section completion could not yet be confirmed. Reconnect and
+              refresh to check prerequisites. Your drafts remain saved on this
+              device.
+            </Typography>
+          )}
+        </DialogContent>
+        <DialogActions>
+          {!gates && (
+            <Button onClick={() => void fetchDomainsProgress(true)}>
+              Refresh
+            </Button>
+          )}
+          <Button onClick={() => setRequestedPeriod(null)}>Close</Button>
+        </DialogActions>
+      </Dialog>
 
       <Snackbar
         open={snackbar.open}

@@ -76,12 +76,14 @@ when the optional field is omitted, including for accounts created before this a
   and individual saved-answer locks remain independent. The backend has no
   parent endpoint for deleting or changing a submitted observation.
   Saved PRE KAYA carries into MID/POST and saved MID KAYA into POST. Inherited
-  rows stay visible with KAYA selected, DI-KAYA disabled and "Carried forward —
-  not saved" until an explicit submission receives HTTP 200/201. Inherited-only
+  rows stay visible with KAYA selected, DI-KAYA disabled and the single-line
+  "draft-not save" label until an explicit submission receives HTTP 200/201. Inherited-only
   submissions are supported. Hidden sources show a neutral teacher lock. A teacher
   can override an unconfirmed parent home observation; a saved MID DI-KAYA resets
   provisional PRE carry-forward into unanswered POST. These virtual answers do
   not enter saved results, dates, scores or counts before submission.
+  Section-wide PRE/MID prerequisites apply to teacher assessments only; parent
+  home submissions continue using their permission and section-period windows.
 - Messages uses contacts' `myId` as the parent profile ID, REST persistence/read
   receipts, unread counts, and Socket.IO 4.8.3 live updates. The access-token-only
   handshake uses `/socket.io/`; token rotation reconnects without remounting

@@ -6,7 +6,7 @@ import unittest
 from sqlalchemy import event
 
 from backend.main import api
-from backend.models import FamilyAccess, Message, Parent, SectionTeacher, Student, StudentEccdEvaluation, SystemLog, Teacher, User
+from backend.models import EccdQuestion, FamilyAccess, Message, Parent, SectionTeacher, Student, StudentEccdEvaluation, SystemLog, Teacher, User
 from backend.models.message import SenderRole
 from backend.routes.messages import unread
 from backend.tests import test_phase2
@@ -209,8 +209,10 @@ class ParityTests(unittest.TestCase):
         self.assertEqual(self.call("PUT", "/api/students/1", 5, json={"lrn_number": "000000001234"}).status_code, 403)
 
     def test_parent_period_summary_and_legacy_cards_never_leak_locks(self):
+        with self.sessions() as db:
+            answers = {str(q): 1 for (q,) in db.query(EccdQuestion.question_id)}
         for period, when in [("PRE", "2026-08-10"), ("MID", "2026-09-10"), ("POST", "2026-10-10")]:
-            self.assertEqual(self.fixture.evaluate(period, when).status_code, 200)
+            self.assertEqual(self.fixture.evaluate(period, when, answers=answers).status_code, 200)
         locked = self.call("GET", "/api/eccd/parent/dashboard-stats/1", 5)
         self.assertEqual(locked.status_code, 200, locked.text)
         for card in locked.json()["domainCards"]:

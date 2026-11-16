@@ -34,6 +34,7 @@ from backend.utils.lrn import hash_lrn
 from backend.utils.reference_data import seed_reference_data
 from backend.utils.security import get_password_hash, verify_password
 from backend.utils.eccd_scorer import calculate_decimal_age, calculate_scores
+from backend.tests.assessment_fixtures import complete_period
 
 PASSWORD = 'Example123'
 LRN = '001234567890'
@@ -381,15 +382,17 @@ class BackendTests(unittest.TestCase):
         self.assertEqual(self.call('POST','/api/students/create',2,json=payload).status_code,403)
 
     def test_batch_dates_and_unknown_questions_are_atomic(self):
-        self.assertEqual(self.evaluate().status_code,200)
+        with self.sessions() as db:
+            answers = {str(q): 1 for (q,) in db.query(EccdQuestion.question_id)}
+        self.assertEqual(self.evaluate(answers=answers).status_code,200)
         self.assertEqual(self.evaluate('MID','2026-08-10').status_code,400)
-        self.assertEqual(self.evaluate('MID','2026-09-10').status_code,200)
+        self.assertEqual(self.evaluate('MID','2026-09-10',answers=answers).status_code,200)
         self.assertEqual(self.evaluate('POST','2026-08-20').status_code,400)
         self.assertEqual(self.evaluate('PRE','2026-10-01').status_code,400)
         self.assertEqual(self.evaluate(answers={str(self.home):0,'99999':1}).status_code,400)
         with self.sessions() as db:
             records=db.query(StudentEccdEvaluation).filter_by(student_id=1).all()
-            self.assertEqual(len(records),2)
+            self.assertEqual(len(records),2 * len(answers))
             self.assertTrue(all(record.answer==EccdAnswer.KAYA for record in records))
 
     def test_parent_masks_answers_dates_scores_progress_and_info(self):
@@ -461,7 +464,9 @@ class BackendTests(unittest.TestCase):
                 self.assertEqual(list(db.execute(table.select())),preserved[table.name],table.name)
 
     def test_transfer_and_handover_preserve_evaluations(self):
-        for period,when in [('PRE','2026-08-10'),('MID','2026-09-10'),('POST','2026-10-10')]: self.assertEqual(self.evaluate(period,when).status_code,200)
+        with self.sessions() as db:
+            answers = {str(q): 1 for (q,) in db.query(EccdQuestion.question_id)}
+        for period,when in [('PRE','2026-08-10'),('MID','2026-09-10'),('POST','2026-10-10')]: self.assertEqual(self.evaluate(period,when,answers=answers).status_code,200)
         with self.sessions() as db: original=[tuple(row) for row in db.execute(StudentEccdEvaluation.__table__.select())]
         self.assertEqual(self.call('PUT','/api/chairman/students/transfer',json={'student_ids':[1],'new_section_id':2}).status_code,200)
         self.assertEqual(self.call('GET','/api/eccd/assessment/1',2).status_code,403)
@@ -482,6 +487,9 @@ class BackendTests(unittest.TestCase):
             questions=[db.query(EccdQuestion).filter_by(domain_id=domain).first().question_id for domain in (1,2)]
             db.commit()
         self.assertEqual(self.evaluate(answers={str(question):0 for question in questions}).status_code,200)
+        with self.sessions() as db:
+            complete_period(db)
+            complete_period(db, period="MID", when=date(2026, 9, 1))
         self.assertEqual(self.evaluate('POST','2026-10-10',answers={str(question):1 for question in questions}).status_code,200)
         result=self.call('GET','/api/eccd/parent/dashboard-stats/1',5).json()
         self.assertEqual(result['totalDiKaya'],0)

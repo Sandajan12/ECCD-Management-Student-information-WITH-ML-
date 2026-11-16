@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Pressable, View } from "react-native";
+import { Pressable, Text, View } from "react-native";
 import type { Assessment, Child, Dashboard, Period, User } from "./contracts";
 import { session } from "./session";
 import { messageOf } from "./sessionCore";
@@ -88,7 +88,11 @@ function HomeDomain({
                   {lock}
                 </Badge>
               )}
-              {carried && !lock && <Copy>Carried forward — not saved</Copy>}
+              {carried && !lock && (
+                <Text style={styles.copy} numberOfLines={1}>
+                  draft-not save
+                </Text>
+              )}
               <View style={styles.row}>
                 {(["KAYA", "DI-KAYA"] as const).map((answer) => (
                   <Button

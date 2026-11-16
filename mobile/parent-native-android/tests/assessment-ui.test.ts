@@ -68,7 +68,14 @@ describe("6. Assessment touch, presentation and navigation handlers (mocked host
     const inner = harness.child(domain);
     press(find(inner.render(), (node) => node.type === "Pressable"));
     const tree = inner.render();
-    assert.match(text(tree), /Carried forward — not saved/);
+    assert.match(text(tree), /draft-not save/);
+    assert.equal(
+      find(
+        tree,
+        (node) => node.type === "Text" && text(node) === "draft-not save",
+      ).props.numberOfLines,
+      1,
+    );
     const row = find(
       tree,
       (node) =>

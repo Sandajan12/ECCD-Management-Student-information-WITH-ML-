@@ -576,6 +576,21 @@ confirms an official test. Actual save timestamps differ from chosen assessment
 dates. Unknown historical teacher timestamps remain null. Import and backup
 compatibility retain this distinction.
 
+Teacher period access/saves are section-wide and sequential. MID requires every
+active student currently in the section to have all configured PRE indicators
+saved (including home/custom questions) and an explicit official teacher PRE date.
+POST requires the same for both PRE and MID; PRE blockers take precedence. Saved
+parent marks count as answers, but parent/compatibility dates and virtual answers
+cannot satisfy prerequisites. There is no additional school-year filter.
+`GET /api/eccd/section/{section_id}/period-gates` returns authorized, masked
+incomplete-student lists/counts for the teacher dialog. `POST /api/eccd/evaluate`
+rechecks existing tables before writes and returns 409 with the prerequisite and
+remaining count. The website blocks selection/save and offers Assess Student to
+open the unfinished period. Missing gate data keeps MID/POST locked; drafts survive
+failures and backend rejection also covers queued teacher submissions. Parent
+home routes remain governed by their independent permission/section windows,
+without classmates' prerequisites. No schema migration is required.
+
 Carry-forward is virtual and per question: saved PRE KAYA prefills MID/POST;
 saved MID KAYA prefills POST. Parents cannot downgrade inherited KAYA. Teachers
 are locked only by earlier teacher-marked/confirmed KAYA, using evaluator role
@@ -588,8 +603,8 @@ unanswered POST; it cannot bypass a separate earlier confirmed KAYA lock.
 `restricted` or null values by period. Hidden sources yield neutral restrictions,
 preserving independent marks access and all editing gates. Saved `answers`,
 scores, dates, exports and completion counts never include virtual answers.
-Inherited-only submissions require explicit Save; native rows say "Carried
-forward — not saved" and stay visible until HTTP 200/201. Drafts cannot bypass
+Inherited-only submissions require explicit Save; checklist/home rows say
+"draft-not save" on a single line and stay visible until HTTP 200/201. Drafts cannot bypass
 locks and remain revision-safe through failures. Existing conflicting records
 require reviewed saves. The older `pre_kaya_question_ids` response field remains
 for compatibility; current clients use per-question metadata. This rule requires

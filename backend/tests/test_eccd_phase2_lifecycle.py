@@ -9,6 +9,7 @@ import openpyxl
 from backend.models import EccdQuestion, Parent, Section, Student, StudentEccdEvaluation, Teacher
 from backend.models.eccd import TestingPeriod
 from backend.tests import test_phase2
+from backend.tests.assessment_fixtures import complete_period
 from backend.utils.eccd_scorer import calculate_decimal_age
 from backend.utils.excel import DOMAIN_SHEETS, XLSX, workbook_bytes
 from backend.utils.lrn import hash_lrn
@@ -221,7 +222,14 @@ class EccdPhase2LifecycleTests(unittest.TestCase):
             db.commit()
         self.parent_save("PRE")
         self.parent_save("MID")
+        preview = self.get_json("/api/eccd/assessment/1", actor=2)
+        self.assertIsNone(preview["periodDates"]["PRE"])
+        self.assertEqual(preview["gradingDates"]["PRE"], "2026-08-20")
+        with self.sessions() as db:
+            complete_period(db, when=date(2026, 8, 10))
         self.teacher_save("MID", "2026-09-10")
+        with self.sessions() as db:
+            complete_period(db, period="MID", when=date(2026, 9, 10))
         self.teacher_save("POST", "2026-10-10", questions=[self.fixture.nonhome])
         assessment = self.get_json("/api/eccd/assessment/1", actor=2)
         questions = {q["question_id"]: q for d in assessment["domains"] for q in d["questions"]}
@@ -230,15 +238,17 @@ class EccdPhase2LifecycleTests(unittest.TestCase):
         self.assertIs(school["is_home_based"], False)
         self.assertEqual(home["evaluator_roles"], {"PRE": "parent", "MID": "parent", "POST": None})
         self.assertEqual(home["answers"], {"PRE": "KAYA", "MID": "KAYA", "POST": None})
-        self.assertEqual(school["evaluator_roles"], {"PRE": None, "MID": None, "POST": "teacher"})
-        self.assertEqual(assessment["periodDates"], {"PRE": None, "MID": "2026-09-10", "POST": "2026-10-10"})
+        self.assertEqual(school["evaluator_roles"], {"PRE": "teacher", "MID": "teacher", "POST": "teacher"})
+        self.assertEqual(assessment["periodDates"], {"PRE": "2026-08-10", "MID": "2026-09-10", "POST": "2026-10-10"})
         self.assertEqual(assessment["evaluationDates"], assessment["periodDates"])
-        self.assertEqual(assessment["gradingDates"], {"PRE": "2026-08-20", "MID": "2026-09-10", "POST": "2026-10-10"})
+        self.assertEqual(assessment["gradingDates"], {"PRE": "2026-08-10", "MID": "2026-09-10", "POST": "2026-10-10"})
         for ages in assessment["evalAges"].values():
-            self.assertEqual(ages["PRE"], calculate_decimal_age(date(2021, 1, 10), date(2026, 8, 20)))
+            self.assertEqual(ages["PRE"], calculate_decimal_age(date(2021, 1, 10), date(2026, 8, 10)))
 
     def test_shared_checklist_schema_masks_teacher_marks_but_keeps_own_editable_home_answers(self):
         self.parent_save("PRE")
+        with self.sessions() as db:
+            complete_period(db)
         self.teacher_save("MID", "2026-09-10")
         with self.sessions() as db:
             teacher = db.get(Teacher, 1)
@@ -325,6 +335,8 @@ class EccdPhase2LifecycleTests(unittest.TestCase):
     def test_import_validates_final_state_when_multiple_teacher_periods_move_together(self):
         for period, when in (("PRE", "2026-08-01"), ("MID", "2026-09-01"), ("POST", "2026-10-01")):
             self.teacher_save(period, when, questions=self.school_questions[:2])
+            with self.sessions() as db:
+                complete_period(db, period=period, when=date.fromisoformat(when))
         dates = {"PRE": date(2026, 11, 1), "MID": date(2026, 12, 1), "POST": date(2027, 1, 1)}
         result = self.import_workbook([self.import_row(dates=dates,
             marks={(self.school_questions[0], period): "KAYA" for period in dates})])

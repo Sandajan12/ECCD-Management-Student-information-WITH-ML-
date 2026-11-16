@@ -174,13 +174,14 @@ export default function HomeAssessmentForm({
                                 sx={{
                                   color: "text.secondary",
                                   fontWeight: 500,
+                                  whiteSpace: "nowrap",
                                 }}
                               >
                                 {assessment.isCarriedForward(
                                   question.question_id,
                                   period,
                                 )
-                                  ? "Carried forward — not saved"
+                                  ? "draft-not save"
                                   : assessment.isQuestionSaved(
                                         question.question_id,
                                         period,

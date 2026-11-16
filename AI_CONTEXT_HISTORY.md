@@ -1,5 +1,41 @@
 # AMES Context History
 
+## 2026-11-16 — Compact draft labels and section-wide teacher prerequisites (local)
+
+On `feat/parent-native-android`, teacher/parent web and native inherited rows use
+single-line `draft-not save` labels. Teacher MID requires saved answers for every
+configured PRE indicator plus an official PRE teacher date for every active
+section student; POST requires PRE and MID. The shared dynamic calculation powers
+the authorized masked remaining-student endpoint and pre-write 409 enforcement.
+The teacher dialog lists saved counts/missing dates and opens each student's
+unfinished period. Unknown/stale gates block saves without clearing drafts.
+Parent home routes keep their independent permission/section-window rules.
+No database columns, migrations or dependencies were added.
+
+Executed locally: frontend unit tests **8 passed**; assessment Playwright
+**42 passed** across desktop/tablet/320px mobile, followed by **6 teacher checks
+passed** after final loading/error refinements and **3 section-gate checks passed**
+with unavailable-gate recovery/draft-preservation assertions. Both frontend TypeScript projects,
+native TypeScript and changed frontend source lint passed. Native tests **52
+passed**, including single-line label, inherited row and manual confirmation
+checks. Browser API fixtures/native mocked hosts do not establish real-account
+or real-device acceptance. No APK was rebuilt.
+
+Backend verification: full `uv run --no-project --python .venv312 python -m pytest
+backend/tests -q` passed **592 tests/697 subtests**, with 10 existing collection/
+deprecation warnings in **26m08s**. Local DB host/database were asserted as
+`localhost` / `ames_parity_dev`; integration fixtures use disposable
+UUID schemas, with SQLite/mocks elsewhere. The final carry-forward suite passed
+**13 tests** and the database-free assessment suite passed **12 tests/12 subtests**.
+Earlier diagnostic runs found later-period fixtures without prerequisites; these
+now establish explicit saved records while preserving the original test intent.
+The AST refresh produced 3,729 nodes/12,790 edges; missing SQL parsing and existing
+Gradle/Kotlin extraction warnings are outside the changed assessment paths.
+
+No push, merge, deployment or Render/Vercel/Supabase tool call. Older
+`mobile/parent-android` and the original untracked carry-forward plan remain
+untouched and unstaged. Stop after the local commit for localhost review.
+
 ## 2026-11-16 — Per-question KAYA carry-forward and teacher exemption (local)
 
 Implemented `ECCD_KAYA_CARRY_FORWARD_PLAN_2.md` on `feat/parent-native-android`

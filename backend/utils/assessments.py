@@ -11,6 +11,7 @@ from backend.utils.eccd_dates import get_grading_date, get_official_testing_date
 from backend.utils.students import public_student
 from backend.utils.mastery import carry_sources, completed_pre_kaya, guard_pre_mastery
 from backend.utils.audit import person_name, record_audit, teacher_name
+from backend.utils.period_gates import guard_section_period
 
 PERIODS = (TestingPeriod.PRE, TestingPeriod.MID, TestingPeriod.POST)
 DOMAIN_CODES = {1: "GM", 2: "FM", 3: "SH", 4: "RL", 5: "EL", 6: "C", 7: "SE"}
@@ -26,6 +27,7 @@ def save_evaluation(db: Session, user: User, payload: EvaluationBatch) -> dict:
     student = resolve_student(db, payload.student_lrn)
     authorize_student(db, user, student)
     db.query(Student).filter_by(student_id=student.student_id).with_for_update().one()
+    guard_section_period(db, student, payload.testing_period)
     question_ids = [row.question_id for row in payload.evaluations]
     actual_ids = {row[0] for row in db.query(EccdQuestion.question_id).filter(EccdQuestion.question_id.in_(question_ids))}
     if actual_ids != set(question_ids):

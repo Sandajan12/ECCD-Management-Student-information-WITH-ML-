@@ -14,6 +14,7 @@ from backend.migrations.teacher_marked_at import apply_teacher_marked_at, check_
 from backend.migrations.parity_batch1 import apply_batch1
 from backend.migrations.parity_batch2 import apply_batch2
 from backend.tests import test_phase2
+from backend.tests.assessment_fixtures import complete_period
 from backend.utils.backups import cipher, export_backup, restore_backup
 from backend.utils.checklist_workbook import get_mapping
 
@@ -60,6 +61,11 @@ class HomeAssessmentLockTests(unittest.TestCase):
             return {(r["question_id"], r["testing_period"].value): dict(r)
                     for r in db.execute(StudentEccdEvaluation.__table__.select()).mappings()}
 
+    def prerequisites(self):
+        with self.sessions() as db:
+            complete_period(db, provisional_home=True)
+            complete_period(db, period="MID", when=date(2026, 10, 1), provisional_home=True)
+
     def question_data(self, actor):
         data = self.call("GET", "/api/eccd/assessment/1" if actor == 2 else "/api/eccd/parent/assessment/1", actor).json()
         return {q["question_id"]: q for d in data["domains"] for q in d["questions"]}
@@ -102,24 +108,30 @@ class HomeAssessmentLockTests(unittest.TestCase):
                 answers[self.fixture.nonhome] = "KAYA"
             response = self.teacher_save(answers, period=source, official=official)
             self.assertEqual(response.status_code, 200, response.text)
+            if source == "PRE":
+                self.assertEqual(self.parent_save({q: "KAYA"}, period="MID").status_code, 200)
+            self.prerequisites()
             before = self.rows()
             for target in targets:
                 for question in answers:
                     response = self.teacher_save({question: "DI-KAYA"}, period=target, official="2026-11-01")
                     self.assertEqual(response.status_code, 400, response.text)
                     self.assertEqual(self.question_data(2)[question]["carry_forward"][target], "locked")
-                self.assertEqual(self.parent_save({q: "DI-KAYA"}, period=target).status_code, 400)
+                self.assertEqual(self.parent_save({q: "DI-KAYA"}, period=target).status_code, 409 if target == "MID" else 400)
             self.assertEqual(self.rows(), before)
 
     def test_parent_source_is_locked_for_parent_and_teacher_can_override_every_period(self):
+        self.assertEqual(self.parent_save(dict.fromkeys(self.questions, "KAYA")).status_code, 200)
+        self.assertEqual(self.parent_save(dict.fromkeys(self.questions, "KAYA"), period="MID").status_code, 200)
+        self.prerequisites()
         for q, target in zip(self.questions, ("PRE", "MID", "POST")):
             self.assertEqual(self.parent_save({q: "KAYA"}).status_code, 200)
             if target != "PRE":
                 self.assertEqual(self.question_data(5)[q]["carry_forward"][target], "locked")
                 self.assertEqual(self.question_data(2)[q]["carry_forward"][target], "editable")
-                self.assertEqual(self.parent_save({q: "DI-KAYA"}, period=target).status_code, 400)
+                self.assertEqual(self.parent_save({q: "DI-KAYA"}, period=target).status_code, 409 if target == "MID" else 400)
             if target == "PRE":
-                self.assertEqual(self.teacher_save({q: "DI-KAYA"}).status_code, 409)
+                self.assertEqual(self.teacher_save({q: "DI-KAYA"}, official="2026-09-01").status_code, 409)
             response = self.teacher_save({q: "DI-KAYA"}, edited=[q], period=target, official={"PRE": "2026-09-01", "MID": "2026-10-01", "POST": "2026-11-01"}[target])
             self.assertEqual(response.status_code, 200, response.text)
             original = self.rows()[q, "PRE"]
@@ -131,6 +143,7 @@ class HomeAssessmentLockTests(unittest.TestCase):
         self.assertEqual(self.parent_save({q: "KAYA"}).status_code, 200)
         self.assertEqual(self.teacher_save({q: "KAYA"}).status_code, 200)
         self.assertEqual(self.rows()[q, "PRE"]["evaluator_role"], "parent")
+        self.prerequisites()
         for target in ("MID", "POST"):
             self.assertEqual(self.teacher_save({q: "DI-KAYA"}, period=target, official="2026-11-05").status_code, 400)
             self.assertEqual(self.question_data(2)[q]["carry_forward"][target], "locked")
@@ -156,6 +169,7 @@ class HomeAssessmentLockTests(unittest.TestCase):
             for column in mapping[period]:
                 self.assertIn(workbook["CHECKLIST"][f"{column}{mapping['row']}"].value, (None, ""))
         self.assertEqual(self.rows(), before)
+        self.prerequisites()
         response = self.teacher_save({q: "DI-KAYA"}, period="MID", official="2026-11-05")
         self.assertEqual(response.status_code, 200, response.text)
         for actor in (2, 5):
@@ -167,11 +181,14 @@ class HomeAssessmentLockTests(unittest.TestCase):
         q, other = self.questions[:2]
         self.assertEqual(self.parent_save({q: "KAYA"}, period="MID").status_code, 200)
         self.assertEqual(self.parent_save({q: "DI-KAYA"}, period="POST").status_code, 400)
+        self.prerequisites()
         self.assertEqual(self.teacher_save({q: "DI-KAYA"}, period="POST").status_code, 200)
         # Simulate an old inconsistent row without automatically rewriting history.
         self.assertEqual(self.teacher_save({other: "KAYA"}, official="2026-09-01").status_code, 200)
         with self.sessions() as db:
-            db.add(StudentEccdEvaluation(student_id=1, question_id=other, testing_period="MID", answer="DI-KAYA", evaluator_role="teacher", evaluation_date=date(2026, 10, 1), teacher_evaluation_date=date(2026, 10, 1)))
+            record = db.query(StudentEccdEvaluation).filter_by(student_id=1, question_id=other, testing_period="MID").one()
+            record.evaluator_role = "teacher"
+            record.teacher_evaluation_date = date(2026, 10, 1)
             db.commit()
         self.assertEqual(self.question_data(2)[other]["carry_forward"]["POST"], "locked")
         self.assertEqual(self.teacher_save({other: "DI-KAYA"}, period="POST", official="2026-11-05").status_code, 400)
@@ -182,6 +199,7 @@ class HomeAssessmentLockTests(unittest.TestCase):
         with self.sessions() as db:
             db.add(StudentEccdEvaluation(student_id=1, question_id=q, testing_period="MID", answer="DI-KAYA", evaluator_role="parent", parent_id=1, parent_submitted_at=FIRST, evaluation_date=date(2026, 10, 1)))
             db.commit()
+        self.prerequisites()
         before = self.rows()
         self.assertEqual(self.question_data(5)[q]["carry_forward"]["POST"], "locked")
         self.assertEqual(self.parent_save({q: "DI-KAYA"}, period="POST").status_code, 400)

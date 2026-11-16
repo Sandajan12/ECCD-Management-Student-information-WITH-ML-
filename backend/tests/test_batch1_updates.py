@@ -103,7 +103,7 @@ class CumulativeMasteryTests(TestCase):
             student_query if model is Student else question_query if model is EccdQuestion.question_id else evaluation_query)
         payload = EvaluationBatch(student_id=1, period="MID", assessment_date="2026-09-10",
                                   answers={"1": 0, "2": 1})
-        with patch("backend.utils.assessments.resolve_student", return_value=Student(student_id=1)), patch("backend.utils.assessments.authorize_student"):
+        with patch("backend.utils.assessments.resolve_student", return_value=Student(student_id=1)), patch("backend.utils.assessments.authorize_student"), patch("backend.utils.assessments.guard_section_period"):
             with self.assertRaises(HTTPException):
                 save_evaluation(db, MagicMock(), payload)
         self.assertEqual(existing[-1].teacher_evaluation_date, date(2026, 8, 10))

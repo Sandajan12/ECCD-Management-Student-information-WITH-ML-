@@ -109,6 +109,12 @@ test("teacher checklist locks teacher PRE and MID sources while allowing parent-
         allow_eccd_question_management: false,
       };
     else if (path === "/api/eccd/domains-progress") json = [domain];
+    else if (path === "/api/eccd/section/1/period-gates")
+      json = {
+        section_id: 1,
+        required_question_count: 3,
+        prerequisites: { PRE: [], MID: [] },
+      };
     else if (path.startsWith("/api/eccd/assessment/"))
       json = {
         student_id: 1,
@@ -133,9 +139,18 @@ test("teacher checklist locks teacher PRE and MID sources while allowing parent-
     await expect(
       row(name).getByRole("button", { name: "DI-KAYA", exact: true }).last(),
     ).toBeDisabled();
-    await expect(
-      row(name).getByText("Carried forward — not saved").last(),
-    ).toBeVisible();
+    await expect(row(name).getByText("draft-not save").last()).toBeVisible();
+    const label = row(name).getByText("draft-not save").last();
+    expect(
+      await label.evaluate((element) => getComputedStyle(element).whiteSpace),
+    ).toBe("nowrap");
+    expect(
+      await label.evaluate(
+        (element) =>
+          element.getBoundingClientRect().right <=
+          element.closest("td")!.getBoundingClientRect().right,
+      ),
+    ).toBe(true);
   }
   await expect(
     row("Parent PRE source")
@@ -156,6 +171,211 @@ test("teacher checklist locks teacher PRE and MID sources while allowing parent-
     { question_id: 2, testing_period: "POST", answer: "DI-KAYA" },
     { question_id: 3, testing_period: "POST", answer: "KAYA" },
   ]);
+  await expectNoStoredCredentials(page);
+});
+
+test("teacher section prerequisites redirect to remaining students and block stale saves", async ({
+  page,
+}) => {
+  const user: SessionUser = {
+    id: 2,
+    first_name: "Test",
+    last_name: "Teacher",
+    full_name: "Test Teacher",
+    email: "teacher@example.com",
+    role: "admin",
+    is_first_login: 0,
+    section_id: 1,
+    section_name: "Test A",
+    allow_eccd_question_management: false,
+  };
+  let preIncomplete = true;
+  let midIncomplete = true;
+  let stale = false;
+  let failGates = false;
+  const submissions: HomeSubmission[] = [];
+  const incomplete = [
+    {
+      student_id: 2,
+      full_name: "Amy Middle Learner",
+      masked_lrn: "********1234",
+      saved_count: 1,
+      missing_testing_date: true,
+    },
+    {
+      student_id: 3,
+      full_name: "Ben Remaining Learner",
+      masked_lrn: "Pending",
+      saved_count: 0,
+      missing_testing_date: false,
+    },
+  ];
+  const questions = [1, 2].map((id) => ({
+    question_id: id,
+    domain_id: 1,
+    question_text: `Indicator ${id}`,
+    sequence_order: id,
+    is_home_based: false,
+    answers: { PRE: "DI-KAYA", MID: "DI-KAYA", POST: null },
+  }));
+  const domain = { domain_id: 1, domain_name: "Gross Motor", questions };
+  await page.route("**/api/**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    let json: unknown = {};
+    if (path === "/api/eccd/students")
+      json = [
+        {
+          student_id: 1,
+          first_name: "Already",
+          last_name: "Assessed",
+          section_id: 1,
+          is_active: true,
+        },
+        ...incomplete.map((s) => ({
+          ...s,
+          first_name: s.full_name,
+          section_id: 1,
+          is_active: true,
+        })),
+      ];
+    else if (path === "/api/sections/")
+      json = [{ section_id: 1, section_name: "Test A" }];
+    else if (path === "/api/teachers/dashboard-filters")
+      json = {
+        sections: ["Test A"],
+        schoolYears: ["2026-2027"],
+        currentSchoolYear: "2026-2027",
+      };
+    else if (path === "/api/teachers/access-controls")
+      json = {
+        section_id: 1,
+        section_name: "Test A",
+        allow_eccd_question_management: false,
+      };
+    else if (path === "/api/eccd/domains-progress") json = [domain];
+    else if (path === "/api/eccd/section/1/period-gates") {
+      if (failGates) {
+        await route.fulfill({
+          status: 503,
+          json: { detail: "Section completion unavailable" },
+        });
+        return;
+      }
+      json = {
+        section_id: 1,
+        required_question_count: 2,
+        prerequisites: {
+          PRE: preIncomplete ? incomplete : [],
+          MID: midIncomplete ? [incomplete[0]] : [],
+        },
+      };
+    } else if (path.startsWith("/api/eccd/assessment/"))
+      json = {
+        student_id: Number(path.split("/").pop()),
+        domains: [domain],
+        evalAges: {},
+        periodDates: { PRE: "2026-08-01", MID: "2026-09-01", POST: null },
+        student_birth_date: "2021-01-01",
+      };
+    else if (path === "/api/eccd/evaluate") {
+      const payload: HomeSubmission = route.request().postDataJSON();
+      submissions.push(payload);
+      if (stale) {
+        preIncomplete = true;
+        await route.fulfill({
+          status: 409,
+          json: {
+            detail: "Complete Pre-Test (PRE) for 2 remaining active students.",
+          },
+        });
+        return;
+      }
+      if (payload.testing_period === "PRE") preIncomplete = false;
+      if (payload.testing_period === "MID") midIncomplete = false;
+    } else if (path === "/api/messages/contacts")
+      json = { myId: 2, contacts: [] };
+    else if (path === "/api/messages/unread-count") json = { unreadCount: 0 };
+    await route.fulfill({ json });
+  });
+  await mockSession(page, user);
+  await page.goto(
+    "/teacher/eccdassessment?student_id=1&period=POST&domain_id=1",
+  );
+  const dialog = page.getByRole("dialog");
+  const period = page.locator("select").nth(1);
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByText("Finish Pre-Test first")).toBeVisible();
+  await expect(dialog.getByText(/2 remaining active/)).toBeVisible();
+  await expect(
+    dialog.getByText("Amy Middle Learner", { exact: true }),
+  ).toBeVisible();
+  await expect(dialog.getByText("********1234", { exact: true })).toBeVisible();
+  await expect(
+    dialog.getByText(/Saved: 1 \/ 2.*Missing testing date/),
+  ).toBeVisible();
+  await expect(
+    dialog.getByRole("button", { name: "Assess Student" }),
+  ).toHaveCount(2);
+  await expect(period).toHaveValue("PRE");
+  await dialog.getByRole("button", { name: "Close", exact: true }).click();
+  await period.selectOption("MID");
+  await expect(dialog).toBeVisible();
+  await expect(period).toHaveValue("PRE");
+  await dialog.getByRole("button", { name: "Assess Student" }).first().click();
+  await expect(page.locator("select").first()).toHaveValue("2");
+  await page
+    .getByRole("button", { name: "Save Assessment", exact: true })
+    .click();
+  await expect(period.locator("option[value=MID]")).not.toHaveText(/Locked/);
+  await period.selectOption("POST");
+  await expect(dialog.getByText("Finish Mid-Test first")).toBeVisible();
+  await dialog.getByRole("button", { name: "Assess Student" }).click();
+  await expect(period).toHaveValue("MID");
+  await page
+    .getByRole("button", { name: "Save Assessment", exact: true })
+    .click();
+  await expect(period.locator("option[value=POST]")).not.toHaveText(/Locked/);
+  await period.selectOption("POST");
+  await expect(period).toHaveValue("POST");
+  await page
+    .getByRole("row")
+    .filter({ hasText: "Indicator 1" })
+    .getByRole("button", { name: "DI-KAYA", exact: true })
+    .last()
+    .click();
+  stale = true;
+  await page
+    .getByRole("button", { name: "Save Assessment", exact: true })
+    .click();
+  await expect(dialog.getByText("Finish Pre-Test first")).toBeVisible();
+  await dialog.getByRole("button", { name: "Close", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "Save Assessment", exact: true }),
+  ).toBeDisabled();
+  expect(submissions.map((s) => s.testing_period)).toEqual([
+    "PRE",
+    "MID",
+    "POST",
+  ]);
+  expect(
+    await page.evaluate(() => localStorage.getItem("eccd_draft_2_POST_1_2")),
+  ).toContain("DI-KAYA");
+  failGates = true;
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await expect(
+    page.getByText("Section completion unavailable", { exact: true }),
+  ).toBeVisible();
+  await period.selectOption("MID");
+  await expect(dialog.getByText("Checking section assessments")).toBeVisible();
+  await expect(period).toHaveValue("POST");
+  failGates = false;
+  await dialog.getByRole("button", { name: "Refresh", exact: true }).click();
+  await expect(dialog.getByText("Finish Pre-Test first")).toBeVisible();
+  await dialog.getByRole("button", { name: "Assess Student" }).first().click();
+  await expect(period).toHaveValue("PRE");
+  expect(
+    await page.evaluate(() => localStorage.getItem("eccd_draft_2_POST_1_2")),
+  ).toContain("DI-KAYA");
   await expectNoStoredCredentials(page);
 });
 
@@ -453,9 +673,7 @@ test("saved KAYA prefills and locks later home answers but only explicit submit 
   await expect(
     homeAnswer(page, "Plays safely at home", "DI-KAYA"),
   ).toBeDisabled();
-  await expect(
-    homeForm(page).getByText("Carried forward — not saved"),
-  ).toBeVisible();
+  await expect(homeForm(page).getByText("draft-not save")).toBeVisible();
   expect(state.submissions).toHaveLength(0);
   expect(state.saved.has("3_MID_11")).toBe(false);
   await submitHome(page);
@@ -465,9 +683,7 @@ test("saved KAYA prefills and locks later home answers but only explicit submit 
     testing_period: "MID",
     answer: "KAYA",
   });
-  await expect(
-    homeForm(page).getByText("Carried forward — not saved"),
-  ).toHaveCount(0);
+  await expect(homeForm(page).getByText("draft-not save")).toHaveCount(0);
   await expectNoStoredCredentials(page);
 });
 

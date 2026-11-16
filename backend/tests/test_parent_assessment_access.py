@@ -396,8 +396,10 @@ class ParentAssessmentAccessTests(unittest.TestCase):
 
     def test_all_acl_toggles_persist_through_aliases_without_changing_assessments(self):
         self.assertEqual(self.save().status_code, 200)
+        with self.sessions() as db:
+            answers = {str(q): 1 for (q,) in db.query(EccdQuestion.question_id)}
         for period, when in (("PRE", "2026-08-10"), ("MID", "2026-09-10"), ("POST", "2026-10-10")):
-            self.assertEqual(self.fixture.evaluate(period=period, when=when).status_code, 200)
+            self.assertEqual(self.fixture.evaluate(period=period, when=when, answers=answers).status_code, 200)
         before = self.evaluation_rows()
         paths = ("/api/teachers/settings", "/api/teachers/me/access", "/api/teachers/access-controls")
         for path in paths:

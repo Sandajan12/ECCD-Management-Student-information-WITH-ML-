@@ -48,6 +48,8 @@ export function useTeacherAssessment(
   domain: Domain | null,
   period: Period,
   onSaved: () => void,
+  canSave: boolean,
+  onConflict: (period: Period) => Promise<void>,
 ) {
   const { user } = useAuth();
   const owner = user?.id || 0;
@@ -245,6 +247,7 @@ export function useTeacherAssessment(
   const handleSave = async () => {
     if (submissionLock.current || !studentId || !domain || !data || loading)
       return;
+    if (!canSave) return;
     const dateError = validateDate();
     const evaluations = questions.flatMap((q) =>
       resolved[period].answers[q.question_id]
@@ -338,7 +341,10 @@ export function useTeacherAssessment(
           message: errorMessage(err),
           severity: "error",
         });
-        if (isAxiosError(err) && err.response?.status === 409) await refresh();
+        if (isAxiosError(err) && err.response?.status === 409) {
+          await refresh();
+          await onConflict(period);
+        }
       }
     } finally {
       submissionLock.current = false;

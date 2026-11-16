@@ -218,6 +218,18 @@ export interface ParentAssessmentAccess {
 export interface SectionAssessmentAccess extends ParentAssessmentAccess {
   section_id: number;
 }
+export interface IncompleteAssessmentStudent {
+  student_id: number;
+  full_name: string;
+  masked_lrn: string;
+  saved_count: number;
+  missing_testing_date: boolean;
+}
+export interface SectionPeriodGates {
+  section_id: number;
+  required_question_count: number;
+  prerequisites: Record<"PRE" | "MID", IncompleteAssessmentStudent[]>;
+}
 export interface Assessment {
   pre_kaya_question_ids?: number[];
   allow_parent_view_eccd_marks?: boolean;

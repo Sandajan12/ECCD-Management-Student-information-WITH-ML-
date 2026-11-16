@@ -243,6 +243,20 @@ class TeacherAssessmentResponse(AssessmentResponse):
     pre_kaya_question_ids: list[PositiveId] = Field(default_factory=list)
 
 
+class IncompleteAssessmentStudent(ApiModel):
+    student_id: PositiveId
+    full_name: str
+    masked_lrn: str
+    saved_count: int = Field(ge=0)
+    missing_testing_date: bool
+
+
+class SectionPeriodGates(ApiModel):
+    section_id: PositiveId
+    required_question_count: int = Field(ge=0)
+    prerequisites: dict[Literal["PRE", "MID"], list[IncompleteAssessmentStudent]]
+
+
 class EccdCardPreviewResponse(ApiModel):
     student_id: PositiveId
     html: str

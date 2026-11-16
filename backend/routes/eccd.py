@@ -31,6 +31,7 @@ from backend.schemas.eccd import (
     ParentEvaluationBatch,
     ParentEvaluationSaved,
     TeacherAssessmentResponse,
+    SectionPeriodGates,
 )
 from backend.schemas.operations import DomainProgressResult, ParentProgressPeriod, SectionSummaryItem
 from backend.schemas.student import StudentPublicResponse
@@ -40,6 +41,15 @@ from backend.utils.eccd_scorer import calculate_decimal_age, calculate_scores
 from backend.utils.eccd_dates import get_grading_date, get_official_testing_date
 
 router = APIRouter(prefix="/api/eccd", tags=["ECCD"])
+
+
+@router.get("/section/{section_id}/period-gates", response_model=SectionPeriodGates)
+def get_section_period_gates(
+    section_id: int = Path(gt=0), db: Session = Depends(get_db),
+    current_user=Depends(verify_role(["admin", "super-admin"])),
+):
+    from backend.utils.period_gates import authorized_period_gates
+    return authorized_period_gates(db, current_user, section_id)
 
 
 @router.get("/card-preview/{student_id}", response_model=EccdCardPreviewResponse)
