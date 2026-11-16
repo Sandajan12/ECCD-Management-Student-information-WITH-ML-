@@ -21,8 +21,8 @@ android {
         applicationId 'com.ameskinder.parent.native'
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 6
-        versionName '1.2.3'
+        versionCode 7
+        versionName '1.2.4'
         buildConfigField 'String', 'AMES_API_URL', JsonOutput.toJson(apiUrl.replaceAll('/$', ''))
         manifestPlaceholders = [usesCleartextTraffic: api.scheme == 'http' ? 'true' : 'false']
         externalNativeBuild { cmake { arguments '-DCMAKE_OBJECT_PATH_MAX=256' } }

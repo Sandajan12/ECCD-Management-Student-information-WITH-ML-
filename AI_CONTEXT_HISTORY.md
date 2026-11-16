@@ -1,5 +1,29 @@
 # AMES Context History
 
+## 2026-11-16 — Compact native login and in-app Terms notice (local)
+
+Updated `9d0cb51` on `feat/parent-native-android` to 1.2.4/code 7. Read-only
+website login/Terms inspection informed the compact native form: no greeting,
+website shortcut or registration button; blue inline Click here registration link.
+Added the same agreement wording, independent checkbox/blue Terms link, full
+five-section privacy dialog, official references and fixed Close/Accept actions.
+All 14 notice paragraphs match except browser/device wording. Closing never
+accepts; login/OTP require agreement and retain `terms_accepted: true`, challenge,
+password-byte and cooldown behavior. Cookie/RAM session, gates, drafts and chat
+contracts are unchanged; no new dependency.
+
+Executed: TypeScript, 49 Node tests (four new login/Terms cases), four native
+cookie tests, signed release/lint/R8, signature and 16 KiB ZIP alignment passed.
+Same release certificate; APK SHA-256
+`8ab7981938c4738de6aee7bee701074392fa7f1770779e86d3c2c0dd95f03c71`.
+Packaged bundle/assets and all 20 app source-map entries matched current source.
+Protected folders/refs were preserved; all 38,582 older untracked TWA files
+matched their original fingerprint. An unrelated untracked root carry-forward
+plan appeared during work and stayed untouched/unstaged. No provider/database
+calls, website/backend tests, push, uninstall or data clearing. Mocked component
+tests do not establish phone layout/accessibility or live-account/OTP acceptance;
+those checks remain pending in UI_PARITY.md/RELEASE_VERIFICATION.md.
+
 ## 2026-11-15 — Native assessment filters and compact Overview (local)
 
 Implemented the approved PARENT_ASSESSMENT_UX_PLAN.md over `b2af2c7` on

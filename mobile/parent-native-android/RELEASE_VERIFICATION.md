@@ -1,4 +1,73 @@
-# Assessment UX update — local release verification
+# Compact login and native Terms — local release verification
+
+Date: **2026-11-16**. Branch: **feat/parent-native-android**.
+Foundation: `9d0cb51`. App: **AMES Parent 1.2.4 (version code 7)**.
+
+| Check | Result |
+| --- | --- |
+| `pnpm.cmd exec tsc --noEmit` | Passed |
+| `pnpm.cmd test` | 49 passed, 7 suites, no failures/skips; includes four new login/Terms interaction tests plus existing auth/assessment/profile/draft/messaging regressions |
+| Login/Terms coverage | Compact form and inline blue registration navigation; preserved credentials; explicit agreement gating; exact login/OTP payloads, challenge and resend cooldown; independent checkbox/link; Close never accepts; disabled agreement while busy |
+| Website notice comparison | All 14 paragraphs match read-only website source, except "this browser" → "this device"; five sections, official reference links, same title/Close/Accept wording |
+| `gradlew.bat testReleaseUnitTest assembleRelease` | BUILD SUCCESSFUL in 7m 45s; 161 tasks (29 executed/132 current); lint/R8 passed, existing upstream deprecations only |
+| Native cookie tests | 4 passed, no failures/errors/skips; XML timestamp `2026-11-16T05:05:57.008Z` |
+| `apksigner.bat verify --verbose --print-certs` | Verifies, APK v2, one RSA-4096 signer; unchanged release certificate |
+| `zipalign.exe -c -P 16 4` | Passed, exit 0 (build-tools 36.0.0) |
+| APK badging | AMES Parent; `com.ameskinder.parent.native`; 1.2.4/code 7; min 26/target 35/compile 36; ARM64 + ARMv7 |
+| Packaged source/assets | 1,295,676-byte Hermes bundle equals generated output; sourcemap matches all 20 current app sources; five fonts match source; both Hermes ABIs present |
+
+Signed APK (ignored by Git):
+
+```text
+C:\Users\user\Desktop\AMES with ML\mobile\parent-native-android\android\app\build\outputs\apk\release\app-release.apk
+```
+
+Size: **24,866,947 bytes**. SHA-256:
+
+```text
+8ab7981938c4738de6aee7bee701074392fa7f1770779e86d3c2c0dd95f03c71
+```
+
+Unchanged signer certificate SHA-256:
+
+```text
+a58b8be298272fd4ebc9b15764fb269a36373d630bf321bbdc17d62980574fa8
+```
+
+Reused external keystore:
+`C:\Users\user\AMES-Android-Keys\parent-native-android\ames-parent-native-release-backup.jks`.
+Existing `release-signing.properties` stayed external; credentials were never
+printed, edited or tracked. Install this same-key update over the existing app
+without uninstalling or clearing data. Build commands remain in README.
+
+Login removes the greeting, website shortcut/copy and registration button, using
+the requested inline prompt instead. Terms uses the website's agreement wording
+and blue-600 (`#155dfc` sRGB), independent checkbox/link targets, a scrollable
+native notice and fixed Close/Accept actions. Reviewing/closing never accepts.
+Registration and OTP share the notice; auth payloads, cookies, RAM session,
+permissions, manual drafts and messaging contracts remain intact.
+
+Isolation: no modified/untracked additions in backend/frontend; no tracked changes
+in the older Android app. Its pre-existing untracked tree remains untouched and
+unstaged: all **38,582 files** match the before/after fingerprint
+`49013298f91c9c7e3e077c57d6aa512b73159582de3670ccb84fc65a070a7f9b`.
+Protected refs remain main `c5d9279ccfe453fa3fb7e7f3240d366d53ba15c0` and
+feat/parent-android-app `0f4629cfb6c7b458de032cb200dbee630da08bb2`.
+An unrelated untracked root `ECCD_KAYA_CARRY_FORWARD_PLAN.md` appeared during the
+session and was also left untouched/unstaged. Only this app and the two authorized
+context documents belong to this change.
+
+Component tests use mocked hooks/hosts, not Android rendering. Phone layout,
+font scaling, accessibility, Back/scroll/keyboard and real-account/OTP acceptance
+remain pending (UI_PARITY.md). No new dependency, provider/database operation,
+website/backend tests, Playwright/pytest, push, uninstall or data clearing.
+
+---
+
+# Historical assessment UX update — local release verification
+
+The shared output path now holds 1.2.4/code 7 above. The following version/hash
+describes the previous 1.2.3/code 6 artifact only.
 
 Date: **2026-11-15**. Branch: **feat/parent-native-android**.
 Foundation: `b2af2c7`. App: **AMES Parent 1.2.3 (version code 6)**.

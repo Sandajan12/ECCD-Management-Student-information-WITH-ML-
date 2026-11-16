@@ -1,7 +1,7 @@
 # AMES Parent — React Native Android, Phases 1–2
 
 Standalone React Native **0.86.3** / React **19.2.3** / TypeScript app. Android
-package `com.ameskinder.parent.native`, version **1.2.3 (6)**, minimum Android 8
+package `com.ameskinder.parent.native`, version **1.2.4 (7)**, minimum Android 8
 (API 26), compile SDK 36, target SDK 35. The APK bundles Hermes and JavaScript;
 Metro and a browser are not required on the phone. Both ARM64 and ARMv7 phones
 are supported. The Java/Kotlin namespace ends in `nativeapp` because `native` is
@@ -49,7 +49,10 @@ when the optional field is omitted, including for accounts created before this a
   backend remains authoritative for email validation. Failed registration email
   delivery retries the same registration. Resend repeats login/registration;
   there is no parent resend/reset endpoint. Passwords and OTP challenges remain
-  in RAM. Review the existing website terms before accepting the checkbox.
+  in RAM. The compact login has an inline blue registration link and the website's
+  agreement wording. Its blue Terms and Conditions link opens the full native
+  privacy notice, with pinned Close/Accept actions. Closing never accepts;
+  signing in/verifying requires agreement. Registration/OTP can review it too.
 - Linked children and adviser/section/year/status cards, with selection in
   `ames_child_${user.id}`. Visible views refresh every 20 seconds and on resume;
   a hidden/unlinked child falls back to an eligible sibling.

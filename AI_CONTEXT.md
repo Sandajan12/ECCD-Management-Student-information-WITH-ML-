@@ -84,6 +84,10 @@ hides confirmed rows/domains with account/child/period RAM confirmations cleared
 on logout; drafts remain revision-safe/manual-only. Only its header collapses the
 expanded form. Native permission locks say Locked by teacher; unread remains on
 bottom Messages, with compact titles and one home instruction.
+Native login is compact, with an inline blue registration link and the website's
+Terms acknowledgment/full privacy dialog. Checkbox and Terms link are separate;
+Close never accepts, and login/OTP require agreement before sending
+`terms_accepted: true`. Only the notice's browser/device wording differs.
 Backend routes, schema, scoring, ML artifacts and website behavior are unchanged.
 
 | Layer | Implementation / authority |

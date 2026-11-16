@@ -620,11 +620,15 @@ export function Dialog({
   children,
   close,
   locked = false,
+  footer,
+  closeLabel = "Close dialog (keep draft)",
 }: {
   title: string;
   children: React.ReactNode;
   close: () => void;
   locked?: boolean;
+  footer?: React.ReactNode;
+  closeLabel?: string;
 }) {
   return (
     <Modal
@@ -654,7 +658,7 @@ export function Dialog({
             <Title style={{ flex: 1 }}>{title}</Title>
             <IconButton
               name="close"
-              label="Close dialog (keep draft)"
+              label={closeLabel}
               disabled={locked}
               onPress={close}
             />
@@ -665,6 +669,9 @@ export function Dialog({
           >
             {children}
           </ScrollView>
+          {footer && (
+            <View style={{ padding: 20, paddingTop: 12 }}>{footer}</View>
+          )}
         </View>
       </KeyboardAvoidingView>
     </Modal>

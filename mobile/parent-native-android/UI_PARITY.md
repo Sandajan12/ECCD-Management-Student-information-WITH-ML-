@@ -4,6 +4,7 @@ Implemented from read-only source inspection on 2026-11-15, based on Phase 2
 `7c882bc`; navigation/adviser refinements follow UI release `6b7a467`, and
 pull-to-refresh/relationship refinements follow `214a324`; assessment UX refinements
 follow `b2af2c7` and the approved PARENT_ASSESSMENT_UX_PLAN.md.
+The compact login/Terms update follows `9d0cb51` (1.2.4/code 7).
 This is native React Native UI, with no browser/WebView or web imports.
 Frontend/backend files were neither generated nor changed.
 
@@ -12,6 +13,7 @@ Frontend/backend files were neither generated nor changed.
 | `layouts/ParentLayout.tsx`, `layouts/MainLayout.tsx` | Dark `#111827` school header, seal, account logout, five white bottom tabs, unread badge, selected-child dialog |
 | `components/teacher/theme.ts`, `context/SettingsContext.tsx` | Poppins Regular/Medium/SemiBold/Bold, school primary color/name/data-URL seal; `#4543c0` fallback, `#1e1e2f`, `#f4f5f7`/`#f8fafc`, slate text, 12px cards, soft shadows |
 | `pages/LoginPage.tsx`, `pages/RegisterParentPage.tsx`, `components/auth-ui.tsx` | Same bundled school background, indigo seal panel, elevated centered card, outlined fields/icons, password visibility, Father/Mother/Guardian dropdown, inline feedback, six OTP cells, resend cooldown |
+| `components/common/TermsPrivacyAcknowledgment.tsx`, `TermsAndPrivacyModal.tsx` | Exact agreement wording, independent checkbox/blue Terms link, five-section native privacy dialog, official references, fixed Close/Accept actions, no implicit acceptance |
 | `pages/parent/Dashboard.tsx` | Overview greeting, school-year pill, child/adviser summary, phase/status, strengths/support, collapsed progress; home editor inline, no Overview message card |
 | `pages/parent/ChildManagement.tsx` | Avatar, completeness bar, protected identity/enrollment summary, current-detail teacher first/last name for Adviser, household sections, sticky green save action |
 | Dashboard Link LRN dialog | LRN-only native dialog, 12 ASCII digits, inline validation, SYNCED/PENDING badges, retained local input; relationship inherited by the server |
@@ -29,6 +31,14 @@ count; the contacts contract does not supply per-contact unread totals.
 
 ## Native adjustments
 
+- Login omits the greeting/decorative subtitle, website shortcut and standalone
+  registration button. It ends with "Don't have an account yet? Click here";
+  Click here is a blue inline link. Agreement/OTP guards retain the existing
+  `terms_accepted: true` contract and 60-second resend cooldown. Link/checkbox blue
+  is `#155dfc`, the sRGB conversion of the website's Tailwind blue-600
+  (`oklch(54.6% 0.245 262.881)`), independent of dynamic school primary color.
+  All 14 notice paragraphs match the website except "this browser" becomes
+  "this device" for native drafts. No web imports or runtime legal-content fetch.
 - Android safe-area padding and `adjustResize` keep actions above system bars and
   the keyboard. Bottom navigation hides while the keyboard is open.
 - Hardware Back dismisses dialogs without clearing drafts, returns a conversation
@@ -72,6 +82,11 @@ website and app with the same account, child, settings and release permissions:
 
 1. Check login/registration/OTP at normal and enlarged font sizes, password toggles,
    autofill/paste, dropdown selection/Back, cooldown, inline errors and staff switching.
+   Login must omit the greeting/website button and use the blue inline Click here
+   registration link. Open Terms without toggling agreement; scroll all five
+   sections, verify visible Close/Accept actions and dismiss with Close/X/Back.
+   Closing preserves credentials and does not accept. Accept checks agreement;
+   unchecking disables login/OTP, and reopening preserves the current check state.
 2. Switch siblings, open/dismiss Link Child with keyboard and Back, and reopen its
    draft. Check both approval statuses and no validation error after a successful link.
 3. Check Overview status/progress and every unreleased/marks-disabled state;

@@ -1,5 +1,5 @@
 import React, { useContext, useEffect, useState } from "react";
-import { BackHandler, Linking, Pressable, View } from "react-native";
+import { BackHandler, Pressable, Text, View } from "react-native";
 import {
   BrandColor,
   SchoolBrand,
@@ -26,6 +26,10 @@ import type {
   Registration,
   Relationship,
 } from "./contracts";
+import {
+  TermsPrivacyAcknowledgment,
+  linkBlue,
+} from "./TermsPrivacyAcknowledgment";
 
 interface AuthForm {
   email: string;
@@ -109,9 +113,10 @@ export function AuthScreen() {
     }
   };
   const submit = async () => {
+    if (busy || seconds) return;
     setAttempted(true);
     if (!form.accepted) {
-      setError("Please accept the Terms and Conditions before continuing.");
+      setError("Please accept the Terms and Conditions before signing in.");
       return;
     }
     const email = form.email.trim().toLowerCase();
@@ -156,6 +161,11 @@ export function AuthScreen() {
     }
   };
   const verify = async () => {
+    if (busy) return;
+    if (!form.accepted) {
+      setError("Please accept the Terms and Conditions before signing in.");
+      return;
+    }
     if (!challenge || !/^[0-9]{6}$/.test(otp)) {
       setError("Enter the 6-digit email code.");
       return;
@@ -175,7 +185,7 @@ export function AuthScreen() {
     }
   };
   const resend = async () => {
-    if (!submitted || seconds || busy) return;
+    if (!submitted || seconds || busy || !form.accepted) return;
     setBusy(true);
     setError("");
     try {
@@ -186,6 +196,20 @@ export function AuthScreen() {
       setBusy(false);
     }
   };
+  const acknowledgment = (
+    <TermsPrivacyAcknowledgment
+      checked={form.accepted}
+      disabled={busy}
+      onChange={(accepted) => {
+        field("accepted", accepted);
+        if (
+          accepted &&
+          error === "Please accept the Terms and Conditions before signing in."
+        )
+          setError("");
+      }}
+    />
+  );
   if (challenge)
     return (
       <Card style={{ padding: 24, gap: 18 }}>
@@ -210,6 +234,7 @@ export function AuthScreen() {
         ) : (
           <>
             <OtpInput value={otp} onChange={setOtp} disabled={busy} />
+            {acknowledgment}
             <Button
               icon="check"
               title={
@@ -219,7 +244,7 @@ export function AuthScreen() {
                     ? "Verify & Activate Account"
                     : "Verify & Log In"
               }
-              disabled={busy || otp.length !== 6}
+              disabled={busy || otp.length !== 6 || !form.accepted}
               onPress={() => void verify()}
             />
           </>
@@ -230,7 +255,7 @@ export function AuthScreen() {
           title={
             seconds ? `Retry email in ${seconds}s` : "Send a new email code"
           }
-          disabled={busy || seconds > 0}
+          disabled={busy || seconds > 0 || !form.accepted}
           onPress={() => void resend()}
         />
         <Button
@@ -274,9 +299,9 @@ export function AuthScreen() {
         >
           {brand.school_name}
         </Title>
-        <Title style={{ fontSize: 17 }}>
-          {register ? "Create your parent account" : "Welcome back"}
-        </Title>
+        {register && (
+          <Title style={{ fontSize: 17 }}>Create your parent account</Title>
+        )}
         {register && (
           <>
             <Input
@@ -363,7 +388,7 @@ export function AuthScreen() {
         <Input
           icon="email"
           label="Email"
-          placeholder="Email address"
+          placeholder="Enter your email"
           value={form.email}
           onChangeText={(v) => field("email", v)}
           error={
@@ -417,41 +442,7 @@ export function AuthScreen() {
             />
           </>
         )}
-        <Pressable
-          accessibilityRole="checkbox"
-          accessibilityState={{ checked: form.accepted }}
-          disabled={busy}
-          onPress={() => field("accepted", !form.accepted)}
-          style={styles.row}
-        >
-          <View
-            style={{
-              width: 22,
-              height: 22,
-              borderRadius: 4,
-              borderWidth: 1,
-              borderColor: color,
-              backgroundColor: form.accepted ? color : "#fff",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            {form.accepted && <Icon name="check" color="#fff" size={17} />}
-          </View>
-          <Copy style={{ flex: 1 }}>I accept the Terms and Conditions</Copy>
-        </Pressable>
-        <Copy>
-          Use the school website to review the account terms before accepting.
-        </Copy>
-        <Button
-          secondary
-          title="Open school website"
-          onPress={() => {
-            void Linking.openURL("https://www.ameskinder.com").catch(() =>
-              setError("Unable to open browser. Visit www.ameskinder.com."),
-            );
-          }}
-        />
+        {acknowledgment}
         {!!error && <Notice error>{error}</Notice>}
         <Button
           icon="lock"
@@ -464,22 +455,26 @@ export function AuthScreen() {
                   ? "Create account"
                   : "Log In"
           }
-          disabled={busy || seconds > 0}
+          disabled={busy || seconds > 0 || !form.accepted}
           onPress={() => void submit()}
         />
-        <View style={styles.row}>
-          <Label>{register ? "Already registered?" : "New to AMES?"}</Label>
-        </View>
-        <Button
-          secondary
-          title={register ? "Sign in instead" : "Create parent account"}
-          disabled={busy}
-          onPress={() => {
-            setRegister(!register);
-            setAttempted(false);
-            setError("");
-          }}
-        />
+        <Copy style={styles.center}>
+          {register ? "Already registered? " : "Don't have an account yet? "}
+          <Text
+            accessibilityRole="link"
+            accessibilityState={{ disabled: busy }}
+            disabled={busy}
+            onPress={() => {
+              if (busy) return;
+              setRegister(!register);
+              setAttempted(false);
+              setError("");
+            }}
+            style={{ color: linkBlue, fontWeight: "700" }}
+          >
+            {register ? "Sign in instead" : "Click here"}
+          </Text>
+        </Copy>
       </View>
     </Card>
   );
