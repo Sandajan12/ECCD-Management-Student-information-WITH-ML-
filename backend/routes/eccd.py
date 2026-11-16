@@ -191,6 +191,8 @@ def get_parent_assessment_data(student_lrn: str, db: Session = Depends(get_db), 
 @router.post("/parent/evaluate", response_model=ParentEvaluationSaved)
 def evaluate_student_parent(payload: ParentEvaluationBatch, db: Session = Depends(get_db), current_user=Depends(verify_role(["user", "super-admin"]))):
     from backend.utils.assessments import save_home_evaluation
+    from backend.utils.rate_limits import enforce_user_limit
+    enforce_user_limit("home-submit", current_user.user_id)
     return save_home_evaluation(db, current_user, payload)
 
 

@@ -12,6 +12,7 @@ from backend.utils.home_photos import photo_storage, sanitize_photo
 from backend.utils.uploads import IMAGE_LIMIT
 from backend.utils.mastery import carry_sources
 from backend.utils.eccd_dates import now_pht
+from backend.utils.rate_limits import enforce_user_limit
 
 router = APIRouter(prefix="/api/eccd", tags=["Home observations"])
 
@@ -21,6 +22,7 @@ def upload_photo(student_id: int = Path(gt=0), question_id: int = Path(gt=0), pe
                        file: UploadFile = File(), db: Session = Depends(get_db),
                        user=Depends(verify_role(["user"])), storage=Depends(photo_storage)):
     parent = parent_question_access(db, user, resolve_student(db, student_id), question_id, period)
+    enforce_user_limit("home-photo", user.user_id)
     evaluations = db.query(StudentEccdEvaluation).options(selectinload(StudentEccdEvaluation.home_review)).filter_by(student_id=student_id).all()
     if (any(r.question_id == question_id and r.testing_period == period for r in evaluations)
             or db.query(ParentHomeObservation).filter_by(student_id=student_id, question_id=question_id, testing_period=period).first()

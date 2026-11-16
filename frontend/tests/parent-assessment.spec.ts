@@ -387,7 +387,12 @@ test("teacher section prerequisites redirect to remaining students and block sta
   await expectNoStoredCredentials(page);
 });
 
-async function portal(page: Page, path = "/parent/dashboard", marks = false) {
+async function portal(
+  page: Page,
+  path = "/parent/dashboard",
+  marks = false,
+  expandHome = true,
+) {
   const state: PortalState = {
     reviewFlow: false,
     pending: new Map(),
@@ -646,11 +651,190 @@ async function portal(page: Page, path = "/parent/dashboard", marks = false) {
   });
   await mockSession(page, user);
   await page.goto(path);
+  if (path === "/parent/dashboard" && expandHome) await openHome(page);
   return state;
 }
 
+async function openHome(page: Page) {
+  const toggle = page.locator("#home-assessment-toggle");
+  await expect(toggle).toBeVisible();
+  if ((await toggle.getAttribute("aria-expanded")) === "false")
+    await toggle.click();
+}
+
+test("Overview home card starts collapsed and only its header toggles it; domains hide independently", async ({
+  page,
+}) => {
+  const state = await portal(page, "/parent/dashboard", false, false);
+  state.reviewFlow = true;
+  const toggle = page.locator("#home-assessment-toggle");
+  await expect(toggle).toHaveAttribute("aria-expanded", "false");
+  await expect(
+    homeAnswer(page, "Plays safely at home", "KAYA"),
+  ).not.toBeVisible();
+  await page.getByRole("button", { name: /Answer Home Checklist/ }).click();
+  await expect(toggle).toHaveAttribute("aria-expanded", "true");
+  const domain = page.locator("#home-domain-1");
+  await expect(page.locator("#home-assessment-content")).toHaveCount(1);
+  await expect(page.locator("#home-domain-content-1")).toHaveCount(1);
+  await expect(domain).toContainText("1 remaining");
+  await domain.click();
+  await expect(domain).toHaveAttribute("aria-expanded", "false");
+  await expect(
+    homeAnswer(page, "Plays safely at home", "KAYA"),
+  ).not.toBeVisible();
+  await expect(homeAnswer(page, "Draws at home", "KAYA")).toBeVisible();
+  await expect(toggle).toHaveAttribute("aria-expanded", "true");
+  await domain.click();
+  await homeAnswer(page, "Plays safely at home", "KAYA").click();
+  await expect(toggle).toHaveAttribute("aria-expanded", "true");
+  await toggle.click();
+  await toggle.press("Enter");
+  await expect(
+    homeAnswer(page, "Plays safely at home", "KAYA"),
+  ).toHaveAttribute("aria-pressed", "true");
+  await submitHome(page);
+  await expect(homeAnswer(page, "Plays safely at home", "KAYA")).toHaveCount(0);
+  await expect(domain).toHaveCount(0);
+  await expect(homeAnswer(page, "Draws at home", "DI-KAYA")).toBeEnabled();
+  await expect(
+    page.getByText("1 Questions Pending", { exact: true }),
+  ).toBeVisible();
+  await homeAnswer(page, "Draws at home", "DI-KAYA").click();
+  await submitHome(page);
+  await expect(
+    homeForm(page).getByText("All home observations submitted", {
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(
+    homeForm(page).getByRole("button", {
+      name: "Submit Observations",
+      exact: true,
+    }),
+  ).toBeDisabled();
+  await page.reload();
+  await expect(toggle).toHaveAttribute("aria-expanded", "false");
+  await openHome(page);
+  await expect(
+    homeForm(page).getByText("All home observations submitted", {
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expectNoStoredCredentials(page);
+});
+
+for (const action of ["photo", "submission"] as const) {
+  test(`${action} throttling never displays an export error and manual retry preserves drafts`, async ({
+    page,
+  }) => {
+    const state = await portal(page);
+    state.reviewFlow = true;
+    let limited = true;
+    const pattern =
+      action === "photo"
+        ? "**/api/eccd/parent/home-photos/**"
+        : "**/api/eccd/parent/evaluate";
+    await page.route(pattern, async (route) => {
+      if (!limited) return route.fallback();
+      await route.fulfill({
+        status: 429,
+        headers: { "Retry-After": "60" },
+        json: {
+          message:
+            "Export or backup limit reached. Please try again in 10 minutes.",
+        },
+      });
+    });
+    await homeAnswer(page, "Plays safely at home", "KAYA").click();
+    if (action === "photo") {
+      await homeForm(page)
+        .getByText("Optional photo", { exact: true })
+        .first()
+        .locator("input")
+        .setInputFiles({
+          name: "dsd.png",
+          mimeType: "image/png",
+          buffer: Buffer.from(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a5z0AAAAASUVORK5CYII=",
+            "base64",
+          ),
+        });
+      await expect(
+        homeForm(page).getByRole("img", { name: "Optional photo preview" }),
+      ).toBeVisible();
+    }
+    await submitHome(page);
+    await expect(
+      homeForm(page).getByText(
+        action === "photo"
+          ? /Photo upload limit reached/
+          : /Observation submission limit reached/,
+      ),
+    ).toBeVisible();
+    await expect(page.getByText(/Export or backup limit reached/)).toHaveCount(
+      0,
+    );
+    expect(state.submissions).toHaveLength(0);
+    await expect(
+      homeAnswer(page, "Plays safely at home", "KAYA"),
+    ).toHaveAttribute("aria-pressed", "true");
+    if (action === "photo")
+      await expect(homeForm(page).getByText(/dsd.png/)).toBeVisible();
+    limited = false;
+    await submitHome(page);
+    await expect.poll(() => state.pending.get("3_PRE_11")).toBe("KAYA");
+    await expect(homeAnswer(page, "Plays safely at home", "KAYA")).toHaveCount(
+      0,
+    );
+    expect(state.pending.get("3_PRE_11")).toBe("KAYA");
+  });
+}
+
+test("429 error mapping reserves export wording for export and backup routes", async ({
+  page,
+}) => {
+  await portal(page);
+  const messages = await page.evaluate(async () => {
+    const path = "/src/services/api.ts";
+    const api = (await import(path)) as {
+      errorMessage: (error: unknown) => string;
+    };
+    return [
+      "/api/backup/export",
+      "/api/teachers/download-all",
+      "/api/eccd/parent/home-photos/3/11/PRE",
+      "/api/eccd/parent/evaluate",
+      "/api/settings/rollover",
+    ].map((url) =>
+      api.errorMessage({
+        isAxiosError: true,
+        config: { url, method: "post" },
+        response: {
+          status: 429,
+          data: {
+            message:
+              "Export or backup limit reached. Please try again in 10 minutes.",
+          },
+        },
+      }),
+    );
+  });
+  expect(
+    messages
+      .slice(0, 2)
+      .every((message) => message.startsWith("Export or backup")),
+  ).toBe(true);
+  expect(messages[2]).toContain("Photo upload limit reached");
+  expect(messages[3]).toContain("Observation submission limit reached");
+  expect(messages[4]).toContain("Too many requests");
+});
+
 const homeForm = (page: Page) =>
-  page.getByRole("region", { name: "Home-Based Assessment", exact: true });
+  page.getByRole("region", {
+    name: "Assess Home-Based Questions",
+    exact: true,
+  });
 const homeAnswer = (page: Page, name: string, answer: Answer) =>
   homeForm(page)
     .getByRole("group", { name, exact: true })
@@ -670,6 +854,7 @@ test("partial parent submission stays pending and optional photo drafts survive 
   await expect(homeForm(page).getByText(/proof.png/)).toBeVisible();
   await homeAnswer(page, "Plays safely at home", "KAYA").click();
   await page.reload();
+  await openHome(page);
   await expect(homeForm(page).getByText(/proof.png/)).toBeVisible();
   await submitHome(page);
   await expect(
@@ -680,7 +865,8 @@ test("partial parent submission stays pending and optional photo drafts survive 
   expect(state.submissions[0].photo_ids?.[11]).toBe("a".repeat(32));
   await expect(homeAnswer(page, "Draws at home", "DI-KAYA")).toBeEnabled();
   await page.reload();
-  await expect(homeAnswer(page, "Plays safely at home", "KAYA")).toBeDisabled();
+  await openHome(page);
+  await expect(homeAnswer(page, "Plays safely at home", "KAYA")).toHaveCount(0);
   await expect(homeForm(page).getByText(/proof.png/)).toHaveCount(0);
   await expectNoStoredCredentials(page);
 });
@@ -748,6 +934,7 @@ test("accepted earlier KAYA hides photo fields while a negative or unanswered hi
   state.saved.set("3_PRE_11", "KAYA");
   state.saved.set("3_PRE_21", "DI-KAYA");
   await page.reload();
+  await openHome(page);
   await homeForm(page).getByRole("combobox").click();
   await page.getByRole("option", { name: "Mid-Test", exact: true }).click();
   await expect(
@@ -912,7 +1099,7 @@ test("teacher review decisions survive close and reload, save only selected rows
 
 async function submitHome(page: Page) {
   await homeForm(page)
-    .getByRole("button", { name: "Save Home Observations" })
+    .getByRole("button", { name: "Submit Observations", exact: true })
     .click();
   await page
     .getByRole("dialog", { name: "Submit Answers" })
@@ -930,7 +1117,7 @@ test("confirmation cancellation retains selections and saved questions lock acro
     draftKey,
   );
   await homeForm(page)
-    .getByRole("button", { name: "Save Home Observations" })
+    .getByRole("button", { name: "Submit Observations", exact: true })
     .click();
   const dialog = page.getByRole("dialog", { name: "Submit Answers" });
   await expect(
@@ -945,9 +1132,10 @@ test("confirmation cancellation retains selections and saved questions lock acro
     homeAnswer(page, "Plays safely at home", "KAYA"),
   ).toHaveAttribute("aria-pressed", "true");
   await submitHome(page);
-  await expect(homeAnswer(page, "Plays safely at home", "KAYA")).toBeDisabled();
+  await expect(homeAnswer(page, "Plays safely at home", "KAYA")).toHaveCount(0);
   await page.reload();
-  await expect(homeAnswer(page, "Plays safely at home", "KAYA")).toBeDisabled();
+  await openHome(page);
+  await expect(homeAnswer(page, "Plays safely at home", "KAYA")).toHaveCount(0);
   await homeAnswer(page, "Draws at home", "DI-KAYA").click();
   await submitHome(page);
   await expect.poll(() => state.submissions.length).toBe(2);
@@ -963,6 +1151,7 @@ test("saved KAYA prefills and locks later home answers but only explicit submit 
   state.laterOpen = true;
   state.saved.set("3_PRE_11", "KAYA");
   await page.reload();
+  await openHome(page);
   await homeForm(page)
     .getByRole("combobox", { name: "Home assessment testing period" })
     .click();
@@ -1033,9 +1222,9 @@ test("a conflicting linked-parent save refreshes locks and preserves the local d
       "Submitted answers cannot be changed. Refresh to view the saved answers.",
     ),
   ).toBeVisible();
-  await expect(
-    homeAnswer(page, "Plays safely at home", "DI-KAYA"),
-  ).toBeDisabled();
+  await expect(homeAnswer(page, "Plays safely at home", "DI-KAYA")).toHaveCount(
+    0,
+  );
   expect(
     await page.evaluate((key) => localStorage.getItem(key), draftKey),
   ).toContain('"11":"KAYA"');
@@ -1089,6 +1278,7 @@ test("drafts survive reload, failed saves and reconnect, and remain isolated bet
   const state = await portal(page);
   await homeAnswer(page, "Plays safely at home", "DI-KAYA").click();
   await page.reload();
+  await openHome(page);
   await expect(
     homeAnswer(page, "Plays safely at home", "DI-KAYA"),
   ).toHaveAttribute("aria-pressed", "true");
@@ -1111,6 +1301,7 @@ test("drafts survive reload, failed saves and reconnect, and remain isolated bet
     ),
   ).toBeVisible();
   await page.reload();
+  await openHome(page);
   await expect(
     homeAnswer(page, "Plays safely at home", "DI-KAYA"),
   ).toHaveAttribute("aria-pressed", "true");
@@ -1263,10 +1454,7 @@ test("an older confirmed save cannot clear a newer draft revision", async ({
   await expect(
     homeForm(page).getByText("Submitted — awaiting teacher review."),
   ).toBeVisible();
-  await expect(
-    homeAnswer(page, "Plays safely at home", "KAYA"),
-  ).toHaveAttribute("aria-pressed", "true");
-  await expect(homeAnswer(page, "Plays safely at home", "KAYA")).toBeDisabled();
+  await expect(homeAnswer(page, "Plays safely at home", "KAYA")).toHaveCount(0);
   expect(
     await page.evaluate((key) => localStorage.getItem(key), draftKey),
   ).toContain("newer-edit");
@@ -1321,11 +1509,12 @@ test("global and period editing locks disable Overview submissions and preserve 
   await homeAnswer(page, "Plays safely at home", "KAYA").click();
   state.preOpen = false;
   await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await expect(homeForm(page).getByText(/Locked by teacher/)).toBeVisible();
   await expect(
-    homeForm(page).getByText(/Editing Closed by Teacher/),
-  ).toBeVisible();
-  await expect(
-    homeForm(page).getByRole("button", { name: "Save Home Observations" }),
+    homeForm(page).getByRole("button", {
+      name: "Submit Observations",
+      exact: true,
+    }),
   ).toBeDisabled();
   expect(
     await page.evaluate((key) => localStorage.getItem(key), draftKey),

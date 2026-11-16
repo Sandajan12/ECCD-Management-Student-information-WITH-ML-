@@ -46,15 +46,10 @@ import type {
   Contact,
   DomainProgress,
   ParentStats,
-  Answer,
   Period,
   Student,
   SessionUser,
 } from "../../types";
-
-interface HomeDraftValues {
-  answers: Record<string, Answer>;
-}
 
 function parentGreeting(
   user: SessionUser | null,
@@ -128,6 +123,7 @@ interface RecentMessage {
 }
 
 const Dashboard: React.FC = () => {
+  const [homeExpanded, setHomeExpanded] = useState<boolean>(false);
   const { user } = useAuth();
   const navigate = useNavigate();
   const roster = useChildren();
@@ -339,17 +335,9 @@ const Dashboard: React.FC = () => {
   const pendingHomeCount = editablePeriods.reduce(
     (total, period) =>
       total +
-      homeQuestions.filter((question) => {
-        const draft = readDraft<HomeDraftValues>(
-          `eccd_draft_${activeChild?.student_id}_${period}_${question.domain_id}_home_${owner}`,
-        );
-        const saved = question.answers[period];
-        const local =
-          draft?.owner_id === owner
-            ? draft.values.answers[question.question_id]
-            : undefined;
-        return !saved || (local !== undefined && local !== saved);
-      }).length,
+      homeQuestions.filter(
+        (question) => !assessment.isQuestionSaved(question.question_id, period),
+      ).length,
     0,
   );
   const periodStatus = (period: Period): string => {
@@ -598,10 +586,10 @@ const Dashboard: React.FC = () => {
                           ? "Checklist unavailable"
                           : "Checking home tasks…"
                         : !isHomeAssessmentOpen
-                          ? "Editing Closed by Teacher"
+                          ? "Locked by teacher"
                           : pendingHomeCount > 0
                             ? pendingHomeCount + " Questions Pending"
-                            : "✅ Home Submissions Up to Date"}
+                            : "All home observations submitted"}
                     </Typography>
                     <Typography sx={{ fontSize: "0.75rem", color: "#64748b" }}>
                       {isHomeAssessmentOpen
@@ -609,20 +597,21 @@ const Dashboard: React.FC = () => {
                           editablePeriods
                             .map((period) => PERIOD_LABELS[period])
                             .join(", ") +
-                          ". Only saved submissions count."
+                          "."
                         : "Your adviser controls when home observations can be submitted."}
                     </Typography>
                     <Button
                       variant="contained"
                       disabled={!isHomeAssessmentOpen}
-                      onClick={() =>
+                      onClick={() => {
+                        setHomeExpanded(true);
                         document
                           .getElementById("home-assessment")
                           ?.scrollIntoView({
                             behavior: "smooth",
                             block: "start",
-                          })
-                      }
+                          });
+                      }}
                       sx={actionSx}
                     >
                       {pendingHomeCount > 0
@@ -912,7 +901,11 @@ const Dashboard: React.FC = () => {
               </Card>
             </Grid>
           </Grid>
-          <HomeAssessmentForm assessment={assessment} childName={childName} />
+          <HomeAssessmentForm
+            assessment={assessment}
+            expanded={homeExpanded}
+            onExpandedChange={setHomeExpanded}
+          />
         </>
       )}
 

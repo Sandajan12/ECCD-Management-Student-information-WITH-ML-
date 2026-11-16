@@ -9,6 +9,7 @@ import ipaddress
 import math
 import threading
 import time
+from fastapi import HTTPException
 
 from sqlalchemy import text
 from backend.config.database import engine
@@ -20,6 +21,7 @@ class Policy:
     window: int
     limit: int
     message: str
+
 
 
 POLICIES = {
@@ -35,6 +37,8 @@ POLICIES = {
     "provisioning": Policy(900, 5, "Too many account creation requests. Please try again in 15 minutes."),
     "student-link": Policy(900, 10, "Too many student linking attempts. Please try again in 15 minutes."),
     "heavy": Policy(600, 5, "Export or backup limit reached. Please try again in 10 minutes."),
+    "home-photo": Policy(60, 60, "Photo upload limit reached. Please wait a minute and submit again. Your draft has been kept."),
+    "home-submit": Policy(60, 30, "Observation submission limit reached. Please wait a minute and submit again. Your draft has been kept."),
     "probe": Policy(60, 60, "Too many readiness requests. Please try again in a minute."),
     "socket-connect": Policy(60, 30, "Too many connection attempts. Please try again in a minute."),
     "socket-events": Policy(60, 100, "Too many socket events. Please try again in a minute."),
@@ -119,6 +123,13 @@ class RateLimits:
 limits = RateLimits()
 
 
+def enforce_user_limit(namespace: str, user_id: int) -> None:
+    """Authenticated home actions have independent account budgets, not export budgets."""
+    retry = limits.hit(namespace, str(user_id))
+    if retry:
+        raise HTTPException(429, POLICIES[namespace].message, headers={"Retry-After": str(retry)})
+
+
 def request_policies(method: str, path: str) -> list[str]:
     """Aliases share budgets; malformed/unauthenticated requests also count."""
     path = path.rstrip("/")
@@ -151,8 +162,6 @@ def request_policies(method: str, path: str) -> list[str]:
     if method == "PUT" and path in ("/api/auth/update-password", "/api/chairman/account"):
         result.append("password")
     if method in ("GET", "POST") and (
-        path.startswith("/api/eccd/parent/home-photos/")
-        or
         path.startswith(("/api/backup/", "/api/chairman/backup/", "/api/teachers/download/"))
         or path in ("/api/chairman/export-eccd", "/api/teachers/download-all", "/api/teachers/import-students", "/api/eccd/export-all", "/api/settings/rollover", "/api/settings/undo-rollover", "/api/settings/revert-school-year", "/api/chairman/rollover-year", "/api/chairman/undo-rollover")
         or (path.startswith("/api/chairman/sections/") and path.endswith("/export-summary"))

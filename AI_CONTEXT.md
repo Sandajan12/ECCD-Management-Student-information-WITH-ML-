@@ -36,6 +36,21 @@ without its answer, author or time; independent marks/score gates remain intact.
 Eight permissions, synced-family eligibility, section windows, RAM tokens,
 encrypted refresh cookies and owner/revision-safe drafts remain mandatory.
 
+Parent website Overview uses a default-collapsed **Assess Home-Based Questions**
+card. Only its header toggles the outer card; the Overview checklist action opens
+it. Each domain has its own accordion and remaining unsubmitted-question count.
+Saved/submitted/declined rows and empty domains leave the editable list; pending
+observations also leave the Overview remaining count. Virtual carried-forward
+KAYA stays visible until explicit confirmed submission. Collapsing/reloading never
+clears answer/photo drafts; partial submissions remain manual. Optional local photo
+previews use revocable Blob URLs, preserving the existing private review flow.
+
+Photo uploads no longer consume the five-per-ten-minute export/backup budget.
+Authenticated home actions use independent per-account budgets: `home-photo`
+(60/minute) and `home-submit` (30/minute), plus the existing general HTTP IP budget.
+429s carry Retry-After and action-specific messages; web error handling reserves
+export/backup wording for those routes and retains all drafts on throttling.
+
 Optional JPEG/PNG/WebP photos appear only on eligible unsubmitted rows without
 an earlier carry source. Validate actual MIME, 5 MiB encoded size, 8192 pixels per
 side and 20 megapixels; sanitize to a fresh metadata-free JPEG, downscaled within
@@ -1064,10 +1079,15 @@ diagnostics, not current publication requirements. Preserve portal disclosures.
 
 ### Verification commands and tracked inventory
 
-Run relevant checks from the repository root:
+Routine verification must run only specific test files/cases directly connected
+to the changes: pytest specific paths and/or `-k`, and Playwright explicit specs
+and/or `--grep` with an existing config. Never run the full `backend/tests`
+directory or full Playwright suites unless the user explicitly requests a full
+regression/pre-release pass. This saves time and token usage. Run relevant checks
+from the repository root (home-observation example below):
 
 ```powershell
-uv run --no-project --python .venv312 python -m pytest backend/tests -q
+uv run --no-project --python .venv312 python -m pytest backend/tests/test_parent_home_review.py -q
 pnpm.cmd --dir frontend exec tsc --noEmit -p tsconfig.app.json
 pnpm.cmd --dir frontend exec tsc --noEmit -p tsconfig.node.json
 pnpm.cmd --dir frontend run lint
@@ -1105,7 +1125,7 @@ on 5191. Most real-API suites start disposable API/Vite servers; `ml-insights`
 needs its API started separately. Example:
 
 ```powershell
-pnpm.cmd --dir frontend exec playwright test --config playwright.ml-sandbox.config.ts
+pnpm.cmd --dir frontend exec playwright test --config playwright.parent-assessment.config.ts tests/parent-assessment.spec.ts --grep "home card|throttling"
 ```
 
 The parent-sync suite uses `tests/helpers/session.ts` to mock session restoration

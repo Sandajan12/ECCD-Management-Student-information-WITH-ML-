@@ -1,4 +1,5 @@
-import { Button, Stack, Typography } from "@mui/material";
+import { useEffect, useState } from "react";
+import { Box, Button, Stack, Typography } from "@mui/material";
 import { useDurableFile } from "../../utils/fileDrafts";
 
 export default function HomePhotoField({
@@ -11,6 +12,13 @@ export default function HomePhotoField({
   disabled: boolean;
 }) {
   const file = useDurableFile(resource);
+  const [preview, setPreview] = useState<string>("");
+  useEffect(() => {
+    if (!file.file) return;
+    const url = URL.createObjectURL(file.file);
+    setPreview(url);
+    return () => URL.revokeObjectURL(url);
+  }, [file.file]);
   if (!eligible && !file.file) return null;
   return (
     <Stack spacing={1} sx={{ alignItems: "flex-start", minWidth: 0 }}>
@@ -38,6 +46,19 @@ export default function HomePhotoField({
       )}
       {file.file && (
         <>
+          {preview && (
+            <Box
+              component="img"
+              src={preview}
+              alt="Optional photo preview"
+              sx={{
+                maxWidth: "100%",
+                maxHeight: "12rem",
+                borderRadius: 2,
+                objectFit: "contain",
+              }}
+            />
+          )}
           <Typography variant="caption" sx={{ overflowWrap: "anywhere" }}>
             {file.file.name} · Photo stays on this device until you submit.
           </Typography>

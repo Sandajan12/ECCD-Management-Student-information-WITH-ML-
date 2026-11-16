@@ -371,11 +371,29 @@ export function errorMessage(error: unknown): string {
     )
       return "Your draft is saved on this device. Reconnect and submit again.";
     const data = error.response?.data;
+    const message =
+      data?.message || (typeof data?.detail === "string" ? data.detail : "");
+    if (error.response?.status === 429) {
+      const path = new URL(
+        API.getUri(error.config || {}),
+        window.location.origin,
+      ).pathname.replace(/\/$/, "");
+      if (path.startsWith("/api/eccd/parent/home-photos/"))
+        return "Photo upload limit reached. Please wait a minute and submit again. Your draft has been kept.";
+      if (path === "/api/eccd/parent/evaluate")
+        return "Observation submission limit reached. Please wait a minute and submit again. Your draft has been kept.";
+      if (
+        message.startsWith("Export or backup limit reached") &&
+        !/\/(?:backup|export(?:-all|-eccd|-summary)?|download(?:-all)?)(?:\/|$)/.test(
+          path,
+        )
+      )
+        return "Too many requests. Please wait and try again. Your draft has been kept.";
+    }
     if (Array.isArray(data?.detail))
       return data.detail.map((item) => item.msg).join(" ");
     return (
-      data?.message ||
-      (typeof data?.detail === "string" ? data.detail : "") ||
+      message ||
       "Cannot reach the server. Your draft has been kept. Please try again."
     );
   }

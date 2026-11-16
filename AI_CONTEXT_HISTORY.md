@@ -1,5 +1,53 @@
 # AMES Context History
 
+## 2026-11-17 — Parent home upload limits and compact website checklist (local)
+
+On `feat/parent-native-android`, removed home-photo uploads from the shared
+five-per-ten-minute export/backup budget. Authenticated uploads and observation
+submissions use separate existing-counter namespaces, scoped by account:
+60 photos/minute and 30 submissions/minute, retaining the general IP budget.
+429s return Retry-After and action-specific messages. Web error handling reserves
+export/backup wording for those endpoints, preserving answer/photo drafts for
+manual retry.
+
+Website Overview now has a default-collapsed **Assess Home-Based Questions**
+card, header-only toggling, one instruction, independent domain accordions and
+remaining counts. Confirmed submissions/saved rows and empty domains leave the
+editable list; the Overview count excludes pending observations. Unsaved inherited
+KAYA remains visible/submittable. Optional local previews use revocable Blob URLs;
+partial submissions, teacher locks, review/photo deletion, score/date boundaries,
+permissions and owner/revision-safe drafts retain their contracts.
+
+Executed: focused backend review tests **15 passed**; frontend draft/period unit
+tests **9 passed**; both frontend TypeScript projects and changed-source lint
+passed. Following the user's narrowed browser scope, **45 focused parent home
+checks passed** across desktop/tablet/320px mobile. After correcting duplicate
+accordion IDs/heading structure, only the **9 affected accordion/carry/permission
+checks** were repeated and passed. An earlier desktop diagnostic found outdated
+saved-row expectations and a test assertion racing the asynchronous photo upload;
+the final focused runs resolve those failures.
+
+The initially requested full backend run was stopped when the user changed the
+verification policy; it is incomplete and is not a passing full-regression result.
+`AGENTS.md` and `AI_CONTEXT.md` now require routine checks to use only directly
+related test files/cases (`-k` / Playwright `--grep`); full backend-directory or
+Playwright-suite runs require an explicit user-requested regression/pre-release
+pass. The pytest processes were confirmed stopped before continuing.
+
+A real browser/HTTP check used `http://localhost:8000`, genuine fixture JWTs,
+disposable loopback `ames_parity_dev` test records and in-memory photo storage.
+After six earlier uploads, choosing `dsd.png` and submitting returned **200/200**,
+hid the submitted row and produced one pending observation with a photo and zero
+official evaluations. No remote storage or school records were used. This does
+not establish live Storage or real-device acceptance. The missing
+`PARENT_ASSESSMENT_UX_PLAN.md` was not assumed available; explicit task requirements,
+native source and the existing home-review plan supplied the UX reference.
+
+No new migrations/dependencies, APK build, merge, push, deployment or remote
+Render/Vercel/Supabase tools. Original untracked audit/carry plans and
+`mobile/parent-android` remain untouched/unstaged. Stop after the local commit for
+localhost review.
+
 ## 2026-11-16 — Compact draft labels and section-wide teacher prerequisites (local)
 
 On `feat/parent-native-android`, teacher/parent web and native inherited rows use

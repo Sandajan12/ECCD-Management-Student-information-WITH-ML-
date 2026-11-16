@@ -24,6 +24,50 @@ def image_bytes():
 
 
 class ParentHomeReviewTests(unittest.TestCase):
+    def test_photo_upload_and_submit_have_independent_account_budgets(self):
+        from backend.utils.rate_limits import limits, POLICIES, request_policies
+        limits.reset()
+        self.addCleanup(limits.reset)
+        for path in (f"/api/eccd/parent/home-photos/1/{self.q}/PRE", "/api/eccd/parent/evaluate"):
+            self.assertNotIn("heavy", request_policies("POST", path))
+        with patch.object(limits, "bypass", False):
+            for _ in range(POLICIES["heavy"].limit + 1):
+                exported = self.call("GET", "/api/backup/export", 5)
+            self.assertEqual(exported.status_code, 429)
+            # More than five photos from the same parent/IP must still work.
+            for _ in range(7):
+                uploaded = self.upload()
+                self.assertEqual(uploaded.status_code, 200, uploaded.text)
+                self.assertNotIn("Export or backup", uploaded.text)
+            photo = uploaded.json()["photo_id"]
+            submitted = self.submit(photo=photo)
+            self.assertEqual(submitted.status_code, 200, submitted.text)
+            self.assertNotIn("Export or backup", submitted.text)
+            self.assertTrue(self.pending()[0]["has_photo"])
+
+    def test_home_rate_limits_preserve_drafts_and_do_not_share_users_or_actions(self):
+        from backend.utils.rate_limits import limits, POLICIES
+        limits.reset()
+        self.addCleanup(limits.reset)
+        with patch.object(limits, "bypass", False):
+            for _ in range(POLICIES["home-photo"].limit):
+                limits.hit("home-photo", "5")
+            blocked = self.upload()
+            self.assertEqual(blocked.status_code, 429)
+            self.assertIn("Photo upload limit", blocked.text)
+            self.assertNotIn("Export or backup", blocked.text)
+            self.assertGreater(int(blocked.headers["Retry-After"]), 0)
+            self.assertEqual(self.upload(actor=6).status_code, 200)
+            self.assertEqual(self.submit().status_code, 200)
+            for _ in range(POLICIES["home-submit"].limit):
+                limits.hit("home-submit", "5")
+            blocked = self.submit()
+            self.assertEqual(blocked.status_code, 429)
+            self.assertIn("Observation submission limit", blocked.text)
+            self.assertNotIn("Export or backup", blocked.text)
+            with self.sessions() as db:
+                self.assertEqual(db.query(ParentHomeObservation).count(), 1)
+
     def test_review_batch_blocks_conflicting_earlier_positive_and_preserves_undecided_photos(self):
         photo = self.upload().json()["photo_id"]
         self.submit(photo=photo)
