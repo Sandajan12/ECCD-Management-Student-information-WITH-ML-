@@ -5,6 +5,24 @@ import type {SessionResponse} from '../src/contracts.ts';
 
 const response = (value: unknown, status = 200) => new Response(JSON.stringify(value), {status, headers: {'Content-Type': 'application/json'}});
 const sessionValue = (id = 1): SessionResponse => ({success: true, user: {id, role: 'user', full_name: 'Parent'}, access_token: `header.${Buffer.from(JSON.stringify({tokenType: 'session', exp: Math.floor(Date.now() / 1000) + 1800, id})).toString('base64url')}.signature`});
+
+test('multipart proof uploads retain the boundary and RAM bearer through one refresh without JSON conversion', async () => {
+  const requests: RequestInit[] = [];
+  const {manager} = setup(async (path, init) => {
+    if (path.startsWith('/api/auth/')) return response(sessionValue());
+    requests.push(init);
+    return requests.length === 1 ? response({detail: 'Expired'}, 401) : response({photo_id: 'a'.repeat(32)});
+  });
+  await manager.restore();
+  const body = new FormData(); body.append('file', 'isolated multipart fixture');
+  await manager.request('/api/eccd/parent/home-photos/7/45/PRE', 'POST', body);
+  assert.equal(requests.length, 2);
+  for (const request of requests) {
+    assert.equal(request.body, body);
+    assert.equal((request.headers as Record<string,string>)['Content-Type'], undefined);
+    assert.ok((request.headers as Record<string,string>).Authorization.startsWith('Bearer '));
+  }
+});
 test('protected JSON payloads survive a single 401 refresh; only numeric local queries are allowed', async () => {
   const calls: Array<{url: string; init: RequestInit}> = []; let denied = true;
   const manager = new SessionManager({baseUrl: 'https://api.ameskinder.com', readPending: async () => false, writePending: async () => {}, clearCookie: async () => {},

@@ -153,6 +153,9 @@ export function useTeacherAssessment(
     if (p !== period || !data || loading || !domain) return;
     if (
       !questions.some((q) => q.question_id === questionId) ||
+      questions.find((q) => q.question_id === questionId)?.home_observations?.[
+        period
+      ]?.status === "pending" ||
       isCarryLocked(questionId, p)
     )
       return;

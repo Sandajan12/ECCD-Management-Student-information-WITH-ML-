@@ -234,7 +234,38 @@ class VerificationBackupRow(BackupRow):
     attempts: int = Field(ge=0)
 
 
+class HomePhotoBackupRow(BackupRow):
+    photo_id: str = Field(pattern=r"^[0-9a-f]{32}$")
+    student_id: PositiveId | None
+    parent_id: PositiveId | None
+    question_id: PositiveId | None
+    testing_period: TestingPeriod
+    object_key: str | None = None
+    created_at: datetime
+    ready: bool = False
+    delete_pending: bool = False
+    deleted_at: datetime | None = None
+    delete_attempts: int = 0
+
+
+class HomeObservationBackupRow(BackupRow):
+    observation_id: PositiveId
+    student_id: PositiveId
+    question_id: PositiveId
+    testing_period: TestingPeriod
+    answer: EccdAnswer
+    parent_id: PositiveId | None
+    submitted_at: datetime
+    status: Literal["pending", "accepted", "declined"]
+    reviewer_id: PositiveId | None = None
+    reviewed_at: datetime | None = None
+    evaluation_id: PositiveId | None = None
+    photo_id: str | None = None
+
+
 class BackupDocument(BackupRow):
+    parent_home_observations: list["HomeObservationBackupRow"] = Field(default_factory=list)
+    home_observation_photos: list["HomePhotoBackupRow"] = Field(default_factory=list)
     users: list[UserBackupRow]
     teachers: list[TeacherBackupRow]
     parents: list[ParentBackupRow]

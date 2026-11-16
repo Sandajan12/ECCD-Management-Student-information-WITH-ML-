@@ -15,7 +15,7 @@ export interface TeacherQuestionState {
 }
 
 type DraftQuestion = Pick<Question, "question_id"> &
-  Partial<Pick<Question, "answers" | "carry_forward">>;
+  Partial<Pick<Question, "answers" | "carry_forward" | "home_observations">>;
 
 export function teacherDomainProgress(
   questions: readonly Pick<Question, "question_id">[],
@@ -70,6 +70,7 @@ export function resolveTeacherDrafts(
     let blocked = false;
     for (const period of PERIODS) {
       const state = result[period];
+      if (question.home_observations?.[period]?.status === "pending") continue;
       const saved = question.answers?.[period];
       const draft = drafts[period]?.answers[question.question_id];
       if (saved) {

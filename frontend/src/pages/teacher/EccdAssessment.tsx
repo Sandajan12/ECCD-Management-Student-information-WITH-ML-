@@ -46,6 +46,7 @@ import { assessmentRefreshScheduler } from "../../hooks/assessmentRefresh";
 import { unfinishedPrerequisite } from "../../utils/periodGates";
 import EccdCardPreviewDialog from "../../components/teacher/EccdCardPreviewDialog";
 import EccdDownloadDialog from "../../components/teacher/EccdDownloadDialog";
+import HomeObservationReview from "../../components/teacher/HomeObservationReview";
 import type { EccdDownloadKind } from "../../components/teacher/EccdDownloadDialog";
 import type {
   Domain as AssessmentDomain,
@@ -551,6 +552,14 @@ const EccdAssessment: React.FC = () => {
         </Stack>
       </Stack>
 
+      {section && (
+        <HomeObservationReview
+          key={progressScope}
+          students={students}
+          domains={domains}
+          onSaved={() => window.dispatchEvent(new Event("ames-record-synced"))}
+        />
+      )}
       {previewScope === progressScope && (
         <EccdCardPreviewDialog
           key={progressScope}
@@ -1028,7 +1037,10 @@ const EccdAssessment: React.FC = () => {
                       </td>
                       {["PRE", "MID", "POST"].map((period) => {
                         const isCurrentPeriod =
-                          period === activePeriod && !activePeriodLocked;
+                          period === activePeriod &&
+                          !activePeriodLocked &&
+                          q.home_observations?.[period as Period]?.status !==
+                            "pending";
                         const answer = getAnswer(q.question_id, period);
                         return (
                           <td
@@ -1088,6 +1100,12 @@ const EccdAssessment: React.FC = () => {
                                 DI-KAYA
                               </button>
                             </div>
+                            {q.home_observations?.[period as Period]?.status ===
+                              "pending" && (
+                              <span className="text-xs text-slate-500">
+                                Awaiting review
+                              </span>
+                            )}
                             {evaluations[period as Period].inheritedAnswers[
                               q.question_id
                             ] && (

@@ -273,7 +273,7 @@ class MigrationTests(unittest.TestCase):
         with engine.begin() as connection:
             select_schema(connection, self.schema)
             document = {name: [dict(row) for row in connection.execute(table.select()).mappings()] for name, table in Base.metadata.tables.items()
-                        if name != "auth_refresh_sessions"}
+                        if name not in ("auth_refresh_sessions", "parent_home_observations", "home_observation_photos")}
         parsed = BackupDocument.model_validate(document)
         self.assertEqual(len(parsed.student_eccd_evaluations), 3)
         self.assertEqual(BackupDocument.model_validate_json(parsed.model_dump_json()), parsed)

@@ -42,7 +42,7 @@ export interface Message {
 }
 export interface ReadReceipt { teacher_id: number; parent_id: number; reader_role: 'teacher' | 'parent'; message_ids: number[]; }
 export type Answer = 'KAYA' | 'DI-KAYA';
-export interface HomePayload { student_id: number; testing_period: Period; evaluations: Array<{question_id: number; testing_period: Period; answer: Answer}>; }
+export interface HomePayload { student_id: number; testing_period: Period; photo_ids?: Record<number, string>; evaluations: Array<{question_id: number; testing_period: Period; answer: Answer}>; }
 export interface Dashboard {
   currentPhase: string; latestPhase: string | null; excelsIn: string; needsSupportIn: string;
   assessmentMastered: boolean; totalKaya: number | null; totalDiKaya: number | null;
@@ -57,6 +57,8 @@ export interface PeriodSummary {
   scaledScores: Record<string, number> | null; sumOfScaledScores: number | null;
 }
 export interface Question {
+  home_observations?: Partial<Record<Period, {status: 'pending' | 'accepted' | 'declined' | 'submitted'; answer: Answer | null; submitted_at: string | null} | null>>;
+  photo_eligible?: Partial<Record<Period, boolean>>;
   question_id: number; question_text: string; sequence_order: number; is_home_based: boolean;
   answers: Record<Period, 'KAYA' | 'DI-KAYA' | null>;
   evaluator_roles: Record<Period, 'teacher' | 'parent' | null>;

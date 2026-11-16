@@ -7,6 +7,7 @@ from .common import ApiModel, PositiveId, SchoolYear
 from .common import ParentPermissions
 from .student import StudentPublicResponse
 from .assessment_access import ParentAssessmentAccess
+from .home_observation import HomeObservationMetadata
 
 
 class EccdExportYearQuery(ApiModel):
@@ -156,6 +157,7 @@ class EvaluationBatch(ApiModel):
 
 
 class ParentEvaluationBatch(ApiModel):
+    photo_ids: dict[PositiveId, str] = Field(default_factory=dict, max_length=1000)
     student_lrn: str | int = Field(validation_alias=AliasChoices("student_id", "student_lrn"))
     testing_period: TestingPeriod | None = None
     evaluations: list[AssessmentAnswer] = Field(min_length=1, max_length=1000)
@@ -177,6 +179,7 @@ class ParentEvaluationBatch(ApiModel):
 class ParentEvaluationSaved(ApiModel):
     message: str
     testing_period: TestingPeriod
+    review_required: bool = True
 
 
 class EvaluationSaved(ApiModel):
@@ -187,6 +190,8 @@ class EvaluationSaved(ApiModel):
 
 
 class ChecklistQuestion(ApiModel):
+    home_observations: dict[TestingPeriod, HomeObservationMetadata | None] = Field(default_factory=dict)
+    photo_eligible: dict[TestingPeriod, bool] = Field(default_factory=dict)
     question_id: PositiveId
     question_text: str
     sequence_order: int

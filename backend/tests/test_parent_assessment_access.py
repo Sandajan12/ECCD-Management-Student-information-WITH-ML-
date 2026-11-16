@@ -36,7 +36,11 @@ class ParentAssessmentAccessTests(unittest.TestCase):
         rows = [{"question_id": self.fixture.home, "testing_period": period, "answer": answer}]
         if extra:
             rows.append({"question_id": self.fixture.home, "testing_period": extra, "answer": answer})
-        return self.call("POST", "/api/eccd/parent/evaluate", actor, json={"student_id": 1, "evaluations": rows})
+        response = self.call("POST", "/api/eccd/parent/evaluate", actor, json={"student_id": 1, "evaluations": rows})
+        if response.status_code == 200:
+            from backend.tests.assessment_fixtures import materialize_legacy_observations
+            materialize_legacy_observations(self.fixture)
+        return response
 
     def update(self, flags=None, actor=2, section=1):
         return self.call("PUT", PATH, actor, params={"section_id": section}, json=flags or FLAGS)

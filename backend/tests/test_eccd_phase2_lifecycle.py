@@ -16,6 +16,19 @@ from backend.utils.lrn import hash_lrn
 
 
 class EccdPhase2LifecycleTests(unittest.TestCase):
+    def test_import_reports_pending_conflict_per_student_and_preserves_unrelated_rows(self):
+        response = self.call("POST", "/api/eccd/parent/evaluate", 5, json={"student_id": 1,
+            "evaluations": [{"question_id": self.fixture.home, "testing_period": "PRE", "answer": "KAYA"}]})
+        self.assertEqual(response.status_code, 200, response.text)
+        result = self.import_workbook([
+            self.import_row(marks={(self.fixture.home, "PRE"): "KAYA"}),
+            self.import_row(name="New, Other, Child", lrn="001234560099"),
+        ])
+        self.assertEqual(result["failedCount"], 1, result)
+        self.assertEqual(result["successCount"], 1, result)
+        self.assertIn("pending", result["errors"][0]["error"])
+        self.assertEqual(self.rows(), [])
+
     @classmethod
     def setUpClass(cls):
         test_phase2.BackendTests.setUpClass()
@@ -45,6 +58,8 @@ class EccdPhase2LifecycleTests(unittest.TestCase):
                 "student_id": 1, "evaluations": [{"question_id": self.fixture.home,
                     "testing_period": period, "answer": answer}]})
         self.assertEqual(response.status_code, 200, response.text)
+        from backend.tests.assessment_fixtures import materialize_legacy_observations
+        materialize_legacy_observations(self.fixture)
         return when
 
     def teacher_save(self, period="PRE", when="2026-08-10", questions=None, actor=2):

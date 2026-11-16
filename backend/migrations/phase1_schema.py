@@ -10,7 +10,7 @@ def phase1_metadata() -> MetaData:
     affected = {"students", "family_access", "student_eccd_evaluations"}
     for table in Base.metadata.sorted_tables:
         # Cookie session storage is introduced explicitly by migration 019.
-        if table.name == "auth_refresh_sessions":
+        if table.name in ("auth_refresh_sessions", "parent_home_observations", "home_observation_photos"):
             continue
         if table.name not in affected:
             table.to_metadata(metadata)

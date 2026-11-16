@@ -177,6 +177,17 @@ export interface TeacherAssignmentPayload {
   teacher_id: number;
 }
 export interface Question {
+  home_observations?: Partial<
+    Record<
+      Period,
+      {
+        status: "pending" | "accepted" | "declined" | "submitted";
+        answer: Answer | null;
+        submitted_at: string | null;
+      } | null
+    >
+  >;
+  photo_eligible?: Partial<Record<Period, boolean>>;
   question_id: number;
   domain_id: number;
   domain_name?: string;

@@ -45,10 +45,14 @@ class HomeAssessmentLockTests(unittest.TestCase):
 
     def parent_save(self, answers, when=FIRST, actor=5, period="PRE"):
         with patch("backend.utils.assessments.now_pht", return_value=when):
-            return self.call("POST", "/api/eccd/parent/evaluate", actor, json={
+            response = self.call("POST", "/api/eccd/parent/evaluate", actor, json={
                 "student_id": 1, "testing_period": period,
                 "evaluations": [{"question_id": q, "testing_period": period, "answer": a}
                                 for q, a in answers.items()]})
+        if response.status_code == 200:
+            from backend.tests.assessment_fixtures import materialize_legacy_observations
+            materialize_legacy_observations(self.fixture)
+        return response
 
     def teacher_save(self, answers, when=SECOND, edited=(), official="2026-11-04", period="PRE"):
         with patch("backend.utils.assessments.now_pht", return_value=when):
@@ -308,6 +312,12 @@ class HomeAssessmentLockTests(unittest.TestCase):
         main = importlib.import_module("backend.main")
         with patch.object(main, "engine", self.fixture.test_engine), \
                 patch.object(main, "SessionLocal", self.sessions), patch.object(main, "warm_inference"):
+            from backend.migrations.phase1 import MigrationError
+            with self.assertRaises(MigrationError):
+                main.initialize_runtime()
+            with self.fixture.test_engine.begin() as connection:
+                self.assertNotIn("teacher_marked_at", {c["name"] for c in inspect(connection).get_columns("student_eccd_evaluations", schema=self.fixture.schema)})
+                apply_teacher_marked_at(connection, self.fixture.schema)
             main.initialize_runtime()
             main.initialize_runtime()
         self.assertIsNone(self.rows()[q, "PRE"]["teacher_marked_at"])

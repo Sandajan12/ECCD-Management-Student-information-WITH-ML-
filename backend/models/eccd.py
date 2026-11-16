@@ -66,6 +66,7 @@ class EccdQuestion(Base):
 
 
 class StudentEccdEvaluation(Base):
+    home_review = relationship("ParentHomeObservation", uselist=False, lazy="select")
     __tablename__ = "student_eccd_evaluations"
 
     evaluation_id = Column(Integer, primary_key=True, autoincrement=True)

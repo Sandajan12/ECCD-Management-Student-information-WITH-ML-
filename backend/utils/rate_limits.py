@@ -151,6 +151,8 @@ def request_policies(method: str, path: str) -> list[str]:
     if method == "PUT" and path in ("/api/auth/update-password", "/api/chairman/account"):
         result.append("password")
     if method in ("GET", "POST") and (
+        path.startswith("/api/eccd/parent/home-photos/")
+        or
         path.startswith(("/api/backup/", "/api/chairman/backup/", "/api/teachers/download/"))
         or path in ("/api/chairman/export-eccd", "/api/teachers/download-all", "/api/teachers/import-students", "/api/eccd/export-all", "/api/settings/rollover", "/api/settings/undo-rollover", "/api/settings/revert-school-year", "/api/chairman/rollover-year", "/api/chairman/undo-rollover")
         or (path.startswith("/api/chairman/sections/") and path.endswith("/export-summary"))

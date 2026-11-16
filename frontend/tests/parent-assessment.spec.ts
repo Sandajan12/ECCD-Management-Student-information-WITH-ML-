@@ -1,5 +1,10 @@
 import { expect, test, type Page } from "@playwright/test";
-import { mockSession, expectNoStoredCredentials } from "./helpers/session";
+import {
+  mockSession,
+  expectNoStoredCredentials,
+  setRamSession,
+  sessionFor,
+} from "./helpers/session";
 import type {
   Answer,
   Assessment,
@@ -10,6 +15,7 @@ import type {
 } from "../src/types";
 
 interface HomeSubmission {
+  photo_ids?: Record<number, string>;
   student_id: number;
   testing_period: Period;
   evaluations: {
@@ -20,6 +26,8 @@ interface HomeSubmission {
 }
 
 interface PortalState {
+  reviewFlow: boolean;
+  pending: Map<string, Answer>;
   marks: boolean;
   editing: boolean;
   preOpen: boolean;
@@ -381,6 +389,8 @@ test("teacher section prerequisites redirect to remaining students and block sta
 
 async function portal(page: Page, path = "/parent/dashboard", marks = false) {
   const state: PortalState = {
+    reviewFlow: false,
+    pending: new Map(),
     marks,
     editing: true,
     preOpen: true,
@@ -491,10 +501,46 @@ async function portal(page: Page, path = "/parent/dashboard", marks = false) {
             : ("teacher" as const),
         },
         parent_locked: {
-          PRE: state.saved.has(`${id}_PRE_${question.question_id}`),
-          MID: state.saved.has(`${id}_MID_${question.question_id}`),
-          POST: state.saved.has(`${id}_POST_${question.question_id}`),
+          PRE:
+            state.saved.has(`${id}_PRE_${question.question_id}`) ||
+            state.pending.has(`${id}_PRE_${question.question_id}`),
+          MID:
+            state.saved.has(`${id}_MID_${question.question_id}`) ||
+            state.pending.has(`${id}_MID_${question.question_id}`),
+          POST:
+            state.saved.has(`${id}_POST_${question.question_id}`) ||
+            state.pending.has(`${id}_POST_${question.question_id}`),
         },
+        home_observations: Object.fromEntries(
+          (["PRE", "MID", "POST"] as const).map((p) => [
+            p,
+            state.pending.has(`${id}_${p}_${question.question_id}`)
+              ? {
+                  status: "pending" as const,
+                  answer: state.pending.get(
+                    `${id}_${p}_${question.question_id}`,
+                  )!,
+                  submitted_at: "2026-11-16T12:00:00+08:00",
+                }
+              : null,
+          ]),
+        ),
+        photo_eligible: Object.fromEntries(
+          (["PRE", "MID", "POST"] as const).map((p) => [
+            p,
+            question.is_home_based &&
+              !state.saved.has(`${id}_${p}_${question.question_id}`) &&
+              !state.pending.has(`${id}_${p}_${question.question_id}`) &&
+              !(
+                p !== "PRE" &&
+                state.saved.get(`${id}_PRE_${question.question_id}`) === "KAYA"
+              ) &&
+              !(
+                p === "POST" &&
+                state.saved.get(`${id}_MID_${question.question_id}`) === "KAYA"
+              ),
+          ]),
+        ),
         carry_forward: {
           PRE: null,
           MID:
@@ -548,6 +594,8 @@ async function portal(page: Page, path = "/parent/dashboard", marks = false) {
         await route.fulfill({
           json: assessment(Number(path.split("/").at(-1))),
         });
+    } else if (path.startsWith("/api/eccd/parent/home-photos/")) {
+      await route.fulfill({ json: { photo_id: "a".repeat(32) } });
     } else if (path === "/api/eccd/parent/evaluate") {
       const payload = route.request().postDataJSON() as HomeSubmission;
       if (state.failSave) {
@@ -580,7 +628,7 @@ async function portal(page: Page, path = "/parent/dashboard", marks = false) {
       }
       state.submissions.push(payload);
       for (const row of payload.evaluations)
-        state.saved.set(
+        (state.reviewFlow ? state.pending : state.saved).set(
           `${payload.student_id}_${row.testing_period}_${row.question_id}`,
           row.answer,
         );
@@ -608,6 +656,260 @@ const homeAnswer = (page: Page, name: string, answer: Answer) =>
     .getByRole("group", { name, exact: true })
     .getByRole("button", { name: answer, exact: true });
 
+test("partial parent submission stays pending and optional photo drafts survive reload until confirmed", async ({
+  page,
+}) => {
+  const state = await portal(page);
+  state.reviewFlow = true;
+  const photo = page.getByText("Optional photo", { exact: true }).first();
+  await photo.locator("input").setInputFiles({
+    name: "proof.png",
+    mimeType: "image/png",
+    buffer: Buffer.from("isolated mocked upload"),
+  });
+  await expect(homeForm(page).getByText(/proof.png/)).toBeVisible();
+  await homeAnswer(page, "Plays safely at home", "KAYA").click();
+  await page.reload();
+  await expect(homeForm(page).getByText(/proof.png/)).toBeVisible();
+  await submitHome(page);
+  await expect(
+    homeForm(page).getByText("Submitted — awaiting teacher review.").first(),
+  ).toBeVisible();
+  expect(state.pending.get("3_PRE_11")).toBe("KAYA");
+  expect(state.saved.has("3_PRE_11")).toBe(false);
+  expect(state.submissions[0].photo_ids?.[11]).toBe("a".repeat(32));
+  await expect(homeAnswer(page, "Draws at home", "DI-KAYA")).toBeEnabled();
+  await page.reload();
+  await expect(homeAnswer(page, "Plays safely at home", "KAYA")).toBeDisabled();
+  await expect(homeForm(page).getByText(/proof.png/)).toHaveCount(0);
+  await expectNoStoredCredentials(page);
+});
+
+test("an account switch during photo upload preserves the original draft and cannot submit as the new parent", async ({
+  page,
+}) => {
+  const state = await portal(page);
+  let release!: () => void;
+  const waiting = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let uploading = false,
+    finished = false;
+  await page.route("**/api/eccd/parent/home-photos/**", async (route) => {
+    uploading = true;
+    await waiting;
+    await route.fulfill({ json: { photo_id: "a".repeat(32) } });
+    finished = true;
+  });
+  await homeForm(page)
+    .getByText("Optional photo", { exact: true })
+    .first()
+    .locator("input")
+    .setInputFiles({
+      name: "proof.png",
+      mimeType: "image/png",
+      buffer: Buffer.from("isolated upload"),
+    });
+  await homeAnswer(page, "Plays safely at home", "KAYA").click();
+  await submitHome(page);
+  await expect.poll(() => uploading).toBe(true);
+  const replacement: SessionUser = {
+    id: 8,
+    first_name: "Other",
+    last_name: "Parent",
+    full_name: "Other Parent",
+    email: "other@example.com",
+    role: "user",
+    is_first_login: 0,
+    section_id: null,
+    section_name: null,
+    allow_eccd_question_management: false,
+  };
+  await setRamSession(page, sessionFor(replacement));
+  release();
+  await expect.poll(() => finished).toBe(true);
+  await expect
+    .poll(async () =>
+      page.evaluate((key) => localStorage.getItem(key), draftKey),
+    )
+    .toContain("Account changed");
+  expect(state.submissions).toHaveLength(0);
+  expect(
+    await page.evaluate((key) => localStorage.getItem(key), draftKey),
+  ).toContain('"11":"KAYA"');
+  await expectNoStoredCredentials(page);
+});
+
+test("accepted earlier KAYA hides photo fields while a negative or unanswered history keeps them optional", async ({
+  page,
+}) => {
+  const state = await portal(page);
+  state.laterOpen = true;
+  state.saved.set("3_PRE_11", "KAYA");
+  state.saved.set("3_PRE_21", "DI-KAYA");
+  await page.reload();
+  await homeForm(page).getByRole("combobox").click();
+  await page.getByRole("option", { name: "Mid-Test", exact: true }).click();
+  await expect(
+    homeForm(page).getByText("Optional photo", { exact: true }),
+  ).toHaveCount(1);
+  await expect(homeForm(page).getByText("draft-not save")).toHaveCount(1);
+  expect(
+    await homeForm(page)
+      .getByText("draft-not save")
+      .evaluate((e) => getComputedStyle(e).whiteSpace),
+  ).toBe("nowrap");
+  await homeAnswer(page, "Draws at home", "KAYA").click();
+  await expect(
+    homeForm(page).getByText("Optional photo", { exact: true }),
+  ).toHaveCount(1);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBeTruthy();
+});
+
+test("teacher review decisions survive close and reload, save only selected rows and keep explicit declines", async ({
+  page,
+}) => {
+  const user: SessionUser = {
+    id: 2,
+    first_name: "Test",
+    last_name: "Teacher",
+    full_name: "Test Teacher",
+    email: "teacher@example.com",
+    role: "admin",
+    is_first_login: 0,
+    section_id: 1,
+    section_name: "Test A",
+    allow_eccd_question_management: false,
+  };
+  const questions = [11, 12, 13].map((id, i) => ({
+    question_id: id,
+    domain_id: 1,
+    sequence_order: i + 1,
+    question_text: `Review question ${id}`,
+    is_home_based: true,
+    answers: { PRE: null, MID: null, POST: null },
+    home_observations: {
+      PRE: {
+        status: "pending",
+        answer: "KAYA",
+        submitted_at: "2026-11-16T12:00:00+08:00",
+      },
+    },
+  }));
+  const domain = { domain_id: 1, domain_name: "Gross Motor", questions };
+  let pending = questions.map((q) => ({
+    observation_id: q.question_id,
+    question_id: q.question_id,
+    student_id: 1,
+    testing_period: "PRE",
+    answer: "KAYA",
+    submitted_at: "2026-11-16T12:00:00+08:00",
+    has_photo: false,
+  }));
+  const saves: { decisions: { observation_id: number; status: string }[] }[] =
+    [];
+  await page.route("**/api/**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    let json: unknown = {};
+    if (path === "/api/eccd/home-observations/pending") json = pending;
+    else if (path === "/api/eccd/home-observations/review") {
+      const payload = route.request().postDataJSON() as (typeof saves)[number];
+      saves.push(payload);
+      pending = pending.filter(
+        (r) =>
+          !payload.decisions.some((d) => d.observation_id === r.observation_id),
+      );
+      json = { message: "Review saved.", cleanup_pending: 0 };
+    } else if (path === "/api/eccd/students")
+      json = [
+        {
+          student_id: 1,
+          first_name: "Sample",
+          last_name: "Child",
+          full_name: "Sample Child",
+          masked_lrn: "********1234",
+          section_id: 1,
+          is_active: true,
+        },
+      ];
+    else if (path === "/api/sections/")
+      json = [{ section_id: 1, section_name: "Test A" }];
+    else if (path === "/api/teachers/dashboard-filters")
+      json = {
+        sections: ["Test A"],
+        schoolYears: ["2026-2027"],
+        currentSchoolYear: "2026-2027",
+      };
+    else if (path === "/api/teachers/access-controls")
+      json = { section_id: 1, section_name: "Test A" };
+    else if (path === "/api/eccd/domains-progress") json = [domain];
+    else if (path === "/api/eccd/section/1/period-gates")
+      json = {
+        section_id: 1,
+        required_question_count: 3,
+        prerequisites: { PRE: [], MID: [] },
+      };
+    else if (path.startsWith("/api/eccd/assessment/"))
+      json = {
+        student_id: 1,
+        domains: [domain],
+        evalAges: {},
+        periodDates: { PRE: null, MID: null, POST: null },
+        student_birth_date: null,
+      };
+    else if (path === "/api/messages/contacts")
+      json = { myId: 2, contacts: [] };
+    else if (path === "/api/messages/unread-count") json = { unreadCount: 0 };
+    await route.fulfill({ json });
+  });
+  await mockSession(page, user);
+  await page.goto(
+    "/teacher/eccdassessment?student_id=1&period=PRE&domain_id=1",
+  );
+  await page
+    .getByRole("button", { name: "Pending Home-Based Assessments (3)" })
+    .click();
+  const dialog = page.getByRole("dialog", {
+    name: "Pending Home-Based Assessments",
+  });
+  const reviewRow = (id: number) =>
+    dialog.getByText(`Review question ${id}`, { exact: true }).locator("..");
+  await reviewRow(11)
+    .getByRole("button", { name: "Decline", exact: true })
+    .click();
+  await dialog.getByRole("button", { name: "Close", exact: true }).click();
+  expect(saves).toHaveLength(0);
+  await page.reload();
+  await page
+    .getByRole("button", { name: "Pending Home-Based Assessments (3)" })
+    .click();
+  await dialog
+    .getByRole("button", { name: "Accept all in this domain" })
+    .click();
+  await dialog
+    .getByRole("button", { name: "Save Review", exact: true })
+    .click();
+  await expect.poll(() => saves.length).toBe(1);
+  expect(saves[0].decisions).toEqual([
+    { observation_id: 11, status: "declined" },
+    { observation_id: 12, status: "accepted" },
+    { observation_id: 13, status: "accepted" },
+  ]);
+  await expect(
+    dialog.getByText("No pending observations for this selection."),
+  ).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBeTruthy();
+  await expectNoStoredCredentials(page);
+});
+
 async function submitHome(page: Page) {
   await homeForm(page)
     .getByRole("button", { name: "Save Home Observations" })
@@ -632,9 +934,7 @@ test("confirmation cancellation retains selections and saved questions lock acro
     .click();
   const dialog = page.getByRole("dialog", { name: "Submit Answers" });
   await expect(
-    dialog.getByText(
-      "Submitted evaluations cannot be changed. Any unanswered questions can still be completed later.",
-    ),
+    dialog.getByText(/Submit 1 answered questions for teacher review/),
   ).toBeVisible();
   await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
   expect(state.submissions).toHaveLength(0);
@@ -754,7 +1054,7 @@ test("Overview shows domain-tagged home questions and saves one batch without sc
   await homeAnswer(page, "Draws at home", "DI-KAYA").click();
   await submitHome(page);
   await expect(
-    form.getByText("Assessment evaluations saved successfully!"),
+    form.getByText("Submitted — awaiting teacher review."),
   ).toBeVisible();
   expect(state.submissions).toEqual([
     {
@@ -961,7 +1261,7 @@ test("an older confirmed save cannot clear a newer draft revision", async ({
     release();
   }
   await expect(
-    homeForm(page).getByText("Assessment evaluations saved successfully!"),
+    homeForm(page).getByText("Submitted — awaiting teacher review."),
   ).toBeVisible();
   await expect(
     homeAnswer(page, "Plays safely at home", "KAYA"),

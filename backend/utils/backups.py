@@ -5,7 +5,7 @@ from pydantic import ValidationError
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 from backend.config.settings import settings
-from backend.models import Base, SystemLog
+from backend.models import Base, SystemLog, HomeObservationPhoto
 from backend.schemas.backup import BackupDocument
 from backend.utils.uploads import BACKUP_LIMIT
 
@@ -23,6 +23,8 @@ def export_backup(db: Session) -> bytes:
     # Current account metadata is email-only; settings carries the Chairman name.
     document = {name: [dict(row) for row in db.execute(table.select()).mappings()] for name, table in Base.metadata.tables.items()
                 if name != "auth_refresh_sessions"}
+    for photo in document["home_observation_photos"]:
+        photo.update(object_key=None, ready=False, delete_pending=False)
     payload = cipher().encrypt(BackupDocument.model_validate(document).model_dump_json(exclude_unset=False).encode())
     if len(payload) > BACKUP_LIMIT:
         raise HTTPException(413, "Backup exceeds the restore upload limit.")
@@ -40,14 +42,21 @@ def restore_backup(db: Session, payload: bytes, audit_user_id: int | None = None
     # snapshots never overwrite the live email-based registry.
     preserved = {"users", "email_verifications", "auth_refresh_sessions"}
     try:
+        # Validate the complete encrypted document before any database reads/writes.
+        # Keep tombstones across restore; backup files never restore object keys.
+        retained_photos = {r.photo_id for r in db.query(HomeObservationPhoto)}
+        db.query(HomeObservationPhoto).filter(HomeObservationPhoto.object_key.isnot(None)).update({"delete_pending": True, "ready": False})
         # No deletion is committed until all replacement data passes FK checks.
         for table in reversed(Base.metadata.sorted_tables):
-            if table.name != "users":
+            if table.name not in ("users", "home_observation_photos"):
                 db.execute(table.delete())
         for table in Base.metadata.sorted_tables:
             if table.name in preserved:
                 continue
             records = getattr(document, table.name)
+            if table.name == "home_observation_photos":
+                records = [r.model_copy(update={"object_key": None, "ready": False, "delete_pending": False})
+                           for r in records if r.photo_id not in retained_photos]
             if records:
                 # Include Pydantic defaults for older backups that predate
                 # evaluator provenance, without guessing historical authorship.

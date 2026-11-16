@@ -51,9 +51,10 @@ export class SessionManager {
   }
   private async wire<T>(path: string, method: string, data?: unknown, token?: string): Promise<T> {
     if (!/^\/api\/[a-zA-Z0-9/_-]+(?:\?[a-z_]+=[0-9]+(?:&[a-z_]+=[0-9]+)*)?$/.test(path)) throw new Error('Invalid API path.');
+    const multipart = typeof FormData !== 'undefined' && data instanceof FormData;
     const response = await this.deps.fetch(this.deps.baseUrl + path, {
-      method, credentials: 'include', headers: {Accept: 'application/json', ...(data === undefined ? {} : {'Content-Type': 'application/json'}),
-        ...(token ? {Authorization: `Bearer ${token}`} : {})}, ...(data === undefined ? {} : {body: JSON.stringify(data)}),
+      method, credentials: 'include', headers: {Accept: 'application/json', ...(data === undefined || multipart ? {} : {'Content-Type': 'application/json'}),
+        ...(token ? {Authorization: `Bearer ${token}`} : {})}, ...(data === undefined ? {} : {body: multipart ? data : JSON.stringify(data)}),
     });
     const date = Date.parse(response.headers.get('Date') || '');
     if (Number.isFinite(date)) this.clockOffset = date - Date.now();

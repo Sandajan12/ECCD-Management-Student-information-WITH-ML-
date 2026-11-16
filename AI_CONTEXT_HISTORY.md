@@ -4421,3 +4421,49 @@ in startup tracebacks (tool output redacted them). New synthetic-secret coverage
 and all deployment-settings tests passed:8 tests,21 subtests in8.55s. No auth
 behavior or dependencies changed. Production readiness is pending the TLS fix
 and final smoke/log verification, not established by this note.
+### 2026-11-16 — Local parent home-observation review and private optional photos
+
+Implemented the approved review plan across FastAPI, responsive parent/teacher web,
+and `mobile/parent-native-android`, locally on `feat/parent-native-android` from
+595a197. New partial KAYA/DI-KAYA submissions remain pending; selected adviser
+Accept/Decline reviews are atomic. Accepted matching parent answers confirm
+carry-forward without official testing dates. Existing assessments, correction
+provenance, section prerequisites, eight gates and manual/revision-safe drafts remain.
+Photo/submission/review steps recheck the live RAM owner; account changes during
+uploads cannot submit the old draft under the replacement account.
+
+Migration 021 adds observation/review records and an independent photo cleanup
+ledger with deny-by-default RLS. Executed expected-missing check, apply and check
+on loopback `ames_parity_dev`; subsequent 016/021 checks passed without mutations.
+Startup now checks all schema, including 016, without automatically applying any
+migration. Historical phase-1 schemas explicitly exclude future 019/021 tables.
+
+Private Supabase Storage is server-only with an injected memory test adapter;
+5 MiB/actual JPEG-PNG-WebP/dimension checks re-encode metadata-free JPEGs. No
+thumbnails are generated. Committed review revokes private no-store reads before
+retryable deletion. Hourly cleanup retries and expires unattached uploads at 24h;
+restore validates first, retains tombstones and cannot restore image keys/bytes.
+The authorized native picker is pinned to 8.3.0, single-image system selection,
+without broad media permissions or base64 draft persistence. Server variables:
+SUPABASE_STORAGE_URL, SUPABASE_STORAGE_SERVICE_KEY, HOME_OBSERVATION_PHOTO_BUCKET.
+
+Verification: full isolated backend suite **608 passed, 697 subtests passed**
+(11 library/Enum warnings; 1700.71 seconds, runner exit 0).
+Loopback `ames_parity_dev` is asserted in shared integration setup, with disposable
+schemas; storage tests use only memory/MockTransport. Focused review/storage: 15 passed;
+review/import/startup checks: 18 passed; historical schema checks: 19 passed;
+query/carry regression suite: 12 passed. Frontend draft unit tests: 8 passed;
+assessment Playwright: 54 passed (desktop/tablet/320px mobile, synthetic APIs and
+RAM auth, runner exit 0). Both frontend TypeScript projects, native TypeScript,
+57 native tests and changed-file ESLint passed. Initial historical-fixture/query
+mock failures were fixed; superseded runs are not final acceptance evidence.
+Graphify refreshed the code AST and inbound helper callers; SQL/native extraction
+warnings remain bounded tooling limitations. Git whitespace check passed.
+
+Diff checkpoint: no generic approval framework or extra storage SDK; reuse
+existing HTTP, draft, MUI and auth services. The separate cleanup ledger and local
+review fallback state are required for deletion durability and preserving inputs.
+No remote infrastructure tools, hosted migrations, bucket provisioning, pushes,
+main merges or APK builds. Real Android picker/URI lifetime/auth acceptance and
+live private Storage behavior remain unverified; bucket setup, backend credentials,
+hourly scheduling and localhost user review are still required before deployment.

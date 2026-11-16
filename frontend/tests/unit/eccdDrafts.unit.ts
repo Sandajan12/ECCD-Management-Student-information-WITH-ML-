@@ -118,3 +118,25 @@ test("PRE answers remain editable and mastery IDs are isolated by question", () 
   assert.equal(state.MID.answers[2], "DI-KAYA");
   assert.equal(state.POST.answers[999], undefined);
 });
+test("pending home observations ignore stale teacher drafts and cannot count as saved or inherited", () => {
+  const questions = [
+    {
+      question_id: 21,
+      answers: { PRE: null, MID: null, POST: null },
+      carry_forward: { PRE: null, MID: null, POST: null },
+      home_observations: {
+        PRE: {
+          status: "pending" as const,
+          answer: "KAYA" as const,
+          submitted_at: null,
+        },
+      },
+    },
+  ];
+  const states = resolveTeacherDrafts(questions, {
+    PRE: { answers: { 21: "KAYA" }, evaluation_date: "2026-11-16" },
+  });
+  assert.deepEqual(states.PRE.answers, {});
+  assert.equal(teacherDomainProgress(questions, states.PRE).savedCount, 0);
+  assert.deepEqual(states.MID.answers, {});
+});

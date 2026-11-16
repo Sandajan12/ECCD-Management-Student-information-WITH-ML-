@@ -33,7 +33,10 @@ def carry_sources(evaluations: Iterable[StudentEccdEvaluation], home_ids: set[in
             row = records.get((question_id, period))
             if row is None:
                 continue
-            teacher_confirmed = row.evaluator_role == "teacher" or row.teacher_evaluation_date is not None
+            review = getattr(row, "home_review", None)
+            teacher_confirmed = (row.evaluator_role == "teacher" or row.teacher_evaluation_date is not None
+                                 or bool(review and review.status == "accepted" and review.answer == row.answer
+                                         and review.student_id == row.student_id and review.question_id == row.question_id and review.testing_period == row.testing_period))
             if row.answer == EccdAnswer.KAYA:
                 source = row
                 if teacher_confirmed or question_id not in home_ids:

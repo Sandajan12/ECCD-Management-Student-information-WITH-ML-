@@ -33,9 +33,11 @@ from backend.migrations.parent_predictions import check_parent_predictions
 from backend.migrations.auth_security_version import check_auth_security_version
 from backend.migrations.email_only_identity import check_email_only_identity
 from backend.migrations.phase1 import MigrationError
-from backend.migrations.teacher_marked_at import apply_teacher_marked_at
+from backend.migrations.teacher_marked_at import check_teacher_marked_at
 from backend.migrations.eccd_question_sequence import check_eccd_question_sequence
 from backend.migrations.refresh_cookie_sessions import check_refresh_cookie_sessions
+from backend.migrations.parent_home_observations import check_parent_home_observations
+from backend.routes.home_observations import router as home_observations_router
 
 access_logger = logging.getLogger("uvicorn.access")
 if not any(isinstance(item, UnreadPollingFilter) for item in access_logger.filters):
@@ -65,12 +67,11 @@ def check_evaluator_tracking_readiness(connection, schema):
 
 
 def initialize_runtime():
-    # The nullable teacher timestamp is the only automatic additive upgrade.
-    # Other upgrades remain explicit; startup never provisions accounts.
+    # Schema checks never apply migrations; upgrades require explicit maintenance commands.
     with engine.begin() as connection:
         schema = connection.execute(text("SELECT current_schema()")).scalar_one()
         check_evaluator_tracking_readiness(connection, schema)
-        apply_teacher_marked_at(connection, schema)
+        check_teacher_marked_at(connection, schema)
         check_adviser_takeover(connection, schema)
         check_parent_assessment_access(connection, schema)
         check_parent_eccd_marks(connection, schema)
@@ -79,6 +80,7 @@ def initialize_runtime():
         check_auth_security_version(connection, schema)
         check_email_only_identity(connection, schema)
         check_refresh_cookie_sessions(connection, schema)
+        check_parent_home_observations(connection, schema)
         check_phase2(connection, schema)
         check_optional_student_lrn(connection, schema)
         check_eccd_question_sequence(connection, schema)
@@ -121,7 +123,7 @@ for router in (auth.router, eccd.router, sections.router, students.router,
                students.message_router, students.chairman_router, settings.router, settings.chairman_router,
                analytics.router, analytics.legacy_router, teachers.router, teachers.student_router, messages.router, backup.router,
                backup.chairman_router, eccd_config.router, eccd_config.chairman_router,
-               chairman.router, parents.router, ml.router):
+               chairman.router, parents.router, ml.router, home_observations_router):
     api.include_router(router)
 
 @api.get("/", response_model=MessageResult)

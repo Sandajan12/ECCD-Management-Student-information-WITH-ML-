@@ -38,6 +38,9 @@ class Settings(BaseSettings):
     DATABASE_POOL_RECYCLE: int = Field(default=300, ge=30, le=3600)
     BACKUP_ENCRYPTION_KEY: str
     BACKUP_IV: str
+    SUPABASE_STORAGE_URL: str = ""
+    SUPABASE_STORAGE_SERVICE_KEY: SecretStr | None = None
+    HOME_OBSERVATION_PHOTO_BUCKET: str = Field(default="home-observation-proofs", pattern=r"^[a-z0-9][a-z0-9-]{0,62}$")
     LRN_ENCRYPTION_KEY: SecretStr | None = None
     LRN_HMAC_SECRET: SecretStr | None = None
 

@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import API, { isNetworkError } from "../services/api";
-interface StoredFile {
+export interface StoredFile {
   file: File;
   revision: string;
   is_pending_sync?: boolean;
   request?: { path: string; fields: Record<string, string> };
   error?: string;
+  photo_id?: string;
 }
 async function openStore(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -16,7 +17,7 @@ async function openStore(): Promise<IDBDatabase> {
     request.onerror = () => reject(request.error);
   });
 }
-async function readFile(key: string): Promise<StoredFile | null> {
+export async function readFile(key: string): Promise<StoredFile | null> {
   const db = await openStore();
   try {
     return await new Promise((resolve, reject) => {
@@ -28,7 +29,7 @@ async function readFile(key: string): Promise<StoredFile | null> {
     db.close();
   }
 }
-async function writeFile(key: string, value: StoredFile): Promise<void> {
+export async function writeFile(key: string, value: StoredFile): Promise<void> {
   const db = await openStore();
   try {
     await new Promise<void>((resolve, reject) => {
@@ -41,15 +42,22 @@ async function writeFile(key: string, value: StoredFile): Promise<void> {
     db.close();
   }
 }
-async function confirmStoredFile(key: string, version: string): Promise<void> {
+export async function confirmStoredFile(
+  key: string,
+  version: string,
+): Promise<void> {
   const db = await openStore();
+  let removed = false;
   try {
     await new Promise<void>((resolve, reject) => {
       const tx = db.transaction("files", "readwrite");
       const store = tx.objectStore("files");
       const request = store.get(key);
       request.onsuccess = () => {
-        if (request.result?.revision === version) store.delete(key);
+        if (request.result?.revision === version) {
+          store.delete(key);
+          removed = true;
+        }
       };
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
@@ -57,6 +65,10 @@ async function confirmStoredFile(key: string, version: string): Promise<void> {
   } finally {
     db.close();
   }
+  if (removed)
+    window.dispatchEvent(
+      new CustomEvent("ames-file-confirmed", { detail: { key, version } }),
+    );
 }
 export async function pendingFiles(
   owner: number,
@@ -97,6 +109,18 @@ export function useDurableFile(resource: string) {
   const key = `ames_file_${user?.id}_${resource}`;
   const [file, setFile] = useState<File | null>(null);
   const revision = useRef("");
+  useEffect(() => {
+    const confirmed = (event: Event) => {
+      const detail = (event as CustomEvent<{ key: string; version: string }>)
+        .detail;
+      if (detail?.key === key && detail.version === revision.current) {
+        revision.current = "";
+        setFile(null);
+      }
+    };
+    window.addEventListener("ames-file-confirmed", confirmed);
+    return () => window.removeEventListener("ames-file-confirmed", confirmed);
+  }, [key]);
   useEffect(() => {
     let active = true;
     revision.current = "";

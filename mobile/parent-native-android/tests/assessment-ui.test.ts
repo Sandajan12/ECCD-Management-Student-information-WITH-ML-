@@ -36,7 +36,7 @@ describe("6. Assessment touch, presentation and navigation handlers (mocked host
         drafts: f.store,
         useDraft: () => ({ ready: true, snapshot: null, storageError: "" }),
       },
-      "./session": { session: { request: async () => {} } },
+      "./session": { session: { snapshot: () => ({session: {user}}), request: async () => {} } },
       "./AssessmentScreens": { OverviewSummary: "OverviewSummary" },
     });
     const screen = harness.mount("OverviewScreen", {
@@ -119,6 +119,7 @@ describe("6. Assessment touch, presentation and navigation handlers (mocked host
       },
       "./session": {
         session: {
+          snapshot: () => ({session: {user}}),
           request: async () => {
             posts++;
           },
@@ -174,7 +175,7 @@ describe("6. Assessment touch, presentation and navigation handlers (mocked host
     );
     assert.match(
       text(tree),
-      /Choose KAYA or DI-KAYA for each home-based question, then tap Submit Observations\./,
+      /Choose KAYA or DI-KAYA for one or more home-based questions, then tap Submit Observations\./,
     );
     assert.doesNotMatch(
       text(tree),
@@ -295,6 +296,7 @@ describe("6. Assessment touch, presentation and navigation handlers (mocked host
       "./drafts": { drafts: f.store, useDraft: () => ({ ready: true }) },
       "./session": {
         session: {
+          snapshot: () => ({session: {user}}),
           request: async () => {
             posts++;
           },
@@ -354,7 +356,7 @@ describe("6. Assessment touch, presentation and navigation handlers (mocked host
     assert.equal(posts, 1);
     assert.deepEqual(props.confirmed, { "123_7_PRE": [45] });
     assert.equal(f.assessment.domains[0].questions[0].parent_locked.PRE, false);
-    assert.match(text(tree), /Observations saved/);
+    assert.match(text(tree), /Submitted — awaiting teacher review/);
   });
 
   test("completion removes submit action; closed windows say teacher lock rather than completed", () => {

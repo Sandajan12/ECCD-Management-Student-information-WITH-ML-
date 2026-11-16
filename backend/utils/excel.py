@@ -650,6 +650,12 @@ def import_workbook(db: Session, user: User, teacher: Teacher, section: Section,
                     answer = EccdAnswer.KAYA if marked(kaya) else EccdAnswer.DI_KAYA if marked(not_kaya) else None
                     if answer is None:
                         continue
+                    from backend.utils.home_observations import guard_pending
+                    from backend.schemas.eccd import AssessmentAnswer
+                    try:
+                        guard_pending(db, student.student_id, [AssessmentAnswer(question_id=question.question_id, testing_period=period, answer=answer)])
+                    except HTTPException as conflict:
+                        raise ValueError(conflict.detail) from None
                     if dates[period] is None:
                         raise ValueError("Marked assessment is missing its testing date.")
                     evaluation = by_question_period.get((question.question_id, period))

@@ -23,6 +23,7 @@ from backend.migrations import (
     parent_predictions, parity_batch1, parity_batch2, phase1, phase2,
     section_ownership, email_only_identity, production_performance, optional_student_lrn,
     teacher_marked_at, eccd_question_sequence, settings_cleanup, refresh_cookie_sessions, remove_trusted_devices,
+    parent_home_observations,
 )
 from backend.models import EccdDomain, EccdQuestion, User, SystemSettings
 from backend.models.user import UserRole
@@ -53,6 +54,7 @@ MIGRATIONS = (
     (settings_cleanup.VERSION, settings_cleanup.apply_settings_cleanup),
     (refresh_cookie_sessions.VERSION, refresh_cookie_sessions.apply_refresh_cookie_sessions),
     (remove_trusted_devices.VERSION, remove_trusted_devices.apply_remove_trusted_devices),
+    (parent_home_observations.VERSION, parent_home_observations.apply_parent_home_observations),
 )
 
 
@@ -226,6 +228,7 @@ def bootstrap(connection: Connection, credentials: ChairmanSettings, schema: str
         settings_cleanup.check_settings_cleanup,
         refresh_cookie_sessions.check_refresh_cookie_sessions,
         remove_trusted_devices.check_remove_trusted_devices,
+        parent_home_observations.check_parent_home_observations,
     ):
         check(connection, schema)
     counts = seed_eccd(connection, schema)

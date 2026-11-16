@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, Text, View } from "react-native";
+import {launchImageLibrary} from "react-native-image-picker";
 import type { Assessment, Child, Dashboard, Period, User } from "./contracts";
 import { session } from "./session";
 import { messageOf } from "./sessionCore";
@@ -47,6 +48,7 @@ function HomeDomain({
     user.id,
   );
   const [expanded, setExpanded] = useState(false);
+  const [photoError, setPhotoError] = useState("");
   const questions = domain.questions;
   return (
     <Card>
@@ -62,6 +64,7 @@ function HomeDomain({
         <Icon name={expanded ? "up" : "down"} />
       </Pressable>
       {!!storageError && <Notice error>{storageError}</Notice>}
+      {!!photoError && <Notice error>{photoError}</Notice>}
       {snapshot?.is_pending_sync && (
         <Notice>
           Your draft is saved on this device. Reconnect and submit again.
@@ -137,6 +140,25 @@ function HomeDomain({
                   />
                 )}
               </View>
+              {question.photo_eligible?.[period] === true && !lock && <Button secondary title="Optional photo" disabled={!ready || busy} onPress={() => {
+                void (async () => {
+                  try {
+                    setPhotoError("");
+                    const result = await launchImageLibrary({mediaType: "photo", selectionLimit: 1, includeBase64: false, includeExtra: false, maxWidth: 2048, maxHeight: 2048, quality: 0.8});
+                    if (result.didCancel) return;
+                    if (result.errorCode) throw new Error(result.errorMessage || "Photo selection failed.");
+                    const asset = result.assets?.[0];
+                    if (!asset?.uri || !asset.type) throw new Error("Select a JPEG, PNG or WebP photo.");
+                    if ((asset.fileSize || 0) > 5 * 1024 * 1024) throw new Error("Photo must be at most 5 MiB.");
+                    await service.photo(domain.domain_id, period, question.question_id, {uri: asset.uri, type: asset.type, name: asset.fileName || "home-photo.jpg"});
+                  } catch(error) {setPhotoError(messageOf(error));}
+                })();
+              }}/>}
+              {snapshot?.values.photos?.[String(question.question_id)] && <>
+                <Copy>{snapshot.values.photos[String(question.question_id)].name} · Photo selected on this device.</Copy>
+                {question.photo_eligible?.[period] !== true && <Notice>An earlier KAYA now carries forward. Remove this optional photo before submitting.</Notice>}
+                <Button secondary title="Remove photo" disabled={busy} onPress={() => {void service.photo(domain.domain_id, period, question.question_id, null).catch(error => setPhotoError(messageOf(error)));}}/>
+              </>}
             </View>
           );
         })}
@@ -203,6 +225,13 @@ export function OverviewScreen({
     () =>
       new HomeObservations(drafts, user.id, child.student_id, (payload) =>
         session.request("/api/eccd/parent/evaluate", "POST", payload),
+        async (question, selectedPeriod, photo) => {
+          const form = new FormData();
+          form.append("file", {uri: photo.uri, type: photo.type, name: photo.name} as unknown as Blob);
+          const uploaded = await session.request<{photo_id: string}>(`/api/eccd/parent/home-photos/${child.student_id}/${question}/${selectedPeriod}`, "POST", form);
+          return uploaded.photo_id;
+        },
+        () => session.snapshot().session?.user.id === user.id,
       ),
     [user.id, child.student_id],
   );
@@ -219,7 +248,7 @@ export function OverviewScreen({
       );
       onConfirmed(period, saved.questionIds);
       if (!mounted.current) return;
-      setNotice(saved.cleanupWarning || "Observations saved.");
+      setNotice(saved.cleanupWarning || "Submitted — awaiting teacher review.");
       await Promise.all([state.reload(), dashboard.reload()]);
     } catch (error) {
       if (mounted.current) setNotice(messageOf(error));
@@ -273,8 +302,7 @@ export function OverviewScreen({
           <Card>
             <Feedback {...state} />
             <Copy>
-              Choose KAYA or DI-KAYA for each home-based question, then tap
-              Submit Observations.
+              Choose KAYA or DI-KAYA for one or more home-based questions, then tap Submit Observations. Photos are optional and removed after the teacher saves a review.
             </Copy>
             {state.data && !editable && <Notice>{TEACHER_LOCK}</Notice>}
             {!!notice && <Notice>{notice}</Notice>}
@@ -306,6 +334,11 @@ export function OverviewScreen({
               busy={busy}
             />
           ))}
+          {state.data?.domains.flatMap(d => d.questions).filter(q => q.home_observations?.[period]).map(q => <Card key={`submitted_${q.question_id}`}>
+            <Label>{q.question_text}</Label>
+            <Badge>{q.home_observations?.[period]?.status === "pending" ? "Submitted — awaiting teacher review" : q.home_observations?.[period]?.status === "declined" ? "Declined — already submitted" : "Submitted"}</Badge>
+            {q.home_observations?.[period]?.answer && <Copy>{q.home_observations[period]?.answer}</Copy>}
+          </Card>)}
         </>
       )}
       <OverviewSummary

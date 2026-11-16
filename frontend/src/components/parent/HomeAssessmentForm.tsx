@@ -19,6 +19,7 @@ import {
 } from "@mui/material";
 import SaveIcon from "@mui/icons-material/Save";
 import type { useParentAssessment } from "../../hooks/useParentAssessment";
+import HomePhotoField from "./HomePhotoField";
 import { PERIOD_LABELS, type Answer, type Period } from "../../types";
 
 interface HomeAssessmentFormProps {
@@ -174,7 +175,13 @@ export default function HomeAssessmentForm({
                                 sx={{
                                   color: "text.secondary",
                                   fontWeight: 500,
-                                  whiteSpace: "nowrap",
+                                  overflowWrap: "anywhere",
+                                  whiteSpace: assessment.isCarriedForward(
+                                    question.question_id,
+                                    period,
+                                  )
+                                    ? "nowrap"
+                                    : "normal",
                                 }}
                               >
                                 {assessment.isCarriedForward(
@@ -186,10 +193,32 @@ export default function HomeAssessmentForm({
                                         question.question_id,
                                         period,
                                       )
-                                    ? "Saved · Locked"
+                                    ? question.home_observations?.[period]
+                                        ?.status === "pending"
+                                      ? "Submitted — awaiting teacher review"
+                                      : question.home_observations?.[period]
+                                            ?.status === "declined"
+                                        ? "Declined · Locked"
+                                        : "Saved · Locked"
                                     : "Locked by teacher"}
                               </Typography>
                             )}
+                          {period && (
+                            <HomePhotoField
+                              key={assessment.photoResource(
+                                question.question_id,
+                                period,
+                              )}
+                              resource={assessment.photoResource(
+                                question.question_id,
+                                period,
+                              )}
+                              eligible={
+                                question.photo_eligible?.[period] === true
+                              }
+                              disabled={disabled}
+                            />
+                          )}
                         </Stack>
                         <ToggleButtonGroup
                           exclusive
@@ -280,8 +309,10 @@ export default function HomeAssessmentForm({
         <DialogTitle id="home-submit-title">Submit Answers</DialogTitle>
         <DialogContent>
           <DialogContentText>
-            Submitted evaluations cannot be changed. Any unanswered questions
-            can still be completed later.
+            Submit {assessment.submissionCount} answered questions for teacher
+            review. Submitted answers cannot be changed. Any unanswered
+            questions can still be completed later. Photos are optional and
+            removed after the teacher saves a review.
           </DialogContentText>
         </DialogContent>
         <DialogActions sx={{ p: 2, gap: 1 }}>

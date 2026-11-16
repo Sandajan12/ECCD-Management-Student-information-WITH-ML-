@@ -125,6 +125,7 @@ export function componentHarness(file: string, mocks: Record<string, unknown>) {
     if (id === "react-native") return native;
     if (id === "./ui") return ui;
     if (id in mocks) return mocks[id];
+    if (id === "react-native-image-picker") return {launchImageLibrary: async () => ({didCancel: true})};
     if (id.startsWith("./")) return require(`${id}.ts`);
     return require(id);
   };

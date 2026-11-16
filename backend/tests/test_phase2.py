@@ -25,6 +25,7 @@ from backend.migrations.adviser_takeover import apply_adviser_takeover
 from backend.migrations.email_only_identity import apply_email_only_identity
 from backend.migrations.remove_trusted_devices import apply_remove_trusted_devices
 from backend.migrations.refresh_cookie_sessions import apply_refresh_cookie_sessions
+from backend.migrations.parent_home_observations import apply_parent_home_observations
 from backend.models import Base, EccdQuestion, EmailVerification, FamilyAccess, Message, Parent, Section, SectionTeacher, Student, StudentEccdEvaluation, SystemLog, SystemSettings, Teacher, User
 from backend.models.eccd import EccdAnswer, TestingPeriod
 from backend.models.user import UserRole
@@ -46,6 +47,7 @@ class BackendTests(unittest.TestCase):
         cls.password_hash = get_password_hash(PASSWORD)
 
     def setUp(self):
+        assert engine.url.host in ("localhost", "127.0.0.1", "::1") and engine.url.database == "ames_parity_dev", "Integration tests require isolated loopback ames_parity_dev"
         self.schema = 'phase2_test_' + uuid4().hex
         with engine.begin() as connection:
             connection.execute(text(f'CREATE SCHEMA "{self.schema}"'))
@@ -55,6 +57,7 @@ class BackendTests(unittest.TestCase):
             apply_email_only_identity(connection, self.schema)
             apply_refresh_cookie_sessions(connection, self.schema)
             apply_remove_trusted_devices(connection, self.schema)
+            apply_parent_home_observations(connection, self.schema)
         self.test_engine = create_engine(engine.url, connect_args={'options': f'-csearch_path={self.schema},public'})
         self.sessions = sessionmaker(bind=self.test_engine, autoflush=False)
         with self.sessions() as db:
@@ -88,6 +91,9 @@ class BackendTests(unittest.TestCase):
             with self.sessions() as db:
                 yield db
         api.dependency_overrides[get_db] = database
+        from backend.utils.home_photos import MemoryPhotoStorage, photo_storage
+        self.photo_storage = MemoryPhotoStorage()
+        api.dependency_overrides[photo_storage] = lambda: self.photo_storage
         self.otp_setting = patch.object(settings, 'ENABLE_OTP', False)
         self.otp_setting.start()
         # Backup tests must not depend on or replace local/deployed secrets.
@@ -427,6 +433,8 @@ class BackendTests(unittest.TestCase):
         self.assertEqual(self.call('POST','/api/eccd/parent/evaluate',5,json=payload).status_code,403)
         self.assertEqual(self.call('PUT','/api/teachers/access-controls',2,json={'allow_parent_edit_home_based_eccd':True,'allow_parent_view_eccd_pre':True}).status_code,200)
         self.assertEqual(self.call('POST','/api/eccd/parent/evaluate',5,json=payload).status_code,200)
+        from backend.tests.assessment_fixtures import materialize_legacy_observations
+        materialize_legacy_observations(self)
         with self.sessions() as db:
             record=db.query(StudentEccdEvaluation).filter_by(student_id=1,question_id=self.home).one()
             record.evaluation_date=date(2026,8,1)

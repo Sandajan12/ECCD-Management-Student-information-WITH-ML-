@@ -1,5 +1,5 @@
 from fastapi import HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 from backend.models import EccdDomain, EccdQuestion, FamilyAccess, Parent, Section, Student, StudentEccdEvaluation, User
 from backend.utils.assessment_access import PERIOD_FLAGS, PERIOD_LABELS, window_values
 from backend.models.eccd import EccdAnswer, TestingPeriod
@@ -12,6 +12,8 @@ from backend.utils.students import public_student
 from backend.utils.mastery import carry_sources, completed_pre_kaya, guard_pre_mastery
 from backend.utils.audit import person_name, record_audit, teacher_name
 from backend.utils.period_gates import guard_section_period
+from backend.models import ParentHomeObservation, HomeObservationPhoto
+from backend.utils.home_observations import guard_pending
 
 PERIODS = (TestingPeriod.PRE, TestingPeriod.MID, TestingPeriod.POST)
 DOMAIN_CODES = {1: "GM", 2: "FM", 3: "SH", 4: "RL", 5: "EL", 6: "C", 7: "SE"}
@@ -32,7 +34,8 @@ def save_evaluation(db: Session, user: User, payload: EvaluationBatch) -> dict:
     actual_ids = {row[0] for row in db.query(EccdQuestion.question_id).filter(EccdQuestion.question_id.in_(question_ids))}
     if actual_ids != set(question_ids):
         raise HTTPException(400, "Unknown assessment question.")
-    existing = db.query(StudentEccdEvaluation).filter_by(student_id=student.student_id).all()
+    existing = db.query(StudentEccdEvaluation).options(selectinload(StudentEccdEvaluation.home_review)).filter_by(student_id=student.student_id).all()
+    guard_pending(db, student.student_id, payload.evaluations)
     guard_pre_mastery(db, existing, payload.evaluations)
     for record in existing:
         if record.testing_period == payload.testing_period or record.teacher_evaluation_date is None:
@@ -99,30 +102,47 @@ def save_home_evaluation(db: Session, user: User, payload: ParentEvaluationBatch
     permissions = permissions_for_student(db, student)
     if not permissions.allow_parent_edit_home_based_eccd:
         raise HTTPException(403, "Editing is currently locked by the Class Adviser.")
-    existing = db.query(StudentEccdEvaluation).filter_by(student_id=student.student_id).all()
+    existing = db.query(StudentEccdEvaluation).options(selectinload(StudentEccdEvaluation.home_review)).filter_by(student_id=student.student_id).all()
     by_question_period = {(record.question_id, record.testing_period): record for record in existing}
+    observations = {(r.question_id, r.testing_period): r for r in db.query(ParentHomeObservation).filter_by(student_id=student.student_id).with_for_update()}
+    if not set(payload.photo_ids).issubset(ids):
+        raise HTTPException(400, "A photo must belong to a submitted answer.")
     # Validate the whole batch before adding any rows or changing provenance.
     for answer in payload.evaluations:
         record = by_question_period.get((answer.question_id, answer.testing_period))
         if record is not None and record.answer != answer.answer:
             raise HTTPException(409, "Submitted answers cannot be changed. Refresh to view the saved answers.")
+        observation = observations.get((answer.question_id, answer.testing_period))
+        if observation is not None and (observation.answer != answer.answer or observation.parent_id != current_parent.parent_id
+                or payload.photo_ids.get(answer.question_id) not in (None, observation.photo_id)):
+            raise HTTPException(409, "This question has already been submitted. Refresh to view its status.")
     new_answers = [answer for answer in payload.evaluations
-                   if (answer.question_id, answer.testing_period) not in by_question_period]
+                   if (answer.question_id, answer.testing_period) not in by_question_period
+                   and (answer.question_id, answer.testing_period) not in observations]
     guard_pre_mastery(db, existing, new_answers, parent=True)
-    if not new_answers:
-        return {"message": "Assessment saved successfully!", "testing_period": payload.testing_period}
-    submitted_at = now_pht()
-    compatibility_date = submitted_at.date()
+    sources = carry_sources(existing, ids)
+    photos = {}
     for answer in new_answers:
-        record = StudentEccdEvaluation(student_id=student.student_id, question_id=answer.question_id, testing_period=answer.testing_period)
-        db.add(record)
-        record.answer = answer.answer
-        record.parent_id = current_parent.parent_id
-        record.evaluator_role = "parent"
-        record.parent_submitted_at = submitted_at
-        if record.teacher_evaluation_date is None:
-            record.evaluation_date = compatibility_date
-        # Parent observations never replace teacher_id or teacher_evaluation_date.
+        photo_id = payload.photo_ids.get(answer.question_id)
+        if not photo_id:
+            continue
+        if (answer.question_id, answer.testing_period) in sources:
+            raise HTTPException(409, "An earlier KAYA now carries forward. Refresh and remove the optional photo before submitting.")
+        photo = db.query(HomeObservationPhoto).filter_by(photo_id=photo_id).with_for_update().first()
+        if (photo is None or photo.parent_id != current_parent.parent_id or photo.student_id != student.student_id
+                or photo.question_id != answer.question_id or photo.testing_period != answer.testing_period
+                or not photo.ready or photo.delete_pending or not photo.object_key
+                or db.query(ParentHomeObservation).filter_by(photo_id=photo_id).first()):
+            raise HTTPException(409, "Photo is unavailable or does not belong to this question and parent. Select it again.")
+        photos[answer.question_id] = photo
+    if not new_answers:
+        return {"message": "Submitted — awaiting teacher review.", "testing_period": payload.testing_period}
+    submitted_at = now_pht()
+    for answer in new_answers:
+        photo = photos.get(answer.question_id)
+        db.add(ParentHomeObservation(student_id=student.student_id, question_id=answer.question_id,
+            testing_period=answer.testing_period, answer=answer.answer, parent_id=current_parent.parent_id,
+            submitted_at=submitted_at, status="pending", photo_id=photo.photo_id if photo else None))
     from backend.utils.account_identity import account_display_name
     name = account_display_name(user)
     record_audit(db, user, "PARENT_ASSESSMENT_SUBMITTED",
@@ -130,7 +150,7 @@ def save_home_evaluation(db: Session, user: User, payload: ParentEvaluationBatch
                  parentId=current_parent.parent_id, parentName=name, studentId=student.student_id,
                  studentName=person_name(student), testingPeriod=payload.testing_period.value)
     db.commit()
-    return {"message": "Assessment saved successfully!", "testing_period": payload.testing_period}
+    return {"message": "Submitted — awaiting teacher review.", "testing_period": payload.testing_period}
 
 
 def assessment_data(db: Session, user: User, identifier: str, parent_view: bool = False) -> dict:
@@ -139,8 +159,9 @@ def assessment_data(db: Session, user: User, identifier: str, parent_view: bool 
     permissions = permissions_for_student(db, student)
     domains = db.query(EccdDomain).order_by(EccdDomain.domain_id).all()
     questions = db.query(EccdQuestion).order_by(EccdQuestion.sequence_order, EccdQuestion.question_id).all()
-    evaluations = db.query(StudentEccdEvaluation).filter_by(student_id=student.student_id).order_by(StudentEccdEvaluation.evaluation_id).all()
+    evaluations = db.query(StudentEccdEvaluation).options(selectinload(StudentEccdEvaluation.home_review)).filter_by(student_id=student.student_id).order_by(StudentEccdEvaluation.evaluation_id).all()
     evaluations_by_question_period = {(record.question_id, record.testing_period): record for record in evaluations}
+    observations = {(r.question_id, r.testing_period): r for r in db.query(ParentHomeObservation).filter_by(student_id=student.student_id)}
     visible = {period: not parent_view or released(permissions, period) for period in PERIODS}
     windows = window_values(db.get(Section, student.section_id) if student.section_id else None) if parent_view else {}
     parent = db.query(Parent).filter_by(user_id=user.user_id).first() if parent_view else None
@@ -173,8 +194,10 @@ def assessment_data(db: Session, user: User, identifier: str, parent_view: bool 
             ages[str(domain.domain_id)][period] = summaries[period]["decimalAge"]
         for question in domain_questions:
             answers, evaluator_roles, parent_dates, teacher_dates, parent_locked, carry_forward = {}, {}, {}, {}, {}, {}
+            observation_metadata, photo_eligible = {}, {}
             for period in PERIODS:
                 record = evaluations_by_question_period.get((question.question_id, period))
+                observation = observations.get((question.question_id, period))
                 source = sources.get((question.question_id, period))
                 carry_forward[period] = None
                 if source and (not parent_view or (question.is_home_based and permissions.allow_parent_edit_home_based_eccd and windows[PERIOD_FLAGS[period.value]])):
@@ -184,6 +207,15 @@ def assessment_data(db: Session, user: User, identifier: str, parent_view: bool 
                     not parent_view or permissions.allow_parent_view_eccd_marks
                     or (permissions.allow_parent_edit_home_based_eccd and windows[PERIOD_FLAGS[period.value]])
                 ))
+                own_observation = bool(parent and observation and observation.parent_id == parent.parent_id)
+                observation_visible = not parent_view or bool(own_observation and permissions.allow_parent_edit_home_based_eccd and windows[PERIOD_FLAGS[period.value]])
+                observation_metadata[period] = ({"status": observation.status if observation_visible else "submitted",
+                    "answer": observation.answer if observation_visible else None,
+                    "submitted_at": observation.submitted_at if observation_visible else None} if observation else None)
+                if observation and parent_view:
+                    parent_locked[period] = True
+                photo_eligible[period] = bool(parent_view and question.is_home_based and not record and not observation
+                    and permissions.allow_parent_edit_home_based_eccd and windows[PERIOD_FLAGS[period.value]] and not source)
                 if not mark_visible(question, record):
                     record = None
                 answers[period] = record.answer if record is not None else None
@@ -192,7 +224,8 @@ def assessment_data(db: Session, user: User, identifier: str, parent_view: bool 
                 teacher_dates[period] = record.teacher_marked_at if record is not None else None
             rows.append({"question_id": question.question_id, "domain_id": question.domain_id, "domain_name": domain.domain_name.replace(" Domain", ""), "question_text": question.question_text, "sequence_order": question.sequence_order,
                          "is_home_based": bool(question.is_home_based), "evaluator_roles": evaluator_roles, "answers": answers,
-                         "parent_submitted_at": parent_dates, "teacher_marked_at": teacher_dates, "parent_locked": parent_locked, "carry_forward": carry_forward})
+                         "parent_submitted_at": parent_dates, "teacher_marked_at": teacher_dates, "parent_locked": parent_locked, "carry_forward": carry_forward,
+                         "home_observations": observation_metadata, "photo_eligible": photo_eligible})
         formatted.append({"domain_id": domain.domain_id, "domain_name": domain.domain_name, "questions": rows})
         # Retain the home-only compatibility projection for older consumers.
         checklist.extend(row for row in rows if row["is_home_based"])

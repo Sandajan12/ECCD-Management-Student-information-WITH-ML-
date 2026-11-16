@@ -11,4 +11,5 @@ from .user import User
 from .email_verification import EmailVerification, OtpPurpose
 from .settings import SystemSettings
 from .refresh_session import RefreshSession
+from .home_observation import ParentHomeObservation, HomeObservationPhoto
 from . import student_reference

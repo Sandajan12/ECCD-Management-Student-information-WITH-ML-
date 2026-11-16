@@ -99,6 +99,7 @@ class CumulativeMasteryTests(TestCase):
         question_query.filter.return_value = [(1,), (2,)]
         question_query.__iter__.return_value = iter([(1,), (2,)])
         evaluation_query.filter_by.return_value.all.return_value = existing
+        evaluation_query.options.return_value = evaluation_query
         db.query.side_effect = lambda model: (
             student_query if model is Student else question_query if model is EccdQuestion.question_id else evaluation_query)
         payload = EvaluationBatch(student_id=1, period="MID", assessment_date="2026-09-10",

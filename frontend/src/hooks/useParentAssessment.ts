@@ -1,7 +1,11 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { isAxiosError } from "axios";
 import { useAuth } from "../context/AuthContext";
-import API, { errorMessage, isNetworkError } from "../services/api";
+import API, {
+  errorMessage,
+  isNetworkError,
+  getSessionUser,
+} from "../services/api";
 import {
   PERIODS,
   type Answer,
@@ -17,6 +21,7 @@ import {
   type Draft,
 } from "../utils/drafts";
 import { useAssessment } from "./useAssessment";
+import { readFile, writeFile, confirmStoredFile } from "../utils/fileDrafts";
 
 interface HomeValues {
   answers: Record<string, Answer>;
@@ -57,7 +62,11 @@ export function useParentAssessment(child?: Student, readOnly = false) {
   const [, updateDrafts] = useState(0);
   const memoryDrafts = useRef(new Map<string, Draft<HomeValues>>());
   const [saving, setSaving] = useState(false);
-  const [confirmation, setConfirmation] = useState<string | null>(null);
+  const [confirmation, setConfirmation] = useState<{
+    scope: string;
+    signature: string;
+    count: number;
+  } | null>(null);
   const saveLock = useRef(false);
   const identity = `${owner}_${id}`;
   const currentChild = useRef(identity);
@@ -177,12 +186,17 @@ export function useParentAssessment(child?: Student, readOnly = false) {
       !canViewMarks &&
       !(
         question?.is_home_based === true &&
-        question.evaluator_roles?.[period] === "parent" &&
+        (question.evaluator_roles?.[period] === "parent" ||
+          question.home_observations?.[period]?.answer) &&
         canEditPeriod(period)
       )
     )
       return null;
-    return question?.answers[period] || null;
+    return (
+      question?.answers[period] ||
+      question?.home_observations?.[period]?.answer ||
+      null
+    );
   };
   const isQuestionSaved = (questionId: number, period: Period): boolean => {
     const question = checklistDomains
@@ -347,11 +361,25 @@ export function useParentAssessment(child?: Student, readOnly = false) {
       });
       return;
     }
+    const confirmationSnapshot = {
+      scope: `${identity}_${period}`,
+      signature: JSON.stringify(
+        snapshots.flatMap((snapshot) => snapshot.evaluations),
+      ),
+      count: snapshots.reduce(
+        (total, snapshot) => total + snapshot.evaluations.length,
+        0,
+      ),
+    };
     if (!confirmed) {
-      setConfirmation(`${identity}_${period}`);
+      setConfirmation(confirmationSnapshot);
       return;
     }
-    if (confirmation !== `${identity}_${period}`) return;
+    if (confirmation?.scope !== confirmationSnapshot.scope) return;
+    if (confirmation.signature !== confirmationSnapshot.signature) {
+      setConfirmation(confirmationSnapshot);
+      return;
+    }
     setConfirmation(null);
     saveLock.current = true;
     setSaving(true);
@@ -371,13 +399,59 @@ export function useParentAssessment(child?: Student, readOnly = false) {
             "Your draft is saved on this device. Reconnect and submit again.",
         };
       }
+      const files: { key: string; revision: string }[] = [];
+      const photo_ids: Record<number, string> = {};
+      for (const row of snapshots.flatMap((snapshot) => snapshot.evaluations)) {
+        if (getSessionUser()?.id !== owner)
+          throw new Error(
+            "Account changed. Your original draft is preserved; sign in to that account to submit it.",
+          );
+        const key = `ames_file_${owner}_home_${id}_${period}_${row.question_id}`;
+        const file = await readFile(key);
+        if (!file) continue;
+        const question = checklistDomains
+          .flatMap((d) => d.questions)
+          .find((q) => q.question_id === row.question_id);
+        if (question?.photo_eligible?.[period] !== true)
+          throw new Error(
+            "An earlier KAYA now carries forward. Remove its optional photo before submitting.",
+          );
+        let photoId = file.photo_id;
+        if (!photoId) {
+          const form = new FormData();
+          form.append("file", file.file);
+          if (getSessionUser()?.id !== owner)
+            throw new Error(
+              "Account changed. Your original draft is preserved; sign in to that account to submit it.",
+            );
+          const uploaded = await API.post<{ photo_id: string }>(
+            `/api/eccd/parent/home-photos/${id}/${row.question_id}/${period}`,
+            form,
+          );
+          if (![200, 201].includes(uploaded.status))
+            throw new Error("The server did not confirm the photo upload.");
+          photoId = uploaded.data.photo_id;
+          if ((await readFile(key))?.revision === file.revision)
+            await writeFile(key, { ...file, photo_id: photoId });
+        }
+        photo_ids[row.question_id] = photoId;
+        files.push({ key, revision: file.revision });
+      }
+      if (getSessionUser()?.id !== owner)
+        throw new Error(
+          "Account changed. Your original draft is preserved; sign in to that account to submit it.",
+        );
       const response = await API.post("/api/eccd/parent/evaluate", {
         student_id: id,
         testing_period: period,
+        ...(Object.keys(photo_ids).length ? { photo_ids } : {}),
         evaluations: snapshots.flatMap((snapshot) => snapshot.evaluations),
       });
       if (response.status !== 200 && response.status !== 201)
         throw new Error("The server did not confirm this save.");
+      await Promise.allSettled(
+        files.map((file) => confirmStoredFile(file.key, file.revision)),
+      );
       for (const snapshot of snapshots) {
         const persisted = readDraft<HomeValues>(snapshot.key);
         if (persisted && persisted.revision !== snapshot.draft.revision)
@@ -415,12 +489,12 @@ export function useParentAssessment(child?: Student, readOnly = false) {
       setFeedback({
         scope: identity,
         error: "",
-        success: "Assessment evaluations saved successfully!",
+        success: "Submitted — awaiting teacher review.",
       });
       if (currentChild.current === identity) await assessment.refresh();
       return {
         severity: "success" as const,
-        message: "Home-based evaluation saved successfully!",
+        message: "Submitted — awaiting teacher review.",
       };
     } catch (err) {
       if (
@@ -473,6 +547,9 @@ export function useParentAssessment(child?: Student, readOnly = false) {
         a.question_id - b.question_id,
     );
   return {
+    submissionCount: confirmation?.count || 0,
+    photoResource: (questionId: number, period: Period) =>
+      `home_${id}_${period}_${questionId}`,
     data,
     checklistDomains,
     activeDomain,
@@ -494,7 +571,7 @@ export function useParentAssessment(child?: Student, readOnly = false) {
     isQuestionLocked,
     isQuestionSaved,
     isCarriedForward,
-    confirmationOpen: confirmation === `${identity}_${selectedPeriod}`,
+    confirmationOpen: confirmation?.scope === `${identity}_${selectedPeriod}`,
     cancelConfirmation: () => setConfirmation(null),
     saving,
     loading: assessment.loading,

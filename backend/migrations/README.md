@@ -1,7 +1,7 @@
 # Feature migrations: Phase 2 is the current backend schema
 
 For a fresh PostgreSQL/Supabase database, the explicit
-[bootstrap command](../scripts/README.md) applies pending migrations 001–020 and
+[bootstrap command](../scripts/README.md) applies pending migrations 001–021 and
 seeds the exact tracked 7-domain/109-question ECCD baseline plus an
 environment-configured Chairman in one transaction:
 
@@ -81,11 +81,10 @@ root for the current export rules.
 ## Teacher correction timestamps (016)
 
 `teacher_marked_at` adds a nullable TIMESTAMPTZ to individual ECCD evaluations.
-Startup applies this one additive migration transactionally before validating the
-current schema; bootstrap registers it as `016_teacher_marked_at`. Concurrent
-workers serialize on the migration ledger. Repeated runs preserve all records;
-historical teacher timestamps remain NULL. Other migrations still require
-explicit application. The runtime database role needs ALTER TABLE permission.
+Startup checks this column without applying migrations; explicit maintenance and
+bootstrap register it as `016_teacher_marked_at`. Concurrent explicit applications
+serialize on the migration ledger. Repeated runs preserve all records; historical
+teacher timestamps remain NULL. The migration role needs ALTER TABLE permission.
 
 ```powershell
 uv run --no-project --python .venv312 python -m backend.migrations.teacher_marked_at --apply
@@ -129,8 +128,7 @@ uv run --no-project --python 3.12 python -m backend.migrations.auth_security_ver
 Adds non-null `users.security_version` with default zero without changing existing
 account fields. Archive/restore and adviser deactivation advance this version so
 previous sessions cannot revive. Repeated application preserves versions. Startup
-checks this column without applying 012; only migration 016 is automatically
-applied at startup. Backup restore preserves live user versions.
+checks this column without applying migrations. Backup restore preserves live user versions.
 
 The Phase 2 backend is implemented in Python/FastAPI, SQLAlchemy/PostgreSQL and
 Pydantic V2. React/Tailwind integration is Phase 3. Stop the dev server before
@@ -392,7 +390,7 @@ everything back. Repeated applies validate the schema and return without writes.
 `--check` validates without applying upgrades. Rollback requires the retained
 backup and matching older application release; dropped usernames are not rebuilt.
 
-Fresh bootstrap runs migrations 001–020 before seeding. Historical Phase 1 keeps
+Fresh bootstrap runs migrations 001–021 before seeding. Historical Phase 1 keeps
 username and excludes the new expression index and Chairman name. Phase 2 uses
 the migration ledger to distinguish its historical and post-013 column contracts,
 and fingerprints actual intermediate columns rather than the evolving ORM.
@@ -431,7 +429,7 @@ creates only auth_refresh_sessions and its user/expiry index, enables RLS,
 revokes PUBLIC/anon/authenticated access and records 019 in the existing ledger.
 No school rows or existing account columns change. Lock timeout is five seconds;
 a conflict rolls back. Startup checks 019 without applying it. Fresh bootstrap
-includes 001–020. Preserve this additive table when rolling back application code;
+includes 001–021. Preserve this additive table when rolling back application code;
 never restore refresh-family records from a backup. Old browser-storage sessions
 require a fresh login. Use custom same-site HTTPS origins for Strict cookies.
 
@@ -464,9 +462,29 @@ Apply locks the ledger/table with a five-second lock timeout and transactionally
 drops only the table using RESTRICT and records `020_remove_trusted_devices`.
 Its own indexes/policies/grants disappear; external views/foreign keys stop the
 upgrade. Repeated apply/check is safe. Startup never runs this destructive step.
-Fresh bootstrap includes 001–020; historical migration schemas remain replayable.
+Fresh bootstrap includes 001–021; historical migration schemas remain replayable.
 No other pending cleanup (including 018) is authorized by this operation.
 
 Resume the updated service and verify readiness, rate limiting, password → OTP →
 refresh restoration → logout → OTP-required login. Do not roll back to an old
 backend that queries the dropped table; use a compatible forward fix.
+# Migration 021: parent home-observation review
+
+`parent_home_observations` adds pending/review metadata and a separate private-photo
+cleanup ledger (`home_observation_photos`). Existing evaluations remain unchanged.
+Both tables enable RLS without public policies. Backend startup checks schema only;
+it never applies migrations, including 016. Fresh bootstrap includes 021.
+
+After a protected backup and stopping API writers, explicitly run:
+
+```powershell
+uv run --no-project --python .venv312 python -m backend.migrations.parent_home_observations --check
+uv run --no-project --python .venv312 python -m backend.migrations.parent_home_observations --apply
+uv run --no-project --python .venv312 python -m backend.migrations.parent_home_observations --check
+```
+
+The November 16 implementation is authorized/verified locally only against
+loopback `ames_parity_dev` and disposable schemas. No hosted migration or bucket
+provisioning is part of that delivery. Do not run an older backend after new pending
+submissions exist: it would bypass review. See the root review plan for coordinated
+client rollout, private Storage configuration, retention limits and cleanup scheduling.

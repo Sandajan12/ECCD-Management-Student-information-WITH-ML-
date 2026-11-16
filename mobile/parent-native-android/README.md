@@ -211,3 +211,35 @@ The property file contains `storeFile`, `storePassword`, `keyAlias`, and
 identity and increment versionCode for data-preserving updates. Never uninstall
 or clear data to verify an upgrade. Build products, local configuration and keys
 are ignored; the signed APK is delivered locally, not committed or published.
+# Parent home-observation review and optional photos (local source update)
+
+New manual submissions contain any answered subset of KAYA/DI-KAYA questions and
+remain pending until the current adviser saves an Accept/Decline review. Submitted
+and declined rows stay locked for parents. Older saved assessments remain intact.
+Accepted earlier KAYA supplies locked `draft-not save` later answers, without
+creating later records or an official testing date. Each later period still needs
+explicit submission and review. The eight permissions and section windows remain.
+
+Optional photos appear only when server `photo_eligible` permits them. A carried
+KAYA needs no new proof. `react-native-image-picker` 8.3.0 uses single-image
+`launchImageLibrary`; no broad Android media permission or base64 persistence is
+added. Drafts store only local URI/name/MIME and an optional opaque uploaded ID in
+the existing owner/child/period/domain envelope. OS cache eviction can invalidate
+a selected URI; reselect the image without clearing the answer draft. Local photo
+drafts are preserved on hidden fields/conflicts; remove them explicitly before
+submitting if an earlier acceptance made proof unnecessary.
+
+Uploads run only from explicit Submit. Session renewal can retry the same in-flight
+authenticated multipart request once; reconnect/login never replays parent forms
+or files. Each upload/submission step checks the live RAM account; an account
+switch preserves the original owner's drafts and cannot submit them as the new
+parent. Backend photo sanitization, private delivery and commit-first deletion
+apply equally to native and web. Configure only the backend storage variables;
+never put service keys in the app. Photos disappear from active storage after
+saved acceptance/decline, with durable deletion retry; provider backup retention
+and already-downloaded copies are separate.
+
+Requires backend migration 021 and coordinated web/backend source. No APK was
+built for this update. Node/TypeScript checks do not establish Android picker,
+URI lifetime, multipart transport, real-device cookie renewal or production
+authentication acceptance; verify those on a device before a release build.

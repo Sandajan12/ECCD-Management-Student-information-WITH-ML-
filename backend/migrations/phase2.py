@@ -37,6 +37,9 @@ def check_phase2(connection: Connection, schema: str = "public") -> None:
         f"SELECT EXISTS (SELECT 1 FROM {LEDGER} WHERE version='018_retired_branding_settings')"
     )).scalar_one()
     for name, table in Base.metadata.tables.items():
+        if name in ("parent_home_observations", "home_observation_photos") and not inspector.has_table(name, schema=schema):
+            # Explicit migration 021 is checked separately by current startup.
+            continue
         if name == "auth_refresh_sessions" and not inspector.has_table(name, schema=schema):
             # Migration 019 is checked separately at current API startup.
             continue

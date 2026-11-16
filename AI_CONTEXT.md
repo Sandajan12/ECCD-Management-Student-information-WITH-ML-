@@ -10,6 +10,63 @@ HttpOnly cookie release and remembered-device removal; see section 6 and explici
 
 ## 1. Purpose and account handoff
 
+### Parent home-observation review (local source, 2026-11-16)
+
+New parent web/native submissions use explicit migration 021's
+`parent_home_observations`; existing evaluation history is unchanged. Parents may
+manually submit any answered subset of KAYA/DI-KAYA. Pending/declined submissions
+are parent-locked and excluded from assessments, scores, dates, completion, ML
+and exports. The teacher's Pending Home-Based Assessments dialog saves selected
+Accept/Decline decisions; undecided observations remain pending. Pending questions
+block ordinary teacher assessment saves/imports. Review follows the current active
+section adviser, including transfers, independently of closed parent windows.
+
+Acceptance atomically creates a parent-attributed evaluation with original author
+and submission time, without an official teacher testing date. A linked accepted
+review confirms carry-forward only while its answer matches the current record.
+Accepted PRE/MID KAYA locks later virtual `draft-not save` answers; later periods
+still need explicit submission/review. Historical unconfirmed parent KAYA keeps
+the teacher exemption. Corrections remove only virtual inheritance, preserving
+saved and pending later responses. Regular testing dates and section-wide teacher
+prerequisites retain their existing rules.
+
+Separate `home_observations` / `photo_eligible` question metadata never puts pending
+answers in saved-answer fields. Another parent's submission has a neutral lock,
+without its answer, author or time; independent marks/score gates remain intact.
+Eight permissions, synced-family eligibility, section windows, RAM tokens,
+encrypted refresh cookies and owner/revision-safe drafts remain mandatory.
+
+Optional JPEG/PNG/WebP photos appear only on eligible unsubmitted rows without
+an earlier carry source. Validate actual MIME, 5 MiB encoded size, 8192 pixels per
+side and 20 megapixels; sanitize to a fresh metadata-free JPEG, downscaled within
+2048 pixels. No thumbnails/variants are generated. Server-only settings are
+`SUPABASE_STORAGE_URL` (HTTPS project origin), `SUPABASE_STORAGE_SERVICE_KEY` and
+`HOME_OBSERVATION_PHOTO_BUCKET` (default `home-observation-proofs`). The bucket
+must already exist privately without client policies; the adapter rejects public
+buckets. Tests override storage with an isolated in-memory adapter.
+
+`home_observation_photos` stores opaque keys/lifecycle metadata, never image bytes.
+Only the author/current authorized reviewer can read pending evidence through
+authenticated no-store FastAPI endpoints. Saved Accept/Decline commits revoke
+reads and queue physical deletion; deletion failures do not undo accepted answers.
+Run `uv run --no-project --python .venv312 python -m backend.scripts.cleanup_home_photos`
+hourly to retry and expire abandoned unattached uploads after 24 hours; submitted
+pending evidence has no automatic expiry. Student/question removal preserves
+cleanup intents. Encrypted school backups include metadata with no object keys or
+bytes; restore preserves deletion tombstones, revokes old image access and queues
+remaining objects for deletion. Missing restored evidence is unavailable without
+losing its answer. Provider backup retention/downloaded device copies cannot be
+instantly erased by application deletion.
+
+Native uses pinned `react-native-image-picker` 8.3.0, single-image system library
+selection without broad media permissions; AsyncStorage stores local URI metadata
+only, never base64. Files/answers/review decisions are manual-submit only. Each
+upload/submission/review checks its current RAM owner, preserving original-owner
+drafts after an account switch. Old
+parent payloads remain accepted but now become pending; older APKs need an update
+for accurate review wording/photo controls. No APK or deployment is established
+by source/unit/browser checks. Local migration verification is recorded in history.
+
 AMES manages early childhood student records, deterministic DepEd ECCD
 assessments, teacher/parent access, exports and educational research predictions.
 The Node.js-to-Python and JavaScript-to-TypeScript migration is complete. Work
@@ -105,7 +162,7 @@ carry-forward uses the per-question rules in section 7 on both parent clients.
 | Workspace | Root `pnpm-workspace.yaml` includes frontend and retains separate lockfiles; frontend has matching pnpm 12 YAML overrides and its own package-manager pin for isolated installs; automatic dependency verification before scripts is disabled |
 | Spreadsheets | openpyxl handles active workbook import/export; pandas is installed |
 | ML | V1 sigmoid-calibrated standalone Random Forest, joblib artifact, 18 PRE/demographic inputs (five household fields excluded), three supported POST outcomes; shared teacher/parent inference |
-| Migrations | Python migrations 001–020; only the nullable teacher timestamp (016) is applied automatically at startup. Other upgrades are explicit; 018 retires three branding columns after the matching app is deployed. No active Alembic setup, pyproject.toml, or uv.lock |
+| Migrations | Python migrations 001–021; startup checks required schema without applying migrations. All upgrades, including 016/021, are explicit. 018 retires three branding columns after the matching app is deployed. No active Alembic setup, pyproject.toml, or uv.lock |
 
 Exact dependency versions belong to manifests/lockfiles. Do not assume another
 environment named `.venv` uses Python 3.12. Root and frontend workspace YAML
@@ -167,7 +224,7 @@ production default or proof of email delivery.
 Settings validation hides input values in exception text to keep startup
 tracebacks from echoing database credentials or other configured secrets.
 
-Startup checks required schema and transactionally applies **only migration 016**;
+Startup checks required schema without applying migrations, including 016/021;
 017 is checked but explicitly applied (section 4). It seeds the tracked
 7-domain/109-question fixture only if both reference tables are empty, and warms
 cached ML artifacts. It never calls `create_all` or provisions accounts.
@@ -287,16 +344,17 @@ preserve those routes and their protection.
 | 013 | email_only_identity | Move Chairman name to settings, remove username, normalize emails and enforce case-insensitive uniqueness |
 | 014 | production_performance | Add 18 supporting B-tree indexes; explicit transactional maintenance-window upgrade, included in fresh bootstrap |
 | 015 | optional_student_lrn | Allow null protected LRNs while preserving assigned-LRN uniqueness and existing student data |
-| 016 | teacher_marked_at | Nullable teacher save timestamp; additive startup/bootstrap migration with no historical backfill |
+| 016 | teacher_marked_at | Nullable teacher save timestamp; explicit/bootstrap migration with no historical backfill |
 | 017 | eccd_question_sequence | Unique idx_questions_domain_sequence on (domain_id, sequence_order); explicit upgrade preserving question rows |
 | 018 | settings_cleanup | Explicitly drop secondary_color/profile_pic_url/login_background, preserving every remaining settings field; deploy matching application before upgrading |
 | 019 | refresh_cookie_sessions | Private refresh families, 10-second rotation grace; explicit additive upgrade before deployment |
 | 020 | remove_trusted_devices | Explicit removal of retired OTP-bypass table after matching app deployment |
+| 021 | parent_home_observations | Explicit pending parent observations/reviews and private-photo cleanup ledger; no historical assessment changes |
 
 `backend/main.py::initialize_runtime` checks evaluator provenance first, then
-transactionally applies **only 016** with migration-ledger serialization. The
-timestamp is nullable, without a default or historical backfill. Other missing
-or incompatible required schema stops startup; upgrades remain explicit.
+checks 016/021 without schema mutations. The teacher timestamp remains nullable,
+without a default or historical backfill. Missing or incompatible required schema
+stops startup; every upgrade remains explicit.
 Migration 011 is an explicit ownership cleanup rather than a startup repair;
 014 is explicit and optional for startup. 017 is checked and never auto-applied.
 
@@ -333,7 +391,7 @@ are configured, the explicit bootstrap is:
 uv run --no-project --python .venv312 python -m backend.scripts.seed_supabase --apply
 ```
 
-It applies pending **001–020** in order, seeds matching reference data and
+It applies pending **001–021** in order, seeds matching reference data and
 provisions the environment-configured Chairman in one transaction. Repeated
 runs preserve accounts/reference rows; conflicting reference data aborts.
 Existing databases need missing feature upgrades in order; use the migration
@@ -459,7 +517,7 @@ backups and cleared on restore, never restored as active sessions.
 Migration 019_refresh_cookie_sessions is explicit and additive: apply/check it
 before deploying this backend; startup checks and never auto-applies it. Enable
 RLS and revoke PUBLIC/anon/authenticated access; only the direct database backend
-uses this table. Fresh bootstrap includes 001–020.
+uses this table. Fresh bootstrap includes 001–021.
 
 JWTs bind to live credentials and persistent security version. Inactive/pending
 accounts cannot use protected services. Credential changes, archive/restore and
