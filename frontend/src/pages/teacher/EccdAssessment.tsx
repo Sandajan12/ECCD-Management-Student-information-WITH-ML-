@@ -159,7 +159,7 @@ const EccdAssessment: React.FC = () => {
     handleSave,
     triggerBackgroundSync,
     getAnswer,
-    isPreKaya,
+    isCarryLocked,
   } = useTeacherAssessment(
     Number(selectedLrn),
     activeDomain,
@@ -984,7 +984,7 @@ const EccdAssessment: React.FC = () => {
                                 type="button"
                                 disabled={
                                   !isCurrentPeriod ||
-                                  isPreKaya(q.question_id, period)
+                                  isCarryLocked(q.question_id, period)
                                 }
                                 onClick={() =>
                                   handleAnswerChange(
@@ -1010,7 +1010,7 @@ const EccdAssessment: React.FC = () => {
                                 type="button"
                                 disabled={
                                   !isCurrentPeriod ||
-                                  isPreKaya(q.question_id, period)
+                                  isCarryLocked(q.question_id, period)
                                 }
                                 onClick={() =>
                                   handleAnswerChange(
@@ -1032,6 +1032,13 @@ const EccdAssessment: React.FC = () => {
                                 DI-KAYA
                               </button>
                             </div>
+                            {evaluations[period as Period].inheritedAnswers[
+                              q.question_id
+                            ] && (
+                              <span className="text-xs text-slate-500">
+                                Carried forward — not saved
+                              </span>
+                            )}
                           </td>
                         );
                       })}

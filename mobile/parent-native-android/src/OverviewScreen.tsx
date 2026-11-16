@@ -71,7 +71,10 @@ function HomeDomain({
       {expanded &&
         questions.map((question) => {
           const lock = homeLock(child, assessment, question, period);
-          const value = snapshot?.values.answers[String(question.question_id)];
+          const carried = question.carry_forward?.[period] === "locked";
+          const value = carried
+            ? "KAYA"
+            : snapshot?.values.answers[String(question.question_id)];
           return (
             <View
               key={question.question_id}
@@ -85,6 +88,7 @@ function HomeDomain({
                   {lock}
                 </Badge>
               )}
+              {carried && !lock && <Copy>Carried forward — not saved</Copy>}
               <View style={styles.row}>
                 {(["KAYA", "DI-KAYA"] as const).map((answer) => (
                   <Button
@@ -93,7 +97,12 @@ function HomeDomain({
                     icon={answer === "KAYA" ? "check" : "support"}
                     color={answer === "KAYA" ? "#15803d" : "#b45309"}
                     secondary={value !== answer}
-                    disabled={!ready || !!lock || busy}
+                    disabled={
+                      !ready ||
+                      !!lock ||
+                      busy ||
+                      (carried && answer === "DI-KAYA")
+                    }
                     onPress={() => {
                       void service
                         .change(
@@ -106,7 +115,7 @@ function HomeDomain({
                     }}
                   />
                 ))}
-                {!!value && (
+                {!!value && !carried && (
                   <Button
                     secondary
                     title="Remove local answer"

@@ -88,7 +88,8 @@ Native login is compact, with an inline blue registration link and the website's
 Terms acknowledgment/full privacy dialog. Checkbox and Terms link are separate;
 Close never accepts, and login/OTP require agreement before sending
 `terms_accepted: true`. Only the notice's browser/device wording differs.
-Backend routes, schema, scoring, ML artifacts and website behavior are unchanged.
+Authentication, schema, scoring and ML artifacts retain their contracts. Home
+carry-forward uses the per-question rules in section 7 on both parent clients.
 
 | Layer | Implementation / authority |
 | --- | --- |
@@ -575,12 +576,24 @@ confirms an official test. Actual save timestamps differ from chosen assessment
 dates. Unknown historical teacher timestamps remain null. Import and backup
 compatibility retain this distinction.
 
-Teacher carry-over is virtual: earlier KAYA can prefill unsaved later periods.
-Completed-PRE mastery locks KAYA for corresponding MID/POST items, with completion
-defined by `mastery.py` over every configured question's teacher date. Later
-periods still need explicit saves and dates. Existing conflicting saved answers
-are not silently rewritten. This is distinct from ML readiness, which filters
-official domains (section 11).
+Carry-forward is virtual and per question: saved PRE KAYA prefills MID/POST;
+saved MID KAYA prefills POST. Parents cannot downgrade inherited KAYA. Teachers
+are locked only by earlier teacher-marked/confirmed KAYA, using evaluator role
+`teacher` OR a non-null `teacher_evaluation_date` (equal-answer confirmation
+retains parent attribution). Unconfirmed parent home KAYA remains editable by
+teachers, including the original period with existing correction confirmation.
+A saved teacher MID DI-KAYA resets an earlier unconfirmed parent PRE source into
+unanswered POST; it cannot bypass a separate earlier confirmed KAYA lock.
+`ChecklistQuestion.carry_forward` contains role-specific `locked`, `editable`,
+`restricted` or null values by period. Hidden sources yield neutral restrictions,
+preserving independent marks access and all editing gates. Saved `answers`,
+scores, dates, exports and completion counts never include virtual answers.
+Inherited-only submissions require explicit Save; native rows say "Carried
+forward — not saved" and stay visible until HTTP 200/201. Drafts cannot bypass
+locks and remain revision-safe through failures. Existing conflicting records
+require reviewed saves. The older `pre_kaya_question_ids` response field remains
+for compatibility; current clients use per-question metadata. This rule requires
+no migration and is independent of official-domain ML readiness (section 11).
 
 Official scoring uses `backend/eccd_scoring_data.json` for GM/FM/SH/RL/EL/C/SE
 and closest-lower lookup fallback. Decimal age uses elapsed years/completed

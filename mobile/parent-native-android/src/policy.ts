@@ -7,6 +7,7 @@ export function homeLock(child: Child, assessment: Assessment, question: Questio
     return 'Locked by teacher';
   if (!assessment.parent_assessment_access[WINDOWS[period]]) return 'Locked by teacher';
   if (question.parent_locked[period]) return 'This observation is already submitted or teacher-confirmed and cannot be changed.';
+  if (question.carry_forward?.[period] === 'restricted') return 'Locked by teacher';
   return question.is_home_based ? '' : 'Only home-based indicators can be observed here.';
 }
 export function released(child: Child, assessment: Assessment, period: Period): boolean {

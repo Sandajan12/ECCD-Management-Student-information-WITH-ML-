@@ -17,6 +17,47 @@ function fixture() {
     domains: [{domain_id: 2, domain_name: 'Motor', questions: [45, 46].map(question_id => ({question_id, is_home_based: true, parent_locked: {PRE: false}}))}]} as Assessment;
   return {records, storage, store, child, assessment};
 }
+
+test('inherited-only home answers remain visible and unsaved until manual confirmation', async () => {
+  const f = fixture();
+  f.assessment.parent_assessment_access.mid_test_parent_editable = true;
+  f.assessment.domains[0].questions[0].carry_forward = {MID: 'locked'};
+  let release: () => void = () => {}; let called: () => void = () => {};
+  const started = new Promise<void>(resolve => {called = resolve;});
+  const service = new HomeObservations(f.store, 123, 7, async payload => {
+    assert.deepEqual(payload.evaluations, [{question_id: 45, testing_period: 'MID', answer: 'KAYA'}]);
+    called(); await new Promise<void>(resolve => {release = resolve;});
+  });
+  await service.load(f.assessment, 'MID');
+  assert.equal(f.records.size, 0);
+  const sending = service.submit(f.child, f.assessment, 'MID');
+  await started;
+  const key = homeKey(7, 'MID', 2, 123);
+  assert.equal(f.store.peek<HomeValues>(key, 123)?.is_pending_sync, true);
+  // A newer answer must survive the old confirmation.
+  await service.change(2, 'MID', 46, 'DI-KAYA');
+  release();
+  assert.deepEqual((await sending).questionIds, [45]);
+  assert.equal(f.store.peek<HomeValues>(key, 123)?.values.answers['46'], 'DI-KAYA');
+});
+
+test('carry lock overrides stale DI-KAYA drafts; hidden carry restrictions cannot submit', async () => {
+  const f = fixture();
+  f.assessment.parent_assessment_access.post_test_parent_editable = true;
+  const question = f.assessment.domains[0].questions[0];
+  question.carry_forward = {POST: 'locked'};
+  let sends = 0;
+  const service = new HomeObservations(f.store, 123, 7, async payload => {
+    sends++; assert.equal(payload.evaluations[0].answer, 'KAYA'); throw new TypeError('offline');
+  });
+  await service.change(2, 'POST', 45, 'DI-KAYA');
+  await assert.rejects(service.submit(f.child, f.assessment, 'POST'), /Reconnect/);
+  const key = homeKey(7, 'POST', 2, 123);
+  assert.equal(f.store.peek<HomeValues>(key, 123)?.values.answers['45'], 'DI-KAYA');
+  question.carry_forward.POST = 'restricted';
+  await assert.rejects(service.submit(f.child, f.assessment, 'POST'), /unlocked/);
+  assert.equal(sends, 1);
+});
 test('home envelope survives reconstruction and loading pending drafts never replays them', async () => {
   const f = fixture(); let sends = 0;
   const service = new HomeObservations(f.store, 123, 7, async () => {sends++;});

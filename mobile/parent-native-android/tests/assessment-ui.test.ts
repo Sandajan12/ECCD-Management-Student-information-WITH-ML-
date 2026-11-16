@@ -18,6 +18,79 @@ const press = (node: Element) => {
 const user = { id: 123, role: "user", full_name: "Parent" };
 
 describe("6. Assessment touch, presentation and navigation handlers (mocked hosts)", () => {
+  test("inherited home rows stay editable-list visible with KAYA selected and DI-KAYA disabled", () => {
+    const f = assessmentFixture();
+    const question = f.assessment.domains[0].questions[0];
+    question.carry_forward = { MID: "locked" };
+    const harness = componentHarness("OverviewScreen.tsx", {
+      "./resources": {
+        useResource: (path: string) => ({
+          data: path.includes("dashboard-stats") ? f.dashboard : f.assessment,
+          error: "",
+          loading: false,
+          reload: async () => {},
+        }),
+        Feedback: "Feedback",
+      },
+      "./drafts": {
+        drafts: f.store,
+        useDraft: () => ({ ready: true, snapshot: null, storageError: "" }),
+      },
+      "./session": { session: { request: async () => {} } },
+      "./AssessmentScreens": { OverviewSummary: "OverviewSummary" },
+    });
+    const screen = harness.mount("OverviewScreen", {
+      user,
+      child: f.child,
+      confirmed: {},
+      onConfirmed() {},
+      refreshChildren: async () => {},
+      header: null,
+      insights() {},
+      results() {},
+    });
+    press(
+      find(
+        screen.render(),
+        (node) =>
+          node.props.accessibilityLabel === "Assess Home-Based Questions",
+      ),
+    );
+    (
+      find(screen.render(), (node) => node.type === "PeriodTabs").props
+        .onChange as (period: string) => void
+    )("MID");
+    const domain = find(
+      screen.render(),
+      (node) =>
+        typeof node.type === "function" && node.type.name === "HomeDomain",
+    );
+    const inner = harness.child(domain);
+    press(find(inner.render(), (node) => node.type === "Pressable"));
+    const tree = inner.render();
+    assert.match(text(tree), /Carried forward — not saved/);
+    const row = find(
+      tree,
+      (node) =>
+        node.type === "View" &&
+        text(node).includes("Indicator 45") &&
+        elements(node).some((item) => item.props.title === "DI-KAYA"),
+    );
+    assert.equal(
+      find(row, (node) => node.props.title === "KAYA").props.secondary,
+      false,
+    );
+    assert.equal(
+      find(row, (node) => node.props.title === "DI-KAYA").props.disabled,
+      true,
+    );
+    assert.equal(
+      elements(row).some((node) => node.props.title === "Remove local answer"),
+      false,
+    );
+    assert.equal(f.records.size, 0);
+  });
+
   test("whole collapsed surface expands; domain and answer handlers have no outer toggle ancestor", async () => {
     const f = assessmentFixture();
     let gets = 0,
@@ -251,7 +324,11 @@ describe("6. Assessment touch, presentation and navigation handlers (mocked host
     let tree = screen.render();
     press(tree.props.footer as Element);
     press(
-      find(screen.render(), (node) => node.type === "Button" && node.props.title === "Submit Answers"),
+      find(
+        screen.render(),
+        (node) =>
+          node.type === "Button" && node.props.title === "Submit Answers",
+      ),
     );
     await new Promise<void>((resolve) => setImmediate(resolve));
     tree = screen.render();

@@ -176,7 +176,17 @@ export default function HomeAssessmentForm({
                                   fontWeight: 500,
                                 }}
                               >
-                                Saved · Locked
+                                {assessment.isCarriedForward(
+                                  question.question_id,
+                                  period,
+                                )
+                                  ? "Carried forward — not saved"
+                                  : assessment.isQuestionSaved(
+                                        question.question_id,
+                                        period,
+                                      )
+                                    ? "Saved · Locked"
+                                    : "Locked by teacher"}
                               </Typography>
                             )}
                         </Stack>

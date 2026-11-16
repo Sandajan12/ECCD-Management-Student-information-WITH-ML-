@@ -9,7 +9,7 @@ from backend.utils.access import authorize_student, current_teacher, get_active_
 from backend.utils.eccd_scorer import calculate_decimal_age, calculate_scores
 from backend.utils.eccd_dates import get_grading_date, get_official_testing_date, now_pht
 from backend.utils.students import public_student
-from backend.utils.mastery import completed_pre_kaya, guard_pre_mastery
+from backend.utils.mastery import carry_sources, completed_pre_kaya, guard_pre_mastery
 from backend.utils.audit import person_name, record_audit, teacher_name
 
 PERIODS = (TestingPeriod.PRE, TestingPeriod.MID, TestingPeriod.POST)
@@ -106,7 +106,7 @@ def save_home_evaluation(db: Session, user: User, payload: ParentEvaluationBatch
             raise HTTPException(409, "Submitted answers cannot be changed. Refresh to view the saved answers.")
     new_answers = [answer for answer in payload.evaluations
                    if (answer.question_id, answer.testing_period) not in by_question_period]
-    guard_pre_mastery(db, existing, new_answers)
+    guard_pre_mastery(db, existing, new_answers, parent=True)
     if not new_answers:
         return {"message": "Assessment saved successfully!", "testing_period": payload.testing_period}
     submitted_at = now_pht()
@@ -142,6 +142,15 @@ def assessment_data(db: Session, user: User, identifier: str, parent_view: bool 
     visible = {period: not parent_view or released(permissions, period) for period in PERIODS}
     windows = window_values(db.get(Section, student.section_id) if student.section_id else None) if parent_view else {}
     parent = db.query(Parent).filter_by(user_id=user.user_id).first() if parent_view else None
+    sources = carry_sources(evaluations, {q.question_id for q in questions if q.is_home_based})
+
+    def mark_visible(question: EccdQuestion, record: StudentEccdEvaluation | None) -> bool:
+        return not parent_view or permissions.allow_parent_view_eccd_marks or bool(
+            record is not None and parent is not None and question.is_home_based
+            and permissions.allow_parent_edit_home_based_eccd
+            and windows[PERIOD_FLAGS[record.testing_period.value]]
+            and record.evaluator_role == "parent" and record.parent_id == parent.parent_id
+        )
     dates, grading_dates, summaries, ages = {}, {}, {}, {}
     for period in PERIODS:
         records = [record for record in evaluations if record.testing_period == period]
@@ -161,33 +170,27 @@ def assessment_data(db: Session, user: User, identifier: str, parent_view: bool 
         for period in PERIODS:
             ages[str(domain.domain_id)][period] = summaries[period]["decimalAge"]
         for question in domain_questions:
-            answers, evaluator_roles, parent_dates, teacher_dates, parent_locked = {}, {}, {}, {}, {}
+            answers, evaluator_roles, parent_dates, teacher_dates, parent_locked, carry_forward = {}, {}, {}, {}, {}, {}
             for period in PERIODS:
                 record = evaluations_by_question_period.get((question.question_id, period))
+                source = sources.get((question.question_id, period))
+                carry_forward[period] = None
+                if source and (not parent_view or (question.is_home_based and permissions.allow_parent_edit_home_based_eccd and windows[PERIOD_FLAGS[period.value]])):
+                    carry_forward[period] = ("locked" if parent_view or source[1] else "editable") if mark_visible(question, source[0]) else "restricted"
                 # A neutral lock reveals no mark, author, or date to other parents.
                 parent_locked[period] = bool(question.is_home_based and record is not None and (
                     not parent_view or permissions.allow_parent_view_eccd_marks
                     or (permissions.allow_parent_edit_home_based_eccd and windows[PERIOD_FLAGS[period.value]])
                 ))
-                if parent_view and not permissions.allow_parent_view_eccd_marks:
-                    # Score release does not release checklist marks. Only the
-                    # authenticated parent's own editable observations survive.
-                    own_editable_home = (
-                        question.is_home_based is True and parent is not None
-                        and permissions.allow_parent_edit_home_based_eccd
-                        and windows[PERIOD_FLAGS[period.value]]
-                        and record is not None and record.evaluator_role == "parent"
-                        and record.parent_id == parent.parent_id
-                    )
-                    if not own_editable_home:
-                        record = None
+                if not mark_visible(question, record):
+                    record = None
                 answers[period] = record.answer if record is not None else None
                 evaluator_roles[period] = record.evaluator_role if record is not None else None
                 parent_dates[period] = record.parent_submitted_at if record is not None else None
                 teacher_dates[period] = record.teacher_marked_at if record is not None else None
             rows.append({"question_id": question.question_id, "domain_id": question.domain_id, "domain_name": domain.domain_name.replace(" Domain", ""), "question_text": question.question_text, "sequence_order": question.sequence_order,
                          "is_home_based": bool(question.is_home_based), "evaluator_roles": evaluator_roles, "answers": answers,
-                         "parent_submitted_at": parent_dates, "teacher_marked_at": teacher_dates, "parent_locked": parent_locked})
+                         "parent_submitted_at": parent_dates, "teacher_marked_at": teacher_dates, "parent_locked": parent_locked, "carry_forward": carry_forward})
         formatted.append({"domain_id": domain.domain_id, "domain_name": domain.domain_name, "questions": rows})
         # Retain the home-only compatibility projection for older consumers.
         checklist.extend(row for row in rows if row["is_home_based"])

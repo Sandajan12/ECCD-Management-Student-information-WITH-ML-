@@ -58,7 +58,7 @@ class OptionalLrnTests(TestCase):
 class CumulativeMasteryTests(TestCase):
     def record(self, question_id=1, answer=EccdAnswer.KAYA, period=TestingPeriod.PRE, confirmed=True):
         return StudentEccdEvaluation(student_id=1, question_id=question_id, testing_period=period,
-                                     answer=answer, teacher_evaluation_date=date(2026, 8, 10) if confirmed else None)
+                                     answer=answer, evaluator_role="teacher" if confirmed else "parent", teacher_evaluation_date=date(2026, 8, 10) if confirmed else None)
 
     def completed(self):
         return [self.record(), self.record(2, EccdAnswer.DI_KAYA)]
@@ -72,7 +72,7 @@ class CumulativeMasteryTests(TestCase):
 
     def test_both_later_periods_reject_downgrade(self):
         db = MagicMock()
-        db.query.return_value = [(1,), (2,)]
+        db.query.return_value.filter.return_value = [(1,), (2,)]
         for period in (TestingPeriod.MID, TestingPeriod.POST):
             answer = AssessmentAnswer(question_id=1, testing_period=period, answer="DI-KAYA")
             with self.subTest(period=period), self.assertRaises(HTTPException) as raised:
@@ -82,13 +82,13 @@ class CumulativeMasteryTests(TestCase):
 
     def test_pre_corrections_and_unmastered_later_items_remain_editable(self):
         db = MagicMock()
-        db.query.return_value = [(1,), (2,)]
+        db.query.return_value.filter.return_value = [(1,), (2,)]
         for question, period, value in ((1, "PRE", "DI-KAYA"), (2, "MID", "DI-KAYA"), (1, "POST", "KAYA")):
             guard_pre_mastery(db, self.completed(), [AssessmentAnswer(question_id=question, testing_period=period, answer=value)])
 
     def test_incomplete_pre_does_not_lock_parent_observations(self):
         db = MagicMock()
-        db.query.return_value = [(1,), (2,)]
+        db.query.return_value.filter.return_value = [(1,), (2,)]
         guard_pre_mastery(db, [self.record(confirmed=False)], [
             AssessmentAnswer(question_id=1, testing_period="MID", answer="DI-KAYA")])
 

@@ -63,6 +63,7 @@ export interface Question {
   parent_submitted_at: Partial<Record<Period, string | null>>;
   teacher_marked_at: Partial<Record<Period, string | null>>;
   parent_locked: Partial<Record<Period, boolean>>;
+    carry_forward?: Partial<Record<Period, 'locked' | 'editable' | 'restricted' | null>>;
 }
 export interface Assessment {
   student_id: number; permissions: Permissions; allow_parent_view_eccd_marks: boolean;

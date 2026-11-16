@@ -1,4 +1,4 @@
-"""Completed PRE mastery shared by assessment reads and write guards."""
+"""Saved per-question carry-forward shared by assessment reads and write guards."""
 from collections.abc import Iterable
 
 from fastapi import HTTPException
@@ -20,11 +20,37 @@ def completed_pre_kaya(question_ids: set[int], evaluations: Iterable[StudentEccd
     return {question_id for question_id in question_ids if confirmed[question_id] == EccdAnswer.KAYA}
 
 
-def guard_pre_mastery(db: Session, evaluations: list[StudentEccdEvaluation], answers: Iterable[AssessmentAnswer]) -> None:
+def carry_sources(evaluations: Iterable[StudentEccdEvaluation], home_ids: set[int]) -> dict[tuple[int, TestingPeriod], tuple[StudentEccdEvaluation, bool]]:
+    """Resolve saved sources only; a confirmed positive survives historical later conflicts."""
+    records = {(row.question_id, row.testing_period): row for row in evaluations}
+    result: dict[tuple[int, TestingPeriod], tuple[StudentEccdEvaluation, bool]] = {}
+    for question_id in {key[0] for key in records}:
+        source, confirmed_source = None, None
+        for period in TestingPeriod:
+            prior = confirmed_source if confirmed_source is not None else source
+            if prior is not None:
+                result[question_id, period] = (prior, confirmed_source is not None)
+            row = records.get((question_id, period))
+            if row is None:
+                continue
+            teacher_confirmed = row.evaluator_role == "teacher" or row.teacher_evaluation_date is not None
+            if row.answer == EccdAnswer.KAYA:
+                source = row
+                if teacher_confirmed or question_id not in home_ids:
+                    confirmed_source = row
+            elif teacher_confirmed:
+                # Only a reviewed teacher negative resets provisional parent positives.
+                source = None
+    return result
+
+
+def guard_pre_mastery(db: Session, evaluations: list[StudentEccdEvaluation], answers: Iterable[AssessmentAnswer], *, parent: bool = False) -> None:
     later_answers = [answer for answer in answers if answer.testing_period != TestingPeriod.PRE]
     if not later_answers:
         return
-    question_ids = {row[0] for row in db.query(EccdQuestion.question_id)}
-    mastered = completed_pre_kaya(question_ids, evaluations)
-    if any(answer.question_id in mastered and answer.answer != EccdAnswer.KAYA for answer in later_answers):
-        raise HTTPException(400, "Items mastered in the completed Pre-Test must remain Kaya in Mid-Test and Post-Test.")
+    home_ids = {row[0] for row in db.query(EccdQuestion.question_id).filter(EccdQuestion.is_home_based.is_(True))}
+    sources = carry_sources(evaluations, home_ids)
+    for answer in later_answers:
+        source = sources.get((answer.question_id, answer.testing_period))
+        if source and (parent or source[1]) and answer.answer != EccdAnswer.KAYA:
+            raise HTTPException(400, "A saved earlier KAYA requires KAYA in this testing period. Refresh and review the assessment.")

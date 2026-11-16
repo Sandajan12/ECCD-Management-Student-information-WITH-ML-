@@ -25,17 +25,20 @@ export class HomeObservations {
     const payload: HomePayload = {student_id: this.student, testing_period: period, evaluations: []};
     for (const domain of assessment.domains) {
       const key = homeKey(this.student, period, domain.domain_id, this.owner);
-      const snapshot = this.store.peek<HomeValues>(key, this.owner);
-      if (!snapshot) continue;
+      const stored = this.store.peek<HomeValues>(key, this.owner);
       const answers: Record<string, Answer> = {};
       for (const question of domain.questions) {
-        const answer = snapshot.values.answers[String(question.question_id)];
+        const answer = question.carry_forward?.[period] === 'locked' ? 'KAYA' : stored?.values.answers[String(question.question_id)];
         if (answer && !confirmed.includes(question.question_id) && !homeLock(child, assessment, question, period)) {
           answers[String(question.question_id)] = answer;
           payload.evaluations.push({question_id: question.question_id, testing_period: period, answer});
         }
       }
-      if (Object.keys(answers).length) snapshots.push({key, snapshot, answers});
+      if (Object.keys(answers).length) {
+        // Capture the actual explicit request while retaining conflicting local work until confirmation.
+        const snapshot = stored || draft(this.owner, {answers});
+        snapshots.push({key, snapshot, answers});
+      }
     }
     if (!payload.evaluations.length || payload.evaluations.length > 1000) throw new Error('Choose between 1 and 1000 unlocked home observations for this period. Locked drafts remain saved.');
     // Persist every request snapshot before HTTP so a process death cannot lose the attempted answers.

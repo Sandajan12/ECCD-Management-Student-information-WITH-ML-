@@ -1,5 +1,39 @@
 # AMES Context History
 
+## 2026-11-16 — Per-question KAYA carry-forward and teacher exemption (local)
+
+Implemented `ECCD_KAYA_CARRY_FORWARD_PLAN_2.md` on `feat/parent-native-android`
+across backend, website and native parent observations. Saved PRE/MID KAYA
+prefills later periods without saving them. Parents cannot downgrade inherited
+marks; teachers can override unconfirmed parent home sources. Teacher role OR
+official confirmation date identifies confirmed positives. Saved teacher MID
+DI-KAYA resets provisional parent PRE inheritance into unanswered POST, while
+independent confirmed positives still lock. Parent history, correction intent,
+masking, eight permissions, period windows and revision-safe manual saves remain.
+Native inherited-only submissions stay visible until HTTP 200/201 confirmation.
+
+Executed: frontend unit tests **7 passed**, focused parent assessment
+browser tests **36 passed** and teacher carry-forward browser tests **3 passed**
+(desktop/tablet/mobile); both frontend TypeScript projects and native TypeScript
+passed; native Node tests **52 passed**. The new workbook assertion passed,
+confirming unsaved inherited MID/POST marks remain blank. Full backend pytest:
+**587 passed, 697 subtests passed**, 10 collection/deprecation warnings, 22m22s.
+The run started before the final historical-parent-negative refinement; the
+affected assessment rerun verified the final helper and extra regression:
+**55 passed, 36 subtests passed**, 3 warnings. Only teacher-confirmed negatives
+reset provisional positives; old unreviewed parent conflicts require review.
+The initial redirected run stalled and was interrupted, then restarted with
+direct output and `-o faulthandler_timeout=60`. The isolated WebSocket diagnostic
+also passed. Backend DB host was verified as `localhost`
+(`ames_parity_dev`); integration fixtures use disposable, UUID-named schemas.
+The refreshed AST graph contains 3,720 nodes/12,742 edges; SQL extraction was
+unavailable and existing Gradle/Kotlin parsing warnings were outside this change.
+
+No new dependency/migration, provider tool, push, merge, deployment or APK release.
+`mobile/parent-android` and the original untracked plan remain untouched/unstaged.
+Browser API fixtures and native mocked hosts do not establish live-account or
+real-device acceptance; local user testing remains required before release.
+
 ## 2026-11-16 — Compact native login and in-app Terms notice (local)
 
 Updated `9d0cb51` on `feat/parent-native-android` to 1.2.4/code 7. Read-only

@@ -184,7 +184,7 @@ export function useParentAssessment(child?: Student, readOnly = false) {
       return null;
     return question?.answers[period] || null;
   };
-  const isQuestionLocked = (questionId: number, period: Period): boolean => {
+  const isQuestionSaved = (questionId: number, period: Period): boolean => {
     const question = checklistDomains
       .flatMap((domain) => domain.questions)
       .find((item) => item.question_id === questionId);
@@ -193,6 +193,18 @@ export function useParentAssessment(child?: Student, readOnly = false) {
       Boolean(question?.answers[period])
     );
   };
+  const carryStatus = (questionId: number, period: Period) =>
+    checklistDomains
+      .flatMap((domain) => domain.questions)
+      .find((question) => question.question_id === questionId)?.carry_forward?.[
+      period
+    ];
+  const isQuestionLocked = (questionId: number, period: Period): boolean =>
+    isQuestionSaved(questionId, period) ||
+    ["locked", "restricted"].includes(carryStatus(questionId, period) || "");
+  const isCarriedForward = (questionId: number, period: Period): boolean =>
+    !isQuestionSaved(questionId, period) &&
+    carryStatus(questionId, period) === "locked";
   const getAnswer = (questionId: number, period: string): Answer | null => {
     if (!PERIODS.includes(period as Period)) return null;
     const p = period as Period;
@@ -204,6 +216,14 @@ export function useParentAssessment(child?: Student, readOnly = false) {
     );
     if (!domain || !question) return null;
     if (question.is_home_based !== true) return serverAnswer(questionId, p);
+    if (question.carry_forward) {
+      const saved = serverAnswer(questionId, p);
+      if (isQuestionSaved(questionId, p)) return saved;
+      if (!canEditPeriod(p) || question.carry_forward[p] === "restricted")
+        return null;
+      if (question.carry_forward[p] === "locked") return "KAYA";
+      return draftFor(domain.domain_id, p)?.values.answers[questionId] || saved;
+    }
     // Own unsaved observations may be entered independently of official score release.
     // The API masks records using marks access and ownership, independently of scores.
     let source: Answer | null = null;
@@ -281,7 +301,8 @@ export function useParentAssessment(child?: Student, readOnly = false) {
         (question) => {
           if (
             question.is_home_based !== true ||
-            isQuestionLocked(question.question_id, period)
+            isQuestionSaved(question.question_id, period) ||
+            carryStatus(question.question_id, period) === "restricted"
           )
             return [];
           const answer = getAnswer(question.question_id, period);
@@ -471,6 +492,8 @@ export function useParentAssessment(child?: Student, readOnly = false) {
     handleAnswerChange,
     handleSaveChecklist,
     isQuestionLocked,
+    isQuestionSaved,
+    isCarriedForward,
     confirmationOpen: confirmation === `${identity}_${selectedPeriod}`,
     cancelConfirmation: () => setConfirmation(null),
     saving,

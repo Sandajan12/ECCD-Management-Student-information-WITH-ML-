@@ -187,6 +187,9 @@ export interface Question {
   parent_submitted_at?: Partial<Record<Period, string | null>>;
   teacher_marked_at?: Partial<Record<Period, string | null>>;
   parent_locked?: Partial<Record<Period, boolean>>;
+  carry_forward?: Partial<
+    Record<Period, "locked" | "editable" | "restricted" | null>
+  >;
   answers: Record<Period, Answer | null>;
 }
 export interface Domain {

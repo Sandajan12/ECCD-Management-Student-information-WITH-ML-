@@ -198,6 +198,7 @@ class ChecklistQuestion(ApiModel):
     parent_submitted_at: dict[TestingPeriod, datetime | None] = Field(default_factory=dict)
     teacher_marked_at: dict[TestingPeriod, datetime | None] = Field(default_factory=dict)
     parent_locked: dict[TestingPeriod, bool] = Field(default_factory=dict)
+    carry_forward: dict[TestingPeriod, Literal["locked", "editable", "restricted"] | None] = Field(default_factory=dict)
 
 
 class ChecklistDomain(ApiModel):

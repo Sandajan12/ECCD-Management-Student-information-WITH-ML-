@@ -28,6 +28,38 @@ const draft: TeacherAssessmentDraft = {
   evaluation_date: "2026-09-10",
 };
 
+test("per-question metadata locks MID mastery and allows parent-source teacher overrides", () => {
+  const confirmed: Question = {
+    ...questions[0],
+    answers: { PRE: null, MID: "KAYA", POST: null },
+    carry_forward: { PRE: null, MID: null, POST: "locked" },
+  };
+  const provisional: Question = {
+    ...questions[1],
+    answers: { PRE: "KAYA", MID: null, POST: null },
+    carry_forward: { PRE: null, MID: "editable", POST: "editable" },
+  };
+  const state = resolveTeacherDrafts([confirmed, provisional], { POST: draft });
+  assert.equal(state.POST.answers[1], "KAYA");
+  assert.equal(state.POST.answers[2], "DI-KAYA");
+  assert.equal(state.POST.savedAnswers[1], undefined);
+  assert.equal(state.POST.inheritedAnswers[1], "KAYA");
+  assert.equal(draft.answers[1], "DI-KAYA");
+  assert.equal(resolveTeacherDrafts([provisional], {}).MID.answers[2], "KAYA");
+});
+
+test("teacher DI-KAYA reset metadata suppresses earlier parent inheritance", () => {
+  const reset: Question = {
+    ...questions[0],
+    answers: { PRE: "KAYA", MID: "DI-KAYA", POST: null },
+    carry_forward: { PRE: null, MID: "editable", POST: null },
+  };
+  const state = resolveTeacherDrafts([reset], {});
+  assert.equal(state.POST.answers[1], undefined);
+  assert.equal(state.MID.answers[1], "DI-KAYA");
+  assert.equal(teacherDomainProgress([reset], state.POST).savedCount, 0);
+});
+
 test("completed PRE Kaya overrides conflicting MID and POST drafts without mutating stored work", () => {
   const state = resolveTeacherDrafts(
     questions,

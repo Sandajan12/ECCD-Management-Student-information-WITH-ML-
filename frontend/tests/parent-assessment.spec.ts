@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { mockSession, expectNoStoredCredentials } from "./helpers/session";
 import type {
   Answer,
   Assessment,
@@ -27,9 +28,136 @@ interface PortalState {
   saveResponse: Promise<void> | null;
   submissions: HomeSubmission[];
   saved: Map<string, Answer>;
+  laterOpen: boolean;
 }
 
 const draftKey = "eccd_draft_3_PRE_1_home_7";
+
+test("teacher checklist locks teacher PRE and MID sources while allowing parent-source overrides", async ({
+  page,
+}) => {
+  const user: SessionUser = {
+    id: 2,
+    first_name: "Test",
+    last_name: "Teacher",
+    full_name: "Test Teacher",
+    email: "teacher@example.com",
+    role: "admin",
+    is_first_login: 0,
+    section_id: 1,
+    section_name: "Test A",
+    allow_eccd_question_management: false,
+  };
+  const questions = [
+    {
+      question_id: 1,
+      domain_id: 1,
+      question_text: "Teacher PRE source",
+      sequence_order: 1,
+      is_home_based: false,
+      answers: { PRE: "KAYA", MID: null, POST: null },
+      carry_forward: { PRE: null, MID: "locked", POST: "locked" },
+    },
+    {
+      question_id: 2,
+      domain_id: 1,
+      question_text: "Parent PRE source",
+      sequence_order: 2,
+      is_home_based: true,
+      answers: { PRE: "KAYA", MID: null, POST: null },
+      carry_forward: { PRE: null, MID: "editable", POST: "editable" },
+    },
+    {
+      question_id: 3,
+      domain_id: 1,
+      question_text: "Teacher MID source",
+      sequence_order: 3,
+      is_home_based: true,
+      answers: { PRE: "DI-KAYA", MID: "KAYA", POST: null },
+      carry_forward: { PRE: null, MID: null, POST: "locked" },
+    },
+  ];
+  const domain = { domain_id: 1, domain_name: "Gross Motor", questions };
+  const submissions: {
+    evaluations: { question_id: number; answer: Answer }[];
+  }[] = [];
+  await page.route("**/api/**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    let json: unknown = {};
+    if (path === "/api/eccd/students")
+      json = [
+        {
+          student_id: 1,
+          first_name: "Sample",
+          last_name: "Child",
+          section_id: 1,
+          is_active: true,
+        },
+      ];
+    else if (path === "/api/sections/")
+      json = [{ section_id: 1, section_name: "Test A" }];
+    else if (path === "/api/teachers/dashboard-filters")
+      json = {
+        sections: ["Test A"],
+        schoolYears: ["2026-2027"],
+        currentSchoolYear: "2026-2027",
+      };
+    else if (path === "/api/teachers/access-controls")
+      json = {
+        section_id: 1,
+        section_name: "Test A",
+        allow_eccd_question_management: false,
+      };
+    else if (path === "/api/eccd/domains-progress") json = [domain];
+    else if (path.startsWith("/api/eccd/assessment/"))
+      json = {
+        student_id: 1,
+        domains: [domain],
+        evalAges: {},
+        periodDates: { PRE: "2026-08-01", MID: "2026-09-01", POST: null },
+        student_birth_date: "2021-01-01",
+      };
+    else if (path === "/api/eccd/evaluate")
+      submissions.push(route.request().postDataJSON());
+    else if (path === "/api/messages/contacts")
+      json = { myId: 2, contacts: [] };
+    else if (path === "/api/messages/unread-count") json = { unreadCount: 0 };
+    await route.fulfill({ json });
+  });
+  await mockSession(page, user);
+  await page.goto(
+    "/teacher/eccdassessment?student_id=1&period=POST&domain_id=1",
+  );
+  const row = (name: string) => page.getByRole("row").filter({ hasText: name });
+  for (const name of ["Teacher PRE source", "Teacher MID source"]) {
+    await expect(
+      row(name).getByRole("button", { name: "DI-KAYA", exact: true }).last(),
+    ).toBeDisabled();
+    await expect(
+      row(name).getByText("Carried forward — not saved").last(),
+    ).toBeVisible();
+  }
+  await expect(
+    row("Parent PRE source")
+      .getByRole("button", { name: "DI-KAYA", exact: true })
+      .last(),
+  ).toBeEnabled();
+  await row("Parent PRE source")
+    .getByRole("button", { name: "DI-KAYA", exact: true })
+    .last()
+    .click();
+  expect(submissions).toHaveLength(0);
+  await page
+    .getByRole("button", { name: "Save Assessment", exact: true })
+    .click();
+  await expect.poll(() => submissions.length).toBe(1);
+  expect(submissions[0].evaluations).toEqual([
+    { question_id: 1, testing_period: "POST", answer: "KAYA" },
+    { question_id: 2, testing_period: "POST", answer: "DI-KAYA" },
+    { question_id: 3, testing_period: "POST", answer: "KAYA" },
+  ]);
+  await expectNoStoredCredentials(page);
+});
 
 async function portal(page: Page, path = "/parent/dashboard", marks = false) {
   const state: PortalState = {
@@ -41,6 +169,7 @@ async function portal(page: Page, path = "/parent/dashboard", marks = false) {
     saveResponse: null,
     submissions: [],
     saved: new Map([["3_PRE_12", "KAYA"]]),
+    laterOpen: false,
   };
   const user: SessionUser = {
     id: 7,
@@ -54,14 +183,9 @@ async function portal(page: Page, path = "/parent/dashboard", marks = false) {
     section_name: null,
     allow_eccd_question_management: false,
   };
-  await page.addInitScript((account) => {
-    if (!localStorage.getItem("token")) {
-      const payload = btoa(JSON.stringify({ exp: Date.now() / 1000 + 3600 }));
-      localStorage.setItem("user", JSON.stringify(account));
-      localStorage.setItem("token", `test.${payload}.test`);
-      localStorage.setItem("ames_draft_7_unrelated", "keep my work");
-    }
-  }, user);
+  await page.addInitScript(() => {
+    localStorage.setItem("ames_draft_7_unrelated", "keep my work");
+  });
 
   const permissions = (): Permissions => ({
     allow_parent_view_student_info: true,
@@ -138,8 +262,8 @@ async function portal(page: Page, path = "/parent/dashboard", marks = false) {
             (state.editing && state.preOpen && question.is_home_based)
               ? state.saved.get(`${id}_PRE_${question.question_id}`) || null
               : null,
-          MID: null,
-          POST: null,
+          MID: state.saved.get(`${id}_MID_${question.question_id}`) || null,
+          POST: state.saved.get(`${id}_POST_${question.question_id}`) || null,
         },
         evaluator_roles: {
           PRE: question.is_home_based
@@ -148,6 +272,24 @@ async function portal(page: Page, path = "/parent/dashboard", marks = false) {
         },
         parent_locked: {
           PRE: state.saved.has(`${id}_PRE_${question.question_id}`),
+          MID: state.saved.has(`${id}_MID_${question.question_id}`),
+          POST: state.saved.has(`${id}_POST_${question.question_id}`),
+        },
+        carry_forward: {
+          PRE: null,
+          MID:
+            state.saved.get(`${id}_PRE_${question.question_id}`) === "KAYA"
+              ? ("locked" as const)
+              : null,
+          POST:
+            state.saved.get(`${id}_MID_${question.question_id}`) === "DI-KAYA"
+              ? null
+              : state.saved.get(`${id}_PRE_${question.question_id}`) ===
+                    "KAYA" ||
+                  state.saved.get(`${id}_MID_${question.question_id}`) ===
+                    "KAYA"
+                ? ("locked" as const)
+                : null,
         },
       })),
     }));
@@ -163,8 +305,8 @@ async function portal(page: Page, path = "/parent/dashboard", marks = false) {
       can_edit_home_based: state.editing,
       parent_assessment_access: {
         pre_test_parent_editable: state.preOpen,
-        mid_test_parent_editable: false,
-        post_test_parent_editable: false,
+        mid_test_parent_editable: state.laterOpen,
+        post_test_parent_editable: state.laterOpen,
       },
       matrix: [],
       homeBasedChecklist: domains.flatMap((domain) =>
@@ -234,6 +376,7 @@ async function portal(page: Page, path = "/parent/dashboard", marks = false) {
       await route.fulfill({ json: [] });
     else await route.fulfill({ json: {} });
   });
+  await mockSession(page, user);
   await page.goto(path);
   return state;
 }
@@ -291,6 +434,41 @@ test("confirmation cancellation retains selections and saved questions lock acro
   expect(state.submissions[1].evaluations).toEqual([
     { question_id: 21, testing_period: "PRE", answer: "DI-KAYA" },
   ]);
+});
+
+test("saved KAYA prefills and locks later home answers but only explicit submit saves them", async ({
+  page,
+}) => {
+  const state = await portal(page);
+  state.laterOpen = true;
+  state.saved.set("3_PRE_11", "KAYA");
+  await page.reload();
+  await homeForm(page)
+    .getByRole("combobox", { name: "Home assessment testing period" })
+    .click();
+  await page.getByRole("option", { name: "Mid-Test", exact: true }).click();
+  await expect(
+    homeAnswer(page, "Plays safely at home", "KAYA"),
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(
+    homeAnswer(page, "Plays safely at home", "DI-KAYA"),
+  ).toBeDisabled();
+  await expect(
+    homeForm(page).getByText("Carried forward — not saved"),
+  ).toBeVisible();
+  expect(state.submissions).toHaveLength(0);
+  expect(state.saved.has("3_MID_11")).toBe(false);
+  await submitHome(page);
+  await expect.poll(() => state.submissions.length).toBe(1);
+  expect(state.submissions[0].evaluations).toContainEqual({
+    question_id: 11,
+    testing_period: "MID",
+    answer: "KAYA",
+  });
+  await expect(
+    homeForm(page).getByText("Carried forward — not saved"),
+  ).toHaveCount(0);
+  await expectNoStoredCredentials(page);
 });
 
 test("offline parent submissions retain drafts and require manual online confirmation", async ({

@@ -6,7 +6,9 @@ pull-to-refresh/relationship refinements follow `214a324`; assessment UX refinem
 follow `b2af2c7` and the approved PARENT_ASSESSMENT_UX_PLAN.md.
 The compact login/Terms update follows `9d0cb51` (1.2.4/code 7).
 This is native React Native UI, with no browser/WebView or web imports.
-Frontend/backend files were neither generated nor changed.
+The initial native UI pass left frontend/backend files unchanged. The local
+carry-forward update also changes their shared assessment behavior, as described
+in `../../ECCD_KAYA_CARRY_FORWARD_PLAN_2.md`.
 
 | Web reference | Native presentation |
 | --- | --- |
@@ -19,6 +21,7 @@ Frontend/backend files were neither generated nor changed.
 | Dashboard Link LRN dialog | LRN-only native dialog, 12 ASCII digits, inline validation, SYNCED/PENDING badges, retained local input; relationship inherited by the server |
 | `components/parent/HomeAssessmentForm.tsx` | Assess Home-Based Questions in Overview; full collapsed card tap, isolated expanded header, period/domain accordions, one instruction, confirmed questions/domains hidden, manual submission and revision-safe drafts |
 | `pages/parent/ParentEccdAssessment.tsx`, `components/parent/ReadOnlyDomainChecklist.tsx` | Read-only official/checklist segments, period summaries, teacher-lock states, scaled matrix, home/school indicators and attribution; permission-safe All/DI-KAYA/KAYA filters, DI-KAYA-first per domain |
+| `hooks/useParentAssessment.ts`, `components/parent/HomeAssessmentForm.tsx` carry-forward | Overview inherits saved PRE/MID KAYA using masked per-question API metadata; inherited rows remain visible, DI-KAYA disabled, labelled "Carried forward — not saved", and submitted only manually. Saved teacher DI-KAYA can reset provisional parent inheritance; saved results/counts stay server-derived. |
 | `pages/parent/ParentMlInsights.tsx` | Readiness, POST outcome and confidence bars, baseline tier badges, expandable green intervention cards, interpretation/research callouts |
 | `components/ChatInterface.tsx` | Mobile contact-to-thread flow, avatars, parent indigo/teacher white bubbles, Philippine-time timestamps, read status, virtualized history and keyboard-safe composer |
 

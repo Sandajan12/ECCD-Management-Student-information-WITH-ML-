@@ -82,8 +82,12 @@ export function useTeacherAssessment(
     if (draft?.owner_id === owner) drafts[p] = draft.values;
   }
   const preKayaQuestionIds = data?.pre_kaya_question_ids || [];
-  const isPreKaya = (questionId: number, p: string): boolean =>
-    p !== "PRE" && preKayaQuestionIds.includes(questionId);
+  const isCarryLocked = (questionId: number, p: string): boolean => {
+    const question = questions.find((q) => q.question_id === questionId);
+    return question?.carry_forward
+      ? question.carry_forward[p as Period] === "locked"
+      : p !== "PRE" && preKayaQuestionIds.includes(questionId);
+  };
   const resolved = resolveTeacherDrafts(questions, drafts, preKayaQuestionIds);
   const dates: Record<Period, string> = {
     PRE: localToday(),
@@ -147,7 +151,7 @@ export function useTeacherAssessment(
     if (p !== period || !data || loading || !domain) return;
     if (
       !questions.some((q) => q.question_id === questionId) ||
-      isPreKaya(questionId, p)
+      isCarryLocked(questionId, p)
     )
       return;
     // Read the latest revision so rapid edits cannot replace another selection.
@@ -422,7 +426,7 @@ export function useTeacherAssessment(
     handleDateChange,
     handleSave,
     triggerBackgroundSync,
-    isPreKaya,
+    isCarryLocked,
     getAnswer: (id: number, p: string) =>
       resolved[p as Period]?.answers[id] || null,
   };

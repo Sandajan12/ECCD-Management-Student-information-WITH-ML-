@@ -15,7 +15,7 @@ export interface TeacherQuestionState {
 }
 
 type DraftQuestion = Pick<Question, "question_id"> &
-  Partial<Pick<Question, "answers">>;
+  Partial<Pick<Question, "answers" | "carry_forward">>;
 
 export function teacherDomainProgress(
   questions: readonly Pick<Question, "question_id">[],
@@ -79,10 +79,17 @@ export function resolveTeacherDrafts(
         blocked = false;
       }
       if (draft) state.draftAnswers[question.question_id] = draft;
-      const locked = period !== "PRE" && preKaya.has(question.question_id);
+      const carry = question.carry_forward?.[period];
+      const locked = question.carry_forward
+        ? carry === "locked"
+        : period !== "PRE" && preKaya.has(question.question_id);
       const inherited = locked
         ? saved !== "KAYA"
-        : !saved && !draft && !blocked && savedSource === "KAYA";
+        : !saved &&
+          !draft &&
+          (question.carry_forward
+            ? carry === "editable"
+            : !blocked && savedSource === "KAYA");
       if (inherited) state.inheritedAnswers[question.question_id] = "KAYA";
       const answer = locked
         ? "KAYA"
