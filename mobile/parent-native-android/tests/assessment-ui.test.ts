@@ -203,7 +203,7 @@ describe("6. Assessment touch, presentation and navigation handlers (mocked host
       f.store.peek<{ answers: Record<string, string> }>(
         "eccd_draft_7_PRE_2_home_123",
         123,
-      )?.values.answers["46"],
+      )?.values.answers["45"],
       "DI-KAYA",
     );
     await (tree.props.onRefresh as () => Promise<void>)();
@@ -216,7 +216,7 @@ describe("6. Assessment touch, presentation and navigation handlers (mocked host
     );
   });
 
-  test("ECCD defaults to All, filters visible indicators and stays read-only", () => {
+  test("ECCD has one DI-KAYA-first list, no answer filters and stays read-only", () => {
     const f = assessmentFixture();
     const harness = componentHarness("AssessmentScreens.tsx", {
       "./session": {
@@ -244,24 +244,14 @@ describe("6. Assessment touch, presentation and navigation handlers (mocked host
     const mode = find(tree, (node) => node.type === "Segments");
     (mode.props.onChange as (value: string) => void)("checklist");
     tree = screen.render();
-    const filter = () =>
-      elements(screen.render()).filter((node) => node.type === "Segments")[1];
-    assert.equal(filter().props.value, "All");
+    assert.equal(elements(tree).filter((node) => node.type === "Segments").length, 1);
     press(find(tree, (node) => node.type === "Pressable"));
     const rows = text(screen.render());
     assert.ok(rows.indexOf("Indicator 47") < rows.indexOf("Indicator 46"));
-    (filter().props.onChange as (value: string) => void)("DI-KAYA");
-    assert.match(text(screen.render()), /Indicator 47/);
-    assert.doesNotMatch(text(screen.render()), /Indicator 46|Language/);
     f.child.allow_parent_view_eccd_marks = false;
-    assert.match(
-      text(screen.render()),
-      /No visible indicators match this filter/,
-    );
-    assert.doesNotMatch(
-      text(screen.render()),
-      /Indicator 47|Pending Adviser Release/,
-    );
+    assert.match(text(screen.render()), /Indicator 47/);
+    assert.match(text(screen.render()), /Locked by teacher/);
+    assert.doesNotMatch(text(screen.render()), /Recorded by teacher|DI-KAYA|Pending Adviser Release/);
     assert.equal(
       elements(screen.render()).some((node) => node.type === "Button"),
       false,
@@ -350,13 +340,32 @@ describe("6. Assessment touch, presentation and navigation handlers (mocked host
       (
         domain.props.domain as (typeof f.assessment.domains)[number]
       ).questions.map((q) => q.question_id),
-      [46],
+      [48],
     );
     assert.equal(state.error, "Refresh offline");
     assert.equal(posts, 1);
     assert.deepEqual(props.confirmed, { "123_7_PRE": [45] });
     assert.equal(f.assessment.domains[0].questions[0].parent_locked.PRE, false);
     assert.match(text(tree), /Submitted — awaiting teacher review/);
+    const question = f.assessment.domains[0].questions[0];
+    question.home_observations = {PRE: {status: "declined", answer: "KAYA", submitted_at: "2026-11-17T00:00:00Z"}};
+    tree = screen.render();
+    assert.ok(elements(tree).some(node =>
+      typeof node.type === "function" && node.type.name === "HomeDomain" &&
+      (node.props.domain as (typeof f.assessment.domains)[number]).questions.some(q => q.question_id === 45)));
+    await new HomeObservations(f.store, 123, 7, async () => {}).change(2, "PRE", 45, "DI-KAYA");
+    press(tree.props.footer as Element);
+    press(find(screen.render(), node => node.type === "Button" && node.props.title === "Submit Answers"));
+    await new Promise<void>(resolve => setImmediate(resolve));
+    assert.equal(posts, 2);
+    assert.equal(elements(screen.render()).some(node =>
+      typeof node.type === "function" && node.type.name === "HomeDomain" &&
+      (node.props.domain as (typeof f.assessment.domains)[number]).questions.some(q => q.question_id === 45)), false);
+    // A later server decline reopens the question even if the same screen remains mounted.
+    question.home_observations.PRE = {...question.home_observations.PRE!, submitted_at: "2026-11-17T01:00:00Z"};
+    assert.ok(elements(screen.render()).some(node =>
+      typeof node.type === "function" && node.type.name === "HomeDomain" &&
+      (node.props.domain as (typeof f.assessment.domains)[number]).questions.some(q => q.question_id === 45)));
   });
 
   test("completion removes submit action; closed windows say teacher lock rather than completed", () => {

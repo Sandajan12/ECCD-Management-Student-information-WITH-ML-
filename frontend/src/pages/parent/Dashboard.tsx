@@ -22,8 +22,6 @@ import {
   Snackbar,
   Stack,
 } from "@mui/material";
-import LockIcon from "@mui/icons-material/Lock";
-import HomeWorkIcon from "@mui/icons-material/HomeWork";
 import CheckCircleOutlineIcon from "@mui/icons-material/CheckCircleOutlined";
 import EmojiEventsIcon from "@mui/icons-material/EmojiEvents";
 import TimelineIcon from "@mui/icons-material/Timeline";
@@ -323,8 +321,6 @@ const Dashboard: React.FC = () => {
     if (child) roster.select(child.student_id);
   };
   const assessmentData = assessment.data;
-  const editablePeriods = assessment.editablePeriods;
-  const isHomeAssessmentOpen = assessment.hasOpenPeriod;
   const visibleStats =
     hydratedChild === activeChild?.student_id ? dashboardStats : null;
   const childName =
@@ -332,18 +328,6 @@ const Dashboard: React.FC = () => {
     [activeChild?.first_name, activeChild?.middle_name, activeChild?.last_name]
       .filter(Boolean)
       .join(" ");
-  const homeQuestions = (assessmentData?.domains ?? []).flatMap((domain) =>
-    domain.questions.filter((question) => question.is_home_based === true),
-  );
-  // Count only server-confirmed observations as submitted. Drafts remain untouched.
-  const pendingHomeCount = editablePeriods.reduce(
-    (total, period) =>
-      total +
-      homeQuestions.filter(
-        (question) => !assessment.isQuestionSaved(question.question_id, period),
-      ).length,
-    0,
-  );
   const periodStatus = (period: Period): string => {
     if (!assessmentData)
       return assessment.error ? "Status unavailable" : "Loading status…";
@@ -568,64 +552,10 @@ const Dashboard: React.FC = () => {
               display: "grid",
               gridTemplateColumns: "minmax(0, 1fr)",
               "@media (min-width: 640px)": {
-                gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+                gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
               },
             }}
           >
-            <Grid sx={{ minWidth: 0 }}>
-              <Card sx={surfaceSx}>
-                <CardContent sx={contentSx}>
-                  <Stack sx={{ gap: 1.25, alignItems: "flex-start" }}>
-                    {isHomeAssessmentOpen ? (
-                      <HomeWorkIcon sx={{ color: primaryColor }} />
-                    ) : (
-                      <LockIcon sx={{ color: "#64748b" }} />
-                    )}
-                    <Typography sx={{ fontSize: "0.75rem", color: "#64748b" }}>
-                      Home Checklist
-                    </Typography>
-                    <Typography sx={{ fontSize: "1rem", fontWeight: 600 }}>
-                      {!assessmentData
-                        ? assessment.error
-                          ? "Checklist unavailable"
-                          : "Checking home tasks…"
-                        : !isHomeAssessmentOpen
-                          ? "Locked by teacher"
-                          : pendingHomeCount > 0
-                            ? pendingHomeCount + " Questions Pending"
-                            : "All home observations submitted"}
-                    </Typography>
-                    <Typography sx={{ fontSize: "0.75rem", color: "#64748b" }}>
-                      {isHomeAssessmentOpen
-                        ? "For open periods: " +
-                          editablePeriods
-                            .map((period) => PERIOD_LABELS[period])
-                            .join(", ") +
-                          "."
-                        : "Your adviser controls when home observations can be submitted."}
-                    </Typography>
-                    <Button
-                      variant="contained"
-                      disabled={!isHomeAssessmentOpen}
-                      onClick={() => {
-                        setHomeExpanded(true);
-                        document
-                          .getElementById("home-assessment")
-                          ?.scrollIntoView({
-                            behavior: "smooth",
-                            block: "start",
-                          });
-                      }}
-                      sx={actionSx}
-                    >
-                      {pendingHomeCount > 0
-                        ? "Answer Home Checklist →"
-                        : "View Home Checklist →"}
-                    </Button>
-                  </Stack>
-                </CardContent>
-              </Card>
-            </Grid>
             <Grid sx={{ minWidth: 0 }}>
               <Card sx={surfaceSx}>
                 <CardContent sx={contentSx}>

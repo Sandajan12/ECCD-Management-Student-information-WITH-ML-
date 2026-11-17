@@ -27,6 +27,7 @@ interface HomeSubmission {
 
 interface PortalState {
   reviewFlow: boolean;
+  declined: Set<string>;
   pending: Map<string, Answer>;
   marks: boolean;
   editing: boolean;
@@ -395,6 +396,7 @@ async function portal(
 ) {
   const state: PortalState = {
     reviewFlow: false,
+    declined: new Set(),
     pending: new Map(),
     marks,
     editing: true,
@@ -508,20 +510,27 @@ async function portal(
         parent_locked: {
           PRE:
             state.saved.has(`${id}_PRE_${question.question_id}`) ||
-            state.pending.has(`${id}_PRE_${question.question_id}`),
+            (state.pending.has(`${id}_PRE_${question.question_id}`) &&
+              !state.declined.has(`${id}_PRE_${question.question_id}`)),
           MID:
             state.saved.has(`${id}_MID_${question.question_id}`) ||
-            state.pending.has(`${id}_MID_${question.question_id}`),
+            (state.pending.has(`${id}_MID_${question.question_id}`) &&
+              !state.declined.has(`${id}_MID_${question.question_id}`)),
           POST:
             state.saved.has(`${id}_POST_${question.question_id}`) ||
-            state.pending.has(`${id}_POST_${question.question_id}`),
+            (state.pending.has(`${id}_POST_${question.question_id}`) &&
+              !state.declined.has(`${id}_POST_${question.question_id}`)),
         },
         home_observations: Object.fromEntries(
           (["PRE", "MID", "POST"] as const).map((p) => [
             p,
             state.pending.has(`${id}_${p}_${question.question_id}`)
               ? {
-                  status: "pending" as const,
+                  status: state.declined.has(
+                    `${id}_${p}_${question.question_id}`,
+                  )
+                    ? ("declined" as const)
+                    : ("pending" as const),
                   answer: state.pending.get(
                     `${id}_${p}_${question.question_id}`,
                   )!,
@@ -632,11 +641,15 @@ async function portal(
         return;
       }
       state.submissions.push(payload);
-      for (const row of payload.evaluations)
+      for (const row of payload.evaluations) {
+        state.declined.delete(
+          `${payload.student_id}_${row.testing_period}_${row.question_id}`,
+        );
         (state.reviewFlow ? state.pending : state.saved).set(
           `${payload.student_id}_${row.testing_period}_${row.question_id}`,
           row.answer,
         );
+      }
       await state.saveResponse;
       await route.fulfill({
         json: { message: "Saved", testing_period: payload.testing_period },
@@ -672,8 +685,32 @@ test("Overview home card starts collapsed and only its header toggles it; domain
   await expect(
     homeAnswer(page, "Plays safely at home", "KAYA"),
   ).not.toBeVisible();
-  await page.getByRole("button", { name: /Answer Home Checklist/ }).click();
+  await expect(page.getByText("Home Checklist", { exact: true })).toHaveCount(
+    0,
+  );
+  await expect(
+    page.getByRole("button", { name: "Submit Observations", exact: true }),
+  ).toHaveCount(0);
+  await toggle.click();
   await expect(toggle).toHaveAttribute("aria-expanded", "true");
+  const submit = page.getByRole("button", {
+    name: "Submit Observations",
+    exact: true,
+  });
+  await expect(submit).toBeVisible();
+  const nav = page.getByRole("navigation", {
+    name: "Parent bottom navigation",
+  });
+  const barBox = await page.getByLabel("Home observation submission").boundingBox();
+  expect(barBox!.x).toBeGreaterThanOrEqual(0);
+  expect(barBox!.x + barBox!.width).toBeLessThanOrEqual(page.viewportSize()!.width);
+  if (await nav.isVisible()) {
+    const navBox = await nav.boundingBox();
+    expect(barBox!.y + barBox!.height).toBeLessThan(navBox!.y);
+  } else {
+    const sidebar = await page.getByRole("complementary", {name: "Main navigation"}).boundingBox();
+    expect(barBox!.x).toBeGreaterThan(sidebar!.x + sidebar!.width);
+  }
   const domain = page.locator("#home-domain-1");
   await expect(page.locator("#home-assessment-content")).toHaveCount(1);
   await expect(page.locator("#home-domain-content-1")).toHaveCount(1);
@@ -689,6 +726,7 @@ test("Overview home card starts collapsed and only its header toggles it; domain
   await homeAnswer(page, "Plays safely at home", "KAYA").click();
   await expect(toggle).toHaveAttribute("aria-expanded", "true");
   await toggle.click();
+  await expect(submit).toHaveCount(0);
   await toggle.press("Enter");
   await expect(
     homeAnswer(page, "Plays safely at home", "KAYA"),
@@ -697,9 +735,6 @@ test("Overview home card starts collapsed and only its header toggles it; domain
   await expect(homeAnswer(page, "Plays safely at home", "KAYA")).toHaveCount(0);
   await expect(domain).toHaveCount(0);
   await expect(homeAnswer(page, "Draws at home", "DI-KAYA")).toBeEnabled();
-  await expect(
-    page.getByText("1 Questions Pending", { exact: true }),
-  ).toBeVisible();
   await homeAnswer(page, "Draws at home", "DI-KAYA").click();
   await submitHome(page);
   await expect(
@@ -712,7 +747,7 @@ test("Overview home card starts collapsed and only its header toggles it; domain
       name: "Submit Observations",
       exact: true,
     }),
-  ).toBeDisabled();
+  ).toHaveCount(0);
   await page.reload();
   await expect(toggle).toHaveAttribute("aria-expanded", "false");
   await openHome(page);
@@ -722,6 +757,85 @@ test("Overview home card starts collapsed and only its header toggles it; domain
     }),
   ).toBeVisible();
   await expectNoStoredCredentials(page);
+});
+
+for (const period of ["PRE", "MID", "POST"] as const) {
+  test(`declined home observations reopen for manual resubmission in ${period}`, async ({
+    page,
+  }) => {
+    const state = await portal(page);
+    state.reviewFlow = true;
+    state.laterOpen = true;
+    const key = `3_${period}_11`;
+    state.pending.set(key, "KAYA");
+    await page.reload();
+    await openHome(page);
+    const selectPeriod = async () => {
+      await page
+        .getByRole("combobox", { name: "Home assessment testing period" })
+        .click();
+      await page
+        .getByRole("option", {
+          name: { PRE: "Pre-Test", MID: "Mid-Test", POST: "Post-Test" }[period],
+          exact: true,
+        })
+        .click();
+    };
+    await selectPeriod();
+    await expect(homeAnswer(page, "Plays safely at home", "KAYA")).toHaveCount(
+      0,
+    );
+    state.declined.add(key);
+    await page.reload();
+    await openHome(page);
+    await selectPeriod();
+    await expect(
+      homeAnswer(page, "Plays safely at home", "DI-KAYA"),
+    ).toBeEnabled();
+    await homeAnswer(page, "Plays safely at home", "DI-KAYA").click();
+    await submitHome(page);
+    await expect.poll(() => state.pending.get(key)).toBe("DI-KAYA");
+    expect(state.declined.has(key)).toBe(false);
+    await expect(
+      homeAnswer(page, "Plays safely at home", "DI-KAYA"),
+    ).toHaveCount(0);
+    await expectNoStoredCredentials(page);
+  });
+}
+
+test("ECCD DI-KAYA-first ordering mixes home and school questions without answer filters", async ({
+  page,
+}) => {
+  const state = await portal(page, "/parent/eccdassessment", true);
+  state.saved.set("3_PRE_11", "KAYA");
+  state.saved.set("3_PRE_12", "DI-KAYA");
+  await page.reload();
+  await page
+    .getByRole("button", { name: "ECCD Checklists", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "View Gross Motor", exact: true })
+    .click();
+  const rows = page
+    .getByRole("region", { name: "Domain questions" })
+    .getByRole("group");
+  await expect(rows).toHaveCount(2);
+  await expect(rows.nth(0)).toContainText("2. Walks in class");
+  await expect(rows.nth(0)).toContainText("DI-KAYA");
+  await expect(rows.nth(1)).toContainText("1. Plays safely at home");
+  await expect(
+    page.getByRole("button", { name: /^(All|KAYA|DI-KAYA)$/ }),
+  ).toHaveCount(0);
+  state.saved.delete("3_PRE_12");
+  await page.reload();
+  await page
+    .getByRole("button", { name: "ECCD Checklists", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "View Gross Motor", exact: true })
+    .click();
+  await expect(rows.nth(0)).toContainText("1. Plays safely at home");
+  await expect(rows.nth(1)).toContainText("Not yet evaluated");
 });
 
 for (const action of ["photo", "submission"] as const) {
@@ -1363,13 +1477,13 @@ test("ECCD cards contain only names and actions; domain results ignore unsaved d
   await button.click();
   await expect(
     page
-      .getByRole("region", { name: "Home-Based Questions", exact: true })
+      .getByRole("group", { name: "Plays safely at home", exact: true })
       .getByText("KAYA", { exact: true }),
   ).toBeVisible();
   await expect(
     page
       .getByRole("region", {
-        name: "School-Administered Questions",
+        name: "Domain questions",
         exact: true,
       })
       .getByText("Walks in class"),
@@ -1395,9 +1509,9 @@ test("ECCD cards contain only names and actions; domain results ignore unsaved d
   await page.getByRole("option", { name: "Mid-Test", exact: true }).click();
   await expect(
     page
-      .getByRole("region", { name: "Home-Based Questions", exact: true })
+      .getByRole("region", { name: "Domain questions", exact: true })
       .getByText("Not yet evaluated"),
-  ).toBeVisible();
+  ).toHaveCount(2);
 });
 
 test("a rejected save retains the exact home answers for later review", async ({
@@ -1502,26 +1616,28 @@ test("revoking viewing closes an open detail; failed access validation hides rec
   await expect(page.getByText("Walks in class")).toHaveCount(0);
 });
 
-test("global and period editing locks disable Overview submissions and preserve drafts", async ({
+test("global and period editing locks hide Overview submissions and preserve drafts", async ({
   page,
 }) => {
   const state = await portal(page);
   await homeAnswer(page, "Plays safely at home", "KAYA").click();
   state.preOpen = false;
-  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await page.reload();
+  await openHome(page);
   await expect(homeForm(page).getByText(/Locked by teacher/)).toBeVisible();
   await expect(
     homeForm(page).getByRole("button", {
       name: "Submit Observations",
       exact: true,
     }),
-  ).toBeDisabled();
+  ).toHaveCount(0);
   expect(
     await page.evaluate((key) => localStorage.getItem(key), draftKey),
   ).toContain('"11":"KAYA"');
   state.preOpen = true;
   state.editing = false;
-  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
-  await expect(homeAnswer(page, "Plays safely at home", "KAYA")).toBeDisabled();
+  await page.reload();
+  await openHome(page);
+  await expect(homeAnswer(page, "Plays safely at home", "KAYA")).toHaveCount(0);
   expect(state.submissions).toEqual([]);
 });

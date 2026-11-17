@@ -56,12 +56,12 @@ test('photo upload and parent submission require manual retries; stale carry con
   assert.equal(posts, 2);
 });
 
-test('pending and declined observations lock parents without supplying an official answer', () => {
+test('pending observations lock parents and declined observations reopen without an official answer', () => {
   const f = assessmentFixture();
   const question = f.assessment.domains[0].questions[0];
   for (const status of ['pending', 'declined'] as const) {
     question.home_observations = {PRE: {status, answer: 'KAYA', submitted_at: '2026-11-16T12:00:00+08:00'}};
-    assert.ok(homeLock(f.child, f.assessment, question, 'PRE'));
+    assert.equal(Boolean(homeLock(f.child, f.assessment, question, 'PRE')), status === 'pending');
     assert.equal(question.answers.PRE, null);
     assert.equal(question.carry_forward?.MID, undefined);
   }

@@ -13,11 +13,11 @@ import { draft, DraftStore, OFFLINE_MESSAGE } from "../src/draftStore.ts";
 import { ApiError } from "../src/sessionCore.ts";
 import { assessmentFixture } from "./assessment-fixture.ts";
 
-describe("1. Permission-safe ECCD filters", () => {
-  test("All ranks DI-KAYA, KAYA, then unmarked while preserving original numbers and source", () => {
+describe("1. Permission-safe ECCD ordering", () => {
+  test("DI-KAYA precedes KAYA and unmarked without changing original numbers or source", () => {
     const f = assessmentFixture(),
       before = JSON.stringify(f.assessment);
-    const rows = checklistDomains(f.child, f.assessment, "PRE", "All")[0]
+    const rows = checklistDomains(f.child, f.assessment, "PRE")[0]
       .questions;
     assert.deepEqual(
       rows.map((q) => q.question_id),
@@ -28,42 +28,19 @@ describe("1. Permission-safe ECCD filters", () => {
       [2, 1, 3],
     );
     assert.equal(JSON.stringify(f.assessment), before);
-    assert.deepEqual(
-      checklistDomains(f.child, f.assessment, "PRE", "DI-KAYA").map(
-        (d) => d.domain_id,
-      ),
-      [2],
-    );
-    assert.deepEqual(
-      checklistDomains(f.child, f.assessment, "PRE", "KAYA")[0].questions.map(
-        (q) => q.question_id,
-      ),
-      [46],
-    );
-    assert.deepEqual(
-      checklistDomains(f.child, f.assessment, "MID", "DI-KAYA"),
-      [],
-    );
+    assert.equal(checklistDomains(f.child, f.assessment, "MID")[0].questions.length, 3);
   });
-  test("hidden answers cannot influence filters, counts or order; own home marks remain independent of scores", () => {
+  test("hidden answers cannot influence order; own home marks remain independent of scores", () => {
     const f = assessmentFixture();
     f.child.allow_parent_view_eccd_marks = false;
-    const before = checklistDomains(f.child, f.assessment, "PRE", "All");
+    const before = checklistDomains(f.child, f.assessment, "PRE");
     assert.deepEqual(
       before[0].questions.map((q) => q.question_id),
       [46, 47, 45],
     );
-    assert.deepEqual(
-      checklistDomains(f.child, f.assessment, "PRE", "DI-KAYA"),
-      [],
-    );
-    assert.deepEqual(
-      checklistDomains(f.child, f.assessment, "PRE", "KAYA"),
-      [],
-    );
     f.assessment.domains[0].questions[1].answers.PRE = "DI-KAYA";
     assert.deepEqual(
-      checklistDomains(f.child, f.assessment, "PRE", "All")[0].questions.map(
+      checklistDomains(f.child, f.assessment, "PRE")[0].questions.map(
         (q) => q.question_id,
       ),
       [46, 47, 45],
@@ -75,14 +52,13 @@ describe("1. Permission-safe ECCD filters", () => {
         f.child,
         f.assessment,
         "PRE",
-        "DI-KAYA",
       )[0].questions.map((q) => q.question_id),
-      [46],
+      [46, 47, 45],
     );
     f.assessment.parent_assessment_access.pre_test_parent_editable = false;
     assert.deepEqual(
-      checklistDomains(f.child, f.assessment, "PRE", "DI-KAYA"),
-      [],
+      checklistDomains(f.child, f.assessment, "PRE")[0].questions.map(q => q.question_id),
+      [46, 47, 45],
     );
   });
 });
@@ -152,8 +128,8 @@ describe("3. Partial saves and confirmation isolation", () => {
         f.assessment,
         "PRE",
         confirmed[homeScope(123, 7, "PRE")],
-      )[0].questions.map((q) => q.question_id),
-      [46],
+      ).map((d) => d.domain_id),
+      [3],
     );
     confirmed = confirmHomeQuestions(confirmed, 123, 7, "PRE", [46]);
     assert.deepEqual(
@@ -269,7 +245,7 @@ describe("5. Failure retention, revisions and manual submission", () => {
       assert.equal(saved.is_pending_sync, !(failure instanceof ApiError));
       assert.equal(
         remainingHomeDomains(f.assessment, "PRE", [])[0].questions.length,
-        2,
+        1,
       );
       await service.load(f.assessment, "PRE");
       await service.load(f.assessment, "MID");

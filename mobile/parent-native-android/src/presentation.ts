@@ -2,13 +2,11 @@ import type { Assessment, Child, Dashboard, Period } from "./contracts";
 import { released, VIEW_FLAGS, visibleMark } from "./policy.ts";
 
 export const TEACHER_LOCK = "Locked by teacher";
-export type ChecklistFilter = "All" | "DI-KAYA" | "KAYA";
 
 export function checklistDomains(
   child: Child,
   assessment: Assessment,
   period: Period,
-  filter: ChecklistFilter,
 ): Assessment["domains"] {
   const answer = (q: Assessment["domains"][number]["questions"][number]) =>
     visibleMark(child, assessment, q, period) ? q.answers[period] : null;
@@ -17,8 +15,7 @@ export function checklistDomains(
   return assessment.domains
     .map((domain) => ({
       ...domain,
-      questions: domain.questions
-        .filter((q) => filter === "All" || answer(q) === filter)
+      questions: [...domain.questions]
         .sort(
           (a, b) => rank(a) - rank(b) || a.sequence_order - b.sequence_order,
         ),
@@ -71,6 +68,10 @@ export function remainingHomeDomains(
           (q) =>
             q.is_home_based &&
             !q.parent_locked[period] &&
+            !q.answers[period] &&
+            q.evaluator_roles?.[period] !== "teacher" &&
+            !q.teacher_marked_at?.[period] &&
+            (!q.home_observations?.[period] || q.home_observations[period]?.status === "declined") &&
             !confirmed.includes(q.question_id),
         )
         .sort((a, b) => a.sequence_order - b.sequence_order),

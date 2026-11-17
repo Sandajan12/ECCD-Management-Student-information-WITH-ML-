@@ -26,13 +26,16 @@ to expand; once open, its header alone collapses it. Domain and answer controls
 do not toggle the outer section. Confirmed home questions disappear from that
 period's editable list, with empty domains hidden and no submit action after
 completion. Session-only confirmation IDs are account/child/period-scoped and
-cleared at logout; stale refreshes cannot reintroduce a confirmed row. Existing
+cleared at logout; stale refreshes cannot reintroduce a confirmed row. Declined
+questions reopen for manual reassessment in an open period unless a saved
+assessment locks them; pending/accepted and teacher-assessed questions stay hidden. Existing
 draft revisions and manual-only submission remain intact, including storage warnings.
 Assessment Progress also starts collapsed. Overview highlights use server
 aggregates for home and school answers in the latest period under teacher release
 controls, without fallback to older released periods. ECCD is exclusively read-only
-with All / DI-KAYA / KAYA filters and DI-KAYA-first ordering per domain; hidden
-answers never enter filter counts or ordering. Permission locks say Locked by
+with a unified list per domain: DI-KAYA, KAYA, then unmarked/restricted questions,
+preserving original numbers and offering no answer filters. Hidden answers never
+affect ordering. Permission locks say Locked by
 teacher. Messages/unread lives only in the bottom navigation, and decorative
 page descriptions are removed. Child Information displays the current profile's
 teacher first/last name, with the optional adviser name or Not assigned fallback.
@@ -215,7 +218,9 @@ are ignored; the signed APK is delivered locally, not committed or published.
 
 New manual submissions contain any answered subset of KAYA/DI-KAYA questions and
 remain pending until the current adviser saves an Accept/Decline review. Submitted
-and declined rows stay locked for parents. Older saved assessments remain intact.
+rows stay locked for parents. Declined rows reopen while editing permission and
+the period window remain open, unless already assessed by the teacher. Manual
+resubmission starts a new pending review; older saved assessments remain intact.
 Accepted earlier KAYA supplies locked `draft-not save` later answers, without
 creating later records or an official testing date. Each later period still needs
 explicit submission and review. The eight permissions and section windows remain.

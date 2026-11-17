@@ -14,9 +14,11 @@ HttpOnly cookie release and remembered-device removal; see section 6 and explici
 
 New parent web/native submissions use explicit migration 021's
 `parent_home_observations`; existing evaluation history is unchanged. Parents may
-manually submit any answered subset of KAYA/DI-KAYA. Pending/declined submissions
-are parent-locked and excluded from assessments, scores, dates, completion, ML
-and exports. The teacher's Pending Home-Based Assessments dialog saves selected
+manually submit any answered subset of KAYA/DI-KAYA. Pending submissions are
+parent-locked; declined submissions reopen for manual reassessment/resubmission
+while global and section-period editing are open. Both remain excluded from
+assessments, scores, dates, completion, ML and exports. The teacher's Pending
+Home-Based Assessments dialog saves selected
 Accept/Decline decisions; undecided observations remain pending. Pending questions
 block ordinary teacher assessment saves/imports. Review follows the current active
 section adviser, including transfers, independently of closed parent windows.
@@ -37,10 +39,16 @@ Eight permissions, synced-family eligibility, section windows, RAM tokens,
 encrypted refresh cookies and owner/revision-safe drafts remain mandatory.
 
 Parent website Overview uses a default-collapsed **Assess Home-Based Questions**
-card. Only its header toggles the outer card; the Overview checklist action opens
-it. Each domain has its own accordion and remaining unsubmitted-question count.
-Saved/submitted/declined rows and empty domains leave the editable list; pending
-observations also leave the Overview remaining count. Virtual carried-forward
+card at the bottom, with no duplicate Home Checklist status/action card. Only its
+header toggles the outer card. Its fixed Submit Observations bar appears only
+while expanded with remaining questions and sits above mobile/tablet navigation.
+Each domain has its own accordion and remaining-question count. In PRE/MID/POST,
+pending/accepted observations and saved teacher assessments leave the editable
+list; declined questions reappear unless a saved assessment still locks them.
+Empty domains disappear; no remaining questions shows "All home observations
+submitted" without a submit action. Resubmission replaces only the declined
+review with a fresh pending ID (rejecting stale teacher decisions), permits new
+optional photos, and retains old photo cleanup tombstones. Virtual carried-forward
 KAYA stays visible until explicit confirmed submission. Collapsing/reloading never
 clears answer/photo drafts; partial submissions remain manual. Optional local photo
 previews use revocable Blob URLs, preserving the existing private review flow.
@@ -149,11 +157,13 @@ from the current detail's teacher first/last name, with a nonblank fallback.
 Data screens use pull-to-refresh without refresh buttons, preserving drafts and
 live updates; ML refresh reloads readiness only. Registration offers Father/Mother/
 Guardian, and LRN linking omits relationship so the server inherits the account's.
-ECCD filtering is read-only (All/DI-KAYA/KAYA, DI-KAYA first per domain) and uses
-only permitted marks. Overview highlights retain latest-period server aggregates
+Both parent ECCD views have one read-only list per domain, without answer filters:
+DI-KAYA first, then KAYA, then unmarked/restricted questions, retaining original
+numbers. Only permitted saved marks affect ordering. Overview highlights retain latest-period server aggregates
 across home/school questions and teacher release gates. Assess Home-Based Questions
 hides confirmed rows/domains with account/child/period RAM confirmations cleared
-on logout; drafts remain revision-safe/manual-only. Only its header collapses the
+on logout; fresh declines reopen them, while resubmitted rows stay hidden even
+when refresh fails. Drafts remain revision-safe/manual-only. Only its header collapses the
 expanded form. Native permission locks say Locked by teacher; unread remains on
 bottom Messages, with compact titles and one home instruction.
 Native login is compact, with an inline blue registration link and the website's

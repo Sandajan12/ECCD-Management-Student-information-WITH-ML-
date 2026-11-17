@@ -182,7 +182,9 @@ export function useParentAssessment(child?: Student, readOnly = false) {
       return null;
     return (
       question?.answers[period] ||
-      question?.home_observations?.[period]?.answer ||
+      (question?.home_observations?.[period]?.status !== "declined"
+        ? question?.home_observations?.[period]?.answer
+        : null) ||
       null
     );
   };
@@ -192,6 +194,11 @@ export function useParentAssessment(child?: Student, readOnly = false) {
       .find((item) => item.question_id === questionId);
     return (
       question?.parent_locked?.[period] === true ||
+      ["pending", "accepted", "submitted"].includes(
+        question?.home_observations?.[period]?.status || "",
+      ) ||
+      question?.evaluator_roles?.[period] === "teacher" ||
+      Boolean(question?.teacher_marked_at?.[period]) ||
       Boolean(question?.answers[period])
     );
   };

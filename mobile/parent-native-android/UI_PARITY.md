@@ -20,7 +20,7 @@ in `../../ECCD_KAYA_CARRY_FORWARD_PLAN_2.md`.
 | `pages/parent/ChildManagement.tsx` | Avatar, completeness bar, protected identity/enrollment summary, current-detail teacher first/last name for Adviser, household sections, sticky green save action |
 | Dashboard Link LRN dialog | LRN-only native dialog, 12 ASCII digits, inline validation, SYNCED/PENDING badges, retained local input; relationship inherited by the server |
 | `components/parent/HomeAssessmentForm.tsx` | Assess Home-Based Questions in Overview; full collapsed card tap, isolated expanded header, period/domain accordions, one instruction, confirmed questions/domains hidden, manual submission and revision-safe drafts |
-| `pages/parent/ParentEccdAssessment.tsx`, `components/parent/ReadOnlyDomainChecklist.tsx` | Read-only official/checklist segments, period summaries, teacher-lock states, scaled matrix, home/school indicators and attribution; permission-safe All/DI-KAYA/KAYA filters, DI-KAYA-first per domain |
+| `pages/parent/ParentEccdAssessment.tsx`, `components/parent/ReadOnlyDomainChecklist.tsx` | Read-only official/checklist segments, period summaries, teacher-lock states, scaled matrix, home/school indicators and attribution; one permission-safe DI-KAYA/KAYA/unmarked list per domain, no answer filters |
 | `hooks/useParentAssessment.ts`, `components/parent/HomeAssessmentForm.tsx` carry-forward | Overview inherits saved PRE/MID KAYA using masked per-question API metadata; inherited rows remain visible, DI-KAYA disabled, labelled "draft-not save", and submitted only manually. Saved teacher DI-KAYA can reset provisional parent inheritance; saved results/counts stay server-derived. |
 | `pages/parent/ParentMlInsights.tsx` | Readiness, POST outcome and confidence bars, baseline tier badges, expandable green intervention cards, interpretation/research callouts |
 | `components/ChatInterface.tsx` | Mobile contact-to-thread flow, avatars, parent indigo/teacher white bubbles, Philippine-time timestamps, read status, virtualized history and keyboard-safe composer |
@@ -114,14 +114,17 @@ website and app with the same account, child, settings and release permissions:
 8. With a Father/Mother account, sync using LRN only and verify the inherited
    relationship. Reopen a pre-update link draft and confirm its LRN is preserved;
    an old local relationship must not override the registered value.
-9. Check All / DI-KAYA / KAYA in each ECCD period. All starts with DI-KAYA within
-   each domain, original numbers remain, empty filtered domains disappear, and
-   restricted answers never affect order/counts. Check marks independently of scores.
+9. Check each ECCD period: there are no answer filter chips. Each domain lists
+   DI-KAYA, then KAYA, then unmarked/restricted questions with original numbers.
+   Restricted answers never affect order. Check marks independently of scores.
 10. Manually submit one home answer, then the rest of a domain. Confirm only saved
     rows disappear, empty domains disappear, and other periods/children are intact.
     Fail the following refresh: confirmed rows must stay hidden. Fail the save:
     rows/drafts must remain. At completion show All home observations submitted
     without a submit action; a teacher lock must never be called completion.
+    Decline a submitted question in PRE/MID/POST: it must reopen only while editing
+    is allowed, accept manual resubmission, and disappear again. Teacher-assessed
+    questions stay hidden, including equal-answer teacher confirmations.
 11. Verify Overview highlights against the same child's server results, including
     school and home questions in the latest period. Lock that period while an
     older period remains released: show Locked by teacher without old highlights.

@@ -38,7 +38,6 @@ import {
   statusColor,
   tierColor,
 } from "./presentation";
-import type { ChecklistFilter } from "./presentation";
 
 export function OverviewSummary({
   child,
@@ -178,9 +177,8 @@ export function ResultsTab({
   const [period, setPeriod] = useState<Period>("PRE"),
     [expanded, setExpanded] = useState<number | null>(null);
   const [tab, setTab] = useState<"official" | "checklist">("official");
-  const [filter, setFilter] = useState<ChecklistFilter>("All");
   const data = state.data;
-  const domains = data ? checklistDomains(child, data, period, filter) : [];
+  const domains = data ? checklistDomains(child, data, period) : [];
   return (
     <Screen
       onRefresh={async () => {
@@ -311,21 +309,13 @@ export function ResultsTab({
         ) : (
           <>
             <PeriodTabs value={period} onChange={setPeriod} />
-            <Segments
-              options={(["All", "DI-KAYA", "KAYA"] as const).map((value) => ({
-                value,
-                label: value,
-              }))}
-              value={filter}
-              onChange={setFilter}
-            />
             {!(
               child.allow_parent_view_eccd_marks &&
               data.permissions.allow_parent_view_eccd_marks &&
               data.allow_parent_view_eccd_marks
             ) && <Notice>{TEACHER_LOCK}</Notice>}
             {!domains.length && (
-              <Notice>No visible indicators match this filter.</Notice>
+              <Notice>No indicators available.</Notice>
             )}
             {domains.map((domain) => (
               <Card key={domain.domain_id}>

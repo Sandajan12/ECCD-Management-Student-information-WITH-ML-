@@ -197,6 +197,7 @@ export function OverviewScreen({
   const [notice, setNotice] = useState("");
   const [confirming, setConfirming] = useState(false);
   const [expanded, setExpanded] = useState(false);
+  const submittedDeclines = useRef(new Map<string, object>());
   const mounted = useRef(true);
   useEffect(
     () => () => {
@@ -204,23 +205,22 @@ export function OverviewScreen({
     },
     [],
   );
-  const confirmedIds =
-    confirmed[homeScope(user.id, child.student_id, period)] || [];
-  const remaining = state.data
-    ? remainingHomeDomains(state.data, period, confirmedIds)
-    : [];
-  const homeCount =
-    state.data?.domains.reduce(
-      (total, domain) =>
-        total + domain.questions.filter((q) => q.is_home_based).length,
-      0,
-    ) || 0;
+  const scope = homeScope(user.id, child.student_id, period);
+  const confirmedIds = (confirmed[scope] || []).filter((id) => {
+    const review = state.data?.domains.flatMap(d => d.questions)
+      .find(q => q.question_id === id)?.home_observations?.[period];
+    // A fresh decline reopens a prior confirmation; a just-resubmitted decline stays hidden during refresh.
+    return review?.status !== "declined" || submittedDeclines.current.get(`${scope}_${id}`) === review;
+  });
   const editable =
     !!state.data &&
     child.allow_parent_edit_home_based_eccd &&
     state.data.permissions.allow_parent_edit_home_based_eccd &&
     state.data.can_edit_home_based &&
     state.data.parent_assessment_access[WINDOWS[period]];
+  const remaining = state.data && editable
+    ? remainingHomeDomains(state.data, period, confirmedIds)
+    : [];
   const service = useMemo(
     () =>
       new HomeObservations(drafts, user.id, child.student_id, (payload) =>
@@ -246,6 +246,11 @@ export function OverviewScreen({
         period,
         confirmedIds,
       );
+      for (const id of saved.questionIds) {
+        const review = state.data.domains.flatMap(d => d.questions)
+          .find(q => q.question_id === id)?.home_observations?.[period];
+        if (review?.status === "declined") submittedDeclines.current.set(`${scope}_${id}`, review);
+      }
       onConfirmed(period, saved.questionIds);
       if (!mounted.current) return;
       setNotice(saved.cleanupWarning || "Submitted — awaiting teacher review.");
@@ -317,9 +322,7 @@ export function OverviewScreen({
           </Card>
           {editable && !remaining.length && (
             <Notice tone="success">
-              {homeCount
-                ? "All home observations submitted"
-                : "No home-based questions available."}
+              All home observations submitted
             </Notice>
           )}
           {remaining.map((domain) => (
@@ -334,11 +337,6 @@ export function OverviewScreen({
               busy={busy}
             />
           ))}
-          {state.data?.domains.flatMap(d => d.questions).filter(q => q.home_observations?.[period]).map(q => <Card key={`submitted_${q.question_id}`}>
-            <Label>{q.question_text}</Label>
-            <Badge>{q.home_observations?.[period]?.status === "pending" ? "Submitted — awaiting teacher review" : q.home_observations?.[period]?.status === "declined" ? "Declined — already submitted" : "Submitted"}</Badge>
-            {q.home_observations?.[period]?.answer && <Copy>{q.home_observations[period]?.answer}</Copy>}
-          </Card>)}
         </>
       )}
       <OverviewSummary

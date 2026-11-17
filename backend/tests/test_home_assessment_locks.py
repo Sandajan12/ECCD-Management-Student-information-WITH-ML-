@@ -9,7 +9,7 @@ from unittest.mock import patch
 import openpyxl
 from sqlalchemy import inspect, text
 
-from backend.models import EccdQuestion, FamilyAccess, Section, StudentEccdEvaluation, Teacher
+from backend.models import EccdQuestion, FamilyAccess, ParentHomeObservation, Section, StudentEccdEvaluation, Teacher
 from backend.migrations.teacher_marked_at import apply_teacher_marked_at, check_teacher_marked_at
 from backend.migrations.parity_batch1 import apply_batch1
 from backend.migrations.parity_batch2 import apply_batch2
@@ -73,6 +73,126 @@ class HomeAssessmentLockTests(unittest.TestCase):
     def question_data(self, actor):
         data = self.call("GET", "/api/eccd/assessment/1" if actor == 2 else "/api/eccd/parent/assessment/1", actor).json()
         return {q["question_id"]: q for d in data["domains"] for q in d["questions"]}
+
+    def test_parent_visibility_and_declined_resubmission_in_each_period(self):
+        q, accepted = self.questions[:2]
+        for period in ("PRE", "MID", "POST"):
+            with self.subTest(period=period):
+                def submit(question, answer="DI-KAYA", actor=5):
+                    return self.call("POST", "/api/eccd/parent/evaluate", actor, json={
+                        "student_id": 1, "testing_period": period,
+                        "evaluations": [{"question_id": question, "testing_period": period, "answer": answer}]})
+
+                self.assertEqual(submit(q).status_code, 200)
+                self.assertEqual(submit(accepted).status_code, 200)
+                self.assertTrue(self.question_data(5)[q]["parent_locked"][period])
+                self.assertTrue(self.question_data(6)[q]["parent_locked"][period])
+                with self.sessions() as db:
+                    rows = {r.question_id: r.observation_id for r in db.query(ParentHomeObservation).filter_by(testing_period=period)}
+                    self.assertEqual(db.query(StudentEccdEvaluation).count(), 0 if period == "PRE" else 2 * ("PRE", "MID", "POST").index(period))
+                reviewed = self.call("POST", "/api/eccd/home-observations/review", 2, json={
+                    "student_id": 1, "decisions": [{"observation_id": rows[q], "status": "declined"},
+                                                      {"observation_id": rows[accepted], "status": "accepted"}]})
+                self.assertEqual(reviewed.status_code, 200, reviewed.text)
+                for actor in (5, 6):
+                    question = self.question_data(actor)[q]
+                    self.assertFalse(question["parent_locked"][period])
+                    self.assertTrue(question["photo_eligible"][period])
+                    self.assertEqual(question["home_observations"][period]["status"], "declined")
+                    self.assertIsNone(question["answers"][period])
+                other = self.question_data(6)[q]["home_observations"][period]
+                self.assertIsNone(other["answer"])
+                self.assertIsNone(other["submitted_at"])
+                with self.sessions() as db:
+                    setattr(db.get(Section, 1), {"PRE": "pre_test_parent_editable", "MID": "mid_test_parent_editable", "POST": "post_test_parent_editable"}[period], False)
+                    db.commit()
+                self.assertEqual(submit(q).status_code, 403)
+                with self.sessions() as db:
+                    setattr(db.get(Section, 1), {"PRE": "pre_test_parent_editable", "MID": "mid_test_parent_editable", "POST": "post_test_parent_editable"}[period], True)
+                    db.get(Teacher, 1).allow_parent_edit_home_based_eccd = False
+                    db.commit()
+                self.assertEqual(submit(q).status_code, 403)
+                with self.sessions() as db:
+                    db.get(Teacher, 1).allow_parent_edit_home_based_eccd = True
+                    db.commit()
+                self.assertTrue(self.question_data(5)[accepted]["parent_locked"][period])
+                self.assertEqual(submit(accepted, "KAYA").status_code, 409)
+                self.assertEqual(submit(q, "KAYA", actor=6).status_code, 200)
+                self.assertTrue(self.question_data(5)[q]["parent_locked"][period])
+                self.assertEqual(self.call("POST", "/api/eccd/home-observations/review", 2, json={
+                    "student_id": 1, "decisions": [{"observation_id": rows[q], "status": "accepted"}]}).status_code, 409)
+                with self.sessions() as db:
+                    row = db.query(ParentHomeObservation).filter_by(question_id=q, testing_period=period).one()
+                    self.assertNotEqual(row.observation_id, rows[q])
+                    rows[q] = row.observation_id
+                    self.assertEqual((row.status, row.answer, row.parent_id), ("pending", "KAYA", 2))
+                    self.assertIsNone(row.reviewed_at)
+                    self.assertIsNone(row.reviewer_id)
+                self.assertEqual(submit(q, "DI-KAYA", actor=5).status_code, 409)
+                # Finish this period with negative marks so it supplies no later carry source.
+                self.assertEqual(self.call("POST", "/api/eccd/home-observations/review", 2, json={
+                    "student_id": 1, "decisions": [{"observation_id": rows[q], "status": "declined"}]}).status_code, 200)
+                self.assertEqual(submit(q).status_code, 200)
+                with self.sessions() as db:
+                    rows[q] = db.query(ParentHomeObservation).filter_by(question_id=q, testing_period=period).one().observation_id
+                self.assertEqual(self.call("POST", "/api/eccd/home-observations/review", 2, json={
+                    "student_id": 1, "decisions": [{"observation_id": rows[q], "status": "accepted"}]}).status_code, 200)
+
+    def test_hidden_teacher_marks_and_equal_answer_confirmation_lock_current_period(self):
+        q, confirmed = self.questions[:2]
+        for period in ("PRE", "MID", "POST"):
+            with self.sessions() as db:
+                db.add_all([
+                    StudentEccdEvaluation(student_id=1, question_id=q, testing_period=period,
+                        answer="DI-KAYA", evaluator_role="teacher", evaluation_date=date(2026, 11, 1)),
+                    StudentEccdEvaluation(student_id=1, question_id=confirmed, testing_period=period,
+                        answer="DI-KAYA", evaluator_role="parent", parent_id=2,
+                        teacher_evaluation_date=date(2026, 11, 1), evaluation_date=date(2026, 11, 1)),
+                ])
+                db.commit()
+            for question_id in (q, confirmed):
+                row = self.question_data(5)[question_id]
+                self.assertTrue(row["parent_locked"][period])
+                self.assertFalse(row["photo_eligible"][period])
+                self.assertIsNone(row["answers"][period])
+                self.assertIsNone(row["evaluator_roles"][period])
+
+    def test_declined_photo_can_be_replaced_without_losing_cleanup_intents(self):
+        from PIL import Image
+        from backend.utils.home_photos import MemoryPhotoStorage, photo_storage
+        storage = MemoryPhotoStorage()
+        test_phase2.api.dependency_overrides[photo_storage] = lambda: storage
+        q = self.questions[0]
+        image = BytesIO()
+        Image.new("RGB", (8, 8), "green").save(image, format="PNG")
+
+        def upload():
+            return self.call("POST", f"/api/eccd/parent/home-photos/1/{q}/PRE", 5,
+                             files={"file": ("proof.png", image.getvalue(), "image/png")})
+
+        def submit(photo):
+            return self.call("POST", "/api/eccd/parent/evaluate", 5, json={
+                "student_id": 1, "testing_period": "PRE", "photo_ids": {str(q): photo},
+                "evaluations": [{"question_id": q, "testing_period": "PRE", "answer": "DI-KAYA"}]})
+
+        old_photo = upload().json()["photo_id"]
+        self.assertEqual(submit(old_photo).status_code, 200)
+        self.assertEqual(upload().status_code, 409)
+        with self.sessions() as db:
+            observation_id = db.query(ParentHomeObservation).one().observation_id
+        with patch.object(storage, "delete", side_effect=OSError("offline")):
+            reviewed = self.call("POST", "/api/eccd/home-observations/review", 2, json={
+                "student_id": 1, "decisions": [{"observation_id": observation_id, "status": "declined"}]})
+        self.assertEqual(reviewed.status_code, 200)
+        self.assertEqual(reviewed.json()["cleanup_pending"], 1)
+        self.assertEqual(submit(old_photo).status_code, 409)
+        replacement = upload()
+        self.assertEqual(replacement.status_code, 200, replacement.text)
+        self.assertEqual(submit(replacement.json()["photo_id"]).status_code, 200)
+        from backend.models import HomeObservationPhoto
+        with self.sessions() as db:
+            self.assertTrue(db.get(HomeObservationPhoto, old_photo).delete_pending)
+            self.assertEqual(db.query(ParentHomeObservation).one().photo_id, replacement.json()["photo_id"])
 
     def test_separate_batches_midnight_and_retries_preserve_dates_and_owner(self):
         first = dict.fromkeys(self.questions[:2], "KAYA")

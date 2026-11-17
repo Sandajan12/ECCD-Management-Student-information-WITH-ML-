@@ -1,5 +1,44 @@
 # AMES Context History
 
+## 2026-11-17 — Parent Overview visibility and DI-KAYA-first viewing (local)
+
+On `feat/parent-native-android`, removed the duplicate website Home Checklist
+status/action card. The single bottom home accordion owns an expansion-controlled
+Submit Observations bar, spaced above mobile/tablet navigation; empty domains and
+completion hide submission. Both parent clients hide pending/accepted and saved
+teacher-assessed questions per PRE/MID/POST. Declines reopen manual reassessment
+only under the existing editing gates. Resubmission replaces the declined review
+with a fresh pending ID so stale teacher decisions fail, supports replacement
+photos, and preserves old photo deletion tombstones. Native RAM confirmations
+allow fresh declines while retaining immediate hiding after a resubmission when
+refresh fails. Draft ownership/revision/manual-submission rules are unchanged.
+Both ECCD screens show one permission-safe list per domain: DI-KAYA, KAYA, then
+unmarked/restricted, with original numbers and no answer filter chips.
+
+Executed targeted verification:
+
+- `uv run --no-project --python .venv312 python -m pytest backend/tests/test_home_assessment_locks.py -q`
+  — **16 passed**, plus **3 period subtests**. Includes pending/accepted locks,
+  declined resubmission, closed permission/window enforcement, hidden teacher
+  marks/equal-answer confirmations, stale review IDs and photo cleanup retention.
+- `pnpm.cmd --dir frontend exec playwright test --config playwright.parent-assessment.config.ts --grep 'Overview home card|declined home observations|DI-KAYA-first|ECCD cards|marks restriction|global and period editing'`
+  — **24 passed** across desktop/tablet/mobile with synthetic API data.
+  After the final bar-inset/content-clearance adjustment, the same configuration
+  with `--grep 'Overview home card'` passed **3/3**, including viewport/sidebar
+  bounds, navigation separation, collapse and completion; app TypeScript passed again.
+- `pnpm.cmd --dir frontend exec tsc --noEmit -p tsconfig.app.json` — passed.
+- `pnpm.cmd --dir mobile/parent-native-android exec tsc --noEmit` — passed.
+- `pnpm.cmd --dir mobile/parent-native-android test` — **57 passed** (Node/mock hosts).
+- `git diff --check` — passed.
+
+The older decline-lock assertion in `test_parent_home_review.py` was updated to
+the new rule; that separate test file was not executed under this task's scope.
+No full backend/Playwright suite, new migration, remote service operation, push,
+APK build or real-device acceptance. `mobile/parent-android` and pre-existing
+untracked audit/plan files remain untouched. Existing dependency deprecation and
+Node experimental/module warnings remain. The local AST graph was refreshed for
+caller inspection; no generated graph artifacts are committed.
+
 ## 2026-11-17 — Web portal request deduplication and polling cleanup (local)
 
 On `feat/parent-native-android`, audited frontend timers/fetch effects. Removed

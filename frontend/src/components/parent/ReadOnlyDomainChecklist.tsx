@@ -23,6 +23,16 @@ export default function ReadOnlyDomainChecklist({
 }: ReadOnlyDomainChecklistProps) {
   const domain = assessment.activeDomain;
   const period = assessment.activePeriod;
+  const questions = [...(domain?.questions || [])].sort((a, b) => {
+    const rank = (answer: string | null) =>
+      answer === "DI-KAYA" ? 0 : answer === "KAYA" ? 1 : 2;
+    return (
+      rank(assessment.canViewMarks ? a.answers[period] : null) -
+        rank(assessment.canViewMarks ? b.answers[period] : null) ||
+      a.sequence_order - b.sequence_order ||
+      a.question_id - b.question_id
+    );
+  });
 
   if (!assessment.canViewMarks)
     return (
@@ -107,77 +117,60 @@ export default function ReadOnlyDomainChecklist({
           <Typography component="h3" variant="h6">
             {domain.domain_name}
           </Typography>
-          {[
-            { home: true, title: "Home-Based Questions" },
-            { home: false, title: "School-Administered Questions" },
-          ].map((group) => {
-            const questions = assessment
-              .sortedQuestions(domain.questions)
-              .filter((question) => question.is_home_based === group.home);
-            return (
-              <Card
-                component="section"
-                aria-label={group.title}
-                key={group.title}
-                elevation={1}
-                sx={{ borderRadius: 3 }}
-              >
-                <CardContent sx={{ p: { xs: 2, sm: 3 } }}>
-                  <Stack spacing={2}>
-                    <Typography component="h4" sx={{ fontWeight: 600 }}>
-                      {group.title}
-                    </Typography>
-                    {questions.length === 0 && (
+          <Card
+            component="section"
+            aria-label="Domain questions"
+            elevation={1}
+            sx={{ borderRadius: 3 }}
+          >
+            <CardContent sx={{ p: { xs: 2, sm: 3 } }}>
+              <Stack spacing={2}>
+                {questions.length === 0 && (
+                  <Typography variant="body2" sx={{ color: "text.secondary" }}>
+                    No questions available.
+                  </Typography>
+                )}
+                {questions.map((question) => {
+                  // Inspection uses only server records, never local drafts or inherited answers.
+                  const answer = question.answers[period];
+                  return (
+                    <Stack
+                      key={question.question_id}
+                      role="group"
+                      aria-label={question.question_text}
+                      direction={{ xs: "column", sm: "row" }}
+                      spacing={2}
+                      sx={{
+                        p: 2,
+                        borderRadius: 3,
+                        bgcolor: "action.hover",
+                        justifyContent: "space-between",
+                        alignItems: { xs: "flex-start", sm: "center" },
+                      }}
+                    >
                       <Typography
                         variant="body2"
-                        sx={{ color: "text.secondary" }}
+                        sx={{ minWidth: 0, overflowWrap: "anywhere" }}
                       >
-                        No items in this group.
+                        {question.sequence_order}. {question.question_text}
                       </Typography>
-                    )}
-                    {questions.map((question) => {
-                      // Inspection uses only server records, never local drafts or inherited answers.
-                      const answer = question.answers[period];
-                      return (
-                        <Stack
-                          key={question.question_id}
-                          role="group"
-                          aria-label={question.question_text}
-                          direction={{ xs: "column", sm: "row" }}
-                          spacing={2}
-                          sx={{
-                            p: 2,
-                            borderRadius: 3,
-                            bgcolor: "action.hover",
-                            justifyContent: "space-between",
-                            alignItems: { xs: "flex-start", sm: "center" },
-                          }}
-                        >
-                          <Typography
-                            variant="body2"
-                            sx={{ minWidth: 0, overflowWrap: "anywhere" }}
-                          >
-                            {question.question_text}
-                          </Typography>
-                          <Chip
-                            label={answer || "Not yet evaluated"}
-                            color={
-                              answer === "KAYA"
-                                ? "success"
-                                : answer === "DI-KAYA"
-                                  ? "warning"
-                                  : "default"
-                            }
-                            sx={{ flexShrink: 0 }}
-                          />
-                        </Stack>
-                      );
-                    })}
-                  </Stack>
-                </CardContent>
-              </Card>
-            );
-          })}
+                      <Chip
+                        label={answer || "Not yet evaluated"}
+                        color={
+                          answer === "KAYA"
+                            ? "success"
+                            : answer === "DI-KAYA"
+                              ? "warning"
+                              : "default"
+                        }
+                        sx={{ flexShrink: 0 }}
+                      />
+                    </Stack>
+                  );
+                })}
+              </Stack>
+            </CardContent>
+          </Card>
         </Stack>
       )}
     </Stack>

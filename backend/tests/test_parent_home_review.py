@@ -198,14 +198,16 @@ class ParentHomeReviewTests(unittest.TestCase):
         gate = self.call("GET", "/api/eccd/section/1/period-gates", 2).json()
         self.assertTrue(gate["prerequisites"]["PRE"])
 
-    def test_decline_no_answer_and_parent_stays_locked(self):
+    def test_decline_no_answer_and_parent_can_resubmit(self):
         self.submit()
         self.assertEqual(self.review(status="declined").status_code, 200)
         with self.sessions() as db:
             self.assertEqual(db.query(StudentEccdEvaluation).count(), 0)
         self.assertEqual(self.question()["home_observations"]["PRE"]["status"], "declined")
+        self.assertFalse(self.question()["parent_locked"]["PRE"])
         self.assertEqual(self.submit().status_code, 200)
-        self.assertFalse(self.pending())
+        self.assertTrue(self.pending())
+        self.assertEqual(self.review(status="declined").status_code, 200)
         response = self.fixture.evaluate(answers={str(self.q): 0})
         self.assertEqual(response.status_code, 200, response.text)
 

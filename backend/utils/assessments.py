@@ -113,12 +113,13 @@ def save_home_evaluation(db: Session, user: User, payload: ParentEvaluationBatch
         if record is not None and record.answer != answer.answer:
             raise HTTPException(409, "Submitted answers cannot be changed. Refresh to view the saved answers.")
         observation = observations.get((answer.question_id, answer.testing_period))
-        if observation is not None and (observation.answer != answer.answer or observation.parent_id != current_parent.parent_id
+        if observation is not None and observation.status != "declined" and (observation.answer != answer.answer or observation.parent_id != current_parent.parent_id
                 or payload.photo_ids.get(answer.question_id) not in (None, observation.photo_id)):
             raise HTTPException(409, "This question has already been submitted. Refresh to view its status.")
     new_answers = [answer for answer in payload.evaluations
                    if (answer.question_id, answer.testing_period) not in by_question_period
-                   and (answer.question_id, answer.testing_period) not in observations]
+                   and ((answer.question_id, answer.testing_period) not in observations
+                        or observations[answer.question_id, answer.testing_period].status == "declined")]
     guard_pre_mastery(db, existing, new_answers, parent=True)
     sources = carry_sources(existing, ids)
     photos = {}
@@ -140,6 +141,11 @@ def save_home_evaluation(db: Session, user: User, payload: ParentEvaluationBatch
     submitted_at = now_pht()
     for answer in new_answers:
         photo = photos.get(answer.question_id)
+        observation = observations.get((answer.question_id, answer.testing_period))
+        if observation is not None:
+            # A new ID rejects stale review decisions; photo cleanup tombstones live independently.
+            db.delete(observation)
+            db.flush()
         db.add(ParentHomeObservation(student_id=student.student_id, question_id=answer.question_id,
             testing_period=answer.testing_period, answer=answer.answer, parent_id=current_parent.parent_id,
             submitted_at=submitted_at, status="pending", photo_id=photo.photo_id if photo else None))
@@ -209,12 +215,12 @@ def assessment_data(db: Session, user: User, identifier: str, parent_view: bool 
                 ))
                 own_observation = bool(parent and observation and observation.parent_id == parent.parent_id)
                 observation_visible = not parent_view or bool(own_observation and permissions.allow_parent_edit_home_based_eccd and windows[PERIOD_FLAGS[period.value]])
-                observation_metadata[period] = ({"status": observation.status if observation_visible else "submitted",
+                observation_metadata[period] = ({"status": observation.status if observation_visible or observation.status == "declined" else "submitted",
                     "answer": observation.answer if observation_visible else None,
                     "submitted_at": observation.submitted_at if observation_visible else None} if observation else None)
-                if observation and parent_view:
+                if observation and observation.status != "declined" and parent_view:
                     parent_locked[period] = True
-                photo_eligible[period] = bool(parent_view and question.is_home_based and not record and not observation
+                photo_eligible[period] = bool(parent_view and question.is_home_based and not record and (not observation or observation.status == "declined")
                     and permissions.allow_parent_edit_home_based_eccd and windows[PERIOD_FLAGS[period.value]] and not source)
                 if not mark_visible(question, record):
                     record = None

@@ -43,8 +43,9 @@ export default function HomeAssessmentForm({
       questions: domain.questions.filter(
         (question) =>
           question.is_home_based === true &&
-          (!period ||
-            !assessment.isQuestionSaved(question.question_id, period)),
+          period &&
+          assessment.canEditPeriod(period) &&
+          !assessment.isQuestionSaved(question.question_id, period),
       ),
     }))
     .filter((domain) => domain.questions.length > 0);
@@ -90,6 +91,7 @@ export default function HomeAssessmentForm({
               void assessment.handleSaveChecklist();
             }}
             spacing={3}
+            sx={{ pb: expanded && domains.length > 0 ? { xs: 16, md: 10 } : 0 }}
           >
             {assessment.error && (
               <Alert severity="error" sx={{ borderRadius: 3 }}>
@@ -140,7 +142,7 @@ export default function HomeAssessmentForm({
                     </MenuItem>
                   ))}
                 </TextField>
-                {domains.length === 0 && (
+                {period && domains.length === 0 && (
                   <Typography variant="body2" sx={{ color: "text.secondary" }}>
                     All home observations submitted
                   </Typography>
@@ -319,25 +321,47 @@ export default function HomeAssessmentForm({
                     </AccordionDetails>
                   </Accordion>
                 ))}
-                <Button
-                  type="submit"
-                  variant="contained"
-                  disabled={disabled || domains.length === 0}
-                  startIcon={
-                    assessment.saving ? (
-                      <CircularProgress size="1rem" color="inherit" />
-                    ) : (
-                      <SaveIcon />
-                    )
-                  }
-                  sx={{
-                    borderRadius: 3,
-                    alignSelf: { xs: "stretch", sm: "flex-start" },
-                    py: 1.25,
-                  }}
-                >
-                  {assessment.saving ? "Submitting…" : "Submit Observations"}
-                </Button>
+                {expanded && domains.length > 0 && period && (
+                  <Stack
+                    aria-label="Home observation submission"
+                    sx={{
+                      position: "fixed",
+                      left: { xs: "0.75rem", md: "16rem" },
+                      right: { xs: "0.75rem", md: "1rem" },
+                      bottom: {
+                        xs: "calc(4.75rem + env(safe-area-inset-bottom, 0px))",
+                        md: "1rem",
+                      },
+                      zIndex: 1100,
+                      bgcolor: "background.paper",
+                      borderRadius: 3,
+                      boxShadow: 2,
+                      p: 1.5,
+                    }}
+                  >
+                    <Button
+                      type="submit"
+                      variant="contained"
+                      disabled={disabled || domains.length === 0}
+                      startIcon={
+                        assessment.saving ? (
+                          <CircularProgress size="1rem" color="inherit" />
+                        ) : (
+                          <SaveIcon />
+                        )
+                      }
+                      sx={{
+                        borderRadius: 3,
+                        alignSelf: { xs: "stretch", sm: "flex-start" },
+                        py: 1.25,
+                      }}
+                    >
+                      {assessment.saving
+                        ? "Submitting…"
+                        : "Submit Observations"}
+                    </Button>
+                  </Stack>
+                )}
               </>
             )}
           </Stack>

@@ -25,7 +25,8 @@ def upload_photo(student_id: int = Path(gt=0), question_id: int = Path(gt=0), pe
     enforce_user_limit("home-photo", user.user_id)
     evaluations = db.query(StudentEccdEvaluation).options(selectinload(StudentEccdEvaluation.home_review)).filter_by(student_id=student_id).all()
     if (any(r.question_id == question_id and r.testing_period == period for r in evaluations)
-            or db.query(ParentHomeObservation).filter_by(student_id=student_id, question_id=question_id, testing_period=period).first()
+            or db.query(ParentHomeObservation).filter_by(student_id=student_id, question_id=question_id, testing_period=period)
+                .filter(ParentHomeObservation.status != "declined").first()
             or (question_id, period) in carry_sources(evaluations, {question_id})):
         raise HTTPException(409, "Photo is no longer needed or this question is already submitted. Refresh first.")
     image = sanitize_photo(file.file.read(IMAGE_LIMIT + 1), file.content_type)
