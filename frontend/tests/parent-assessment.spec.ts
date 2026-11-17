@@ -311,7 +311,7 @@ test("teacher section prerequisites redirect to remaining students and block sta
     "/teacher/eccdassessment?student_id=1&period=POST&domain_id=1",
   );
   const dialog = page.getByRole("dialog");
-  const period = page.locator("select").nth(1);
+  const period = page.getByLabel("Period", { exact: true });
   await expect(dialog).toBeVisible();
   await expect(dialog.getByText("Finish Pre-Test first")).toBeVisible();
   await expect(dialog.getByText(/2 remaining active/)).toBeVisible();
@@ -331,7 +331,9 @@ test("teacher section prerequisites redirect to remaining students and block sta
   await expect(dialog).toBeVisible();
   await expect(period).toHaveValue("PRE");
   await dialog.getByRole("button", { name: "Assess Student" }).first().click();
-  await expect(page.locator("select").first()).toHaveValue("2");
+  await expect(
+    page.getByRole("combobox", { name: "Student", exact: true }),
+  ).toHaveValue(/Amy Middle Learner/);
   await page
     .getByRole("button", { name: "Save Assessment", exact: true })
     .click();

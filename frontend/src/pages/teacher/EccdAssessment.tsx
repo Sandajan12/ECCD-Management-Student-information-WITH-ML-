@@ -16,8 +16,14 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
+  Autocomplete,
+  createFilterOptions,
+  TextField,
+  IconButton,
 } from "@mui/material";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
+import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
+import ChevronRightIcon from "@mui/icons-material/ChevronRight";
 import DownloadIcon from "@mui/icons-material/Download";
 import PreviewIcon from "@mui/icons-material/Preview";
 import WifiIcon from "@mui/icons-material/Wifi";
@@ -44,11 +50,13 @@ import {
 import type { TeacherAssessmentDraft } from "../../utils/eccdDrafts";
 import { assessmentRefreshScheduler } from "../../hooks/assessmentRefresh";
 import { refreshOnWake } from "../../hooks/refreshOnWake";
+import { sharedGet } from "../../services/sharedGet";
 import { unfinishedPrerequisite } from "../../utils/periodGates";
 import EccdCardPreviewDialog from "../../components/teacher/EccdCardPreviewDialog";
 import EccdDownloadDialog from "../../components/teacher/EccdDownloadDialog";
 import HomeObservationReview from "../../components/teacher/HomeObservationReview";
 import type { EccdDownloadKind } from "../../components/teacher/EccdDownloadDialog";
+import { studentName } from "../../types";
 import type {
   Domain as AssessmentDomain,
   DomainProgress,
@@ -191,7 +199,6 @@ const EccdAssessment: React.FC = () => {
   const {
     assessment: selectedAssessment,
     assessmentDate,
-    gradingDates,
     questions,
     periodProgress,
     evalAges,
@@ -276,6 +283,101 @@ const EccdAssessment: React.FC = () => {
   const getDisplayAge = (p: Period) =>
     activeDomain ? evalAges[activeDomain.domain_id]?.[p] : null;
   const activeProgress = periodProgress[activePeriod];
+  const selectedStudentIndex = students.findIndex(
+    (student) => String(student.student_id) === selectedLrn,
+  );
+  const orderedDomains = [...domains].sort(
+    (a, b) =>
+      (CHECKLIST_DOMAIN_ORDER[a.domain_name] ?? 7) -
+      (CHECKLIST_DOMAIN_ORDER[b.domain_name] ?? 7),
+  );
+  const chooseStudent = (student: Student | null) => {
+    setDomainJump(null);
+    setSelectedLrn(student ? String(student.student_id) : "");
+  };
+  const studentDomainProgress = (studentId: number, domain: Domain) => {
+    const assessment =
+      selectedAssessment?.student_id === studentId
+        ? selectedAssessment
+        : classAssessments?.scope === progressScope
+          ? classAssessments.records.find(
+              (record) => record.student_id === studentId,
+            )
+          : undefined;
+    if (!assessment) return null;
+    const savedQuestions =
+      assessment.domains.find((item) => item.domain_id === domain.domain_id)
+        ?.questions || [];
+    const domainQuestions = domain.questions.map(
+      (question) =>
+        savedQuestions.find(
+          (saved) => saved.question_id === question.question_id,
+        ) || {
+          ...question,
+          answers: { PRE: null, MID: null, POST: null },
+        },
+    );
+    const draft = readDraft<TeacherAssessmentDraft>(
+      `eccd_draft_${studentId}_${activePeriod}_${domain.domain_id}_${user?.id}`,
+    );
+    const values = draft?.owner_id === user?.id ? draft?.values : undefined;
+    const state = resolveTeacherDrafts(
+      domainQuestions,
+      { [activePeriod]: values },
+      assessment.pre_kaya_question_ids,
+    );
+    return teacherDomainProgress(
+      domainQuestions,
+      state[activePeriod],
+      Boolean(
+        values &&
+        values.evaluation_date !==
+          (assessment.periodDates[activePeriod] || localToday()),
+      ),
+    );
+  };
+  const loadStudentProgress = async () => {
+    const version = requestVersion.current;
+    const progress = progressVersion.current;
+    const known =
+      classAssessments?.scope === progressScope ? classAssessments.records : [];
+    const missing = students.filter(
+      (student) =>
+        !known.some((record) => record.student_id === student.student_id),
+    );
+    // Read on demand, in small batches; opening the picker never saves drafts.
+    for (let index = 0; index < missing.length; index += 4) {
+      const results = await Promise.allSettled(
+        missing
+          .slice(index, index + 4)
+          .map((student) =>
+            sharedGet<Assessment>(`/api/eccd/assessment/${student.student_id}`),
+          ),
+      );
+      if (
+        version !== requestVersion.current ||
+        progress !== progressVersion.current
+      )
+        return;
+      const records = results.flatMap((result) =>
+        result.status === "fulfilled" ? [result.value] : [],
+      );
+      setClassAssessments((previous) => ({
+        scope: progressScope,
+        records: [
+          ...records.filter(
+            (record) =>
+              !previous?.records.some(
+                (saved) =>
+                  previous.scope === progressScope &&
+                  saved.student_id === record.student_id,
+              ),
+          ),
+          ...(previous?.scope === progressScope ? previous.records : []),
+        ],
+      }));
+    }
+  };
   const domainCardProgress = (domain: Domain) => {
     if (classAssessments?.scope !== progressScope) return null;
     // Aggregate percentages cannot reveal partial per-question saved counts.
@@ -293,41 +395,13 @@ const EccdAssessment: React.FC = () => {
     let draftCount = 0;
     let total = 0;
     let dateChanges = 0;
-    for (const assessment of classAssessments.records.filter((record) =>
-      students.some((student) => student.student_id === record.student_id),
-    )) {
-      const savedQuestions =
-        assessment.domains.find((item) => item.domain_id === domain.domain_id)
-          ?.questions || [];
-      const domainQuestions = domain.questions.map(
-        (q) =>
-          savedQuestions.find(
-            (saved) => saved.question_id === q.question_id,
-          ) || { ...q, answers: { PRE: null, MID: null, POST: null } },
-      );
-      const draft = readDraft<TeacherAssessmentDraft>(
-        `eccd_draft_${assessment.student_id}_${activePeriod}_${domain.domain_id}_${user?.id}`,
-      );
-      const values =
-        draft && draft.owner_id === user?.id ? draft.values : undefined;
-      const state = resolveTeacherDrafts(
-        domainQuestions,
-        { [activePeriod]: values },
-        assessment.pre_kaya_question_ids,
-      );
-      const progress = teacherDomainProgress(
-        domainQuestions,
-        state[activePeriod],
-      );
+    for (const student of students) {
+      const progress = studentDomainProgress(student.student_id, domain);
+      if (!progress) return null;
       savedCount += progress.savedCount;
       draftCount += progress.draftCount;
       total += progress.total;
-      if (
-        values &&
-        values.evaluation_date !==
-          (assessment.periodDates[activePeriod] || localToday())
-      )
-        dateChanges++;
+      if (progress.hasDateChange) dateChanges++;
     }
     return {
       savedCount,
@@ -401,13 +475,17 @@ const EccdAssessment: React.FC = () => {
     }
     const reload = () => {
       if (!section) return;
+      setClassAssessments(null);
       void load();
       scheduler.schedule();
     };
     const synced = (event: Event) => {
       const key = (event as CustomEvent<string>).detail;
       if (key?.startsWith("eccd_draft_")) {
-        if (key.endsWith(`_${user?.id}`)) scheduler.schedule();
+        if (key.endsWith(`_${user?.id}`)) {
+          setClassAssessments(null);
+          scheduler.schedule();
+        }
       } else reload();
     };
     const stop = refreshOnWake(reload);
@@ -483,16 +561,20 @@ const EccdAssessment: React.FC = () => {
     }
   };
   return (
-    <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6 flex flex-col min-h-0 relative pb-16">
+    <div className="w-full max-w-7xl mx-auto px-2 pt-2 flex flex-col min-h-0 relative pb-24">
       {/* Header section */}
       <Stack
         sx={{
           display: "flex",
           justifyContent: "space-between",
-          alignItems: { xs: "flex-start", lg: "center" },
-          mb: 4,
-          flexDirection: { xs: "column", lg: "row" },
-          gap: 2,
+          alignItems: "flex-start",
+          mb: 1.5,
+          flexDirection: "column",
+          gap: 1,
+          "@media (min-width: 1280px)": {
+            flexDirection: "row",
+            alignItems: "center",
+          },
         }}
       >
         <Box>
@@ -501,21 +583,22 @@ const EccdAssessment: React.FC = () => {
             sx={{
               fontWeight: "800",
               color: "#1e1e2f",
-              mb: 0.5,
-              fontSize: { xs: "1.25rem", sm: "1.75rem", md: "2rem" },
+              fontSize: { xs: "1.25rem", sm: "1.5rem" },
             }}
           >
             ECCD Assessment
           </Typography>
-          <Typography variant="body1" color="textSecondary">
-            Evaluate and monitor student progress across ECCD domains.
-          </Typography>
+          {!activeDomain && (
+            <Typography variant="body2" color="text.secondary">
+              Evaluate and monitor student progress across ECCD domains.
+            </Typography>
+          )}
         </Box>
         <Stack
           role="group"
           aria-label="Assessment actions"
           direction="row"
-          spacing={2}
+          spacing={1}
           useFlexGap
           sx={{
             alignItems: "center",
@@ -523,6 +606,17 @@ const EccdAssessment: React.FC = () => {
             width: { xs: "100%", md: "auto" },
             justifyContent: { xs: "flex-start", lg: "flex-end" },
             minWidth: 0,
+            "@media (min-width: 1024px)": {
+              flexWrap: "nowrap",
+              alignSelf: "flex-end",
+            },
+            "& .MuiButton-root": {
+              fontSize: "0.75rem",
+              px: 1,
+              py: 0.75,
+              lineHeight: 1.4,
+              "& .MuiButton-startIcon": { mr: 0.5, "& svg": { fontSize: 18 } },
+            },
           }}
         >
           <Chip
@@ -530,6 +624,7 @@ const EccdAssessment: React.FC = () => {
             label={isOnline ? "Online" : "Offline"}
             color={isOnline ? "success" : "warning"}
             variant="filled"
+            size="small"
             sx={{ fontWeight: "bold" }}
           />
           {pendingDraftsCount > 0 && (
@@ -581,9 +676,10 @@ const EccdAssessment: React.FC = () => {
               key={progressScope}
               students={students}
               domains={domains}
-              onSaved={() =>
-                window.dispatchEvent(new Event("ames-record-synced"))
-              }
+              onSaved={() => {
+                setClassAssessments(null);
+                window.dispatchEvent(new Event("ames-record-synced"));
+              }}
             />
           )}
           <Button
@@ -819,147 +915,284 @@ const EccdAssessment: React.FC = () => {
       {/* Detail View: Single Domain Checklist */}
       {!loading && activeDomain && (
         <div className="flex flex-col min-h-0 w-full">
-          {/* Back button */}
-          <button
-            type="button"
-            onClick={() => {
-              setDomainJump(null);
-              setActiveDomain(null);
+          <Stack
+            sx={{
+              gap: 1.5,
+              mb: 1.5,
+              p: 1.5,
+              borderRadius: 3,
+              bgcolor: "white",
+              boxShadow: 1,
             }}
-            className="inline-flex items-center gap-1.5 text-xs sm:text-sm font-semibold text-slate-500 hover:text-slate-800 transition-colors mb-3 cursor-pointer group w-fit"
           >
-            <ArrowBackIcon
-              sx={{ fontSize: 18 }}
-              className="group-hover:-translate-x-0.5 transition-transform"
-            />
-            Back to Domains
-          </button>
-
-          {/* Responsive Filter Toolbar */}
-          <div className="flex flex-wrap items-center justify-between gap-3 mb-4 bg-white p-3.5 sm:p-4 rounded-2xl border border-slate-100 shadow-sm">
-            {/* Domain Title & Indicator Count */}
-            <div className="min-w-0">
-              <h2 className="text-base sm:text-lg lg:text-xl font-bold text-slate-900 tracking-tight leading-tight">
-                {activeDomain.domain_name}
-              </h2>
-              <p className="text-xs text-slate-500 font-medium mt-0.5">
-                {activeDomain.questions?.length
-                  ? `${activeDomain.questions.length} Indicators Checklist`
-                  : "Developmental Indicators"}
-              </p>
-            </div>
-
-            {/* Filter Controls Grouping */}
-            <div className="flex flex-wrap items-center gap-2.5 sm:gap-3">
-              {/* Student Selector */}
-              <div className="relative min-w-[200px] sm:min-w-[240px]">
-                <select
-                  value={selectedLrn}
-                  onChange={(e) => setSelectedLrn(e.target.value)}
-                  className="w-full text-xs sm:text-sm py-1.5 px-3 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all cursor-pointer"
+            <Stack
+              direction="row"
+              sx={{ alignItems: "center", gap: 1.5, flexWrap: "wrap" }}
+            >
+              <Button
+                size="small"
+                color="inherit"
+                startIcon={<ArrowBackIcon />}
+                onClick={() => {
+                  setDomainJump(null);
+                  setActiveDomain(null);
+                }}
+                sx={{ borderRadius: 3, fontSize: "0.75rem", flexShrink: 0 }}
+              >
+                Back to Domains
+              </Button>
+              <Stack
+                direction="row"
+                sx={{
+                  alignItems: "baseline",
+                  gap: 1,
+                  flexWrap: "wrap",
+                  minWidth: 0,
+                }}
+              >
+                <Typography
+                  component="h2"
+                  sx={{ fontSize: "1rem", fontWeight: 700 }}
                 >
-                  <option value="" disabled>
-                    Select Student to Assess
-                  </option>
-                  {students.length === 0 && (
-                    <option disabled>No students found</option>
-                  )}
-                  {students.map((s) => {
-                    const idVal = String(s.student_id);
-                    return (
-                      <option key={idVal} value={idVal}>
-                        {s.first_name} {s.last_name} ({s.masked_lrn})
-                      </option>
-                    );
+                  {activeDomain.domain_name}
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  {activeDomain.questions.length} Indicators Checklist
+                </Typography>
+              </Stack>
+            </Stack>
+
+            <Stack
+              component="nav"
+              aria-label="Checklist domains"
+              direction="row"
+              sx={{ gap: 0.75, overflowX: "auto", pb: 0.5 }}
+            >
+              <Typography
+                variant="caption"
+                sx={{
+                  alignSelf: "center",
+                  color: "text.secondary",
+                  flexShrink: 0,
+                }}
+              >
+                Domains
+              </Typography>
+              {orderedDomains.map((domain, index) => {
+                const progress = studentDomainProgress(
+                  Number(selectedLrn),
+                  domain,
+                );
+                const status = `Saved: ${progress?.savedCount ?? "—"} / ${domain.questions.length}`;
+                return (
+                  <Tooltip
+                    key={domain.domain_id}
+                    title={`${domain.domain_name} · ${status}${progress?.draftCount || progress?.hasDateChange ? " · Unsaved changes" : ""}`}
+                  >
+                    <Chip
+                      component="button"
+                      type="button"
+                      size="small"
+                      label={`${index + 1} · ${progress ? `${progress.savedCount}/${progress.total}` : "—"}${progress?.draftCount || progress?.hasDateChange ? " *" : ""}`}
+                      aria-label={`Domain ${index + 1}: ${domain.domain_name}, ${status}`}
+                      aria-pressed={activeDomain.domain_id === domain.domain_id}
+                      color={
+                        activeDomain.domain_id === domain.domain_id
+                          ? "primary"
+                          : progress?.complete
+                            ? "success"
+                            : "default"
+                      }
+                      variant={
+                        activeDomain.domain_id === domain.domain_id
+                          ? "filled"
+                          : "outlined"
+                      }
+                      onClick={() => {
+                        setDomainJump(null);
+                        setActiveDomain(domain);
+                      }}
+                      sx={{ flexShrink: 0, fontWeight: 600 }}
+                    />
+                  </Tooltip>
+                );
+              })}
+            </Stack>
+
+            <Stack
+              direction="row"
+              sx={{ alignItems: "center", flexWrap: "wrap", gap: 1.5 }}
+            >
+              <Stack
+                direction="row"
+                sx={{
+                  alignItems: "center",
+                  gap: 0.5,
+                  flex: "1 1 18rem",
+                  minWidth: 0,
+                }}
+              >
+                <Autocomplete<Student>
+                  fullWidth
+                  size="small"
+                  options={students}
+                  value={students[selectedStudentIndex] || null}
+                  onOpen={() => void loadStudentProgress()}
+                  getOptionLabel={(student) =>
+                    `${studentName(student)} (${student.masked_lrn})`
+                  }
+                  getOptionKey={(student) => student.student_id}
+                  isOptionEqualToValue={(option, value) =>
+                    option.student_id === value.student_id
+                  }
+                  filterOptions={createFilterOptions<Student>({
+                    stringify: (student) =>
+                      `${studentName(student)} ${student.masked_lrn}`,
                   })}
-                </select>
-              </div>
+                  onChange={(_, student) => chooseStudent(student)}
+                  noOptionsText="No students found"
+                  renderOption={({ key, ...props }, student) => {
+                    const progress = studentDomainProgress(
+                      student.student_id,
+                      activeDomain,
+                    );
+                    return (
+                      <Box component="li" key={key} {...props}>
+                        <Stack sx={{ width: "100%", minWidth: 0 }}>
+                          <Typography
+                            variant="body2"
+                            sx={{ overflowWrap: "anywhere" }}
+                          >
+                            {studentName(student)} ({student.masked_lrn})
+                          </Typography>
+                          <Typography
+                            variant="caption"
+                            sx={{
+                              color: progress?.complete
+                                ? "success.main"
+                                : "text.secondary",
+                            }}
+                          >
+                            Saved: {progress?.savedCount ?? "—"} /{" "}
+                            {activeDomain.questions.length}
+                          </Typography>
+                        </Stack>
+                      </Box>
+                    );
+                  }}
+                  renderInput={(params) => (
+                    <TextField
+                      {...params}
+                      label="Student"
+                      placeholder="Search name or LRN"
+                      sx={{
+                        "& .MuiOutlinedInput-root": {
+                          borderRadius: 3,
+                          fontSize: "0.8rem",
+                        },
+                      }}
+                    />
+                  )}
+                  sx={{ minWidth: 0 }}
+                />
+                <IconButton
+                  size="small"
+                  aria-label="Previous Student"
+                  disabled={selectedStudentIndex <= 0}
+                  onClick={() =>
+                    chooseStudent(students[selectedStudentIndex - 1])
+                  }
+                  sx={{ borderRadius: 3 }}
+                >
+                  <ChevronLeftIcon />
+                </IconButton>
+                <IconButton
+                  size="small"
+                  aria-label="Next Student"
+                  disabled={
+                    !students.length ||
+                    selectedStudentIndex >= students.length - 1
+                  }
+                  onClick={() =>
+                    chooseStudent(students[selectedStudentIndex + 1])
+                  }
+                  sx={{ borderRadius: 3 }}
+                >
+                  <ChevronRightIcon />
+                </IconButton>
+              </Stack>
 
               {selectedLrn && (
                 <>
-                  {/* Testing Period Selector & Status Badge */}
-                  <div className="flex items-center gap-2">
-                    <div className="relative min-w-[130px]">
-                      <select
-                        value={activePeriod}
-                        onChange={(e) => choosePeriod(e.target.value as Period)}
-                        className="w-full text-xs sm:text-sm py-1.5 px-3 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all cursor-pointer"
-                      >
-                        {(["PRE", "MID", "POST"] as Period[]).map((p) => (
-                          <option key={p} value={p}>
-                            {p === "PRE"
-                              ? "Pre-Test"
-                              : p === "MID"
-                                ? "Mid-Test"
-                                : "Post-Test"}
-                            {periodLocked(p) ? " — Locked" : ""}
-                            {` (Saved: ${periodProgress[p].savedCount} / ${periodProgress[p].total})`}
-                            {periodProgress[p].draftCount > 0 ||
-                            periodProgress[p].hasDateChange
-                              ? " - Draft"
-                              : ""}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    {activeProgress.draftCount > 0 ||
-                    activeProgress.hasDateChange ? (
-                      <span className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200 whitespace-nowrap">
-                        Unsaved changes
-                      </span>
-                    ) : activeProgress.savedCount > 0 ? (
-                      <span className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 whitespace-nowrap">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-600"></span>
-                        Saved: {activeProgress.savedCount} /{" "}
-                        {activeProgress.total}
-                      </span>
-                    ) : activeProgress.inheritedCount > 0 ? (
-                      <span className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-medium bg-slate-100 text-slate-600 whitespace-nowrap">
-                        Inherited (not saved)
-                      </span>
-                    ) : (
-                      <span className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-medium bg-slate-100 text-slate-600 whitespace-nowrap">
-                        <span className="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
-                        Not Started
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Date Picker & Decimal Age */}
-                  <div className="flex flex-col">
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="date"
-                        value={assessmentDate}
-                        min={getDateBounds(activePeriod).min}
-                        max={getDateBounds(activePeriod).max}
-                        onChange={(e) => handleDateChange(e.target.value)}
-                        className={`text-xs sm:text-sm py-1.5 px-3 bg-slate-50 rounded-xl font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all ${dateError ? "border-2 border-rose-500 text-rose-700" : "border border-slate-200"}`}
+                  <TextField
+                    select
+                    size="small"
+                    label="Period"
+                    value={activePeriod}
+                    onChange={(event) =>
+                      choosePeriod(event.target.value as Period)
+                    }
+                    slotProps={{ select: { native: true } }}
+                    sx={{
+                      flex: "1 1 12rem",
+                      minWidth: 0,
+                      "& .MuiOutlinedInput-root": {
+                        borderRadius: 3,
+                        fontSize: "0.8rem",
+                      },
+                    }}
+                  >
+                    {(["PRE", "MID", "POST"] as Period[]).map((period) => (
+                      <option key={period} value={period}>
+                        {period === "PRE"
+                          ? "Pre-Test"
+                          : period === "MID"
+                            ? "Mid-Test"
+                            : "Post-Test"}
+                        {periodLocked(period) ? " — Locked" : ""}
+                        {` (Saved: ${periodProgress[period].savedCount} / ${periodProgress[period].total})`}
+                        {periodProgress[period].draftCount > 0 ||
+                        periodProgress[period].hasDateChange
+                          ? " - Draft"
+                          : ""}
+                      </option>
+                    ))}
+                  </TextField>
+                  <TextField
+                    type="date"
+                    size="small"
+                    label="Grading Date"
+                    value={assessmentDate}
+                    onChange={(event) => handleDateChange(event.target.value)}
+                    error={!!dateError}
+                    helperText={dateError || undefined}
+                    slotProps={{
+                      inputLabel: { shrink: true },
+                      htmlInput: getDateBounds(activePeriod),
+                    }}
+                    sx={{
+                      flex: "1 1 9rem",
+                      minWidth: 0,
+                      "& .MuiOutlinedInput-root": {
+                        borderRadius: 3,
+                        fontSize: "0.8rem",
+                      },
+                    }}
+                  />
+                  {getDisplayAge(activePeriod) !== null &&
+                    getDisplayAge(activePeriod) !== undefined && (
+                      <Chip
+                        size="small"
+                        label={`Decimal Age: ${getDisplayAge(activePeriod)}`}
+                        color="primary"
+                        variant="outlined"
+                        sx={{ fontSize: "0.75rem" }}
                       />
-                      {getDisplayAge(activePeriod) !== null &&
-                        getDisplayAge(activePeriod) !== undefined && (
-                          <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 border border-blue-200 whitespace-nowrap">
-                            Decimal Age: {getDisplayAge(activePeriod)}
-                          </span>
-                        )}
-                    </div>
-                    {gradingDates?.[activePeriod] && (
-                      <span className="text-[11px] text-slate-500 mt-1">
-                        Grading Date:{" "}
-                        {formatDisplayDate(gradingDates[activePeriod])}
-                      </span>
                     )}
-                    {dateError && (
-                      <span className="text-[11px] font-semibold text-rose-600 mt-1 max-w-[280px]">
-                        {dateError}
-                      </span>
-                    )}
-                  </div>
                 </>
               )}
-            </div>
-          </div>
+            </Stack>
+          </Stack>
 
           {/* Empty Student State */}
           {!selectedLrn ? (

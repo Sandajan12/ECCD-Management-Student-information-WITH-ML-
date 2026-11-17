@@ -7,6 +7,8 @@ interface AssessmentScenario {
   dateOnly?: boolean;
   pendingCount?: number;
   gatesOpen?: boolean;
+  checklistRows?: boolean;
+  saveSucceeds?: boolean;
 }
 
 const domainNames = [
@@ -35,7 +37,10 @@ async function assessmentPortal(page: Page, scenario: AssessmentScenario = {}) {
   const domains: Domain[] = domainNames.map((name, index) => ({
     domain_id: index + 1,
     domain_name: name,
-    questions: [1, 2].map((sequence) => ({
+    questions: Array.from(
+      { length: scenario.checklistRows ? 8 : 2 },
+      (_, i) => i + 1,
+    ).map((sequence) => ({
       question_id: (index + 1) * 10 + sequence,
       domain_id: index + 1,
       question_text: `${name} indicator ${sequence}`,
@@ -64,6 +69,12 @@ async function assessmentPortal(page: Page, scenario: AssessmentScenario = {}) {
       if (scenario.preComplete) question.carry_forward = { MID: "locked" };
     }
   }
+  const completed: Assessment = {
+    ...target,
+    student_id: 1,
+    domains: structuredClone(domains),
+    periodDates: { PRE: "2026-08-01", MID: "2026-09-01", POST: null },
+  };
   const state = {
     gatesOpen: scenario.gatesOpen || false,
     submissions: 0,
@@ -102,7 +113,7 @@ async function assessmentPortal(page: Page, scenario: AssessmentScenario = {}) {
         student_id: id,
         first_name: id === 1 ? "Completed" : "Remaining",
         last_name: "Learner",
-        masked_lrn: "Pending",
+        masked_lrn: id === 1 ? "••••••••1234" : "Pending",
         section_id: 1,
         is_active: true,
       }));
@@ -136,14 +147,7 @@ async function assessmentPortal(page: Page, scenario: AssessmentScenario = {}) {
         },
       };
     } else if (path.startsWith("/api/eccd/assessment/")) {
-      json = path.endsWith("/2")
-        ? target
-        : {
-            ...target,
-            student_id: 1,
-            domains,
-            periodDates: { PRE: "2026-08-01", MID: "2026-09-01", POST: null },
-          };
+      json = path.endsWith("/2") ? target : completed;
     } else if (path === "/api/eccd/home-observations/pending") {
       json = Array.from({ length: scenario.pendingCount || 0 }, (_, index) => ({
         observation_id: index + 1,
@@ -156,6 +160,26 @@ async function assessmentPortal(page: Page, scenario: AssessmentScenario = {}) {
       }));
     } else if (path === "/api/eccd/evaluate") {
       state.submissions++;
+      if (scenario.saveSucceeds) {
+        const payload = route.request().postDataJSON() as {
+          student_id: number;
+          testing_period: Period;
+          assessment_date: string;
+          evaluations: { question_id: number; answer: "KAYA" | "DI-KAYA" }[];
+        };
+        const assessment = payload.student_id === 1 ? completed : target;
+        for (const evaluation of payload.evaluations) {
+          const question = assessment.domains
+            .flatMap((domain) => domain.questions)
+            .find((item) => item.question_id === evaluation.question_id);
+          if (question)
+            question.answers[payload.testing_period] = evaluation.answer;
+        }
+        assessment.periodDates[payload.testing_period] =
+          payload.assessment_date;
+        await route.fulfill({ json: { message: "Saved" } });
+        return;
+      }
       await conflict;
       state.gatesOpen = false;
       await route.fulfill({
@@ -177,7 +201,9 @@ async function assessmentPortal(page: Page, scenario: AssessmentScenario = {}) {
   await expect(
     page.getByRole("heading", { name: "Cognitive", exact: true }),
   ).toBeVisible();
-  await expect(page.locator("select").first()).toHaveValue("1");
+  await expect(
+    page.getByRole("combobox", { name: "Student", exact: true }),
+  ).toHaveValue(/Completed Learner/);
   await expect(page.getByText("Loading assessments...")).toHaveCount(0);
   return state;
 }
@@ -229,7 +255,9 @@ const jumpCases: {
 for (const item of jumpCases) {
   test(`teacher smart domain jump: ${item.name}`, async ({ page }) => {
     const state = await assessmentPortal(page, item.scenario);
-    await page.locator("select").nth(1).selectOption(item.requested);
+    await page
+      .getByLabel("Period", { exact: true })
+      .selectOption(item.requested);
     const dialog = page.getByRole("dialog");
     await expect(dialog).toContainText(
       item.expectedPeriod === "PRE"
@@ -243,8 +271,10 @@ for (const item of jumpCases) {
     await expect(
       page.getByRole("heading", { name: item.expectedDomain, exact: true }),
     ).toBeVisible();
-    await expect(page.locator("select").first()).toHaveValue("2");
-    await expect(page.locator("select").nth(1)).toHaveValue(
+    await expect(
+      page.getByRole("combobox", { name: "Student", exact: true }),
+    ).toHaveValue(/Remaining Learner/);
+    await expect(page.getByLabel("Period", { exact: true })).toHaveValue(
       item.expectedPeriod,
     );
     await expect(page.locator('input[type="date"]')).toBeVisible();
@@ -263,7 +293,7 @@ test("teacher smart domain jump: prerequisite modal from domain grid opens unsav
   page,
 }) => {
   const state = await assessmentPortal(page, { gatesOpen: true });
-  await page.locator("select").nth(1).selectOption("POST");
+  await page.getByLabel("Period", { exact: true }).selectOption("POST");
   await page
     .getByRole("button", { name: "Save Assessment", exact: true })
     .click();
@@ -285,11 +315,242 @@ test("teacher smart domain jump: prerequisite modal from domain grid opens unsav
   await expect(
     page.getByRole("heading", { name: "Fine Motor", exact: true }),
   ).toBeVisible();
-  await expect(page.locator("select").first()).toHaveValue("2");
-  await expect(page.locator("select").nth(1)).toHaveValue("PRE");
+  await expect(
+    page.getByRole("combobox", { name: "Student", exact: true }),
+  ).toHaveValue(/Remaining Learner/);
+  await expect(page.getByLabel("Period", { exact: true })).toHaveValue("PRE");
   expect(
     await page.evaluate(() => localStorage.getItem("eccd_draft_1_POST_6_2")),
   ).toContain("DI-KAYA");
+});
+
+test("teacher checklist student search filters names and masked LRNs with saved counts", async ({
+  page,
+}) => {
+  const state = await assessmentPortal(page);
+  await page.getByRole("button", { name: /^Domain 2: Fine Motor,/ }).click();
+  const student = page.getByRole("combobox", { name: "Student", exact: true });
+  await student.fill("learner");
+  const options = page.getByRole("listbox").getByRole("option");
+  await expect(options).toHaveCount(2);
+  await expect(options.filter({ hasText: "Completed Learner" })).toContainText(
+    "Saved: 2 / 2",
+  );
+  // The retained KAYA draft must not inflate the server-saved count.
+  await expect(options.filter({ hasText: "Remaining Learner" })).toContainText(
+    "Saved: 1 / 2",
+  );
+  await student.fill("1234");
+  await expect(options).toHaveCount(1);
+  await expect(options).toContainText("••••••••1234");
+  await student.fill("rEmAiNiNg");
+  await expect(options).toHaveCount(1);
+  await options.click();
+  await expect(student).toHaveValue("Remaining Learner (Pending)");
+  await expect(
+    page.getByRole("heading", { name: "Fine Motor", exact: true }),
+  ).toBeVisible();
+  await expect(page.getByLabel("Period", { exact: true })).toHaveValue("PRE");
+  await expect(page.locator("tbody tr").nth(1)).toContainText(
+    "Fine Motor indicator 2",
+  );
+  await expect(
+    page.getByText("1 unsaved change", { exact: true }).first(),
+  ).toBeVisible();
+  await student.fill("missing student");
+  await expect(
+    page.getByText("No students found", { exact: true }),
+  ).toBeVisible();
+  await student.fill("");
+  await expect(options).toHaveCount(2);
+  await student.press("Escape");
+  expect(state.submissions).toBe(0);
+  await expectNoStoredCredentials(page);
+});
+
+test("teacher checklist quick navigation retains drafts and refreshes saved completion", async ({
+  page,
+}) => {
+  const state = await assessmentPortal(page, { saveSucceeds: true });
+  const student = page.getByRole("combobox", { name: "Student", exact: true });
+  const previous = page.getByRole("button", {
+    name: "Previous Student",
+    exact: true,
+  });
+  const next = page.getByRole("button", { name: "Next Student", exact: true });
+  const fineMotor = page.getByRole("button", {
+    name: /^Domain 2: Fine Motor,/,
+  });
+  await expect(previous).toBeDisabled();
+  await next.click();
+  await expect(student).toHaveValue(/Remaining Learner/);
+  await expect(next).toBeDisabled();
+  await fineMotor.click();
+  await expect(fineMotor).toHaveAttribute("aria-pressed", "true");
+  await expect(fineMotor).toContainText("1/2 *");
+  await expect(page.locator("tbody tr")).toHaveCount(2);
+  const answer = page
+    .locator("tbody tr")
+    .nth(1)
+    .getByRole("button", { name: "DI-KAYA", exact: true })
+    .first();
+  await answer.click();
+  await page.getByLabel("Grading Date", { exact: true }).fill("2026-08-02");
+  await previous.click();
+  await expect(student).toHaveValue(/Completed Learner/);
+  await expect(
+    page.getByRole("heading", { name: "Fine Motor", exact: true }),
+  ).toBeVisible();
+  await expect(fineMotor).toContainText("2/2");
+  await next.click();
+  await expect(student).toHaveValue(/Remaining Learner/);
+  await expect(page.getByLabel("Grading Date", { exact: true })).toHaveValue(
+    "2026-08-02",
+  );
+  await page.getByRole("button", { name: /^Domain 1: Gross Motor,/ }).click();
+  await expect(
+    page.getByRole("heading", { name: "Gross Motor", exact: true }),
+  ).toBeVisible();
+  await expect(student).toHaveValue(/Remaining Learner/);
+  await fineMotor.click();
+  await expect(page.getByLabel("Grading Date", { exact: true })).toHaveValue(
+    "2026-08-02",
+  );
+  expect(
+    await page.evaluate(
+      () =>
+        JSON.parse(localStorage.getItem("eccd_draft_2_PRE_2_2") || "null")
+          .values.answers[22],
+    ),
+  ).toBe("DI-KAYA");
+  await expect(answer).toHaveClass(/bg-rose-600/);
+  expect(state.submissions).toBe(0);
+  await page
+    .getByRole("button", { name: "Save Assessment", exact: true })
+    .click();
+  await expect(
+    page.getByText("Assessment Saved Successfully!", { exact: true }),
+  ).toBeVisible();
+  await expect(fineMotor).toContainText("2/2");
+  await expect(fineMotor).not.toContainText("*");
+  expect(state.submissions).toBe(1);
+  expect(
+    await page.evaluate(() => localStorage.getItem("eccd_draft_2_PRE_2_2")),
+  ).toBeNull();
+  await previous.click();
+  await next.click();
+  await expect(student).toHaveValue(/Remaining Learner/);
+  await expect(fineMotor).toContainText("2/2");
+  expect(
+    await page.evaluate(() => localStorage.getItem("ames_draft_2_unrelated")),
+  ).toBe("keep my work");
+  await expectNoStoredCredentials(page);
+});
+
+for (const width of [1024, 1280]) {
+  test(`teacher checklist compact layout at ${width}px shows questions without initial scroll`, async ({
+    page,
+  }, testInfo) => {
+    await page.setViewportSize({ width, height: 720 });
+    await assessmentPortal(page, { checklistRows: true });
+    await expect(page.locator("tbody tr")).toHaveCount(8);
+    const toolbar = page.getByRole("group", {
+      name: "Assessment actions",
+      exact: true,
+    });
+    const geometry = await toolbar.evaluate((element) => {
+      const rects = [...element.children].map((child) =>
+        child.getBoundingClientRect(),
+      );
+      return {
+        tops: rects.map((rect) => rect.top),
+        bottoms: rects.map((rect) => rect.bottom),
+        rights: rects.map((rect) => rect.right),
+        viewport: window.innerWidth,
+      };
+    });
+    expect(Math.max(...geometry.tops)).toBeLessThan(
+      Math.min(...geometry.bottoms),
+    );
+    expect(Math.max(...geometry.rights)).toBeLessThanOrEqual(geometry.viewport);
+    const row = page.locator("tbody tr").nth(3);
+    const fourthQuestion = await row.boundingBox();
+    expect(fourthQuestion!.y).toBeGreaterThan(0);
+    expect(fourthQuestion!.y + fourthQuestion!.height).toBeLessThanOrEqual(720);
+    await expect(
+      row.getByRole("button", { name: "KAYA", exact: true }).first(),
+    ).toBeInViewport({ ratio: 1 });
+    await expect(
+      row.getByRole("button", { name: "KAYA", exact: true }).first(),
+    ).toBeEnabled();
+    expect(
+      await page
+        .locator("[data-layout-content]")
+        .evaluate((element) => element.scrollTop),
+    ).toBe(0);
+    await expect(page.getByText(/^Grading Date:/)).toHaveCount(0);
+    await expect(
+      page.getByLabel("Grading Date", { exact: true }),
+    ).toBeVisible();
+    expect(
+      await page
+        .getByRole("navigation", { name: "Checklist domains", exact: true })
+        .evaluate((element) => element.scrollWidth <= element.clientWidth),
+    ).toBe(true);
+    if (testInfo.project.name === "desktop")
+      await page.screenshot({
+        path: testInfo.outputPath(`checklist-${width}.png`),
+      });
+    await page.evaluate(() => {
+      const content = document.querySelector("[data-layout-content]");
+      content?.scrollTo(0, content.scrollHeight);
+      window.scrollTo(0, document.documentElement.scrollHeight);
+    });
+    const last = await page.locator("tbody tr").last().boundingBox();
+    const save = await page
+      .getByRole("button", { name: "Save Assessment", exact: true })
+      .boundingBox();
+    expect(last!.y + last!.height).toBeLessThanOrEqual(save!.y);
+    expect(
+      await page
+        .locator("main .pb-24")
+        .evaluate((element) => getComputedStyle(element).paddingBottom),
+    ).toBe("96px");
+  });
+}
+
+test("teacher checklist mobile controls fit without page overflow", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 320, height: 700 });
+  await assessmentPortal(page, { checklistRows: true });
+  await expect(
+    page.getByRole("combobox", { name: "Student", exact: true }),
+  ).toBeInViewport();
+  const pills = page.getByRole("navigation", {
+    name: "Checklist domains",
+    exact: true,
+  });
+  await expect(pills.getByRole("button")).toHaveCount(7);
+  await pills.getByRole("button", { name: /^Domain 7:/ }).click();
+  await expect(
+    page.getByRole("heading", { name: "Social-Emotional", exact: true }),
+  ).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth > window.innerWidth,
+    ),
+  ).toBe(false);
+  await page.evaluate(() => {
+    const content = document.querySelector("[data-layout-content]");
+    content?.scrollTo(0, content.scrollHeight);
+    window.scrollTo(0, document.documentElement.scrollHeight);
+  });
+  const last = await page.locator("tbody tr").last().boundingBox();
+  const save = await page
+    .getByRole("button", { name: "Save Assessment", exact: true })
+    .boundingBox();
+  expect(last!.y + last!.height).toBeLessThanOrEqual(save!.y);
 });
 
 for (const count of [0, 3]) {

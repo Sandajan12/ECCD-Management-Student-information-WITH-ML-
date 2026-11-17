@@ -692,13 +692,30 @@ MID), then the first domain with server-unsaved indicators in official checklist
 order (Gross Motor through Social-Emotional, followed by custom domains).
 This works from the domain overview or another domain; drafts and virtual carried
 answers never count as saved. Date-only blockers open the first domain for the
-official testing-date save. Pending Home-Based Assessments is a content-sized,
-wrapping header action beside Online/Preview/Download, with an amber clock/review
-icon and count pill (strong orange for pending rows, softer amber at zero).
+official testing-date save. Pending Home-Based Assessments is a content-sized
+header action beside Online/Preview/Download, on one compact row at desktop
+widths >=1024px and wrapping on smaller screens, with an amber review icon and
+count pill (strong orange for pending rows, softer amber at zero).
 Missing gate data keeps MID/POST locked; drafts survive
 failures and backend rejection also covers queued teacher submissions. Parent
 home routes remain governed by their independent permission/section windows,
 without classmates' prerequisites. No schema migration is required.
+
+The Teacher checklist combines Back/domain/count in one header row, followed by
+numbered domain pills and compact Student/Period/Grading Date/Decimal Age controls.
+Student Autocomplete searches names and the visible masked LRN/suffix only;
+Previous/Next follow roster order without wrapping. Navigation retains the other
+selection, active period and owner-scoped answer/date drafts, and never saves.
+Picker options show the active domain/period's server-saved count; domain pills
+show the selected student's counts, with an asterisk for unsaved changes.
+Virtual carry-forward/drafts do not inflate saved counts. Missing counts display
+an em dash until available, never an assumed zero. Opening the picker reads missing
+assessments through the existing credential-scoped shared GET in batches of four;
+confirmed selected-student reads replace its snapshot. Wake/sync/review refreshes
+invalidate roster snapshots, with no idle polling. Keep the checklist's 96px
+bottom padding so the sticky Save Assessment dock clears the final question.
+Focused browser coverage is `tests/teacher-eccd-assessment.spec.ts` using
+`playwright.parent-assessment.config.ts`; always select this spec explicitly.
 
 Carry-forward is virtual and per question: saved PRE KAYA prefills MID/POST;
 saved MID KAYA prefills POST. Parents cannot downgrade inherited KAYA. Teachers

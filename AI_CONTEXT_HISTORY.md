@@ -1,5 +1,36 @@
 # AMES Context History
 
+## 2026-11-17 — Teacher checklist density and quick navigation (local)
+
+On `feat/parent-native-android`, compacted the Teacher ECCD header/actions and
+combined Back/domain/count with numbered domain pills and labeled controls.
+Replaced the student select with MUI Autocomplete over names/masked LRN suffixes,
+added saved domain/period counts and Previous/Next roster navigation, removed the
+duplicate grading-date helper, and retained 96px bottom padding. Navigation keeps
+answer/date drafts and period gates; confirmed saves update completion. Missing
+roster counts load on picker opening through existing shared GETs, four at a time,
+without new endpoints, polling, dependencies or additional component state.
+
+Executed only targeted frontend verification:
+
+- `pnpm.cmd --dir frontend exec playwright test --config playwright.parent-assessment.config.ts teacher-eccd-assessment.spec.ts parent-assessment.spec.ts --grep "teacher (smart domain jump|checklist|pending review toolbar|section prerequisites)" --workers=2 --reporter=line`
+  — **45 passed**, covering search/clearing, masked LRN matching, saved-versus-draft
+  counts, navigation/draft retention, confirmed saves, locks/prerequisites and
+  desktop/tablet/mobile behavior. Desktop geometry checks use 1024/1280 × 720,
+  ensure four question rows fall within the viewport and PRE controls are visible,
+  all seven pills fit horizontally, and the final row clears Save at the bottom.
+  Visually inspected both desktop screenshots; three full rows clear the sticky
+  dock at 1024px, with more at 1280px. Initial assertions were corrected to scope
+  Autocomplete options, measure vertical visibility independently of the existing
+  horizontal table scroll, and scroll fully to the bottom for dock clearance.
+- `pnpm.cmd --dir frontend exec tsc --noEmit -p tsconfig.app.json` — **passed**;
+  the final retry succeeded after a transient pnpm fetch failure.
+- `git diff --check` — **passed**.
+
+Mocked local API checks establish no production/database acceptance. No backend
+tests, full browser suites, migrations, remote tools, push or deployment ran;
+`mobile/parent-android` and the existing untracked work were left untouched.
+
 ## 2026-11-17 — Teacher prerequisite domain jump and pending toolbar (local)
 
 On `feat/parent-native-android`, Assess Student closes the prerequisite dialog,
