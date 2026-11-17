@@ -1,9 +1,12 @@
 import { expect, test } from "@playwright/test";
 import { readFile, stat } from "node:fs/promises";
 import { createHash } from "node:crypto";
+import { fileURLToPath } from "node:url";
+import { loadEnv } from "vite";
 
 const downloadUrl =
-  process.env.VITE_PARENT_APP_DOWNLOAD_URL?.trim() ||
+  loadEnv("development", fileURLToPath(new URL("..", import.meta.url)))
+    .VITE_PARENT_APP_DOWNLOAD_URL?.trim() ||
   "/downloads/ames-parent.apk";
 const downloadBody = "synthetic APK for the download-link interaction check";
 

@@ -1,5 +1,23 @@
 # AMES Context History
 
+## 2026-11-17 — Configure the parent APK Google Drive link (local)
+
+Set `VITE_PARENT_APP_DOWNLOAD_URL` in ignored `frontend/.env` and the tracked
+template to the supplied sharing URL for Drive file
+`1GjsVuLmhhjKZVLjJPB3ww-Ziou2xNMYd`. Both auth pages open that file page in a
+separate tab; the blank/unset local APK fallback remains unchanged. A public,
+unauthenticated page read returned HTTP 200 and `app-release.apk - Google Drive`
+without access-denied text. The hosted binary was not downloaded/hash-verified.
+
+The focused auth-download spec now uses Vite's existing `loadEnv` so its expected
+link follows `.env`, `.env.local` and process overrides. Only that spec ran with
+`playwright.parent-assessment.config.ts`: **6 passed** with an explicit Drive URL
+override, then **6 passed** using the actual local `.env` without an override.
+API/attachment responses were mocked; these checks verify URL wiring, responsive
+placement and preserved forms, not Drive's download UI or real APK installation.
+No new dependencies, native rebuild, full suites, push or remote infrastructure
+changes. Production requires the same build-time variable; hosting was not changed.
+
 ## 2026-11-17 — Native release rebuild and auth-page app download (local)
 
 Stayed on `feat/parent-native-android`. The teacher `EccdAssessment.tsx` diff

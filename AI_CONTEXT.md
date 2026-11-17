@@ -972,9 +972,12 @@ upload endpoint is removed. New enrollment uses the configured school year.
 Login and Registration share a top-right **Download App** link in `AuthBackdrop`,
 outside their form cards. Responsive vertical padding prevents overlap, including
 short/narrow screens. It opens/downloads separately without submitting or clearing
-inputs. Set `VITE_PARENT_APP_DOWNLOAD_URL` in `frontend/.env` when a hosted APK URL
-is available, then restart Vite/rebuild. Until then, the same-site fallback requires
-copying the signed native APK to ignored `frontend/public/downloads/ames-parent.apk`.
+inputs. `VITE_PARENT_APP_DOWNLOAD_URL` in `frontend/.env` and its template points
+to the user-supplied Google Drive sharing page (file ID
+`1GjsVuLmhhjKZVLjJPB3ww-Ziou2xNMYd`); users download from Drive after it opens.
+Restart Vite/rebuild after changing this setting. The blank/unset same-site
+fallback requires copying the signed native APK to ignored
+`frontend/public/downloads/ames-parent.apk`.
 The APK and `.env` remain outside Git; a source checkout alone supplies no APK.
 Focused coverage is `tests/auth-download.spec.ts`, explicitly selected with
 `playwright.parent-assessment.config.ts`; no other specs are needed for this link.
