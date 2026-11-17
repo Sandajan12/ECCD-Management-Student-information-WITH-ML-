@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Grid, Stack } from "@mui/material";
 import API, { errorMessage } from "../../services/api";
 import { readDraft, useDurableForm } from "../../utils/drafts";
 import type { Domain, Question } from "../../types";
@@ -212,18 +213,27 @@ export default function EccdQuestionsManagement() {
   }, [refresh]);
   const domain = domains.find((d) => d.domain_id === id);
   return (
-    <div className="min-h-screen p-2 pb-10">
-      <div className="mb-6 flex flex-col items-start justify-between gap-4 legacy-sm:flex-row">
-        <div>
-          <h1 className="mb-1 text-[34px] font-extrabold leading-[1.235] text-[#1e1e2f]">
+    <div className="min-w-0 p-2 pb-6">
+      <Stack
+        direction={{ xs: "column", sm: "row" }}
+        sx={{
+          mb: 2,
+          gap: 1.5,
+          alignItems: { xs: "flex-start", sm: "center" },
+          justifyContent: "space-between",
+        }}
+      >
+        <div className="min-w-0">
+          <h1 className="mb-1 text-xl font-bold leading-tight text-[#1e1e2f] sm:text-2xl">
             ECCD Questions Management
           </h1>
-          <p className="text-base leading-[1.5] text-[#777]">
+          <p className="text-xs leading-relaxed text-[#777] sm:text-sm">
             Manage ECCD Domains and their respective assessment questions.
           </p>
         </div>
         {!domain && (
           <Button
+            small
             startIcon={<Icon name="Add" />}
             className="font-bold"
             onClick={() => setEditor({ type: "domain" })}
@@ -231,7 +241,7 @@ export default function EccdQuestionsManagement() {
             Add Domain
           </Button>
         )}
-      </div>
+      </Stack>
       <Notice tone="error">{error}</Notice>
       {loading ? (
         <div
@@ -256,18 +266,27 @@ export default function EccdQuestionsManagement() {
           </svg>
         </div>
       ) : !domain ? (
-        <div className="grid min-w-0 grid-cols-1 gap-10 legacy-sm:grid-cols-3">
+        <Grid container spacing={2}>
           {domains.map((item) => (
-            <article
+            <Grid
+              component="article"
+              size={{ xs: 12, sm: 6, lg: 4 }}
               key={item.domain_id}
-              className="mx-auto flex h-[300px] min-w-0 w-full max-w-[300px] cursor-pointer flex-col overflow-hidden rounded-2xl bg-white p-6 shadow-[0_4px_15px_rgba(0,0,0,.05)] transition-[transform,box-shadow] duration-200 hover:-translate-y-1 hover:shadow-[0_12px_25px_rgba(0,0,0,.1)] xl:min-w-[300px]"
+              className="flex min-w-0 cursor-pointer flex-col rounded-2xl bg-white p-4 shadow-[0_4px_15px_rgba(0,0,0,.05)] transition-shadow duration-200 hover:shadow-md"
               onClick={() => setId(item.domain_id)}
             >
-              <div className="mb-4 flex items-start justify-between">
-                <h2 className="h-[65px] min-w-0 line-clamp-2 text-xl font-bold leading-[1.6] break-words text-[#1e1e2f]">
+              <Stack
+                direction="row"
+                sx={{
+                  alignItems: "flex-start",
+                  justifyContent: "space-between",
+                  gap: 1,
+                }}
+              >
+                <h2 className="min-w-0 text-base font-bold leading-6 break-words text-[#1e1e2f]">
                   {item.domain_name}
                 </h2>
-                <div>
+                <div className="flex shrink-0">
                   <IconButton
                     small
                     title="Edit Domain"
@@ -291,46 +310,60 @@ export default function EccdQuestionsManagement() {
                     <Icon name="Delete" className="size-5" />
                   </IconButton>
                 </div>
-              </div>
-              <div className="flex grow items-center justify-center">
-                <p className="text-base font-medium leading-[1.5] text-[#777]">
+              </Stack>
+              <div className="mt-2 mb-4">
+                <p className="text-sm leading-relaxed text-[#777]">
                   {item.questions.length} Questions Available
                 </p>
               </div>
               <Button
-                className="mt-auto w-full py-2 font-bold shadow-none"
+                small
+                className="mt-auto w-full font-bold shadow-none"
                 onClick={() => setId(item.domain_id)}
               >
                 Manage Questions
               </Button>
-            </article>
+            </Grid>
           ))}
-        </div>
+        </Grid>
       ) : (
         <>
           <Button
+            small
             variant="text"
             startIcon={<Icon name="ArrowBack" />}
-            className="mb-6 px-2! text-[17.6px] font-bold text-[#777]"
+            className="mb-2 px-2! font-semibold text-[#777]"
             onClick={() => setId(0)}
           >
             Back to Domains
           </Button>
-          <section className="mb-8 overflow-hidden rounded-2xl bg-white shadow-[0_4px_20px_rgba(0,0,0,.05)]">
-            <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[#e2e8f0] bg-[#fbfbfb] p-6">
-              <h2 className="text-2xl font-extrabold leading-[1.334] text-[#1e1e2f]">
+          <section className="mb-4 overflow-hidden rounded-2xl bg-white shadow-[0_4px_20px_rgba(0,0,0,.05)]">
+            <Stack
+              direction="row"
+              sx={{
+                flexWrap: "wrap",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 1.5,
+                p: { xs: 1.5, sm: 2 },
+                borderBottom: "1px solid #e2e8f0",
+                bgcolor: "#fbfbfb",
+              }}
+            >
+              <h2 className="text-base font-bold leading-snug text-[#1e1e2f] sm:text-lg">
                 {domain.domain_name} Questions
               </h2>
               <Button
+                small
                 className="font-bold"
                 startIcon={<Icon name="Add" />}
                 onClick={() => setEditor({ type: "question", domain })}
               >
                 Add Question
               </Button>
-            </div>
+            </Stack>
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[700px]">
+              <table className="w-full min-w-[700px] [&_th]:px-3! [&_th]:py-2.5! [&_th]:text-xs! [&_td]:px-3! [&_td]:py-2.5! [&_td]:text-sm!">
                 <thead className="bg-[#fbfbfb]">
                   <tr>
                     <th className="w-[10%] font-bold! text-[#777]!">ORDER</th>
@@ -351,7 +384,7 @@ export default function EccdQuestionsManagement() {
                       <td className="font-bold! text-[#64748b]">
                         {question.sequence_order || index + 1}
                       </td>
-                      <td className="py-6! text-[16.8px]! font-medium! text-[#334155]">
+                      <td className="font-medium! text-[#334155]">
                         {question.question_text}
                       </td>
                       <td>

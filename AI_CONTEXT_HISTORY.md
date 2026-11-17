@@ -1,5 +1,18 @@
 # AMES Context History
 
+## 2026-11-17 — Question Management title and spacing (local)
+
+On `feat/parent-native-android`, reduced the shared Teacher/Chairman page title
+from 34px to responsive 20/24px, replaced fixed 300px domain cards and 40px gaps
+with content-sized cards in a 1/2/3-column MUI Grid, and tightened the Back action,
+domain header, buttons and question-row padding. Page-local presentation only;
+requests, permissions, ordering, editing and durable draft logic are unchanged.
+
+Executed `pnpm.cmd --dir frontend exec playwright test --config playwright.parent-sync.config.ts eccd-question-order.spec.ts --reporter=line`
+— **4 passed**, covering both portals at desktop/mobile sizes with mocked APIs.
+`pnpm.cmd --dir frontend exec tsc --noEmit -p tsconfig.app.json` also passed.
+No full suites, backend tests, mobile changes or remote operations ran.
+
 ## 2026-11-17 — Teacher checklist density and quick navigation (local)
 
 On `feat/parent-native-android`, compacted the Teacher ECCD header/actions and

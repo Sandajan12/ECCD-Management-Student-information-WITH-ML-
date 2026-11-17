@@ -314,6 +314,9 @@ Important routed workflows:
 - Teacher Management supports Primary Adviser assignment/handover, account
   archive/restore and the separate question-management toggle; no role selector.
 - Student Records supports multi-student transfers without deleting evaluations.
+- Teacher/Chairman Question Management shares compact 20–24px page headings,
+  content-sized domain cards in a responsive 1/2/3-column grid, and compact question
+  rows. Keep these styles local to that page; editing and durable drafts are unchanged.
 - Teacher/Chairman dashboard filters share validated section/year/period scopes.
   Providers/shared GETs coalesce requests without overwriting unsaved drafts.
 - Parent Overview contains home observations; Parent ECCD Checklists shows saved
