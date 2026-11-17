@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from "react";
 import {
   Accordion,
   AccordionDetails,
@@ -37,6 +38,26 @@ export default function HomeAssessmentForm({
   onExpandedChange,
 }: HomeAssessmentFormProps) {
   const period = assessment.selectedPeriod;
+  const [navigation, setNavigation] = useState<{
+    scope: string;
+    collapsed: Record<number, boolean>;
+    question?: number;
+  }>({ scope: "", collapsed: {} });
+  const currentNavigation = navigation.scope === assessment.photoScope ? navigation : null;
+  const rows = useRef(new Map<number, HTMLDivElement>());
+  useEffect(() => {
+    setNavigation({ scope: assessment.photoScope, collapsed: {} });
+  }, [assessment.photoScope]);
+  useEffect(() => {
+    const question = currentNavigation?.question;
+    if (!expanded || !question) return;
+    const frame = requestAnimationFrame(() => {
+      const row = rows.current.get(question);
+      row?.querySelector<HTMLButtonElement>("button[data-home-answer]:not([disabled])")?.focus({ preventScroll: true });
+      row?.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [currentNavigation, expanded]);
   const domains = assessment.checklistDomains
     .map((domain) => ({
       ...domain,
@@ -151,7 +172,11 @@ export default function HomeAssessmentForm({
                   <Accordion
                     component="section"
                     key={`${period}-${domain.domain_id}`}
-                    defaultExpanded
+                    expanded={!currentNavigation?.collapsed[domain.domain_id]}
+                    onChange={(_, next) => setNavigation({
+                      scope: assessment.photoScope,
+                      collapsed: { ...currentNavigation?.collapsed, [domain.domain_id]: !next },
+                    })}
                     disableGutters
                     elevation={0}
                     sx={{
@@ -189,6 +214,10 @@ export default function HomeAssessmentForm({
                           .map((question) => (
                             <Stack
                               key={question.question_id}
+                              ref={(row: HTMLDivElement | null) => {
+                                if (row) rows.current.set(question.question_id, row);
+                                else rows.current.delete(question.question_id);
+                              }}
                               direction={{ xs: "column", md: "row" }}
                               spacing={2}
                               sx={{
@@ -218,7 +247,7 @@ export default function HomeAssessmentForm({
                                   variant="body2"
                                   sx={{ overflowWrap: "anywhere" }}
                                 >
-                                  {question.question_text}
+                                  {question.sequence_order}. {question.question_text}
                                 </Typography>
                                 {period &&
                                   assessment.isQuestionLocked(
@@ -285,7 +314,7 @@ export default function HomeAssessmentForm({
                                     ),
                                   )
                                 }
-                                aria-labelledby={`home-question-${question.question_id}`}
+                                aria-label={question.question_text}
                                 onChange={(_, answer: Answer | null) => {
                                   if (period && answer)
                                     assessment.handleAnswerChange(
@@ -298,9 +327,13 @@ export default function HomeAssessmentForm({
                                   flexShrink: 0,
                                   alignSelf: "flex-start",
                                   borderRadius: 3,
+                                  ...(currentNavigation?.question === question.question_id
+                                    ? { outline: "2px solid", outlineColor: "warning.main", outlineOffset: 4 }
+                                    : {}),
                                 }}
                               >
                                 <ToggleButton
+                                  data-home-answer
                                   value="KAYA"
                                   color="success"
                                   sx={{ borderRadius: 3, px: 2 }}
@@ -308,6 +341,7 @@ export default function HomeAssessmentForm({
                                   KAYA
                                 </ToggleButton>
                                 <ToggleButton
+                                  data-home-answer
                                   value="DI-KAYA"
                                   color="warning"
                                   sx={{ borderRadius: 3, px: 2 }}
@@ -367,6 +401,41 @@ export default function HomeAssessmentForm({
           </Stack>
         </CardContent>
       </AccordionDetails>
+      <Dialog
+        open={assessment.missingPhotoMarks.length > 0}
+        onClose={assessment.closePhotoWarning}
+        disableRestoreFocus={Boolean(currentNavigation?.question)}
+        fullWidth
+        maxWidth="sm"
+        slotProps={{ paper: { sx: { borderRadius: 3 } } }}
+        aria-labelledby="home-photo-warning-title"
+        aria-describedby="home-photo-warning-description"
+      >
+        <DialogTitle id="home-photo-warning-title">Mark the questions with photos</DialogTitle>
+        <DialogContent>
+          <Stack spacing={3}>
+            <DialogContentText id="home-photo-warning-description">
+              Some questions have a photo but no KAYA or DI-KAYA mark. Mark these questions or remove their photos before submitting. Your drafts are saved.
+            </DialogContentText>
+            {assessment.missingPhotoMarks.map((question) => (
+              <Stack key={question.questionId} spacing={1}>
+                <Typography sx={{ fontWeight: 600 }}>{question.domainName}</Typography>
+                <Typography>{question.number}. {question.text}</Typography>
+                <Button variant="outlined" sx={{ borderRadius: 3, alignSelf: "flex-start" }} onClick={() => {
+                  assessment.closePhotoWarning();
+                  onExpandedChange(true);
+                  setNavigation({ scope: assessment.photoScope,
+                    collapsed: { ...currentNavigation?.collapsed, [question.domainId]: false },
+                    question: question.questionId });
+                }}>Go to question</Button>
+              </Stack>
+            ))}
+          </Stack>
+        </DialogContent>
+        <DialogActions sx={{ p: 2 }}>
+          <Button onClick={assessment.closePhotoWarning} sx={{ borderRadius: 3 }}>Close</Button>
+        </DialogActions>
+      </Dialog>
       <Dialog
         open={assessment.confirmationOpen}
         onClose={assessment.cancelConfirmation}

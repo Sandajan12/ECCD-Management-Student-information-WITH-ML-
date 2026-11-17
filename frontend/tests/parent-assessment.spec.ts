@@ -26,6 +26,7 @@ interface HomeSubmission {
 }
 
 interface PortalState {
+  restricted: Set<string>;
   reviewFlow: boolean;
   declined: Set<string>;
   pending: Map<string, Answer>;
@@ -399,6 +400,7 @@ async function portal(
   expandHome = true,
 ) {
   const state: PortalState = {
+    restricted: new Set(),
     reviewFlow: false,
     declined: new Set(),
     pending: new Map(),
@@ -560,7 +562,7 @@ async function portal(
           ]),
         ),
         carry_forward: {
-          PRE: null,
+          PRE: state.restricted.has(`${id}_PRE_${question.question_id}`) ? ("restricted" as const) : null,
           MID:
             state.saved.get(`${id}_PRE_${question.question_id}`) === "KAYA"
               ? ("locked" as const)
@@ -957,6 +959,187 @@ const homeAnswer = (page: Page, name: string, answer: Answer) =>
   homeForm(page)
     .getByRole("group", { name, exact: true })
     .getByRole("button", { name: answer, exact: true });
+
+async function photoDrafts(page: Page) {
+  return page.evaluate(async () => {
+    const db = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open("ames-form-files", 1);
+      request.onupgradeneeded = () => request.result.createObjectStore("files");
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    try {
+      return await new Promise<string[]>((resolve, reject) => {
+        const request = db.transaction("files").objectStore("files").getAllKeys();
+        request.onsuccess = () => resolve(request.result.map(String));
+        request.onerror = () => reject(request.error);
+      });
+    } finally { db.close(); }
+  });
+}
+
+async function seedPhotoDraft(page: Page, key: string) {
+  await page.evaluate(async (photoKey) => {
+    const db = await new Promise<IDBDatabase>((resolve) => {
+      const request = indexedDB.open("ames-form-files", 1);
+      request.onupgradeneeded = () => request.result.createObjectStore("files");
+      request.onsuccess = () => resolve(request.result);
+    });
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const tx = db.transaction("files", "readwrite");
+        tx.objectStore("files").put({file: new File(["proof"], "proof.png", {type: "image/png"}), revision: crypto.randomUUID()}, photoKey);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      });
+    } finally { db.close(); }
+  }, key);
+}
+
+test("photo without mark alone across domains warns, retains reload drafts and jumps to collapsed controls", async ({ page }) => {
+  const state = await portal(page);
+  state.reviewFlow = true;
+  let uploads = 0;
+  page.on("request", request => { if (request.url().includes("/api/eccd/parent/home-photos/")) uploads++; });
+  for (const index of [0, 1]) {
+    await homeForm(page).locator('input[type="file"]').nth(index).setInputFiles({name: `proof-${index}.png`, mimeType: "image/png", buffer: Buffer.from("mocked photo")});
+  }
+  await expect.poll(async () => (await photoDrafts(page)).length).toBe(2);
+  await page.reload();
+  await openHome(page);
+  await page.locator("#home-domain-1").click();
+  await page.locator("#home-domain-2").click();
+  await homeForm(page).getByRole("button", {name: "Submit Observations", exact: true}).click();
+  const warning = page.getByRole("dialog", {name: "Mark the questions with photos"});
+  await expect(warning).toBeVisible();
+  await expect(warning.getByRole("button", {name: "Go to question"})).toHaveCount(2);
+  await expect(warning).toContainText("Gross Motor");
+  await expect(warning).toContainText("1. Plays safely at home");
+  await expect(warning).toContainText("Fine Motor");
+  await expect(warning).toContainText("1. Draws at home");
+  expect(state.submissions).toHaveLength(0); expect(uploads).toBe(0);
+  expect(await photoDrafts(page)).toHaveLength(2);
+  await warning.getByRole("button", {name: "Go to question"}).first().click();
+  await expect(page.locator("#home-domain-1")).toHaveAttribute("aria-expanded", "true");
+  await expect(homeAnswer(page, "Plays safely at home", "KAYA")).toBeFocused();
+  await expect(homeAnswer(page, "Plays safely at home", "KAYA")).toBeInViewport();
+  await homeAnswer(page, "Plays safely at home", "KAYA").click();
+  await homeForm(page).getByRole("button", {name: "Submit Observations", exact: true}).click();
+  await expect(warning.getByRole("button", {name: "Go to question"})).toHaveCount(1);
+  await warning.getByRole("button", {name: "Go to question"}).click();
+  await expect(homeAnswer(page, "Draws at home", "KAYA")).toBeFocused();
+  await homeForm(page).getByRole("button", {name: "Remove photo", exact: true}).last().click();
+  await expect.poll(async () => (await photoDrafts(page)).length).toBe(1);
+  expect(state.submissions).toHaveLength(0); expect(uploads).toBe(0);
+  await submitHome(page);
+  await expect.poll(() => state.submissions.length).toBe(1);
+  expect(state.submissions[0].evaluations.map(q => q.question_id)).toEqual([11]);
+  expect(uploads).toBe(1);
+  await expectNoStoredCredentials(page);
+});
+
+test("photo without mark added during confirmation blocks the complete batch before uploads or pending writes", async ({ page }) => {
+  const state = await portal(page);
+  state.reviewFlow = true;
+  let uploads = 0;
+  page.on("request", request => { if (request.url().includes("/api/eccd/parent/home-photos/")) uploads++; });
+  await homeAnswer(page, "Plays safely at home", "KAYA").click();
+  await homeForm(page).getByRole("button", {name: "Submit Observations", exact: true}).click();
+  const confirmation = page.getByRole("dialog", {name: "Submit Answers"});
+  await expect(confirmation).toBeVisible();
+  const before = await page.evaluate(key => localStorage.getItem(key), draftKey);
+  await seedPhotoDraft(page, "ames_file_7_home_3_PRE_21");
+  await confirmation.getByRole("button", {name: "Submit Answers", exact: true}).click();
+  const warning = page.getByRole("dialog", {name: "Mark the questions with photos"});
+  await expect(warning).toBeVisible();
+  expect(await page.evaluate(key => localStorage.getItem(key), draftKey)).toBe(before);
+  expect(state.submissions).toHaveLength(0); expect(uploads).toBe(0);
+  await warning.getByRole("button", {name: "Close", exact: true}).click();
+  await page.reload();
+  await openHome(page);
+  await homeAnswer(page, "Draws at home", "DI-KAYA").click();
+  await submitHome(page);
+  await expect.poll(() => state.submissions.length).toBe(1);
+  expect(state.submissions[0].evaluations.map(q => q.question_id)).toEqual([11, 21]);
+  expect(uploads).toBe(1);
+});
+
+test("photo without mark after removing a draft answer warns again and keeps the photo", async ({ page }) => {
+  const state = await portal(page);
+  await homeAnswer(page, "Plays safely at home", "KAYA").click();
+  await seedPhotoDraft(page, "ames_file_7_home_3_PRE_11");
+  await homeForm(page).getByRole("button", {name: "Submit Observations", exact: true}).click();
+  const confirmation = page.getByRole("dialog", {name: "Submit Answers"});
+  await expect(confirmation).toBeVisible();
+  await page.evaluate(key => {
+    const draft = JSON.parse(localStorage.getItem(key)!);
+    draft.values.answers = {};
+    draft.revision = crypto.randomUUID();
+    localStorage.setItem(key, JSON.stringify(draft));
+    window.dispatchEvent(new Event("ames-drafts-changed"));
+  }, draftKey);
+  await confirmation.getByRole("button", {name: "Submit Answers", exact: true}).click();
+  const warning = page.getByRole("dialog", {name: "Mark the questions with photos"});
+  await expect(warning).toBeVisible();
+  expect(state.submissions).toHaveLength(0);
+  expect(await photoDrafts(page)).toContain("ames_file_7_home_3_PRE_11");
+});
+
+test("photo without mark drafts from other owners children and periods never block photo-free partial submission", async ({ page }) => {
+  const state = await portal(page);
+  state.reviewFlow = true;
+  const keys = ["ames_file_8_home_3_PRE_11", "ames_file_7_home_4_PRE_11", "ames_file_7_home_3_MID_11", "ames_file_7_home_3_PRE_12"];
+  for (const key of keys) await seedPhotoDraft(page, key);
+  await homeAnswer(page, "Draws at home", "DI-KAYA").click();
+  await submitHome(page);
+  await expect.poll(() => state.submissions.length).toBe(1);
+  expect(state.submissions[0].evaluations.map(q => q.question_id)).toEqual([21]);
+  expect((await photoDrafts(page)).sort()).toEqual(keys.sort());
+});
+
+test("photo without mark validation ignores saved and inherited rows", async ({ page }) => {
+  const state = await portal(page);
+  state.reviewFlow = true;
+  state.saved.set("3_PRE_11", "KAYA");
+  await seedPhotoDraft(page, "ames_file_7_home_3_PRE_11");
+  await page.reload(); await openHome(page);
+  await homeAnswer(page, "Draws at home", "DI-KAYA").click();
+  await submitHome(page);
+  await expect.poll(() => state.submissions.length).toBe(1);
+  expect(await photoDrafts(page)).toContain("ames_file_7_home_3_PRE_11");
+  // The accepted source gives MID an effective KAYA; stale evidence uses the separate eligibility error.
+  state.laterOpen = true;
+  await seedPhotoDraft(page, "ames_file_7_home_3_MID_11");
+  await page.reload(); await openHome(page);
+  await homeForm(page).getByRole("combobox").click();
+  await page.getByRole("option", {name: "Mid-Test", exact: true}).click();
+  await homeForm(page).getByRole("button", {name: "Submit Observations", exact: true}).click();
+  await expect(page.getByRole("dialog", {name: "Submit Answers"})).toBeVisible();
+  await page.getByRole("dialog", {name: "Submit Answers"}).getByRole("button", {name: "Submit Answers", exact: true}).click();
+  await expect(homeForm(page).getByText(/An earlier KAYA now carries forward/).last()).toBeVisible();
+  await expect(page.getByRole("dialog", {name: "Mark the questions with photos"})).toHaveCount(0);
+  expect(state.submissions).toHaveLength(1);
+});
+
+test("photo without mark validation ignores pending and restricted rows without clearing their photos", async ({ page }) => {
+  const state = await portal(page);
+  state.reviewFlow = true;
+  state.pending.set("3_PRE_21", "KAYA");
+  await seedPhotoDraft(page, "ames_file_7_home_3_PRE_21");
+  await page.reload(); await openHome(page);
+  await homeAnswer(page, "Plays safely at home", "KAYA").click();
+  await submitHome(page);
+  await expect.poll(() => state.submissions.length).toBe(1);
+  expect(state.submissions[0].evaluations.map(q => q.question_id)).toEqual([11]);
+  state.pending.delete("3_PRE_21");
+  state.restricted.add("3_PRE_21");
+  await page.reload(); await openHome(page);
+  await homeForm(page).getByRole("button", {name: "Submit Observations", exact: true}).click();
+  await expect(homeForm(page).getByText("Please answer at least one indicator before saving.")).toBeVisible();
+  await expect(page.getByRole("dialog", {name: "Mark the questions with photos"})).toHaveCount(0);
+  expect(state.submissions).toHaveLength(1);
+  expect(await photoDrafts(page)).toContain("ames_file_7_home_3_PRE_21");
+});
 
 test("partial parent submission stays pending and optional photo drafts survive reload until confirmed", async ({
   page,

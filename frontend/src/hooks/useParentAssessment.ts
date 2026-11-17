@@ -37,6 +37,13 @@ interface HomeEvaluation {
   testing_period: Period;
   answer: Answer;
 }
+export interface MissingPhotoMark {
+  domainId: number;
+  domainName: string;
+  questionId: number;
+  number: number;
+  text: string;
+}
 const VIEW_FLAGS = {
   PRE: "allow_parent_view_eccd_pre",
   MID: "allow_parent_view_eccd_mid",
@@ -66,6 +73,10 @@ export function useParentAssessment(child?: Student, readOnly = false) {
     scope: string;
     signature: string;
     count: number;
+  } | null>(null);
+  const [photoWarning, setPhotoWarning] = useState<{
+    scope: string;
+    questions: MissingPhotoMark[];
   } | null>(null);
   const saveLock = useRef(false);
   const identity = `${owner}_${id}`;
@@ -116,6 +127,13 @@ export function useParentAssessment(child?: Student, readOnly = false) {
     preferred && viewablePeriods.includes(preferred)
       ? preferred
       : (viewablePeriods[0] ?? null);
+  const photoScope = `${identity}_${selectedPeriod}`;
+  const photoEditable = selectedPeriod ? canEditPeriod(selectedPeriod) : false;
+  const currentPhotoScope = useRef({ scope: photoScope, data, editable: photoEditable });
+  useLayoutEffect(() => {
+    currentPhotoScope.current = { scope: photoScope, data, editable: photoEditable };
+  }, [photoScope, data, photoEditable]);
+  useLayoutEffect(() => { setPhotoWarning(null); }, [photoScope]);
   useEffect(() => {
     setPeriodSelection((previous) =>
       previous?.owner === owner &&
@@ -305,6 +323,43 @@ export function useParentAssessment(child?: Student, readOnly = false) {
     )
       return;
     const period = selectedPeriod;
+    // Read every editable row, including domains with no answers, before any writes or uploads.
+    saveLock.current = true;
+    setSaving(true);
+    try {
+      const photos = await Promise.all(checklistDomains.flatMap((domain) =>
+        domain.questions.flatMap((question) => {
+          if (question.is_home_based !== true ||
+              isQuestionSaved(question.question_id, period) ||
+              carryStatus(question.question_id, period) === "restricted") return [];
+          return [readFile(`ames_file_${owner}_home_${id}_${period}_${question.question_id}`)
+            .then((file) => ({ file, domain, question }))];
+        }),
+      ));
+      if (currentPhotoScope.current.scope !== photoScope ||
+          currentPhotoScope.current.data !== data || !currentPhotoScope.current.editable ||
+          getSessionUser()?.id !== owner) return;
+      const questions = photos.flatMap(({ file, domain, question }) =>
+        file && !getAnswer(question.question_id, period)
+          ? [{ domainId: domain.domain_id, domainName: domain.domain_name,
+              questionId: question.question_id, number: question.sequence_order,
+              text: question.question_text }]
+          : [],
+      );
+      if (questions.length) {
+        setConfirmation(null);
+        setPhotoWarning({ scope: photoScope, questions });
+        return;
+      }
+      setPhotoWarning(null);
+    } catch {
+      if (currentPhotoScope.current.scope === photoScope)
+        setFeedback({ scope: identity, error: "Could not check saved photos. Your drafts are preserved. Try submitting again.", success: "" });
+      return;
+    } finally {
+      saveLock.current = false;
+      setSaving(false);
+    }
     const snapshots = checklistDomains.flatMap((domain) => {
       const evaluations: HomeEvaluation[] = domain.questions.flatMap(
         (question) => {
@@ -545,6 +600,10 @@ export function useParentAssessment(child?: Student, readOnly = false) {
         a.question_id - b.question_id,
     );
   return {
+    photoScope,
+    missingPhotoMarks: photoWarning?.scope === photoScope && canEditHomeBased &&
+      selectedPeriod && canEditPeriod(selectedPeriod) ? photoWarning.questions : [],
+    closePhotoWarning: () => setPhotoWarning(null),
     submissionCount: confirmation?.count || 0,
     photoResource: (questionId: number, period: Period) =>
       `home_${id}_${period}_${questionId}`,

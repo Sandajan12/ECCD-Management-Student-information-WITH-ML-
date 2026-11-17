@@ -6,6 +6,12 @@ import type {Draft} from './draftStore.ts';
 export interface HomePhoto {uri: string; type: string; name: string; photo_id?: string;}
 export interface HomeValues { answers: Record<string, Answer>; photos?: Record<string, HomePhoto>; }
 export interface HomeSubmission { questionIds: number[]; cleanupWarning?: string; }
+export interface MissingPhotoMark { domainId: number; domainName: string; questionId: number; number: number; text: string; }
+export class MissingPhotoMarksError extends Error {
+  constructor(public questions: MissingPhotoMark[]) {
+    super('Some questions have a photo but no KAYA or DI-KAYA mark. Mark these questions or remove their photos before submitting. Your drafts are saved.');
+  }
+}
 export const homeKey = (student: number, period: Period, domain: number, owner: number) => `eccd_draft_${student}_${period}_${domain}_home_${owner}`;
 export class HomeObservations {
   constructor(private store: DraftStore, private owner: number, private student: number,
@@ -29,9 +35,24 @@ export class HomeObservations {
     if (photo) photos[String(question)] = photo; else delete photos[String(question)];
     return this.store.put(key, draft(this.owner, {...previous, answers: {...previous?.answers}, photos}));
   }
+  async validatePhotos(child: Child, assessment: Assessment, period: Period, confirmed: readonly number[] = []): Promise<void> {
+    await this.load(assessment, period);
+    if (!this.isCurrentOwner()) throw new ApiError('Account changed. Your original draft is preserved; sign in to that account to submit it.', 409);
+    const missing = assessment.domains.flatMap(domain => {
+      const values = this.store.peek<HomeValues>(homeKey(this.student, period, domain.domain_id, this.owner), this.owner)?.values;
+      return domain.questions.flatMap(question =>
+        values?.photos?.[String(question.question_id)] &&
+        !values.answers[String(question.question_id)] && question.carry_forward?.[period] !== 'locked' &&
+        !confirmed.includes(question.question_id) && !homeLock(child, assessment, question, period)
+          ? [{domainId: domain.domain_id, domainName: domain.domain_name, questionId: question.question_id,
+              number: question.sequence_order, text: question.question_text}]
+          : []);
+    });
+    if (missing.length) throw new MissingPhotoMarksError(missing);
+  }
   /** Called only from the Submit button; loading or reconnecting never calls this method. */
   async submit(child: Child, assessment: Assessment, period: Period, confirmed: readonly number[] = []): Promise<HomeSubmission> {
-    await this.load(assessment, period);
+    await this.validatePhotos(child, assessment, period, confirmed);
     const snapshots: Array<{key: string; snapshot: Draft<HomeValues>; answers: Record<string, Answer>}> = [];
     const payload: HomePayload = {student_id: this.student, testing_period: period, evaluations: []};
     for (const domain of assessment.domains) {

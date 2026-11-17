@@ -1,12 +1,12 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Pressable, Text, View } from "react-native";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Pressable, ScrollView, Text, View } from "react-native";
 import {launchImageLibrary} from "react-native-image-picker";
 import type { Assessment, Child, Dashboard, Period, User } from "./contracts";
 import { session } from "./session";
 import { messageOf } from "./sessionCore";
 import { drafts, useDraft } from "./drafts";
-import { homeKey, HomeObservations } from "./homeObservations";
-import type { HomeValues } from "./homeObservations";
+import { homeKey, HomeObservations, MissingPhotoMarksError } from "./homeObservations";
+import type { HomeValues, MissingPhotoMark } from "./homeObservations";
 import { homeLock, WINDOWS } from "./policy";
 import { homeScope, remainingHomeDomains, TEACHER_LOCK } from "./presentation";
 import type { HomeConfirmations } from "./presentation";
@@ -34,6 +34,8 @@ function HomeDomain({
   period,
   service,
   busy,
+  target,
+  reveal,
 }: {
   domain: Assessment["domains"][number];
   child: Child;
@@ -42,6 +44,8 @@ function HomeDomain({
   period: Period;
   service: HomeObservations;
   busy: boolean;
+  target?: MissingPhotoMark;
+  reveal: (row: View) => void;
 }) {
   const { snapshot, ready, storageError } = useDraft<HomeValues>(
     homeKey(child.student_id, period, domain.domain_id, user.id),
@@ -49,6 +53,13 @@ function HomeDomain({
   );
   const [expanded, setExpanded] = useState(false);
   const [photoError, setPhotoError] = useState("");
+  const targetRow = useRef<View>(null);
+  useEffect(() => {
+    if (target) setExpanded(true);
+  }, [target]);
+  useEffect(() => {
+    if (target && expanded && targetRow.current) reveal(targetRow.current);
+  }, [target, expanded, reveal]);
   const questions = domain.questions;
   return (
     <Card>
@@ -81,6 +92,10 @@ function HomeDomain({
           return (
             <View
               key={question.question_id}
+              ref={target?.questionId === question.question_id ? targetRow : undefined}
+              onLayout={() => {
+                if (target?.questionId === question.question_id && targetRow.current) reveal(targetRow.current);
+              }}
               style={{ gap: 8, paddingVertical: 8 }}
             >
               <Label>
@@ -96,7 +111,9 @@ function HomeDomain({
                   draft-not save
                 </Text>
               )}
-              <View style={styles.row}>
+              <View style={[styles.row, target?.questionId === question.question_id && {
+                borderWidth: 2, borderColor: "#b45309", borderRadius: 12, padding: 8,
+              }]}>
                 {(["KAYA", "DI-KAYA"] as const).map((answer) => (
                   <Button
                     key={answer}
@@ -195,7 +212,12 @@ export function OverviewScreen({
   const [period, setPeriod] = useState<Period>("PRE");
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
-  const [confirming, setConfirming] = useState(false);
+  const [confirming, setConfirming] = useState<string | null>(null);
+  const [photoWarning, setPhotoWarning] = useState<{ scope: string; error: MissingPhotoMarksError } | null>(null);
+  const [navigation, setNavigation] = useState<{ scope: string; question: MissingPhotoMark } | null>(null);
+  const scrollRef = useRef<ScrollView>(null);
+  const contentRef = useRef<View>(null);
+  const actionLock = useRef(false);
   const [expanded, setExpanded] = useState(false);
   const submittedDeclines = useRef(new Map<string, object>());
   const mounted = useRef(true);
@@ -206,6 +228,13 @@ export function OverviewScreen({
     [],
   );
   const scope = homeScope(user.id, child.student_id, period);
+  const liveScope = useRef(scope);
+  useEffect(() => {
+    liveScope.current = scope;
+    setPhotoWarning(null);
+    setNavigation(null);
+    setConfirming(null);
+  }, [scope]);
   const confirmedIds = (confirmed[scope] || []).filter((id) => {
     const review = state.data?.domains.flatMap(d => d.questions)
       .find(q => q.question_id === id)?.home_observations?.[period];
@@ -231,12 +260,36 @@ export function OverviewScreen({
           const uploaded = await session.request<{photo_id: string}>(`/api/eccd/parent/home-photos/${child.student_id}/${question}/${selectedPeriod}`, "POST", form);
           return uploaded.photo_id;
         },
-        () => session.snapshot().session?.user.id === user.id,
+        () => session.snapshot().session?.user.id === user.id &&
+          liveScope.current === scope,
       ),
-    [user.id, child.student_id],
+    [user.id, child.student_id, scope],
   );
+  const reveal = useCallback((row: View) => {
+    if (!contentRef.current || liveScope.current !== scope) return;
+    row.measureLayout(contentRef.current, (_x, y) => {
+      if (liveScope.current === scope) scrollRef.current?.scrollTo({ y: Math.max(0, y - 12), animated: true });
+    }, () => {});
+  }, [scope]);
+  const prepareSubmission = async () => {
+    if (actionLock.current || !state.data || !editable) return;
+    actionLock.current = true;
+    setBusy(true);
+    try {
+      await service.validatePhotos(child, state.data, period, confirmedIds);
+      if (liveScope.current === scope && mounted.current) setConfirming(scope);
+    } catch (error) {
+      if (liveScope.current !== scope || !mounted.current) return;
+      if (error instanceof MissingPhotoMarksError) setPhotoWarning({ scope, error });
+      else setNotice(messageOf(error));
+    } finally {
+      actionLock.current = false;
+      if (mounted.current) setBusy(false);
+    }
+  };
   const submit = async () => {
-    if (busy || !state.data) return;
+    if (actionLock.current || busy || !state.data || !editable) return;
+    actionLock.current = true;
     setBusy(true);
     setNotice("");
     try {
@@ -246,18 +299,23 @@ export function OverviewScreen({
         period,
         confirmedIds,
       );
+      if (!mounted.current || liveScope.current !== scope) return;
       for (const id of saved.questionIds) {
         const review = state.data.domains.flatMap(d => d.questions)
           .find(q => q.question_id === id)?.home_observations?.[period];
         if (review?.status === "declined") submittedDeclines.current.set(`${scope}_${id}`, review);
       }
       onConfirmed(period, saved.questionIds);
-      if (!mounted.current) return;
+      if (!mounted.current || liveScope.current !== scope) return;
       setNotice(saved.cleanupWarning || "Submitted — awaiting teacher review.");
       await Promise.all([state.reload(), dashboard.reload()]);
     } catch (error) {
-      if (mounted.current) setNotice(messageOf(error));
+      if (mounted.current && liveScope.current === scope) {
+        if (error instanceof MissingPhotoMarksError) setPhotoWarning({ scope, error });
+        else setNotice(messageOf(error));
+      }
     } finally {
+      actionLock.current = false;
       if (mounted.current) setBusy(false);
     }
   };
@@ -265,6 +323,8 @@ export function OverviewScreen({
   const toggle = () => setExpanded((value) => !value);
   return (
     <Screen
+      scrollRef={scrollRef}
+      contentRef={contentRef}
       onRefresh={async () => {
         await Promise.all([
           refreshChildren(),
@@ -279,7 +339,7 @@ export function OverviewScreen({
             icon="save"
             title={busy ? "Submitting…" : "Submit Observations"}
             disabled={disabled}
-            onPress={() => setConfirming(true)}
+            onPress={() => { void prepareSubmission(); }}
           />
         )
       }
@@ -335,6 +395,8 @@ export function OverviewScreen({
               period={period}
               service={service}
               busy={busy}
+              target={navigation?.scope === scope && navigation.question.domainId === domain.domain_id ? navigation.question : undefined}
+              reveal={reveal}
             />
           ))}
         </>
@@ -346,8 +408,25 @@ export function OverviewScreen({
         insights={insights}
         results={results}
       />
-      {confirming && (
-        <Dialog title="Submit Answers" close={() => setConfirming(false)}>
+      {photoWarning?.scope === scope && editable && (
+        <Dialog title="Mark the questions with photos" close={() => setPhotoWarning(null)}>
+          <Copy>{photoWarning.error.message}</Copy>
+          {photoWarning.error.questions.map(question => (
+            <Card key={question.questionId}>
+              <Label>{question.domainName}</Label>
+              <Copy>{question.number}. {question.text}</Copy>
+              <Button secondary title="Go to question" onPress={() => {
+                setPhotoWarning(null);
+                setExpanded(true);
+                setNavigation({ scope, question });
+              }} />
+            </Card>
+          ))}
+          <Button secondary title="Close" onPress={() => setPhotoWarning(null)} />
+        </Dialog>
+      )}
+      {confirming === scope && editable && (
+        <Dialog title="Submit Answers" close={() => setConfirming(null)}>
           <Copy>
             Submitted evaluations cannot be changed. Any unanswered questions
             can still be completed later.
@@ -356,14 +435,14 @@ export function OverviewScreen({
           <Button
             secondary
             title="Cancel"
-            onPress={() => setConfirming(false)}
+            onPress={() => setConfirming(null)}
           />
           <Button
             title="Submit Answers"
             icon="save"
             disabled={disabled}
             onPress={() => {
-              setConfirming(false);
+              setConfirming(null);
               void submit();
             }}
           />

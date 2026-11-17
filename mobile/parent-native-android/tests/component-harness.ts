@@ -85,6 +85,14 @@ export function componentHarness(file: string, mocks: Record<string, unknown>) {
       }
       return s.value;
     },
+    useCallback: (fn: unknown, deps: readonly unknown[]) => {
+      const s = slot();
+      if (!equal(s.deps, deps)) {
+        s.value = fn;
+        s.deps = deps;
+      }
+      return s.value;
+    },
     useEffect: (fn: () => (() => void) | void, deps: readonly unknown[]) => {
       const s = slot();
       if (equal(s.deps, deps)) return;

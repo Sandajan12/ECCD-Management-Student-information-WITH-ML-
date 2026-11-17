@@ -583,16 +583,23 @@ export function Screen({
   children,
   footer,
   onRefresh,
+  scrollRef,
+  contentRef,
 }: {
   children: React.ReactNode;
   footer?: React.ReactNode;
   onRefresh?: () => Promise<void>;
+  scrollRef?: React.RefObject<ScrollView | null>;
+  contentRef?: React.RefObject<View | null>;
 }) {
   const color = useContext(BrandColor),
     pull = usePullRefresh(onRefresh);
   return (
     <View style={{ flex: 1 }}>
       <ScrollView
+        ref={scrollRef}
+        // React Native's innerViewRef type omits the nullable mount lifecycle.
+        innerViewRef={contentRef as React.RefObject<View> | undefined}
         contentContainerStyle={[styles.content, { flexGrow: 1 }]}
         alwaysBounceVertical
         refreshControl={

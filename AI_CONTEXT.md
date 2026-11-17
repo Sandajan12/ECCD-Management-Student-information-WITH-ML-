@@ -50,7 +50,14 @@ submitted" without a submit action. Resubmission replaces only the declined
 review with a fresh pending ID (rejecting stale teacher decisions), permits new
 optional photos, and retains old photo cleanup tombstones. Virtual carried-forward
 KAYA stays visible until explicit confirmed submission. Collapsing/reloading never
-clears answer/photo drafts; partial submissions remain manual. Optional local photo
+clears answer/photo drafts; partial submissions remain manual. Both clients block
+the entire batch before confirmation and recheck before submission when an editable
+question has a photo without KAYA/DI-KAYA. The warning lists domain/number/text;
+**Go to question** expands and highlights its controls (web also focuses them).
+Parents must mark the question or remove its photo, then manually submit again.
+Validation preserves drafts and makes no upload/pending-request writes; ignore
+other scopes and saved/pending/restricted rows. Inherited KAYA counts as a mark.
+Optional local photo
 previews use revocable Blob URLs, preserving the existing private review flow.
 
 Photo uploads no longer consume the five-per-ten-minute export/backup budget.

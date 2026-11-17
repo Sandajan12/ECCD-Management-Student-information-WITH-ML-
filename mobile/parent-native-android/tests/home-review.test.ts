@@ -1,7 +1,8 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {assessmentFixture} from './assessment-fixture.ts';
-import {HomeObservations, homeKey} from '../src/homeObservations.ts';
+import {HomeObservations, homeKey, MissingPhotoMarksError} from '../src/homeObservations.ts';
+import {DraftStore} from '../src/draftStore.ts';
 import type {HomeValues} from '../src/homeObservations.ts';
 import {homeLock} from '../src/policy.ts';
 import {ApiError} from '../src/sessionCore.ts';
@@ -55,7 +56,7 @@ test('photo transport failures retain generic offline guidance and never submit 
   assert.equal(f.store.peek<HomeValues>(homeKey(7, 'PRE', 2, 123), 123)?.values.answers['45'], 'KAYA');
 });
 
-test('partial submission sends optional photo reference and preserves photo-only/unrelated drafts', async () => {
+test('photo without mark blocks the whole partial submission until the photo is removed', async () => {
   const f = assessmentFixture();
   f.assessment.domains[0].questions[0].photo_eligible = {PRE: true};
   const photo = {uri: 'file:///private/local-proof.jpg', type: 'image/jpeg', name: 'proof.jpg'};
@@ -74,12 +75,79 @@ test('partial submission sends optional photo reference and preserves photo-only
   await service.change(2, 'PRE', 45, 'KAYA');
   await service.load(f.assessment, 'PRE');
   assert.equal(posts, 0); assert.equal(uploads, 0);
+  const before = new Map(f.records);
+  await assert.rejects(service.submit(f.child, f.assessment, 'PRE'), error => {
+    assert.ok(error instanceof MissingPhotoMarksError);
+    assert.deepEqual(error.questions, [{domainId: 3, domainName: 'Language', questionId: 48, number: 1, text: 'Indicator 48'}]);
+    return true;
+  });
+  assert.deepEqual(f.records, before);
+  assert.equal(posts, 0); assert.equal(uploads, 0);
+  await service.photo(3, 'PRE', 48, null);
+  assert.equal(posts, 0); assert.equal(uploads, 0);
   const result = await service.submit(f.child, f.assessment, 'PRE');
   assert.deepEqual(result.questionIds, [45]);
   assert.equal(posts, 1); assert.equal(uploads, 1);
-  assert.ok(f.store.peek<HomeValues>(homeKey(7, 'PRE', 3, 123), 123)?.values.photos?.['48']);
+  assert.equal(f.store.peek<HomeValues>(homeKey(7, 'PRE', 3, 123), 123)?.values.photos?.['48'], undefined);
   assert.equal(f.store.peek(homeKey(7, 'PRE', 2, 123), 123), null);
   assert.equal([...f.records.values()].some(record => record.includes('base64')), false);
+});
+
+test('photo without mark across domains survives reload and requires explicit marking and submission', async () => {
+  const f = assessmentFixture();
+  const photo = {uri: 'file:///proof.jpg', type: 'image/jpeg', name: 'proof.jpg'};
+  let posts = 0, uploads = 0;
+  let service = new HomeObservations(f.store, 123, 7, async () => {posts++;}, async () => {uploads++; return 'a'.repeat(32);});
+  for (const [domain, question] of [[2, 45], [3, 48]]) {
+    await service.photo(domain, 'PRE', question, photo);
+    f.assessment.domains.find(d => d.domain_id === domain)!.questions.find(q => q.question_id === question)!.photo_eligible = {PRE: true};
+  }
+  const restored = new DraftStore(f.storage);
+  service = new HomeObservations(restored, 123, 7, async () => {posts++;}, async () => {uploads++; return 'a'.repeat(32);});
+  await assert.rejects(service.validatePhotos(f.child, f.assessment, 'PRE'), error => {
+    assert.ok(error instanceof MissingPhotoMarksError);
+    assert.deepEqual(error.questions.map(q => q.questionId), [45, 48]); return true;
+  });
+  await service.change(2, 'PRE', 45, 'KAYA');
+  await service.change(3, 'PRE', 48, 'DI-KAYA');
+  await service.validatePhotos(f.child, f.assessment, 'PRE');
+  // A mark removed after confirmation must be checked again inside submit.
+  await service.change(2, 'PRE', 45, null);
+  const before = new Map(f.records);
+  await assert.rejects(service.submit(f.child, f.assessment, 'PRE'), MissingPhotoMarksError);
+  assert.deepEqual(f.records, before);
+  assert.equal(posts, 0); assert.equal(uploads, 0);
+  await service.change(2, 'PRE', 45, 'KAYA');
+  assert.equal(posts, 0);
+  assert.deepEqual((await service.submit(f.child, f.assessment, 'PRE')).questionIds, [45, 48]);
+  assert.equal(posts, 1); assert.equal(uploads, 2);
+});
+
+test('photo without mark validation ignores other owners, children, periods and locked rows', async () => {
+  const f = assessmentFixture();
+  const photo = {uri: 'file:///proof.jpg', type: 'image/jpeg', name: 'proof.jpg'};
+  const service = new HomeObservations(f.store, 123, 7, async () => {});
+  for (const [owner, student, period] of [[456, 7, 'PRE'], [123, 8, 'PRE'], [123, 7, 'MID']] as const) {
+    await new HomeObservations(f.store, owner, student, async () => {}).photo(2, period, 45, photo);
+  }
+  const unrelated = new Map(f.records);
+  await service.validatePhotos(f.child, f.assessment, 'PRE');
+  await service.photo(2, 'PRE', 45, photo);
+  const q = f.assessment.domains[0].questions[0];
+  for (const status of ['pending', 'accepted', 'submitted'] as const) {
+    q.home_observations = {PRE: {status, answer: 'KAYA', submitted_at: '2026-11-17T00:00:00Z'}};
+    await service.validatePhotos(f.child, f.assessment, 'PRE');
+  }
+  q.home_observations = {};
+  q.carry_forward = {PRE: 'restricted'};
+  await service.validatePhotos(f.child, f.assessment, 'PRE');
+  q.carry_forward.PRE = 'locked'; // Effective inherited KAYA is a mark; photo eligibility remains a separate check.
+  await service.validatePhotos(f.child, f.assessment, 'PRE');
+  q.carry_forward.PRE = null;
+  await service.validatePhotos(f.child, f.assessment, 'PRE', [45]);
+  f.child.allow_parent_edit_home_based_eccd = false;
+  await service.validatePhotos(f.child, f.assessment, 'PRE');
+  for (const [key, record] of unrelated) assert.equal(f.records.get(key), record);
 });
 
 test('photo upload and parent submission require manual retries; stale carry conflicts retain URI and answers', async () => {

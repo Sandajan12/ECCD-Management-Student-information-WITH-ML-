@@ -1,5 +1,31 @@
 # AMES Context History
 
+## 2026-11-17 — Parent photo without a mark warning (local)
+
+Implemented `PARENT_PHOTO_MISSING_MARK_PLAN.md` on `feat/parent-native-android`.
+Web/native check every editable home question before confirmation and recheck
+before submission. A photo without KAYA/DI-KAYA blocks the whole batch without
+uploads or pending-request writes. The warning lists domain/original number/text;
+Go to question expands/highlights its controls and focuses them on the website.
+Correction/removal requires another manual submission. Owner/child/period scopes,
+inherited KAYA, existing locks and revision-safe draft retention remain intact.
+Native `Screen` gained optional scroll/content refs, preserving existing UI code.
+
+Consulted the existing graph and refreshed the relevant TypeScript AST import
+mapping locally. Ponytail checkpoint found no new dependencies or unnecessary
+general abstractions. Only the five approved verification commands were used:
+
+- Frontend app and node TypeScript: **passed**.
+- Native TypeScript: **passed**; native `pnpm.cmd test`: **63 passed**, no skips.
+- Explicit `parent-assessment.spec.ts --grep "photo without mark"` browser run:
+  **18 passed** across desktop/tablet/mobile (six cases per viewport).
+
+Native harness checks cover modal/navigation handlers and measured-scroll calls;
+real Android scrolling, picker and device acceptance remain untested. Browser
+tests use local mocked APIs; no backend/database test, migration, remote service,
+deployment, push, main operation or APK build ran. Unrelated work and the older
+`mobile/parent-android` were preserved.
+
 ## 2026-11-17 — System branding separated from official school identity (local)
 
 On `feat/parent-native-android`, renamed the settings column/API/client branding

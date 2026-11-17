@@ -17,6 +17,63 @@ const press = (node: Element) => {
 };
 const user = { id: 123, role: "user", full_name: "Parent" };
 
+test("photo without mark warning blocks confirmation, reveals its collapsed row, and rechecks on submit", async () => {
+  const f = assessmentFixture();
+  let posts = 0;
+  const service = new HomeObservations(f.store, 123, 7, async () => {});
+  const photo = {uri: "file:///proof.jpg", name: "proof.jpg", type: "image/jpeg"};
+  await service.photo(2, "PRE", 45, photo);
+  const harness = componentHarness("OverviewScreen.tsx", {
+    "./resources": {useResource: (path: string) => ({data: path.includes("dashboard-stats") ? f.dashboard : f.assessment, reload: async () => {}, loading: false}), Feedback: "Feedback"},
+    "./drafts": {drafts: f.store, useDraft: (key: string) => ({ready: true, snapshot: f.store.peek(key, 123)})},
+    "./session": {session: {snapshot: () => ({session: {user}}), request: async () => {posts++;}}},
+    "./AssessmentScreens": {OverviewSummary: "OverviewSummary"},
+  });
+  const props: Props = {user, child: f.child, confirmed: {}, onConfirmed() {}, refreshChildren: async () => {}, header: null, insights() {}, results() {}};
+  const screen = harness.mount("OverviewScreen", props);
+  press(find(screen.render(), n => n.props.accessibilityLabel === "Assess Home-Based Questions"));
+  press(screen.render().props.footer as Element);
+  await new Promise<void>(resolve => setImmediate(resolve));
+  let tree = screen.render();
+  const warning = find(tree, n => n.type === "Dialog");
+  assert.equal(warning.props.title, "Mark the questions with photos");
+  assert.match(text(warning), /Motor.*3\s*\.\s*Indicator 45/);
+  assert.equal(posts, 0);
+  press(find(warning, n => n.props.title === "Go to question"));
+  tree = screen.render();
+  const domain = find(tree, n => typeof n.type === "function" && n.type.name === "HomeDomain" && !!n.props.target);
+  const inner = harness.child(domain);
+  inner.render(); // Opening the target expands the initially collapsed domain.
+  let inside = inner.render();
+  assert.match(text(inside), /Indicator 45/);
+  let scrolled = -1;
+  const content = {};
+  (tree.props.contentRef as {current: unknown}).current = content;
+  (tree.props.scrollRef as {current: unknown}).current = {scrollTo: ({y}: {y: number}) => {scrolled = y;}};
+  const row = find(inside, n => n.type === "View" && !!n.props.ref);
+  (row.props.ref as {current: unknown}).current = {measureLayout: (relative: unknown, done: (x: number, y: number) => void) => {assert.equal(relative, content); done(0, 240);}};
+  (row.props.onLayout as () => void)();
+  assert.equal(scrolled, 228);
+  assert.equal(elements(row).some(n => Array.isArray(n.props.style) && n.props.style.some(s => (s as Props)?.borderColor === "#b45309")), true);
+  assert.equal(posts, 0);
+  // Remove the photo, then confirm a photo-free partial answer.
+  await service.photo(2, "PRE", 45, null);
+  await service.change(2, "PRE", 45, "KAYA");
+  press(screen.render().props.footer as Element);
+  await new Promise<void>(resolve => setImmediate(resolve));
+  const confirm = find(screen.render(), n => n.type === "Dialog");
+  assert.equal(confirm.props.title, "Submit Answers");
+  await service.photo(3, "PRE", 48, photo); // Change a draft while the confirmation is open.
+  press(find(confirm, n => n.type === "Button" && n.props.title === "Submit Answers"));
+  await new Promise<void>(resolve => setImmediate(resolve));
+  assert.equal(find(screen.render(), n => n.type === "Dialog").props.title, "Mark the questions with photos");
+  assert.equal(posts, 0);
+  // Warning and navigation cannot leak to a replacement child/period.
+  const switched = screen.render({...props, child: {...f.child, student_id: 8}});
+  assert.equal(elements(switched).some(n => n.type === "Dialog"), false);
+  assert.equal(elements(switched).some(n => typeof n.type === "function" && n.type.name === "HomeDomain" && !!n.props.target), false);
+});
+
 describe("6. Assessment touch, presentation and navigation handlers (mocked hosts)", () => {
   test("inherited home rows stay editable-list visible with KAYA selected and DI-KAYA disabled", () => {
     const f = assessmentFixture();
@@ -322,6 +379,7 @@ describe("6. Assessment touch, presentation and navigation handlers (mocked host
     );
     let tree = screen.render();
     press(tree.props.footer as Element);
+    await new Promise<void>((resolve) => setImmediate(resolve));
     press(
       find(
         screen.render(),
@@ -355,6 +413,7 @@ describe("6. Assessment touch, presentation and navigation handlers (mocked host
       (node.props.domain as (typeof f.assessment.domains)[number]).questions.some(q => q.question_id === 45)));
     await new HomeObservations(f.store, 123, 7, async () => {}).change(2, "PRE", 45, "DI-KAYA");
     press(tree.props.footer as Element);
+    await new Promise<void>((resolve) => setImmediate(resolve));
     press(find(screen.render(), node => node.type === "Button" && node.props.title === "Submit Answers"));
     await new Promise<void>(resolve => setImmediate(resolve));
     assert.equal(posts, 2);
