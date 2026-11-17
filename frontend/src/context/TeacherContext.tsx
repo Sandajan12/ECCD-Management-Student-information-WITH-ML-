@@ -10,6 +10,8 @@ import type { ReactNode } from "react";
 import { useAuth } from "./AuthContext";
 import { errorMessage } from "../services/api";
 import { sharedGet } from "../services/sharedGet";
+import { refreshOnWake } from "../hooks/refreshOnWake";
+import { useHomeObservations } from "../hooks/useHomeObservations";
 import type { Permissions, Section, SessionUser } from "../types";
 
 export interface TeacherDashboardFilters {
@@ -36,6 +38,7 @@ interface TeacherContextState {
   access: TeacherAccess | null;
   initialized: boolean;
   refresh: () => Promise<void>;
+  homeObservations: ReturnType<typeof useHomeObservations>;
 }
 const TeacherContext = createContext<TeacherContextState | null>(null);
 interface TeacherProviderProps {
@@ -45,6 +48,8 @@ interface TeacherProviderProps {
 export function TeacherProvider({ children }: TeacherProviderProps) {
   const { user, token, updateUser } = useAuth();
   const userId = user?.id;
+  const authenticated = Boolean(token);
+  const homeObservations = useHomeObservations(userId || 0);
   const latestUser = useRef<SessionUser | null>(user);
   useEffect(() => {
     latestUser.current = user;
@@ -76,7 +81,7 @@ export function TeacherProvider({ children }: TeacherProviderProps) {
     [storageKey],
   );
   const refresh = useCallback(async () => {
-    if (!userId || !token) return;
+    if (!userId || !authenticated) return;
     // The filters endpoint is scoped to active teacher assignments; /sections
     // alone returns the whole school and must not define teacher choices.
     const version = ++requestVersion.current;
@@ -124,16 +129,13 @@ export function TeacherProvider({ children }: TeacherProviderProps) {
     } finally {
       if (version === requestVersion.current) setLoading(false);
     }
-  }, [userId, token, cacheKey, storageKey, selectSection, updateUser]);
+  }, [userId, authenticated, cacheKey, storageKey, selectSection, updateUser]);
   useEffect(() => {
     void refresh();
-    const reload = () => void refresh();
-    window.addEventListener("focus", reload);
-    window.addEventListener("online", reload);
+    const stop = refreshOnWake(refresh);
     return () => {
       ++requestVersion.current;
-      window.removeEventListener("focus", reload);
-      window.removeEventListener("online", reload);
+      stop();
     };
   }, [refresh]);
   return (
@@ -148,6 +150,7 @@ export function TeacherProvider({ children }: TeacherProviderProps) {
         access,
         initialized,
         refresh,
+        homeObservations,
       }}
     >
       {children}

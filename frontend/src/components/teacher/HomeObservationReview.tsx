@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Alert,
   Box,
@@ -14,24 +14,16 @@ import {
 } from "@mui/material";
 import API, { errorMessage, getSessionUser } from "../../services/api";
 import { useAuth } from "../../context/AuthContext";
+import { useTeacher } from "../../context/TeacherContext";
 import {
   readDraft,
   storeDraft,
   confirmDraft,
   type Draft,
 } from "../../utils/drafts";
-import type { Answer, Domain, Period, Student } from "../../types";
+import type { Domain, Period, Student } from "../../types";
 import { PERIODS, PERIOD_LABELS, studentName } from "../../types";
 
-interface Observation {
-  observation_id: number;
-  student_id: number;
-  question_id: number;
-  testing_period: Period;
-  answer: Answer;
-  submitted_at: string;
-  has_photo: boolean;
-}
 type Decision = "accepted" | "declined";
 interface ReviewValues {
   decisions: Record<number, Decision>;
@@ -86,7 +78,8 @@ export default function HomeObservationReview({
   onSaved: () => void;
 }) {
   const { user } = useAuth();
-  const [rows, setRows] = useState<Observation[]>([]);
+  const { homeObservations } = useTeacher();
+  const { rows, refresh, error: loadError } = homeObservations;
   const [open, setOpen] = useState(false);
   const [student, setStudent] = useState<number | "">("");
   const [period, setPeriod] = useState<Period>("PRE");
@@ -97,23 +90,6 @@ export default function HomeObservationReview({
     new Map<string, Draft<ReviewValues>>(),
   );
   const saving = useRef(false);
-  const refresh = useCallback(async () => {
-    try {
-      const response = await API.get<Observation[]>(
-        "/api/eccd/home-observations/pending",
-      );
-      if (!Array.isArray(response.data))
-        throw new Error("Pending review list could not be loaded.");
-      setRows(response.data);
-    } catch (err) {
-      setError(errorMessage(err));
-    }
-  }, []);
-  useEffect(() => {
-    void refresh();
-    const timer = window.setInterval(() => void refresh(), 20000);
-    return () => window.clearInterval(timer);
-  }, [refresh]);
   const selected =
     students.some((s) => s.student_id === student) &&
     rows.some((r) => r.student_id === student)
@@ -227,7 +203,9 @@ export default function HomeObservationReview({
         </DialogTitle>
         <DialogContent dividers>
           <Stack spacing={3}>
-            {error && <Alert severity="warning">{error}</Alert>}
+            {(error || loadError) && (
+              <Alert severity="warning">{error || loadError}</Alert>
+            )}
             <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
               <TextField
                 select

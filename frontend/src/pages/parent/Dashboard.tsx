@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
+import { refreshOnWake } from "../../hooks/refreshOnWake";
 import { isAxiosError } from "axios";
 import type { SelectChangeEvent } from "@mui/material";
 import {
@@ -129,6 +130,12 @@ const Dashboard: React.FC = () => {
   const roster = useChildren();
   const linkedChildren = roster.children;
   const activeChild = roster.child;
+  const childId = activeChild?.student_id;
+  const adviserName = [activeChild?.teacher_fname, activeChild?.teacher_lname]
+    .filter(Boolean)
+    .join(" ")
+    .trim()
+    .toLowerCase();
   const assessment = useParentAssessment(activeChild);
   const activeChildIndex = Math.max(
     0,
@@ -173,14 +180,14 @@ const Dashboard: React.FC = () => {
     }
   }, [roster.loading, roster.children.length, roster.error]);
   useEffect(() => {
-    const version = ++requestVersion.current;
-    const id = activeChild?.student_id;
+    const id = childId;
     setDomains([]);
     setDashboardStats(null);
     setRecentMessages([]);
     setHydratedChild(0);
     if (!id) return;
     const load = async () => {
+      const version = ++requestVersion.current;
       const results = await Promise.allSettled([
         api.get<ParentStats>(`/api/eccd/parent/dashboard-stats/${id}`),
         api.get<DomainProgress[]>(`/api/eccd/parent/domains-progress/${id}`),
@@ -195,18 +202,13 @@ const Dashboard: React.FC = () => {
       setHydratedChild(id);
       if (contacts.status === "fulfilled" && contacts.value.data.myId) {
         const parentId = contacts.value.data.myId;
-        const adviser = [activeChild.teacher_fname, activeChild.teacher_lname]
-          .filter(Boolean)
-          .join(" ")
-          .trim()
-          .toLowerCase();
         const all = contacts.value.data.contacts;
         const matching = all.filter(
           (contact) =>
             contact.name
               .replace(/^Teacher\s+/i, "")
               .trim()
-              .toLowerCase() === adviser,
+              .toLowerCase() === adviserName,
         );
         const relevant = matching.length ? matching : all;
         const histories = await Promise.allSettled(
@@ -242,10 +244,12 @@ const Dashboard: React.FC = () => {
       }
     };
     void load();
+    const stop = refreshOnWake(load);
     return () => {
       ++requestVersion.current;
+      stop();
     };
-  }, [activeChild]);
+  }, [childId, adviserName]);
   const handleLinkLrn = async () => {
     if (linkingLock.current) return;
     const lrn = lrnNumber.trim();

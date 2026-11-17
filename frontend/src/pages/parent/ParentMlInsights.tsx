@@ -16,6 +16,7 @@ import AutoAwesomeRounded from "@mui/icons-material/AutoAwesomeRounded";
 import HomeOutlined from "@mui/icons-material/HomeOutlined";
 import API, { errorMessage } from "../../services/api";
 import { useChildren } from "../../hooks/useChildren";
+import { refreshOnWake } from "../../hooks/refreshOnWake";
 import ForecastSupportNotice from "../../components/common/ForecastSupportNotice";
 import type { ForecastState } from "../../components/common/ForecastSupportNotice";
 
@@ -508,10 +509,7 @@ export default function ParentMlInsights() {
       }
     };
     void refresh();
-    const reload = () => void refresh();
-    const timer = window.setInterval(reload, 20000);
-    window.addEventListener("focus", reload);
-    window.addEventListener("online", reload);
+    const stop = refreshOnWake(refresh);
     return () => {
       current = false;
       controller.abort();
@@ -519,9 +517,7 @@ export default function ParentMlInsights() {
       predictionController.current?.abort();
       setPredicting(null);
       setPrediction(null);
-      window.clearInterval(timer);
-      window.removeEventListener("focus", reload);
-      window.removeEventListener("online", reload);
+      stop();
     };
   }, [selected, childId]);
 
@@ -586,13 +582,12 @@ export default function ParentMlInsights() {
         <Typography variant="body2" sx={{ mt: 1 }}>
           Educational research prototype for instructional planning, not a
           formal clinical diagnosis. Standalone sigmoid-calibrated Random Forest
-          evaluation reported 92.16%
-          mixed-holdout accuracy, but only 37.5% on eight real holdout learners.
-          All 29 observed real POST outcomes were Average and contributed
-          generator anchors; there is no independent real-world validation.
-          Probabilities are not calibrated clinical confidence. Advanced
-          developmental classes are unsupported. Home activities do not
-          establish treatment effectiveness.
+          evaluation reported 92.16% mixed-holdout accuracy, but only 37.5% on
+          eight real holdout learners. All 29 observed real POST outcomes were
+          Average and contributed generator anchors; there is no independent
+          real-world validation. Probabilities are not calibrated clinical
+          confidence. Advanced developmental classes are unsupported. Home
+          activities do not establish treatment effectiveness.
         </Typography>
       </details>
       {childrenError && (

@@ -8,9 +8,11 @@ const pending = new Map<string, Promise<unknown>>();
 // Strict Mode effect replay) without caching permissions after a refresh.
 // Consumers ignore superseded results independently; they must not abort a
 // request another consumer is still using.
+// Confirmed mutations/manual refreshes may bypass a read started before a save.
 export function sharedGet<T>(
   path: string,
   params?: SharedGetParams,
+  fresh = false,
 ): Promise<T> {
   const key = JSON.stringify([
     getAccessToken(),
@@ -18,11 +20,13 @@ export function sharedGet<T>(
     Object.entries(params || {}).sort(([a], [b]) => a.localeCompare(b)),
   ]);
   const existing = pending.get(key);
-  if (existing) return existing as Promise<T>;
+  if (existing && !fresh) return existing as Promise<T>;
 
   const request = API.get<T>(path, { params })
     .then(({ data }) => data)
-    .finally(() => pending.delete(key));
+    .finally(() => {
+      if (pending.get(key) === request) pending.delete(key);
+    });
   pending.set(key, request);
   return request;
 }

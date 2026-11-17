@@ -298,9 +298,17 @@ Important routed workflows:
   Providers/shared GETs coalesce requests without overwriting unsaved drafts.
 - Parent Overview contains home observations; Parent ECCD Checklists shows saved
   results under independent marks access. Score release and editing remain separate.
-- `useChildren` refreshes eligible children every 20 seconds in visible tabs and
-  on focus/visibility/reconnection; selection falls back to an eligible sibling
-  or empty state. Access loss preserves drafts.
+- Parent/Teacher data loads on mount, explicit saves/manual refresh, and visible
+  online focus/visibility/reconnection with a minimum 60-second wake cooldown
+  (`hooks/refreshOnWake.ts`). No idle child, assessment, readiness or pending-home
+  polling. Child selection still falls back to an eligible sibling or empty state;
+  access loss preserves drafts. Parent dashboard effects depend on child/adviser
+  primitives, and Teacher provider loads do not repeat on access-token renewal.
+- TeacherProvider owns `useHomeObservations` once per account. Review consumers
+  share its pending rows/error/refresh and the credential-scoped `sharedGet`
+  in-flight request. Initial assessment reads also coalesce; explicit review/save
+  refreshes bypass older reads so pre-save snapshots cannot replace confirmed work.
+  Settings callbacks remain stable and settings are not polled.
 
 The ignored local `graphify-out/graph.json` predates recent changes. Check
 freshness and refresh the relevant AST mapping before shared-code refactors;
@@ -877,8 +885,11 @@ and active assignment. Socket.IO uses `auth: { token }` and authorized rooms
 `teacher-N-parent-M`. **HTTP persistence is authoritative**: committed messages
 and exact read receipts push to currently authorized sessions/tabs. Failed
 transport delivery does not turn a confirmed save into failure. One connection
-per portal tab deduplicates messages; reconnect and bounded/backed-off HTTP
-fallback recover reads. Failed sends retain scoped drafts for explicit manual
+per portal tab deduplicates messages. Web transports prefer WebSocket then polling
+(`tryAllTransports` preserves fallback); there is no recurring HTTP fallback-read
+loop. Socket events refresh unread counts; reconnect and visible online wake
+events recover reads with a minimum 60-second cooldown, honoring Retry-After.
+Failed sends retain scoped drafts for explicit manual
 retry. Read recovery never authorizes automatic replay of message writes.
 
 Push is process-local under the current single-process assumption. Multiple

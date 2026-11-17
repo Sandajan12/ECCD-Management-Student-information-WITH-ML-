@@ -23,6 +23,7 @@ import { useSessionField } from "../../utils/sessionDrafts";
 import type { Permissions, SessionResponse } from "../../types";
 import { passwordValid } from "../../components/ForceChangePassword";
 import { useTeacher } from "../../context/TeacherContext";
+import { refreshOnWake } from "../../hooks/refreshOnWake";
 import ParentAssessmentAccessSettings from "../../components/teacher/ParentAssessmentAccessSettings";
 interface PasswordChallenge {
   email?: string;
@@ -162,12 +163,12 @@ const TeacherSettings: React.FC = () => {
       }
     };
     void load();
-    window.addEventListener("online", load);
+    const stop = refreshOnWake(load);
     return () => {
       current = false;
       accessGeneration.current++;
       accessReady.current = false;
-      window.removeEventListener("online", load);
+      stop();
     };
   }, [accessKey, owner]);
   const persistSettingChange = (updates: Partial<Permissions>) => {

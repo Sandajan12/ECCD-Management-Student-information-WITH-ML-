@@ -3,6 +3,7 @@ import { isAxiosError } from "axios";
 import { useAuth } from "../context/AuthContext";
 import API, { errorMessage, isNetworkError } from "../services/api";
 import type { Student } from "../types";
+import { refreshOnWake } from "./refreshOnWake";
 import {
   confirmDraft,
   readDraft,
@@ -65,17 +66,15 @@ export function useParentProfile(id: number) {
     setRecord(null);
     void refresh();
     const reload = () => void refresh();
+    const stop = refreshOnWake(refresh);
     const redraw = () => updateDrafts(new Map(memoryDrafts.current));
-    window.addEventListener("online", reload);
-    window.addEventListener("focus", reload);
     window.addEventListener("ames-record-synced", reload);
     window.addEventListener("ames-drafts-changed", redraw);
     window.addEventListener("storage", redraw);
     return () => {
       currentKey.current = "";
       ++version.current;
-      window.removeEventListener("online", reload);
-      window.removeEventListener("focus", reload);
+      stop();
       window.removeEventListener("ames-record-synced", reload);
       window.removeEventListener("ames-drafts-changed", redraw);
       window.removeEventListener("storage", redraw);

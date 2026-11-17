@@ -20,6 +20,16 @@ const roster = Array.from({ length: 31 }, (_, index) => ({
 async function studentList(initialRoster = roster) {
   const slots = [], effects = [], listeners = {}, batches = [], exports = {};
   let cursor = 0, students = initialRoster;
+  let now = 100000;
+  const browser = { addEventListener: (name, callback) => { listeners[name] = callback; }, removeEventListener() {} };
+  const wake = {};
+  runInNewContext(ts.transpileModule(readFileSync(resolve(__dirname, "../src/hooks/refreshOnWake.ts"), "utf8"), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS },
+  }).outputText, {
+    exports: wake, window: browser,
+    document: { ...browser, visibilityState: "visible" }, navigator: { onLine: true },
+    Date: class extends Date { static now() { return now; } },
+  });
   const hooks = {
     useState(initial) {
       const slot = cursor++;
@@ -36,9 +46,10 @@ async function studentList(initialRoster = roster) {
   };
   runInNewContext(compiled, {
     exports, AbortController,
-    window: { addEventListener: (name, callback) => { listeners[name] = callback; }, removeEventListener() {} },
+    window: browser,
     require(name) {
       if (name === "react") return hooks;
+      if (name.endsWith("hooks/refreshOnWake")) return wake;
       if (name === "@mui/material") return new Proxy({}, { get: (_, key) => String(key) });
       if (name.endsWith("services/api")) return { __esModule: true, default: { get: async () => ({ data: students }) } };
       if (name.endsWith("context/TeacherContext")) return { useTeacher: () => ({ section: { section_id: 1 } }) };
@@ -66,7 +77,7 @@ async function studentList(initialRoster = roster) {
   render();
   await flush();
   return { render, batches, flush, async reload(next) {
-    students = next; listeners.online(); render(); await flush();
+    students = next; now += 60000; listeners.online(); render(); await flush();
   } };
 }
 const pager = (nodes) => nodes.find((node) => node.type === "Pagination");

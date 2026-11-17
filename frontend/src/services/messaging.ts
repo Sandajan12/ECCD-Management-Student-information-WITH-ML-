@@ -15,8 +15,8 @@ interface MessagingSnapshot {
   unread: number;
 }
 
-// One instance per authenticated portal tab. It owns all recovery timers so
-// layout and chat cannot start independent polling/reconnect request storms.
+// One instance per authenticated portal tab; socket events and wake recovery
+// keep layout and chat in sync without idle HTTP polling.
 export class MessagingClient {
   private socket: Socket | null = null;
   private snapshot: MessagingSnapshot = { ready: false, unread: 0 };
@@ -29,12 +29,11 @@ export class MessagingClient {
   private controller = new AbortController();
   private closed = false;
   private recovery: Promise<unknown> | null = null;
-  private fallback?: ReturnType<typeof setTimeout>;
   private unreadTimer?: ReturnType<typeof setTimeout>;
   private retryTimer?: ReturnType<typeof setTimeout>;
   private socketRetry?: ReturnType<typeof setTimeout>;
   private startup?: ReturnType<typeof setTimeout>;
-  private backoff = 30000;
+  private lastRecovery = 0;
   private cooldown = 0;
   private unreadRevision = 0;
 
@@ -98,7 +97,7 @@ export class MessagingClient {
       this.retryTimer = setTimeout(this.recover, this.retryDelay());
     }
   };
-  retryDelay = () => Math.max(30000, this.cooldown - Date.now());
+  retryDelay = () => Math.max(60000, this.cooldown - Date.now());
   isCoolingDown = () => Date.now() < this.cooldown;
   request<T>(method: "get" | "put", path: string, data?: unknown): Promise<T> {
     const key = `${method}:${path}:${JSON.stringify(data)}`;
@@ -144,62 +143,23 @@ export class MessagingClient {
     );
   };
   private recover = () => {
-    if (this.closed || this.recovery) return;
-    if (
-      !this.socket?.connected &&
-      (!navigator.onLine || document.visibilityState !== "visible")
-    ) {
-      this.schedule();
-      return;
-    }
+    if (this.closed || this.recovery || !this.snapshot.ready) return;
+    if (!navigator.onLine || document.visibilityState !== "visible") return;
     if (Date.now() < this.cooldown) {
       clearTimeout(this.retryTimer);
       this.retryTimer = setTimeout(this.recover, this.cooldown - Date.now());
       return;
     }
+    if (Date.now() - this.lastRecovery < 60000) return;
+    this.lastRecovery = Date.now();
     clearTimeout(this.unreadTimer);
     this.unreadTimer = undefined;
     this.recovery = Promise.allSettled([
       this.refreshUnread(),
       ...Array.from(this.recoveries, (refresh) => refresh()),
-    ])
-      .then((results) => {
-        this.backoff = results.some((result) => result.status === "rejected")
-          ? Math.min(this.backoff * 2, 120000)
-          : 30000;
-      })
-      .finally(() => {
-        this.recovery = null;
-        this.schedule();
-      });
-  };
-  private schedule = () => {
-    if (
-      this.closed ||
-      !this.snapshot.ready ||
-      this.socketRetry ||
-      this.socket?.connected ||
-      !navigator.onLine ||
-      document.visibilityState !== "visible"
-    ) {
-      clearTimeout(this.fallback);
-      this.fallback = undefined;
-      return;
-    }
-    // Repeated connect_error/focus events must not postpone the fallback.
-    if (this.fallback) return;
-    this.fallback = setTimeout(
-      () => {
-        this.fallback = undefined;
-        if (
-          !this.socket?.connected &&
-          navigator.onLine &&
-          document.visibilityState === "visible"
-        )
-          this.recover();
-      },
-      Math.max(this.backoff, this.cooldown - Date.now()),
-    );
+    ]).finally(() => {
+      this.recovery = null;
+    });
   };
   private pauseSocket(socket: Socket, seconds: number) {
     this.cooldown = Math.max(
@@ -211,9 +171,7 @@ export class MessagingClient {
     this.socketRetry = setTimeout(() => {
       this.socketRetry = undefined;
       socket.connect();
-      this.schedule();
     }, this.cooldown - Date.now());
-    this.schedule();
   }
   start() {
     if (!this.enabled || !this.token) return () => {};
@@ -221,8 +179,8 @@ export class MessagingClient {
       if (this.snapshot.ready) return;
       clearTimeout(this.startup);
       this.update({ ready: true });
+      this.lastRecovery = Date.now();
       void this.refreshUnread().catch(() => {});
-      this.schedule();
     };
     // Defer startup so StrictMode's discarded mount sends no HTTP/handshake.
     const boot = setTimeout(() => {
@@ -233,19 +191,17 @@ export class MessagingClient {
         {
           auth: { token: this.token },
           withCredentials: true,
+          transports: ["websocket", "polling"],
+          tryAllTransports: true,
           reconnectionDelay: 3000,
           reconnectionDelayMax: 30000,
         },
       ));
       socket.on("connect", () => {
-        clearTimeout(this.fallback);
-        this.fallback = undefined;
         clearTimeout(this.retryTimer);
-        this.backoff = 30000;
         if (this.snapshot.ready) this.recover();
         else initialize();
       });
-      socket.on("disconnect", this.schedule);
       socket.on(
         "connect_error",
         (error: Error & { context?: XMLHttpRequest }) => {
@@ -259,7 +215,7 @@ export class MessagingClient {
                 ? seconds
                 : (Date.parse(header) - Date.now()) / 1000 || 60,
             );
-          } else this.schedule();
+          }
         },
       );
       socket.on("receive_message", this.receive);
@@ -271,24 +227,22 @@ export class MessagingClient {
         this.pauseSocket(socket, event.retryAfter || 60);
       });
       this.startup = setTimeout(initialize, 1000);
-      this.schedule();
     }, 0);
-    document.addEventListener("visibilitychange", this.schedule);
-    window.addEventListener("online", this.schedule);
-    window.addEventListener("offline", this.schedule);
+    document.addEventListener("visibilitychange", this.recover);
+    window.addEventListener("online", this.recover);
+    window.addEventListener("focus", this.recover);
     return () => {
       this.closed = true;
       clearTimeout(boot);
       clearTimeout(this.startup);
-      clearTimeout(this.fallback);
       clearTimeout(this.retryTimer);
       clearTimeout(this.socketRetry);
       clearTimeout(this.unreadTimer);
       this.controller.abort();
       this.socket?.disconnect();
-      document.removeEventListener("visibilitychange", this.schedule);
-      window.removeEventListener("online", this.schedule);
-      window.removeEventListener("offline", this.schedule);
+      document.removeEventListener("visibilitychange", this.recover);
+      window.removeEventListener("online", this.recover);
+      window.removeEventListener("focus", this.recover);
     };
   }
 }

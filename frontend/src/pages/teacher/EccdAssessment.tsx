@@ -43,6 +43,7 @@ import {
 } from "../../utils/eccdDrafts";
 import type { TeacherAssessmentDraft } from "../../utils/eccdDrafts";
 import { assessmentRefreshScheduler } from "../../hooks/assessmentRefresh";
+import { refreshOnWake } from "../../hooks/refreshOnWake";
 import { unfinishedPrerequisite } from "../../utils/periodGates";
 import EccdCardPreviewDialog from "../../components/teacher/EccdCardPreviewDialog";
 import EccdDownloadDialog from "../../components/teacher/EccdDownloadDialog";
@@ -358,8 +359,7 @@ const EccdAssessment: React.FC = () => {
         if (key.endsWith(`_${user?.id}`)) scheduler.schedule();
       } else reload();
     };
-    window.addEventListener("online", reload);
-    window.addEventListener("focus", reload);
+    const stop = refreshOnWake(reload);
     window.addEventListener("ames-record-synced", synced);
     return () => {
       ++requestVersion.current;
@@ -368,8 +368,7 @@ const EccdAssessment: React.FC = () => {
       progressController.current?.abort();
       scheduler.cancel();
       progressRefresh.current = null;
-      window.removeEventListener("online", reload);
-      window.removeEventListener("focus", reload);
+      stop();
       window.removeEventListener("ames-record-synced", synced);
     };
   }, [section?.section_id, user?.id, fetchDomainsProgress]);

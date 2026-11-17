@@ -82,25 +82,13 @@ export function useParentAssessment(child?: Student, readOnly = false) {
   }>({ scope: "", error: "", success: "" });
   useEffect(() => {
     const redraw = () => updateDrafts((version) => version + 1);
-    const reload = () => void assessment.refresh();
-    const reloadVisible = () => {
-      if (document.visibilityState === "visible") reload();
-    };
-    const timer = window.setInterval(reloadVisible, 20000);
     window.addEventListener("ames-drafts-changed", redraw);
     window.addEventListener("storage", redraw);
-    window.addEventListener("online", reload);
-    window.addEventListener("focus", reload);
-    document.addEventListener("visibilitychange", reloadVisible);
     return () => {
-      window.clearInterval(timer);
-      document.removeEventListener("visibilitychange", reloadVisible);
       window.removeEventListener("ames-drafts-changed", redraw);
       window.removeEventListener("storage", redraw);
-      window.removeEventListener("online", reload);
-      window.removeEventListener("focus", reload);
     };
-  }, [assessment.refresh]);
+  }, []);
   const canEditHomeBased =
     !readOnly &&
     data?.can_edit_home_based === true &&

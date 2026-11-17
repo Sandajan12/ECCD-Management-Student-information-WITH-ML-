@@ -44,6 +44,7 @@ import { useSettings } from "../../context/SettingsContext";
 import { useAuth } from "../../context/AuthContext";
 import { userDisplayName } from "../../utils/displayName";
 import { useTeacher } from "../../context/TeacherContext";
+import { refreshOnWake } from "../../hooks/refreshOnWake";
 import {
   useDurableForm,
   readDraft,
@@ -300,10 +301,10 @@ const StudentManagement: React.FC = () => {
       }
     };
     void load();
-    window.addEventListener("online", load);
+    const stop = refreshOnWake(load);
     return () => {
       current = false;
-      window.removeEventListener("online", load);
+      stop();
     };
   }, [owner]);
   const fetchActiveStudents = useCallback(async () => {
@@ -351,13 +352,11 @@ const StudentManagement: React.FC = () => {
       void fetchActiveStudents();
       void fetchArchivedStudents();
     };
-    window.addEventListener("online", reload);
-    window.addEventListener("focus", reload);
+    const stop = refreshOnWake(reload);
     window.addEventListener("ames-record-synced", reload);
     return () => {
       ++rosterVersion.current;
-      window.removeEventListener("online", reload);
-      window.removeEventListener("focus", reload);
+      stop();
       window.removeEventListener("ames-record-synced", reload);
     };
   }, [fetchActiveStudents, fetchArchivedStudents]);
@@ -511,12 +510,10 @@ const StudentManagement: React.FC = () => {
         return;
       void loadEditDetails(id);
     };
-    window.addEventListener("focus", refreshDetails);
-    window.addEventListener("online", refreshDetails);
+    const stop = refreshOnWake(refreshDetails);
     return () => {
       ++editVersion.current;
-      window.removeEventListener("focus", refreshDetails);
-      window.removeEventListener("online", refreshDetails);
+      stop();
     };
   }, [editOpen, loadEditDetails, owner]);
   const handleUpdateStudent = async () => {

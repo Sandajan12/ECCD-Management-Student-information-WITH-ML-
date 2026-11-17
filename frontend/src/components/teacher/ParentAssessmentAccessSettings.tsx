@@ -9,6 +9,7 @@ import {
   Typography,
 } from "@mui/material";
 import { useAuth } from "../../context/AuthContext";
+import { refreshOnWake } from "../../hooks/refreshOnWake";
 import api, { errorMessage, isNetworkError } from "../../services/api";
 import {
   confirmDraft,
@@ -102,12 +103,10 @@ export default function ParentAssessmentAccessSettings({
       }
     };
     void load();
-    window.addEventListener("online", load);
-    window.addEventListener("focus", load);
+    const stop = refreshOnWake(load);
     return () => {
       mounted.current = false;
-      window.removeEventListener("online", load);
-      window.removeEventListener("focus", load);
+      stop();
     };
   }, [key, owner, path, sectionId, onFeedback]);
   const save = (next: ParentAssessmentAccess) => {

@@ -4,6 +4,7 @@ import { sharedGet } from "../services/sharedGet";
 import { PERIODS } from "../types";
 import type { Period, Question, Student } from "../types";
 import { assessmentRefreshScheduler } from "./assessmentRefresh";
+import { refreshOnWake } from "./refreshOnWake";
 
 interface SavedEvaluation {
   question_id: number;
@@ -128,16 +129,13 @@ export function usePendingEvaluations(
       }
     };
     void load();
-    const reload = () => void load();
+    const stop = refreshOnWake(load);
     const scheduler = assessmentRefreshScheduler(ownerId, load);
-    window.addEventListener("focus", reload);
-    window.addEventListener("online", reload);
     window.addEventListener("ames-record-synced", scheduler.schedule);
     return () => {
       current = false;
       scheduler.cancel();
-      window.removeEventListener("focus", reload);
-      window.removeEventListener("online", reload);
+      stop();
       window.removeEventListener("ames-record-synced", scheduler.schedule);
     };
   }, [enabled, scope, sectionId, ownerId]);

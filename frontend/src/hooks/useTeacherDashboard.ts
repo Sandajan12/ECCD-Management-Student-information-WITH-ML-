@@ -3,6 +3,7 @@ import { sharedGet } from "../services/sharedGet";
 import { useTeacher } from "../context/TeacherContext";
 import type { Period } from "../types";
 import { assessmentRefreshScheduler } from "./assessmentRefresh";
+import { refreshOnWake } from "./refreshOnWake";
 
 export interface TeacherDomainSummary {
   domainId: number;
@@ -100,16 +101,13 @@ function useDashboardResource<T>(
       }
     };
     void load();
-    const reload = () => void load();
+    const stop = refreshOnWake(load);
     const scheduler = assessmentRefreshScheduler(ownerId, load);
-    window.addEventListener("online", reload);
-    window.addEventListener("focus", reload);
     window.addEventListener("ames-record-synced", scheduler.schedule);
     return () => {
       current = false;
       scheduler.cancel();
-      window.removeEventListener("online", reload);
-      window.removeEventListener("focus", reload);
+      stop();
       window.removeEventListener("ames-record-synced", scheduler.schedule);
     };
   }, [key, ownerId, paramsKey, path]);

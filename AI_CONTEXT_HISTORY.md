@@ -1,5 +1,40 @@
 # AMES Context History
 
+## 2026-11-17 — Web portal request deduplication and polling cleanup (local)
+
+On `feat/parent-native-android`, audited frontend timers/fetch effects. Removed
+four 20-second loops (children, parent assessment, parent readiness and Teacher
+home reviews) and the messaging client's recurring HTTP fallback reads. The
+remaining one-second interval is the login display/OTP clock, not a data fetch.
+Parent/Teacher wake refreshes now coalesce visible online focus, visibility and
+reconnection events with a minimum 60-second cooldown; explicit saves/manual
+refreshes remain immediate. Authentication renewal and teacher-only draft replay
+are unchanged.
+
+TeacherProvider owns pending home observations once per account, sharing rows,
+errors and refresh across consumers with credential-scoped in-flight GET
+deduplication. Source had one direct web pending consumer, not three independent
+sidebar/dashboard/page fetches. Initial child/assessment reads coalesce during
+Strict Mode replay. Explicit assessment/review refreshes bypass older reads after
+confirmed saves, and superseded requests cannot evict newer in-flight entries.
+Teacher provider loads no longer restart on token renewal; Parent dashboard
+fetches depend on child/adviser primitives rather than replaced child objects.
+Settings/chat callbacks were inspected and already stable. Web messaging prefers
+`["websocket", "polling"]` with transport fallback, event-driven unread updates,
+cooldown-controlled wake recovery and preserved Retry-After handling.
+
+Executed only targeted frontend unit tests:
+`node --test frontend/tests/portal-refresh.test.cjs frontend/tests/ml-student-list.test.cjs`
+— **13 passed**. Covered shared pending state, Strict Mode/overlapping reads,
+token renewal, stale owner/save responses, stable resource dependencies, retained
+drafts, wake cooldown/cleanup, socket events, idle silence and longer Retry-After.
+`pnpm.cmd --dir frontend exec tsc --noEmit -p tsconfig.app.json` and
+`git diff --check` passed. No backend tests, browser suites, migrations, remote
+service calls, deployment or push. Both mobile clients and pre-existing untracked
+files were left untouched. These are local unit/type checks, not browser or live
+network acceptance. The local AST graph was refreshed; unrelated SQL/Kotlin/
+Gradle extraction limitations do not establish dependencies in those languages.
+
 ## 2026-11-17 — Parent home upload limits and compact website checklist (local)
 
 On `feat/parent-native-android`, removed home-photo uploads from the shared

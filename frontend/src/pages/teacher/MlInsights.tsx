@@ -26,6 +26,7 @@ import SchoolOutlined from "@mui/icons-material/SchoolOutlined";
 import HomeOutlined from "@mui/icons-material/HomeOutlined";
 import API, { errorMessage, isNetworkError } from "../../services/api";
 import { useTeacher } from "../../context/TeacherContext";
+import { refreshOnWake } from "../../hooks/refreshOnWake";
 import { useAuth } from "../../context/AuthContext";
 import { readDraft, storeDraft, useDurableForm } from "../../utils/drafts";
 import {
@@ -591,8 +592,7 @@ function StudentEvaluation({
   }, [batchStudents]);
   useEffect(() => {
     const retry = () => setRefresh((value) => value + 1);
-    window.addEventListener("online", retry);
-    return () => window.removeEventListener("online", retry);
+    return refreshOnWake(retry);
   }, []);
   return (
     <Stack sx={{ gap: 1.5, minWidth: 0 }}>
