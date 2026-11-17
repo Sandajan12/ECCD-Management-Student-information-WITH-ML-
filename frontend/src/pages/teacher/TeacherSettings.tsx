@@ -384,19 +384,21 @@ const TeacherSettings: React.FC = () => {
     }
   };
   return (
-    <Box sx={{ p: 3, minHeight: "85vh" }}>
-      <Box sx={{ mb: 4, maxWidth: 900, mx: "auto" }}>
-        <h1 className="text-2xl font-bold text-slate-900 tracking-tight">
+    <Box
+      sx={{ p: 1, width: "100%", minWidth: 0, maxWidth: "80rem", mx: "auto" }}
+    >
+      <Box sx={{ mb: 2 }}>
+        <h1 className="text-xl font-bold leading-tight text-slate-900 tracking-tight sm:text-2xl">
           Settings
         </h1>
-        <p className="text-sm text-slate-500 mt-0.5">
+        <p className="text-xs text-slate-500 mt-1 sm:text-sm">
           Manage teacher and parent access settings.
         </p>
       </Box>
 
       {/* === GLOBAL PARENT ACCESS SETTINGS PANEL === */}
-      <Box sx={{ mb: 4, maxWidth: 900, mx: "auto" }}>
-        <h2 className="text-lg font-bold text-slate-800 mt-6 mb-1">
+      <Box sx={{ mb: 3 }}>
+        <h2 className="text-lg font-bold text-slate-800 mb-1">
           Global Parent Access
         </h2>
         <p className="text-sm text-slate-500 mb-3">
@@ -421,16 +423,19 @@ const TeacherSettings: React.FC = () => {
 
         <Paper
           sx={{
-            p: { xs: 3, md: 4 },
-            borderRadius: 4,
+            p: { xs: 2, sm: 3 },
+            borderRadius: 3,
             boxShadow: "0 4px 20px rgba(0,0,0,0.05)",
           }}
         >
           <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-3">
             Student Record Permissions
           </h3>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-3">
-            <div className="rounded-xl bg-white p-4 shadow-sm border border-slate-100">
+          <Grid container spacing={2} sx={{ mb: 2 }}>
+            <Grid
+              size={{ xs: 12, sm: 6, lg: 4 }}
+              className="rounded-xl bg-white p-4 shadow-sm border border-slate-100"
+            >
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="min-w-0 flex-1 basis-32">
                   <Typography variant="body2" sx={{ fontWeight: "bold" }}>
@@ -458,8 +463,11 @@ const TeacherSettings: React.FC = () => {
                   color="primary"
                 />
               </div>
-            </div>
-            <div className="rounded-xl bg-white p-4 shadow-sm border border-slate-100">
+            </Grid>
+            <Grid
+              size={{ xs: 12, sm: 6, lg: 4 }}
+              className="rounded-xl bg-white p-4 shadow-sm border border-slate-100"
+            >
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="min-w-0 flex-1 basis-32">
                   <Typography
@@ -493,8 +501,11 @@ const TeacherSettings: React.FC = () => {
                   color="primary"
                 />
               </div>
-            </div>
-            <div className="rounded-xl bg-white p-4 shadow-sm border border-slate-100">
+            </Grid>
+            <Grid
+              size={{ xs: 12, sm: 6, lg: 4 }}
+              className="rounded-xl bg-white p-4 shadow-sm border border-slate-100"
+            >
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="min-w-0 flex-1 basis-32">
                   <Typography
@@ -528,24 +539,27 @@ const TeacherSettings: React.FC = () => {
                   color="secondary"
                 />
               </div>
-            </div>
-          </div>
+            </Grid>
+          </Grid>
 
           <Divider sx={{ my: 2 }} />
 
           <Typography
             variant="subtitle1"
             sx={{
-              mb: 2,
+              mb: 1.5,
               color: "#374151",
               fontWeight: "bold",
             }}
           >
             ECCD Assessment Visibility
           </Typography>
-          <Grid container spacing={3}>
+          <Grid container spacing={2}>
             <Grid size={{ xs: 12, sm: 6 }}>
-              <Paper variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
+              <Paper
+                variant="outlined"
+                sx={{ p: 2, borderRadius: 3, height: "100%" }}
+              >
                 <Box
                   sx={{
                     display: "flex",
@@ -588,7 +602,10 @@ const TeacherSettings: React.FC = () => {
               </Paper>
             </Grid>
             <Grid size={{ xs: 12, sm: 6 }}>
-              <Paper variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
+              <Paper
+                variant="outlined"
+                sx={{ p: 2, borderRadius: 3, height: "100%" }}
+              >
                 <Box
                   sx={{
                     display: "flex",
@@ -631,7 +648,10 @@ const TeacherSettings: React.FC = () => {
               </Paper>
             </Grid>
             <Grid size={{ xs: 12, sm: 6 }}>
-              <Paper variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
+              <Paper
+                variant="outlined"
+                sx={{ p: 2, borderRadius: 3, height: "100%" }}
+              >
                 <Box
                   sx={{
                     display: "flex",
@@ -674,7 +694,10 @@ const TeacherSettings: React.FC = () => {
               </Paper>
             </Grid>
             <Grid size={{ xs: 12, sm: 6 }}>
-              <Paper variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
+              <Paper
+                variant="outlined"
+                sx={{ p: 2, borderRadius: 3, height: "100%" }}
+              >
                 <Box
                   sx={{
                     display: "flex",
@@ -729,14 +752,20 @@ const TeacherSettings: React.FC = () => {
       </Box>
 
       {/* === ACCOUNT SETTINGS PANEL === */}
-      <Box sx={{ mb: 4, maxWidth: 900, mx: "auto", mt: 6 }}>
+      <Box sx={{ mb: 3 }}>
         <Typography
-          variant="h5"
-          sx={{ fontWeight: "800", color: "#111827", mb: 0.5 }}
+          component="h2"
+          variant="h6"
+          sx={{
+            fontSize: "1.125rem",
+            fontWeight: 700,
+            color: "#111827",
+            mb: 0.5,
+          }}
         >
           Account Settings
         </Typography>
-        <Typography variant="body1" color="textSecondary" sx={{ mb: 3 }}>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
           Change or update your account password.
         </Typography>
 
@@ -753,12 +782,12 @@ const TeacherSettings: React.FC = () => {
 
         <Paper
           sx={{
-            p: { xs: 3, md: 5 },
-            borderRadius: 4,
+            p: { xs: 2, sm: 3 },
+            borderRadius: 3,
             boxShadow: "0 4px 20px rgba(0,0,0,0.05)",
           }}
         >
-          <Grid container spacing={4}>
+          <Grid container spacing={3}>
             <Grid size={{ xs: 12, md: 7 }}>
               <Typography
                 variant="body2"
@@ -773,7 +802,7 @@ const TeacherSettings: React.FC = () => {
                 placeholder="Enter current password to save"
                 value={oldPassword}
                 onChange={(e) => setOldPassword(e.target.value)}
-                sx={{ mb: 4, "& .MuiOutlinedInput-root": { borderRadius: 2 } }}
+                sx={{ mb: 2, "& .MuiOutlinedInput-root": { borderRadius: 3 } }}
               />
 
               <Typography
@@ -789,7 +818,7 @@ const TeacherSettings: React.FC = () => {
                 placeholder="Enter new password"
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
-                sx={{ mb: 2, "& .MuiOutlinedInput-root": { borderRadius: 2 } }}
+                sx={{ mb: 2, "& .MuiOutlinedInput-root": { borderRadius: 3 } }}
               />
 
               <Typography
@@ -805,7 +834,7 @@ const TeacherSettings: React.FC = () => {
                 placeholder="Confirm new password"
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
-                sx={{ mb: 3, "& .MuiOutlinedInput-root": { borderRadius: 2 } }}
+                sx={{ mb: 2, "& .MuiOutlinedInput-root": { borderRadius: 3 } }}
               />
 
               <Button
@@ -823,7 +852,7 @@ const TeacherSettings: React.FC = () => {
                   textTransform: "none",
                   fontWeight: "bold",
                   width: "fit-content",
-                  px: 5,
+                  px: 3,
                   mt: 1,
                   borderRadius: 2,
                   boxShadow: "none",
@@ -835,7 +864,7 @@ const TeacherSettings: React.FC = () => {
             </Grid>
 
             <Grid size={{ xs: 12, md: 5 }}>
-              <Box sx={{ mt: { xs: 0, md: 9.5 } }}>
+              <Box>
                 <PasswordValidator
                   password={newPassword}
                   onValidationChange={setIsPasswordValid}

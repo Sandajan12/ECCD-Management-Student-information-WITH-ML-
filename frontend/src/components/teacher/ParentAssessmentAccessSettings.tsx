@@ -160,11 +160,11 @@ export default function ParentAssessmentAccessSettings({
     <>
       <Typography
         variant="subtitle1"
-        sx={{ fontWeight: "bold", color: "#374151", mb: 2 }}
+        sx={{ fontWeight: "bold", color: "#374151", mb: 1 }}
       >
         ECCD Assessment Editing
       </Typography>
-      <Typography variant="body2" sx={{ color: "text.secondary", mb: 2 }}>
+      <Typography variant="body2" sx={{ color: "text.secondary", mb: 1.5 }}>
         Enable Home-Based Checklist Edit, then choose which assessment periods
         parents can edit. Changes save when you change a switch while online.
       </Typography>
@@ -183,9 +183,12 @@ export default function ParentAssessmentAccessSettings({
           periods.
         </Alert>
       )}
-      <Grid container spacing={3}>
+      <Grid container spacing={2}>
         <Grid size={{ xs: 12, sm: 6 }}>
-          <Paper variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
+          <Paper
+            variant="outlined"
+            sx={{ p: 2, borderRadius: 3, height: "100%" }}
+          >
             <Box
               sx={{
                 display: "flex",
@@ -215,7 +218,10 @@ export default function ParentAssessmentAccessSettings({
         </Grid>
         {controls.map((control) => (
           <Grid key={control.key} size={{ xs: 12, sm: 6 }}>
-            <Paper variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
+            <Paper
+              variant="outlined"
+              sx={{ p: 2, borderRadius: 3, height: "100%" }}
+            >
               <Box
                 sx={{
                   display: "flex",

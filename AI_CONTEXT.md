@@ -317,6 +317,9 @@ Important routed workflows:
 - Teacher/Chairman Question Management shares compact 20–24px page headings,
   content-sized domain cards in a responsive 1/2/3-column grid, and compact question
   rows. Keep these styles local to that page; editing and durable drafts are unchanged.
+- Teacher Settings aligns access/account sections under one responsive 20–24px
+  page title, with 18px section headings, consistent card gaps/padding and aligned
+  password requirements. Preserve all eight access gates and existing save/draft flows.
 - Teacher/Chairman dashboard filters share validated section/year/period scopes.
   Providers/shared GETs coalesce requests without overwriting unsaved drafts.
 - Parent Overview contains home observations; Parent ECCD Checklists shows saved

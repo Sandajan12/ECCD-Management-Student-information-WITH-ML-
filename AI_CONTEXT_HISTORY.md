@@ -1,5 +1,18 @@
 # AMES Context History
 
+## 2026-11-17 — Teacher Settings title and spacing (local)
+
+On `feat/parent-native-android`, aligned access/account sections under a shared
+responsive 20/24px page heading and matching 18px section headings. Reduced outer,
+card and form spacing; made permission cards responsive and equal-height within
+rows; removed the password-requirements panel's artificial vertical offset.
+Presentation only: access gates, requests, password/OTP and draft logic unchanged.
+
+`pnpm.cmd --dir frontend exec playwright test --config playwright.parent-sync.config.ts offline-settings.spec.ts --grep "ACL drafts accumulate|ACL partial retry|teacher permission drafts" --reporter=line`
+— **6 passed** with mocked APIs at desktop/mobile sizes. App TypeScript checking
+(`pnpm.cmd --dir frontend exec tsc --noEmit -p tsconfig.app.json`) also passed.
+No full suites, backend tests, mobile changes or remote operations ran.
+
 ## 2026-11-17 — Question Management title and spacing (local)
 
 On `feat/parent-native-android`, reduced the shared Teacher/Chairman page title
