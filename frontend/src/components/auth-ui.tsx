@@ -6,16 +6,35 @@ import type {
   InputHTMLAttributes,
   ReactNode,
 } from "react";
-import { Box } from "@mui/material";
+import { Box, Stack } from "@mui/material";
+import AndroidIcon from "@mui/icons-material/Android";
 import Background from "../assets/background_pic.webp";
 import LegacyIcon from "./LegacyIcon";
 import LegacyRipple from "./LegacyRipple";
 import type { LegacyIconName } from "./LegacyIcon";
 
 export const fallbackLogo = "https://via.placeholder.com/150?text=Logo";
+const parentAppDownloadUrl =
+  import.meta.env.VITE_PARENT_APP_DOWNLOAD_URL?.trim() ||
+  "/downloads/ames-parent.apk";
+
 export function AuthBackdrop({ children }: { children: ReactNode }) {
   return (
-    <main className="relative isolate flex min-h-screen w-full items-center justify-center overflow-hidden p-4 font-sans text-[#333]">
+    <Stack
+      component="main"
+      className="font-sans text-[#333]"
+      sx={{
+        alignItems: "center",
+        justifyContent: "center",
+        position: "relative",
+        isolation: "isolate",
+        minHeight: "100vh",
+        width: "100%",
+        overflow: "hidden",
+        px: { xs: 2, sm: 3 },
+        py: { xs: 12, sm: 14 },
+      }}
+    >
       <Box
         aria-hidden="true"
         className="absolute inset-0 -z-20 bg-cover bg-center blur-[3px]"
@@ -24,8 +43,18 @@ export function AuthBackdrop({ children }: { children: ReactNode }) {
         }}
       />
       <div aria-hidden="true" className="absolute inset-0 -z-10 bg-black/40" />
+      <a
+        href={parentAppDownloadUrl}
+        download="ames-parent.apk"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="absolute top-4 right-4 z-10 inline-flex min-h-11 items-center justify-center gap-2 rounded-full border border-slate-200 bg-white/95 px-4 py-2.5 text-sm font-semibold text-slate-900 shadow-md backdrop-blur-sm transition hover:bg-white hover:shadow-lg sm:top-6 sm:right-6"
+      >
+        <AndroidIcon sx={{ fontSize: "1.25rem" }} />
+        Download App
+      </a>
       {children}
-    </main>
+    </Stack>
   );
 }
 function AuthOutline() {

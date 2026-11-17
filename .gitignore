@@ -83,6 +83,7 @@ dist/
 .turbo/
 .cache/
 .vite/
+.gradle/
 .vite-temp/
 *.tsbuildinfo
 .eslintcache

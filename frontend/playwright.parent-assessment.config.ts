@@ -2,7 +2,11 @@ import { defineConfig } from "@playwright/test";
 
 export default defineConfig({
   testDir: "./tests",
-  testMatch: ["parent-assessment.spec.ts", "teacher-eccd-assessment.spec.ts"],
+  testMatch: [
+    "parent-assessment.spec.ts",
+    "teacher-eccd-assessment.spec.ts",
+    "auth-download.spec.ts",
+  ],
   outputDir: "./test-results/parent-assessment",
   workers: 1,
   timeout: 30000,

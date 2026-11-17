@@ -259,6 +259,7 @@ it. Preserve existing configuration and copy templates only when files are absen
 | `EMAIL_TRANSPORT`, `BREVO_API_KEY` | smtp (local-compatible default) or brevo_api (HTTPS 443); production requires credentials and a real MAIL_FROM; Render blueprint selects brevo_api |
 | `VITE_API_URL` | Public backend origin without /api; fallback https://api.ameskinder.com |
 | `VITE_SOCKET_URL` | Optional chat-origin override; otherwise chat uses API origin |
+| `VITE_PARENT_APP_DOWNLOAD_URL` | Optional parent APK link on Login/Registration; blank/unset uses `/downloads/ames-parent.apk` |
 
 Never print or regenerate existing secrets. Preserve LRN encryption/HMAC keys
 and the Fernet backup key. Local OTP bypass is a development option, not a
@@ -967,6 +968,16 @@ create singleton defaults, so is not guaranteed read-only. Logos are base64 data
 URLs. Secondary color and profile-picture settings are retired; login and
 registration always use the bundled `background_pic.webp`. The former background
 upload endpoint is removed. New enrollment uses the configured school year.
+
+Login and Registration share a top-right **Download App** link in `AuthBackdrop`,
+outside their form cards. Responsive vertical padding prevents overlap, including
+short/narrow screens. It opens/downloads separately without submitting or clearing
+inputs. Set `VITE_PARENT_APP_DOWNLOAD_URL` in `frontend/.env` when a hosted APK URL
+is available, then restart Vite/rebuild. Until then, the same-site fallback requires
+copying the signed native APK to ignored `frontend/public/downloads/ames-parent.apk`.
+The APK and `.env` remain outside Git; a source checkout alone supplies no APK.
+Focused coverage is `tests/auth-download.spec.ts`, explicitly selected with
+`playwright.parent-assessment.config.ts`; no other specs are needed for this link.
 
 Migration `022_system_name` explicitly renames `system_settings.school_name` to
 `system_name`, retaining stored branding and all other settings. Startup checks

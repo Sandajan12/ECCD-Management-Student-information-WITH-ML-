@@ -1,5 +1,52 @@
 # AMES Context History
 
+## 2026-11-17 — Native release rebuild and auth-page app download (local)
+
+Stayed on `feat/parent-native-android`. The teacher `EccdAssessment.tsx` diff
+contained only two trailing spaces after a JSX closing expression; reverted that
+accidental whitespace only. Confirmed the older TWA directory is distinct from
+the native client, checked for tracked files/reparse points, and removed only
+`mobile/parent-android/.gradle`. Added the `.gradle/` ignore rule. Preserved the
+unrelated audit/plan documents and legacy APK artifacts without staging them.
+
+Native TypeScript passed; native Node tests: **63 passed**, no failures/skips.
+`gradlew.bat assembleRelease` succeeded in **12m 55s** (192 tasks), reusing the
+external release properties/backup keystore and production API origin. The missing
+SDK Platform 35 was installed; no native source, signing key or API URL changed.
+APK v2/RSA-4096 signature matches the prior certificate; 16 KiB alignment passed.
+Packaged bundle matches generated output; sourcemap matches all 20 current app
+sources, including branding/photo-warning changes, with ARM64/ARMv7 Hermes present.
+
+Fresh ignored APK:
+`mobile/parent-native-android/android/app/build/outputs/apk/release/app-release.apk`.
+**24,917,822 bytes**, modified **2026-11-17T20:00:53.260010+08:00**.
+SHA-256: `21ebf9f759e1cdacdc777ff898e83a47d03f49d8c1a36c22eca81e80a13cba7e`.
+Copied the identical artifact to ignored `frontend/public/downloads/ames-parent.apk`.
+
+Shared `AuthBackdrop` now provides the Android **Download App** link outside both
+Login/Registration cards, with top-right placement and responsive clearance.
+Added typed `VITE_PARENT_APP_DOWNLOAD_URL`, the template entry and ignored local
+`frontend/.env` entry (blank). It falls back to `/downloads/ames-parent.apk`; the
+user will supply a hosted URL later. No new state, wrappers or dependencies were
+needed at the Ponytail checkpoint. Consulted the graph and refreshed the relevant
+TypeScript AST import map before changing the shared backdrop.
+
+Frontend app TypeScript passed. Ran only `tests/auth-download.spec.ts` through
+the existing `playwright.parent-assessment.config.ts`: **6 passed** with the local
+fallback and **6 passed** with a mocked environment override. Checked both pages
+on desktop/tablet/320px mobile plus short landscape, no card overlap/horizontal
+overflow, keyboard download, safe external-link attributes, and retained form
+values/storage without auth submissions. Fallback downloads matched the real
+local APK hash; override downloads used synthetic bytes. Reviewed desktop/mobile
+screenshots. Initial verification caught unsupported MUI layout props (moved to
+`sx`) and a synthetic-body assertion receiving the real binary (changed to hash
+comparison); final checks passed. Sandbox tooling/cache failures required elevated
+local commands; no dependencies were added.
+
+No backend tests/full browser suites, migrations, remote infrastructure tools,
+deployment, push or main operations ran. Real-device installation/authentication,
+picker URI lifetime and hosted APK availability remain unverified.
+
 ## 2026-11-17 — Parent photo without a mark warning (local)
 
 Implemented `PARENT_PHOTO_MISSING_MARK_PLAN.md` on `feat/parent-native-android`.
