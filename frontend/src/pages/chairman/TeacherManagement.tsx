@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Stack } from "@mui/material";
 import API, { downloadFile, errorMessage } from "../../services/api";
 import { confirmDraft, readDraft, useDurableForm } from "../../utils/drafts";
 import { useSessionField } from "../../utils/sessionDrafts";
@@ -787,26 +788,30 @@ export default function TeacherManagement() {
     </div>
   );
   return (
-    <>
-      <h1 className="mb-8 text-[34px] font-bold leading-[1.235]">
-        Teacher's Account Management
-      </h1>
-      <div className="mb-6 flex items-center justify-between">
-        <h2 className="text-xl font-semibold leading-[1.6]">
+    <div className="chairman-page">
+      <h1 className="chairman-page-title mb-4">Teacher's Account Management</h1>
+      <Stack
+        direction="row"
+        sx={{
+          mb: 2,
+          gap: 1.5,
+          alignItems: "center",
+          justifyContent: "space-between",
+          flexWrap: "wrap",
+        }}
+      >
+        <h2 className="chairman-section-title">
           Registered Teachers{" "}
           <span className="rounded-[4px] bg-[#eee] px-2 text-sm font-normal leading-[1.43]">
             Total: {activeTeachers.length}
           </span>
         </h2>
-        <div>
-          <Button
-            variant="secondary"
-            className="mr-4"
-            onClick={() => setArchived(true)}
-          >
+        <Stack direction="row" sx={{ gap: 1, flexWrap: "wrap" }}>
+          <Button variant="secondary" small onClick={() => setArchived(true)}>
             View Archive
           </Button>
           <Button
+            small
             startIcon={<Icon name="Add" />}
             onClick={() => {
               setCreatedSectionName("");
@@ -815,8 +820,8 @@ export default function TeacherManagement() {
           >
             Add New Teacher
           </Button>
-        </div>
-      </div>
+        </Stack>
+      </Stack>
       <Notice tone="error">{error}</Notice>
       <Notice tone="success">{message}</Notice>
       {teacherTable(activeTeachers)}
@@ -1143,6 +1148,6 @@ export default function TeacherManagement() {
           <Notice tone="error">{error}</Notice>
         </Modal>
       )}
-    </>
+    </div>
   );
 }

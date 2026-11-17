@@ -1,5 +1,31 @@
 # AMES Context History
 
+## 2026-11-17 — Chairman portal title and spacing consistency (local)
+
+On `feat/parent-native-android`, aligned Dashboard, Teacher Accounts, Student
+Records, Audit Logs and System Settings with the existing compact ECCD Questions
+page. Chairman-scoped page/title styles provide responsive 20/24px headings,
+shared content widths and 18px section headings. Reduced card/table/section padding,
+made staff/student actions wrap, removed nested fixed-width settings containers,
+and aligned the audit title outside its filter card. Requests, permissions,
+drafts, scoring, exports and destructive-action confirmations are unchanged.
+
+Executed frontend checks only:
+
+- `pnpm.cmd --dir frontend exec tsc --noEmit -p tsconfig.app.json` — **passed**.
+- `pnpm.cmd --dir frontend exec playwright test --config playwright.parent-sync.config.ts offline-settings.spec.ts --grep "chairman queued switches" --reporter=line`
+  — **2 passed**, preserving explicit draft retry in both viewport projects.
+- Local read-only browser inspection with synthetic API/session responses covered
+  all **6 Chairman routes × 4 widths (320/768/1024/1440px)**. All 24 renders had
+  matching title alignment/sizing, no page/main horizontal overflow and no browser
+  JavaScript errors. Inspected desktop/mobile screenshots, including Settings'
+  account/backup/rollover sections. The inspection helper/reports/screenshots are
+  ignored local artifacts, not production authentication or database evidence.
+
+The local Vite launcher hit a pnpm fetch failure inside the sandbox; the same
+localhost-only command succeeded outside it. No backend tests, full suites,
+migrations, mobile changes, remote tools, pushes or deployments ran.
+
 ## 2026-11-17 — Teacher Settings title and spacing (local)
 
 On `feat/parent-native-android`, aligned access/account sections under a shared

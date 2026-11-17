@@ -123,15 +123,13 @@ function AccountSettings() {
     setMessage("Account updated successfully. Your new session is active.");
   };
   return (
-    <section className="mx-auto mt-12 mb-8 max-w-[900px]">
-      <h2 className="mb-1 text-2xl font-extrabold leading-[1.334] text-[#111827]">
-        Account Settings
-      </h2>
-      <p className="mb-6 text-base leading-[1.5] text-[#777]">
+    <section className="chairman-settings-section">
+      <h2 className="chairman-section-title mb-1">Account Settings</h2>
+      <p className="mb-3 text-sm leading-relaxed text-[#777]">
         Update your email and password
       </p>
       <form
-        className="chairman-card legacy-md:p-10"
+        className="chairman-card"
         onSubmit={async (e) => {
           e.preventDefault();
           if (saving.current) return;
@@ -167,7 +165,7 @@ function AccountSettings() {
         <Notice tone="error">{error}</Notice>
         <Notice tone="success">{message}</Notice>
         <fieldset disabled={busy} className="min-w-0 border-0 p-0">
-          <div className="grid grid-cols-1 gap-8 legacy-md:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 legacy-md:grid-cols-2">
             <Field
               label="Current Password (Required):"
               containerClassName="[&_label]:text-sm [&_label]:leading-[1.43] [&_label]:text-[#111827] pb-2"
@@ -344,7 +342,7 @@ function SchoolBranding({
     reader.readAsDataURL(file);
   };
   return (
-    <div className="chairman-card mx-auto max-w-[900px] legacy-md:p-10">
+    <div className="chairman-card">
       <Notice tone="error">{error}</Notice>
       <Notice tone="success">{message}</Notice>
       <form
@@ -387,10 +385,10 @@ function SchoolBranding({
         }}
       >
         <fieldset disabled={busy} className="min-w-0 border-0 p-0">
-          <p className="mb-6 text-sm font-bold leading-[1.57] tracking-[1px] text-[#9ca3af]">
+          <p className="mb-4 text-xs font-bold leading-relaxed tracking-wider text-[#9ca3af]">
             IDENTITY
           </p>
-          <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <Field
               label="School Name:"
               placeholder="e.g. APOLINARIO MABINI ELEMENTARY SCHOOL"
@@ -427,7 +425,7 @@ function SchoolBranding({
               }
             />
           </div>
-          <div className="mt-6 grid grid-cols-1 items-start gap-6 border-t border-gray-100 pt-6 md:grid-cols-2">
+          <div className="mt-4 grid grid-cols-1 items-start gap-4 border-t border-gray-100 pt-4 md:grid-cols-2">
             <div className="min-w-0">
               <p className="mb-4 text-sm font-bold leading-[1.43] text-[#111827]">
                 Portal Logo:
@@ -654,13 +652,11 @@ export default function SystemSettings() {
     label: new Date(2026, i, 1).toLocaleString("en", { month: "long" }),
   }));
   return (
-    <div className="flex min-h-[85vh] flex-col p-6 [&>section]:w-full [&>div]:w-full">
-      <section className="mx-auto max-w-[900px]">
-        <div className="mb-8">
-          <h1 className="mb-1 text-[34px] font-extrabold leading-[1.235] text-[#111827]">
-            System Personalization
-          </h1>
-          <p className="text-base leading-[1.5] text-[#777]">
+    <div className="chairman-page">
+      <section>
+        <div className="mb-4">
+          <h1 className="chairman-page-title mb-1">System Personalization</h1>
+          <p className="text-sm leading-relaxed text-[#777]">
             Manage system appearance
           </p>
         </div>
@@ -689,19 +685,17 @@ export default function SystemSettings() {
         )}
       </section>
       <AccountSettings />
-      <section className="mx-auto mt-12 mb-8 max-w-[900px]">
-        <h2 className="mb-1 text-2xl font-extrabold leading-[1.334] text-[#111827]">
-          Data Backup & Restore
-        </h2>
-        <p className="mb-6 text-base leading-[1.5] text-[#777]">
+      <section className="chairman-settings-section">
+        <h2 className="chairman-section-title mb-1">Data Backup & Restore</h2>
+        <p className="mb-3 text-sm leading-relaxed text-[#777]">
           Securely Download or Restore System
         </p>
-        <div className="chairman-card legacy-md:p-10">
+        <div className="chairman-card">
           <Notice tone="error">{backupError}</Notice>
           <Notice tone="success">{backupMessage}</Notice>
-          <div className="grid grid-cols-1 gap-8 legacy-md:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 legacy-md:grid-cols-2">
             <div>
-              <p className="mb-6 text-sm font-bold leading-[1.57] tracking-[1px] text-[#9ca3af]">
+              <p className="mb-3 text-xs font-bold leading-relaxed tracking-wider text-[#9ca3af]">
                 ENCRYPTED EXPORT
               </p>
               <p className="mb-4 text-sm leading-[1.43] text-[#111827]">
@@ -709,7 +703,7 @@ export default function SystemSettings() {
                 database
               </p>
               <Button
-                className="mt-4 bg-brand px-6 font-bold shadow-none"
+                className="bg-brand px-4 font-bold shadow-none"
                 disabled={busy}
                 onClick={async () => {
                   if (processing.current) return;
@@ -732,7 +726,7 @@ export default function SystemSettings() {
               </Button>
             </div>
             <div>
-              <p className="mb-6 text-sm font-bold leading-[1.57] tracking-[1px] text-[#9ca3af]">
+              <p className="mb-3 text-xs font-bold leading-relaxed tracking-wider text-[#9ca3af]">
                 SYSTEM RESTORE
               </p>
               <p className="mb-4 text-sm leading-[1.43] text-[#111827]">
@@ -770,17 +764,15 @@ export default function SystemSettings() {
           </div>
         </div>
       </section>
-      <section className="mx-auto mt-12 mb-8 max-w-[900px]">
-        <h2 className="mb-1 text-2xl font-extrabold leading-[1.334] text-[#111827]">
-          School Year Management
-        </h2>
-        <p className="mb-6 text-base leading-[1.5] text-[#777]">
+      <section className="chairman-settings-section">
+        <h2 className="chairman-section-title mb-1">School Year Management</h2>
+        <p className="mb-3 text-sm leading-relaxed text-[#777]">
           Advance the system to a new school year
         </p>
-        <div className="chairman-card legacy-md:p-10">
+        <div className="chairman-card">
           <Notice tone="error">{yearError || settingsError}</Notice>
           <Notice tone="success">{yearMessage}</Notice>
-          <div className="mb-6 grid grid-cols-1 items-center gap-6 rounded-xl border border-gray-100 bg-gray-50 p-4 md:grid-cols-2">
+          <div className="mb-4 grid grid-cols-1 items-center gap-4 rounded-xl border border-gray-100 bg-gray-50 p-4 md:grid-cols-2">
             <div>
               <span className="text-xs font-semibold tracking-wider text-gray-400 uppercase">
                 Active School Year

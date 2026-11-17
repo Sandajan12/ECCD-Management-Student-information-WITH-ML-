@@ -320,6 +320,10 @@ Important routed workflows:
 - Teacher Settings aligns access/account sections under one responsive 20–24px
   page title, with 18px section headings, consistent card gaps/padding and aligned
   password requirements. Preserve all eight access gates and existing save/draft flows.
+- Chairman Dashboard, Teacher Management, Student Records, Audit Logs and System
+  Settings use the Chairman-scoped page/title styles for aligned 20–24px headings,
+  compact responsive actions and consistent content widths. Settings sections use
+  18px subheadings and shared card padding; preserve modal warnings and all workflows.
 - Teacher/Chairman dashboard filters share validated section/year/period scopes.
   Providers/shared GETs coalesce requests without overwriting unsaved drafts.
 - Parent Overview contains home observations; Parent ECCD Checklists shows saved

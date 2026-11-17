@@ -1,5 +1,6 @@
 // Visual source: legacy pages/chairman/StudentRecords.jsx.
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Stack } from "@mui/material";
 import { useSettings } from "../../context/SettingsContext";
 import type { ReactNode } from "react";
 import API, { downloadFile, errorMessage } from "../../services/api";
@@ -241,13 +242,21 @@ export default function StudentRecords() {
     </h3>
   );
   return (
-    <div className="mx-auto max-w-[1200px] p-6">
-      <div className="mb-8 flex flex-wrap items-center justify-between gap-4">
-        <h1 className="text-2xl font-extrabold leading-[1.334] text-[#111827]">
-          Enrolled Students
-        </h1>
-        <div className="flex flex-wrap gap-4">
+    <div className="chairman-page">
+      <Stack
+        direction="row"
+        sx={{
+          mb: 2,
+          gap: 1.5,
+          alignItems: "center",
+          justifyContent: "space-between",
+          flexWrap: "wrap",
+        }}
+      >
+        <h1 className="chairman-page-title">Enrolled Students</h1>
+        <Stack direction="row" sx={{ gap: 1, flexWrap: "wrap" }}>
           <Button
+            small
             className="bg-[#4f46e5] font-bold"
             disabled={!selected.length}
             onClick={() => setTransfer(true)}
@@ -255,19 +264,31 @@ export default function StudentRecords() {
             Transfer Selected {selected.length ? `(${selected.length})` : ""}
           </Button>
           <Button
+            small
             className="bg-brand font-bold"
             onClick={() => setDownload(true)}
           >
             Download ECCD Records
           </Button>
-        </div>
-      </div>
+        </Stack>
+      </Stack>
       {!download && <Snackbar notification={notification} onClose={dismiss} />}
-      <div className="mb-8 flex flex-col items-stretch gap-4 rounded-lg bg-white p-4 shadow-[0_1px_3px_rgba(0,0,0,.1)] legacy-md:flex-row legacy-md:items-center">
+      <Stack
+        direction={{ xs: "column", md: "row" }}
+        sx={{
+          mb: 2,
+          gap: 1.5,
+          p: 2,
+          borderRadius: 3,
+          bgcolor: "white",
+          boxShadow: 1,
+          alignItems: { xs: "stretch", md: "center" },
+        }}
+      >
         <Field
           aria-label="Search students"
           placeholder="Enter search Records by (LRN or Name)"
-          containerClassName="flex-1"
+          containerClassName="min-w-0 flex-1"
           className="rounded-lg bg-[#f9fafb]"
           adornment={<Icon name="Search" />}
           value={search}
@@ -276,7 +297,7 @@ export default function StudentRecords() {
         <Select
           aria-label="Section"
           className="rounded-lg bg-[#f9fafb]"
-          containerClassName="legacy-md:min-w-[200px]"
+          containerClassName="min-w-0 md:w-1/4"
           value={section}
           onChange={(e) => {
             setSection(e.target.value);
@@ -292,7 +313,7 @@ export default function StudentRecords() {
         <Select
           aria-label="School year"
           className="rounded-lg bg-[#f9fafb]"
-          containerClassName="legacy-md:min-w-[200px]"
+          containerClassName="min-w-0 md:w-1/4"
           value={year}
           onChange={(e) => {
             setYear(e.target.value);
@@ -303,7 +324,7 @@ export default function StudentRecords() {
             <option key={y}>{y}</option>
           ))}
         </Select>
-      </div>
+      </Stack>
       <div className="overflow-x-auto rounded-lg bg-white shadow-[0_4px_6px_rgba(0,0,0,.05)]">
         <table className="w-full min-w-[calc(650px+10rem)]">
           <thead className="bg-[#f3f4f6]">

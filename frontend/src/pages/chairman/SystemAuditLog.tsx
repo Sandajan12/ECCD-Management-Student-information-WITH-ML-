@@ -250,17 +250,15 @@ export default function SystemAuditLog() {
   const start = (currentPage - 1) * pageSize;
   const paginated = visible.slice(start, start + pageSize);
   return (
-    <div className="p-6">
-      <section className="mx-auto min-h-[80vh] max-w-[1200px] rounded-2xl bg-white p-6 shadow-[0_4px_20px_rgba(0,0,0,.05)] legacy-md:p-10">
+    <div className="chairman-page">
+      <h1 className="chairman-page-title mb-4">System Audit Logs</h1>
+      <section className="min-w-0 rounded-2xl bg-white p-4 shadow-[0_4px_20px_rgba(0,0,0,.05)] sm:p-6">
         <Stack
           sx={{
             gap: 2,
-            mb: 4,
+            mb: 2,
           }}
         >
-          <h1 className="text-2xl font-black leading-[1.334] text-[#111827]">
-            System Audit Logs
-          </h1>
           <Stack
             sx={{
               gap: 2,

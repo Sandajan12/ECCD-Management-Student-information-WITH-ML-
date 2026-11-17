@@ -257,12 +257,10 @@ export default function Dashboard() {
     },
   ];
   return (
-    <div className="w-full min-w-0 bg-slate-50">
-      <header className="mb-6 flex min-w-0 flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+    <div className="chairman-page bg-slate-50">
+      <header className="mb-4 flex min-w-0 flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
         <div className="min-w-0">
-          <h1 className="text-xl font-bold leading-[1.6] text-[#1f2937]">
-            Educational Overview
-          </h1>
+          <h1 className="chairman-page-title">Educational Overview</h1>
           <p className="mt-1 break-words text-sm text-[#6b7280] [overflow-wrap:anywhere]">
             Welcome, {displayName}
           </p>
@@ -339,7 +337,7 @@ export default function Dashboard() {
         {statsRequest.error && `Statistics: ${statsRequest.error}`}
       </Notice>
       <section
-        className="mt-4 mb-8 grid grid-cols-1 items-stretch gap-4 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-5"
+        className="mt-4 mb-6 grid grid-cols-1 items-stretch gap-4 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-5"
         aria-label="Summary statistics"
         aria-busy={statsRequest.loading}
       >
