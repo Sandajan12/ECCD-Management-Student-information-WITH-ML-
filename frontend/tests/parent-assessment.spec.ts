@@ -370,6 +370,8 @@ test("teacher section prerequisites redirect to remaining students and block sta
     await page.evaluate(() => localStorage.getItem("eccd_draft_2_POST_1_2")),
   ).toContain("DI-KAYA");
   failGates = true;
+  // A visible wake refresh observes the existing 60-second cooldown.
+  await page.clock.setFixedTime(new Date(Date.now() + 61000));
   await page.evaluate(() => window.dispatchEvent(new Event("focus")));
   await expect(
     page.getByText("Section completion unavailable", { exact: true }),
@@ -1172,7 +1174,7 @@ test("teacher review decisions survive close and reload, save only selected rows
     "/teacher/eccdassessment?student_id=1&period=PRE&domain_id=1",
   );
   await page
-    .getByRole("button", { name: "Pending Home-Based Assessments (3)" })
+    .getByRole("button", { name: "Pending Home-Based Assessments 3" })
     .click();
   const dialog = page.getByRole("dialog", {
     name: "Pending Home-Based Assessments",
@@ -1186,7 +1188,7 @@ test("teacher review decisions survive close and reload, save only selected rows
   expect(saves).toHaveLength(0);
   await page.reload();
   await page
-    .getByRole("button", { name: "Pending Home-Based Assessments (3)" })
+    .getByRole("button", { name: "Pending Home-Based Assessments 3" })
     .click();
   await dialog
     .getByRole("button", { name: "Accept all in this domain" })
@@ -1200,6 +1202,13 @@ test("teacher review decisions survive close and reload, save only selected rows
     { observation_id: 12, status: "accepted" },
     { observation_id: 13, status: "accepted" },
   ]);
+  await dialog.getByRole("button", { name: "Close", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "Pending Home-Based Assessments 0" }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Pending Home-Based Assessments 0" })
+    .click();
   await expect(
     dialog.getByText("No pending observations for this selection."),
   ).toBeVisible();

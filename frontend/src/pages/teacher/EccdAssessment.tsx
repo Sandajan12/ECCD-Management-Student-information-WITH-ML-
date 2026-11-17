@@ -68,6 +68,15 @@ const attributionDate = (value: string | null | undefined): string => {
   }).format(new Date(value));
 };
 interface Domain extends AssessmentDomain, DomainProgress {}
+const CHECKLIST_DOMAIN_ORDER: Record<string, number> = {
+  "Gross Motor": 0,
+  "Fine Motor": 1,
+  "Self-Help": 2,
+  "Receptive Language": 3,
+  "Expressive Language": 4,
+  Cognitive: 5,
+  "Social-Emotional": 6,
+};
 const EccdAssessment: React.FC = () => {
   const { user } = useAuth();
   const { section, dashboardFilters } = useTeacher();
@@ -101,6 +110,10 @@ const EccdAssessment: React.FC = () => {
     data: SectionPeriodGates;
   } | null>(null);
   const [requestedPeriod, setRequestedPeriod] = useState<Period | null>(null);
+  const [domainJump, setDomainJump] = useState<{
+    studentId: number;
+    period: Period;
+  } | null>(null);
   const gates = periodGates?.scope === progressScope ? periodGates.data : null;
   const periodLocked = (period: Period) =>
     period !== "PRE" && (!gates || !!unfinishedPrerequisite(gates, period));
@@ -211,6 +224,43 @@ const EccdAssessment: React.FC = () => {
     },
   );
   useEffect(() => {
+    if (!domainJump) return;
+    if (
+      Number(selectedLrn) !== domainJump.studentId ||
+      activePeriod !== domainJump.period
+    ) {
+      setDomainJump(null);
+      return;
+    }
+    if (!selectedAssessment || evalLoading || !domains.length) return;
+    const orderedDomains = [...domains].sort(
+      (a, b) =>
+        (CHECKLIST_DOMAIN_ORDER[a.domain_name] ?? 7) -
+        (CHECKLIST_DOMAIN_ORDER[b.domain_name] ?? 7),
+    );
+    // Only server-saved answers complete a prerequisite, including carried KAYA.
+    const incompleteDomain = orderedDomains.find((domain) => {
+      const saved = selectedAssessment.domains.find(
+        (item) => item.domain_id === domain.domain_id,
+      );
+      return domain.questions.some(
+        (question) =>
+          !saved?.questions.find(
+            (item) => item.question_id === question.question_id,
+          )?.answers[domainJump.period],
+      );
+    });
+    setActiveDomain(incompleteDomain || orderedDomains[0]);
+    setDomainJump(null);
+  }, [
+    domainJump,
+    selectedLrn,
+    activePeriod,
+    selectedAssessment,
+    evalLoading,
+    domains,
+  ]);
+  useEffect(() => {
     if (!selectedAssessment) return;
     setClassAssessments((previous) => ({
       scope: progressScope,
@@ -299,6 +349,7 @@ const EccdAssessment: React.FC = () => {
     setClassAssessments(null);
     setPeriodGates(null);
     setRequestedPeriod(null);
+    setDomainJump(null);
     setActivePeriod("PRE");
     setLoading(false);
     setDownloadKind(null);
@@ -461,6 +512,8 @@ const EccdAssessment: React.FC = () => {
           </Typography>
         </Box>
         <Stack
+          role="group"
+          aria-label="Assessment actions"
           direction="row"
           spacing={2}
           useFlexGap
@@ -468,6 +521,8 @@ const EccdAssessment: React.FC = () => {
             alignItems: "center",
             flexWrap: "wrap",
             width: { xs: "100%", md: "auto" },
+            justifyContent: { xs: "flex-start", lg: "flex-end" },
+            minWidth: 0,
           }}
         >
           <Chip
@@ -521,6 +576,16 @@ const EccdAssessment: React.FC = () => {
               </span>
             </Tooltip>
           )}
+          {section && (
+            <HomeObservationReview
+              key={progressScope}
+              students={students}
+              domains={domains}
+              onSaved={() =>
+                window.dispatchEvent(new Event("ames-record-synced"))
+              }
+            />
+          )}
           <Button
             variant="outlined"
             startIcon={<PreviewIcon />}
@@ -551,14 +616,6 @@ const EccdAssessment: React.FC = () => {
         </Stack>
       </Stack>
 
-      {section && (
-        <HomeObservationReview
-          key={progressScope}
-          students={students}
-          domains={domains}
-          onSaved={() => window.dispatchEvent(new Event("ames-record-synced"))}
-        />
-      )}
       {previewScope === progressScope && (
         <EccdCardPreviewDialog
           key={progressScope}
@@ -765,7 +822,10 @@ const EccdAssessment: React.FC = () => {
           {/* Back button */}
           <button
             type="button"
-            onClick={() => setActiveDomain(null)}
+            onClick={() => {
+              setDomainJump(null);
+              setActiveDomain(null);
+            }}
             className="inline-flex items-center gap-1.5 text-xs sm:text-sm font-semibold text-slate-500 hover:text-slate-800 transition-colors mb-3 cursor-pointer group w-fit"
           >
             <ArrowBackIcon
@@ -1252,8 +1312,19 @@ const EccdAssessment: React.FC = () => {
                     variant="outlined"
                     sx={{ borderRadius: 3, alignSelf: "flex-start" }}
                     onClick={() => {
+                      const targetPeriod =
+                        requestedPeriod === "MID" ||
+                        gates.prerequisites.PRE.some(
+                          (item) => item.student_id === student.student_id,
+                        )
+                          ? "PRE"
+                          : "MID";
                       setSelectedLrn(String(student.student_id));
-                      setActivePeriod(prerequisite);
+                      setActivePeriod(targetPeriod);
+                      setDomainJump({
+                        studentId: student.student_id,
+                        period: targetPeriod,
+                      });
                       setRequestedPeriod(null);
                     }}
                   >

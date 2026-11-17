@@ -687,7 +687,15 @@ cannot satisfy prerequisites. There is no additional school-year filter.
 incomplete-student lists/counts for the teacher dialog. `POST /api/eccd/evaluate`
 rechecks existing tables before writes and returns 409 with the prerequisite and
 remaining count. The website blocks selection/save and offers Assess Student to
-open the unfinished period. Missing gate data keeps MID/POST locked; drafts survive
+select that student and open the earliest unfinished prerequisite (PRE before
+MID), then the first domain with server-unsaved indicators in official checklist
+order (Gross Motor through Social-Emotional, followed by custom domains).
+This works from the domain overview or another domain; drafts and virtual carried
+answers never count as saved. Date-only blockers open the first domain for the
+official testing-date save. Pending Home-Based Assessments is a content-sized,
+wrapping header action beside Online/Preview/Download, with an amber clock/review
+icon and count pill (strong orange for pending rows, softer amber at zero).
+Missing gate data keeps MID/POST locked; drafts survive
 failures and backend rejection also covers queued teacher submissions. Parent
 home routes remain governed by their independent permission/section windows,
 without classmates' prerequisites. No schema migration is required.

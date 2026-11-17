@@ -12,6 +12,7 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
+import PendingActionsIcon from "@mui/icons-material/PendingActions";
 import API, { errorMessage, getSessionUser } from "../../services/api";
 import { useAuth } from "../../context/AuthContext";
 import { useTeacher } from "../../context/TeacherContext";
@@ -180,13 +181,46 @@ export default function HomeObservationReview({
     <>
       <Button
         variant="outlined"
+        startIcon={<PendingActionsIcon />}
         onClick={() => {
           setOpen(true);
           void refresh();
         }}
-        sx={{ borderRadius: 3 }}
+        sx={{
+          borderRadius: 3,
+          flex: "0 1 auto",
+          width: "fit-content",
+          maxWidth: "100%",
+          minWidth: 0,
+          gap: 1,
+          px: 1.5,
+          py: 0.75,
+          fontWeight: 700,
+          textTransform: "none",
+          lineHeight: 1.4,
+          color: rows.length ? "#9A3412" : "#B45309",
+          bgcolor: rows.length ? "#FFF7ED" : "#FFFBEB",
+          borderColor: rows.length ? "#F97316" : "#FDBA74",
+          "&:hover": {
+            bgcolor: "#FFEDD5",
+            borderColor: "#EA580C",
+          },
+        }}
       >
-        Pending Home-Based Assessments ({rows.length})
+        <Box component="span">Pending Home-Based Assessments</Box>
+        <Box
+          component="span"
+          sx={{
+            borderRadius: 99,
+            px: 1,
+            py: 0.25,
+            flexShrink: 0,
+            bgcolor: rows.length ? "#EA580C" : "#FFEDD5",
+            color: rows.length ? "#FFFFFF" : "#B45309",
+          }}
+        >
+          {rows.length}
+        </Box>
       </Button>
       <Dialog
         open={open}

@@ -1,5 +1,37 @@
 # AMES Context History
 
+## 2026-11-17 — Teacher prerequisite domain jump and pending toolbar (local)
+
+On `feat/parent-native-android`, Assess Student closes the prerequisite dialog,
+selects the student's earliest incomplete PRE/MID period using the existing
+official-date-aware gates, and opens the first domain with server-unsaved answers
+in checklist order. It reuses the assessment hook, including navigation from the
+domain grid after a stale-save conflict. Date-only blockers open Gross Motor;
+drafts and virtual carry-forward remain unsaved and retained. Moved the existing
+home-review action into the wrapping header toolbar with a pending icon, compact
+amber/orange styles and a count pill that updates after confirmed review saves.
+
+Executed targeted frontend checks only:
+
+- `pnpm.cmd --dir frontend exec playwright test --config playwright.parent-assessment.config.ts teacher-eccd-assessment.spec.ts --reporter=line`
+  — **24 passed**, covering PRE/MID selection, checklist ordering, date-only
+  fallback, saved-versus-draft/carry answers, grid/detail navigation and both
+  pending-count styles at desktop/tablet/mobile sizes. An initial run stalled
+  when the host reported offline; the mocked online fixture now pins that state.
+- Existing `parent-assessment.spec.ts` teacher review/prerequisite checks selected
+  with `--grep "teacher section prerequisites|teacher review decisions"`:
+  **3 review cases passed**; the prerequisite test initially assumed immediate
+  focus refresh. Updated only its test clock for the existing 60-second wake
+  cooldown, then reran with `--grep "teacher section prerequisites"`:
+  **3 passed**. Review checks retain close/reload decisions and verify count 3→0.
+- `pnpm.cmd --dir frontend exec tsc --noEmit -p tsconfig.app.json` — passed.
+
+Ponytail/React review kept one transient navigation request and existing shared
+assessment/review state, with no dependencies or API changes. No backend tests,
+full suites, migrations, remote tools, deployments or pushes were run. Existing
+untracked work and `mobile/parent-android` were left untouched. Browser data and
+sessions were mocked; these checks do not establish production authentication.
+
 ## 2026-11-17 — Local home-photo fallback and upload error visibility
 
 On `feat/parent-native-android`, diagnosed photo submissions stopping before
