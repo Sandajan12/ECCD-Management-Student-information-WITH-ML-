@@ -8,6 +8,7 @@ from matplotlib import get_data_path
 from openpyxl.cell.cell import MergedCell
 
 from backend.utils.eccd_dates import now_pht
+from backend.constants import OFFICIAL_SCHOOL_NAME
 
 
 def cell_text(cell) -> str:
@@ -91,7 +92,7 @@ class ReportPDF(FPDF):
     def section_summary(self, sheet):
         _, headings, rows, widths = next(summary_tables(sheet))
         period = {"PR": "PRETEST", "M": "MID", "PO": "POSTTEST"}[sheet.title]
-        school = "Apolinario Mabini Elementary School"
+        school = OFFICIAL_SCHOOL_NAME
         if cell_text(sheet["E8"]):
             school += f" | School Number: {cell_text(sheet['E8'])}"
         year = cell_text(sheet["J8"]).partition(":")[2].strip() or cell_text(sheet["J8"])
@@ -264,7 +265,7 @@ class TeacherChecklistPDF(ReportPDF):
                 elif text == "DI-KAYA":
                     text = "DI-\nKAYA"
                 if cell.coordinate == "V6":
-                    text = "SCHOOL: Apolinario Mabini Elementary School"
+                    text = f"SCHOOL: {OFFICIAL_SCHOOL_NAME}"
                 cells.append((cell, end_row, end_column, text))
         # Measure wrapped content first so neither marks nor questions overlap borders.
         while True:

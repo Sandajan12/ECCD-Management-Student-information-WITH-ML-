@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from backend.models import EccdQuestion, FamilyAccess, Parent, Section, SectionTeacher, Student, StudentEccdEvaluation, SystemSettings, Teacher, User
 from backend.models.eccd import EccdAnswer, TestingPeriod
+from backend.constants import OFFICIAL_SCHOOL_NAME
 from backend.schemas.student import StudentCreate
 from backend.schemas.operations import SectionMismatchResponse
 from backend.schemas.common import validate_person_name
@@ -301,7 +302,7 @@ def summary_workbook(db: Session, section: Section, students: list[Student]):
                     sheet.cell(row, column).value = None
         tallies = defaultdict(lambda: {"Male": 0, "Female": 0})
         header_dates = []
-        for row, column, value in ((3, 2, setting.school_name.upper()), (8, 5, "136481"), (8, 10, f"SCHOOL YEAR: {students[0].school_year if students else setting.current_school_year}"), (10, 4, setting.school_name.upper()), (10, 14, section.section_name.upper()), (10, 20, teacher_name)):
+        for row, column, value in ((3, 2, OFFICIAL_SCHOOL_NAME), (8, 5, "136481"), (8, 10, f"SCHOOL YEAR: {students[0].school_year if students else setting.current_school_year}"), (10, 4, OFFICIAL_SCHOOL_NAME), (10, 14, section.section_name.upper()), (10, 20, teacher_name)):
             write_cell(sheet, row, column, value)
         for index, student in enumerate(students[:30]):
             row = 14 + index
@@ -381,7 +382,7 @@ def summary_workbook(db: Session, section: Section, students: list[Student]):
                         cell.comment = None
             for start in blocks:
                 for row, offset, value in (
-                    (2, 0, setting.school_name.upper()),
+                    (2, 0, OFFICIAL_SCHOOL_NAME),
                     (3, 0, students[0].school_year if students else setting.current_school_year),
                     (2, 16, section.section_name.upper()), (3, 16, teacher_name),
                     *((3, 30 + index * 3, header_dates[period]) for index, period in enumerate(periods)),
@@ -521,6 +522,23 @@ def workbook_section_name(rows: list[tuple[object, ...]]) -> str:
     return "Not identified"
 
 
+def validate_workbook_school(rows: list[tuple[object, ...]]) -> None:
+    """Validate supplied school headers; older templates may omit this metadata."""
+    labels = r"school(?:\s+name)?"
+    for row in rows[:2]:
+        for index, value in enumerate(row):
+            if not isinstance(value, str):
+                continue
+            match = re.fullmatch(rf"\s*{labels}\s*:\s*(.+?)\s*", value, re.IGNORECASE)
+            name = match.group(1) if match else None
+            if re.fullmatch(rf"\s*{labels}\s*:?\s*", value, re.IGNORECASE):
+                name = next((str(cell).strip() for cell in row[index + 1:] if cell is not None and str(cell).strip()), "")
+            elif not match and re.fullmatch(r".*\b(?:elementary|high)\s+school\s*", value, re.IGNORECASE):
+                name = value
+            if name is not None and " ".join(name.split()).casefold() != OFFICIAL_SCHOOL_NAME.casefold():
+                raise HTTPException(400, f"Invalid school name. Expected {OFFICIAL_SCHOOL_NAME}.")
+
+
 def import_students(db: Session, user: User, content: bytes, section_id: int | None = None, overwrite_section: bool = False) -> dict:
     teacher = current_teacher(db, user)
     assignments = db.query(SectionTeacher).filter_by(teacher_id=teacher.teacher_id, role="Primary Adviser", status="Active").order_by(SectionTeacher.id).all()
@@ -563,6 +581,7 @@ def import_workbook(db: Session, user: User, teacher: Teacher, section: Section,
     for sheet in wb:
         sheet.reset_dimensions()
     rows = import_sheet_rows(wb["Info Sheet"], max_columns=MAX_INFO_IMPORT_COLUMNS)
+    validate_workbook_school(rows)
     if len(rows) < 3:
         raise HTTPException(400, "No data found in Info Sheet starting at row 3.")
     file_section = workbook_section_name(rows)
@@ -583,7 +602,9 @@ def import_workbook(db: Session, user: User, teacher: Teacher, section: Section,
             index = {}
             # SH, C and SE contain answers beyond column 100 (up to 164 in
             # the reference checklist). Preserve those assessment columns.
-            for values in import_sheet_rows(wb[sheet_name], max_columns=MAX_ASSESSMENT_IMPORT_COLUMNS):
+            assessment_rows = import_sheet_rows(wb[sheet_name], max_columns=MAX_ASSESSMENT_IMPORT_COLUMNS)
+            validate_workbook_school(assessment_rows)
+            for values in assessment_rows:
                 if len(values) > 1 and isinstance(values[1], str):
                     index.setdefault(" ".join(values[1].split()).casefold(), values)
             domain_rows[sheet_name] = index

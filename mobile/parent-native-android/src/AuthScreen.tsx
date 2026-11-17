@@ -297,7 +297,7 @@ export function AuthScreen() {
             },
           ]}
         >
-          {brand.school_name}
+          {brand.system_name}
         </Title>
         {register && (
           <Title style={{ fontSize: 17 }}>Create your parent account</Title>

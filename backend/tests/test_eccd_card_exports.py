@@ -61,7 +61,7 @@ class EccdCardExportTests(TestCase):
             Section(section_id=2, section_name="Other"),
             Section(section_id=3, section_name="Empty"),
             SectionTeacher(section_id=1, teacher_id=1, role="Primary Adviser", status="Active"),
-            SystemSettings(id=1, school_name="<script>School</script>", principal_name="Test Principal", current_school_year="2026-2027"),
+            SystemSettings(id=1, system_name="<script>School</script>", principal_name="Test Principal", current_school_year="2026-2027"),
         ])
         for domain_id, name in enumerate(("Gross Motor", "Fine Motor", "Self-Help", "Receptive Language", "Expressive Language", "Cognitive", "Socio-Emotional"), 1):
             self.db.add(EccdDomain(domain_id=domain_id, domain_name=name))

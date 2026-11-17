@@ -15,7 +15,11 @@ VERSION = "018_retired_branding_settings"
 def check_settings_cleanup(connection: Connection, schema: str = "public") -> None:
     select_schema(connection, schema)
     columns = {item["name"] for item in inspect(connection).get_columns("system_settings", schema=schema)}
-    if columns != set(SystemSettings.__table__.columns.keys()):
+    expected = set(SystemSettings.__table__.columns.keys())
+    if "school_name" in columns and "system_name" not in columns:
+        expected.remove("system_name")
+        expected.add("school_name")
+    if columns != expected:
         raise MigrationError("Retired settings columns remain or settings schema is incompatible; run backend.migrations.settings_cleanup --apply after deploying the matching app")
     check_phase2(connection, schema)
 

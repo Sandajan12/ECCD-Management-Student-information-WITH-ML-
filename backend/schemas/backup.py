@@ -202,7 +202,7 @@ class LogBackupRow(BackupRow):
 class SettingsBackupRow(BackupRow):
     id: PositiveId
     system_title: str | None = Field(max_length=255)
-    school_name: str = Field(max_length=255)
+    system_name: str = Field(max_length=255)
     principal_name: str | None = Field(max_length=255)
     chairman_name: str | None = Field(default=None, max_length=255)
     school_year_start_month: int = Field(ge=1, le=12)
@@ -217,8 +217,13 @@ class SettingsBackupRow(BackupRow):
     def discard_retired_branding(cls, value: object) -> object:
         # Older encrypted backups remain usable without restoring retired columns.
         if isinstance(value, dict):
-            return {key: item for key, item in value.items()
-                    if key not in ("secondary_color", "profile_pic_url", "login_background")}
+            value = {key: item for key, item in value.items()
+                     if key not in ("secondary_color", "profile_pic_url", "login_background")}
+            if "school_name" in value:
+                legacy_name = value.pop("school_name")
+                if "system_name" in value and value["system_name"] != legacy_name:
+                    raise ValueError("Conflicting system names in backup")
+                value.setdefault("system_name", legacy_name)
         return value
 
 

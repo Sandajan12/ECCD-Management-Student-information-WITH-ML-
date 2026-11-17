@@ -20,6 +20,7 @@ def cipher() -> Fernet:
 def export_backup(db: Session) -> bytes:
     # ORM metadata includes all evaluator provenance columns; retain default/null
     # fields in the encrypted document as well as explicitly populated values.
+    # Settings exports system_name; the backup schema maps legacy school_name on restore.
     # Current account metadata is email-only; settings carries the Chairman name.
     document = {name: [dict(row) for row in db.execute(table.select()).mappings()] for name, table in Base.metadata.tables.items()
                 if name != "auth_refresh_sessions"}

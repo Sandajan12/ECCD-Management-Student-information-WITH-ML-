@@ -61,6 +61,9 @@ def phase1_metadata() -> MetaData:
         if index.name == "ux_users_email_lower":
             users.indexes.remove(index)
     settings = metadata.tables["system_settings"]
+    # Migration 022 alone renames the historical branding column.
+    settings._columns.remove(settings.c.system_name)
+    settings.append_column(Column("school_name", String(255), default="APOLINARIO MABINI ELEMENTARY SCHOOL", server_default="APOLINARIO MABINI ELEMENTARY SCHOOL", nullable=False))
     # Preserve the historical settings shape until explicit migration 018.
     settings.append_column(Column("secondary_color", String(10), default="#FFFFFF"))
     settings.append_column(Column("profile_pic_url", Text, nullable=True))

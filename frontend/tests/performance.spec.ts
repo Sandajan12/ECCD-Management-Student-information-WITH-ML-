@@ -47,7 +47,7 @@ test.beforeEach(async ({ page }) => {
       json:
         path.replace(/\/$/, "") === "/api/settings"
           ? {
-              school_name: "Performance Test School",
+              system_name: "Performance Test School",
               school_year_start_month: 8,
             }
           : path.endsWith("unread-count")

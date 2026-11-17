@@ -10,6 +10,7 @@ from openpyxl.styles import Alignment, Font
 from openpyxl.worksheet.pagebreak import Break
 from backend.utils.eccd_scorer import calculate_decimal_age, calculate_scores
 from backend.utils.eccd_dates import get_official_testing_date, PHT
+from backend.constants import OFFICIAL_SCHOOL_NAME
 
 DOMAIN_CODES = {1:'GM', 2:'FM', 3:'SH', 4:'RL', 5:'EL', 6:'C', 7:'SE'}
 DOMAIN_CAPACITIES = {1:13, 2:11, 3:27, 4:5, 5:8, 6:21, 7:24}
@@ -42,7 +43,7 @@ def generate_student_workbook(student, teacher, parents, evaluations, questions,
 
     section_name = student.section.section_name if student.section else student.section_name or ''
     headers = {'V4':'NATIONAL CAPITAL REGION','V5':'DIVISION OF MANILA',
-               'V6':f'SCHOOL: {setting.school_name.upper()}',
+               'V6':f'SCHOOL: {OFFICIAL_SCHOOL_NAME}',
                'V7':f'SCHOOL YEAR: {student.school_year or setting.current_school_year}',
                'V8':f'SECTION: {section_name.upper()}', 'W10':student.lrn_number,
                'W11':f"{(student.last_name or '').upper()}, {(student.first_name or '').upper()}",
@@ -161,7 +162,7 @@ def append_checklist_sections(ws, student, teacher, evaluations, questions, sett
         page_start = next_row
         ws.row_breaks.append(Break(id=page_start - 1, min=0, max=29))
         headers = (
-            f'SCHOOL: {setting.school_name} | SCHOOL YEAR: {student.school_year or setting.current_school_year}',
+            f'SCHOOL: {OFFICIAL_SCHOOL_NAME} | SCHOOL YEAR: {student.school_year or setting.current_school_year}',
             f'STUDENT: {student.last_name or ""}, {student.first_name or ""} | LRN: {student.lrn_number or ""}',
             f'SECTION: {section_name} | ADVISER: {teacher.first_name or ""} {teacher.last_name or ""}',
         )

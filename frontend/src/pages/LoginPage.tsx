@@ -57,7 +57,7 @@ export function AuthFrame({ children }: { children: ReactNode }) {
         >
           <div className="mx-auto w-full max-w-[26.25rem] text-center">
             <h1 className="mb-6 text-center text-[1.1rem] leading-[1.3] font-extrabold tracking-[0.04em] text-brand uppercase legacy-sm:text-xl legacy-md:mb-7 legacy-md:text-[1.35rem]">
-              {settings.school_name || "Apolinario Mabini Elementary School"}
+              {settings.system_name || "APOLINARIO MABINI ELEMENTARY SCHOOL"}
             </h1>
             {children}
           </div>

@@ -53,7 +53,7 @@ test("retired branding preserves old settings drafts and submits only current fi
   const key = "ames_draft_1_school_settings";
   const settings: SystemSettings = {
     system_title: "Test school",
-    school_name: "Server school",
+    system_name: "Server school",
     principal_name: "Principal",
     chairman_name: "Chairman",
     primary_color: "#2563eb",
@@ -76,6 +76,7 @@ test("retired branding preserves old settings drafts and submits only current fi
             is_pending_sync: false,
             values: {
               ...initial,
+              system_name: undefined,
               school_name: "Unsaved school",
               existing_logo_url: "",
               secondary_color: "#abcdef",
@@ -101,7 +102,7 @@ test("retired branding preserves old settings drafts and submits only current fi
   });
   await mockSession(page, { ...teacher, id: 1, role: "super-admin" });
   await page.goto("/super-admin/settings");
-  const school = page.getByRole("textbox", { name: "School Name:" });
+  const school = page.getByRole("textbox", { name: "System Name:" });
   await expect(school).toHaveValue("Unsaved school");
   await school.fill("Updated offline school");
   await page.evaluate(() =>
@@ -127,12 +128,12 @@ test("retired branding preserves old settings drafts and submits only current fi
   ).not.toBeNull();
   await page.getByRole("button", { name: "Save", exact: true }).click();
   await expect(
-    page.getByText("School settings saved.", { exact: true }),
+    page.getByText("System settings saved.", { exact: true }),
   ).toBeVisible();
   expect(submissions).toHaveLength(1);
   expect(submissions[0]).toContain("Updated offline school");
   expect(submissions[0]).not.toMatch(
-    /secondary_color|profile_pic|profilePic|login_background/,
+    /school_name|secondary_color|profile_pic|profilePic|login_background/,
   );
   expect(
     await page.evaluate((draftKey) => localStorage.getItem(draftKey), key),

@@ -41,6 +41,7 @@ import PersonOutlinedIcon from "@mui/icons-material/PersonOutlined";
 import PeopleAltOutlinedIcon from "@mui/icons-material/PeopleAltOutlined";
 import api, { errorMessage, isNetworkError } from "../../services/api";
 import { useSettings } from "../../context/SettingsContext";
+import { OFFICIAL_SCHOOL_NAME } from "../../constants";
 import { useAuth } from "../../context/AuthContext";
 import { userDisplayName } from "../../utils/displayName";
 import { useTeacher } from "../../context/TeacherContext";
@@ -1283,10 +1284,7 @@ const StudentManagement: React.FC = () => {
                 </Typography>
                 <TextField
                   fullWidth
-                  value={
-                    settings?.school_name ||
-                    "Apolinario Mabini Elementary School"
-                  }
+                  value={OFFICIAL_SCHOOL_NAME}
                   size="small"
                   disabled
                   sx={{

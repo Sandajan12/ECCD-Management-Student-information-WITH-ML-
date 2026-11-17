@@ -95,7 +95,7 @@ export function componentHarness(file: string, mocks: Record<string, unknown>) {
       });
     },
     useContext: (context: string) =>
-      context === "BrandColor" ? "#4543c0" : { school_name: "AMES Parent" },
+      context === "BrandColor" ? "#4543c0" : { system_name: "AMES Parent" },
     useSyncExternalStore: (_subscribe: unknown, snapshot: () => unknown) =>
       snapshot(),
   };

@@ -233,7 +233,7 @@ export function ChildPortal({
             fontSize: 14,
           }}
         >
-          {brand.school_name}
+          {brand.system_name}
         </Text>
         <IconButton
           name="logout"

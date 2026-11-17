@@ -26,7 +26,7 @@ import {
 import type { Branding } from "./src/contracts";
 
 const fallback: Branding = {
-  school_name: "AMES Parent",
+  system_name: "AMES Parent",
   primary_color: "#4543c0",
   logo_url: null,
 };
@@ -41,10 +41,10 @@ function Content() {
         if (!r.ok) return;
         const value = (await r.json()) as Branding;
         setBrand({
-          school_name:
-            typeof value.school_name === "string" && value.school_name.trim()
-              ? value.school_name
-              : fallback.school_name,
+          system_name:
+            typeof value.system_name === "string" && value.system_name.trim()
+              ? value.system_name
+              : fallback.system_name,
           primary_color: /^#[0-9a-f]{6}$/i.test(value.primary_color)
             ? value.primary_color
             : fallback.primary_color,

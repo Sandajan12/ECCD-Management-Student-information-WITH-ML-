@@ -32,7 +32,7 @@ class SettingsCleanupTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.text)
         self.assertTrue(set(RETIRED_SETTINGS_COLUMNS).isdisjoint(response.json()))
         response = self.call("PUT", "/api/settings/update", json={
-            "school_name": "Preserved school", "secondary_color": "#445566",
+            "system_name": "Preserved school", "secondary_color": "#445566",
             "existing_profile_pic_url": "discarded", "existing_logo_url": "current-logo",
         })
         self.assertEqual(response.status_code, 200, response.text)

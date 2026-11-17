@@ -1,7 +1,7 @@
 # Feature migrations: Phase 2 is the current backend schema
 
 For a fresh PostgreSQL/Supabase database, the explicit
-[bootstrap command](../scripts/README.md) applies pending migrations 001–021 and
+[bootstrap command](../scripts/README.md) applies pending migrations 001–022 and
 seeds the exact tracked 7-domain/109-question ECCD baseline plus an
 environment-configured Chairman in one transaction:
 
@@ -429,7 +429,7 @@ creates only auth_refresh_sessions and its user/expiry index, enables RLS,
 revokes PUBLIC/anon/authenticated access and records 019 in the existing ledger.
 No school rows or existing account columns change. Lock timeout is five seconds;
 a conflict rolls back. Startup checks 019 without applying it. Fresh bootstrap
-includes 001–021. Preserve this additive table when rolling back application code;
+includes 001–022. Preserve this additive table when rolling back application code;
 never restore refresh-family records from a backup. Old browser-storage sessions
 require a fresh login. Use custom same-site HTTPS origins for Strict cookies.
 
@@ -462,7 +462,7 @@ Apply locks the ledger/table with a five-second lock timeout and transactionally
 drops only the table using RESTRICT and records `020_remove_trusted_devices`.
 Its own indexes/policies/grants disappear; external views/foreign keys stop the
 upgrade. Repeated apply/check is safe. Startup never runs this destructive step.
-Fresh bootstrap includes 001–021; historical migration schemas remain replayable.
+Fresh bootstrap includes 001–022; historical migration schemas remain replayable.
 No other pending cleanup (including 018) is authorized by this operation.
 
 Resume the updated service and verify readiness, rate limiting, password → OTP →
@@ -488,3 +488,27 @@ loopback `ames_parity_dev` and disposable schemas. No hosted migration or bucket
 provisioning is part of that delivery. Do not run an older backend after new pending
 submissions exist: it would bypass review. See the root review plan for coordinated
 client rollout, private Storage configuration, retention limits and cleanup scheduling.
+
+## 022: Separate system branding from official school identity
+
+`system_name` replaces `system_settings.school_name` and its API key. The rename
+preserves every stored setting; only the future-row default changes to
+`ECCD Management System`. Official documents/import validation always use
+`APOLINARIO MABINI ELEMENTARY SCHOOL`, independent of branding. Legacy encrypted
+backups map `school_name` on restore; conflicting dual keys are rejected.
+
+Retain a protected backup and stop API writers. Coordinate the backend, website
+and native client update with the explicit rename; an older backend cannot run
+afterward. Against the verified intended database, run:
+
+```powershell
+uv run --no-project --python .venv312 python -m backend.migrations.system_name --check
+uv run --no-project --python .venv312 python -m backend.migrations.system_name --apply
+uv run --no-project --python .venv312 python -m backend.migrations.system_name --check
+```
+
+The initial check reports a pending migration. Apply locks settings/the ledger
+with a five-second timeout, compares stored values before/after the rename, and
+commits DDL and ledger together. Failure rolls back; repeated apply validates
+without rewriting values. Startup only checks 022. Historical schema builders
+keep `school_name` until this migration; fresh bootstrap includes 001–022.

@@ -36,6 +36,9 @@ def check_phase2(connection: Connection, schema: str = "public") -> None:
     settings_cleanup_applied = inspector.has_table(LEDGER, schema=schema) and connection.execute(text(
         f"SELECT EXISTS (SELECT 1 FROM {LEDGER} WHERE version='018_retired_branding_settings')"
     )).scalar_one()
+    system_name_applied = inspector.has_table(LEDGER, schema=schema) and connection.execute(text(
+        f"SELECT EXISTS (SELECT 1 FROM {LEDGER} WHERE version='022_system_name')"
+    )).scalar_one()
     for name, table in Base.metadata.tables.items():
         if name in ("parent_home_observations", "home_observation_photos") and not inspector.has_table(name, schema=schema):
             # Explicit migration 021 is checked separately by current startup.
@@ -45,6 +48,9 @@ def check_phase2(connection: Connection, schema: str = "public") -> None:
             continue
         actual = {column["name"] for column in inspector.get_columns(name, schema=schema)}
         expected = set(table.columns.keys())
+        if name == "system_settings" and "school_name" in actual and not system_name_applied:
+            expected.remove("system_name")
+            expected.add("school_name")
         if name == "system_settings" and not settings_cleanup_applied:
             # Deploy the new app before the explicit column-drop maintenance window.
             actual -= set(RETIRED_SETTINGS_COLUMNS)

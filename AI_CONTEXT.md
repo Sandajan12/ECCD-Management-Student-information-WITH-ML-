@@ -157,7 +157,7 @@ parent profile ID, not the account ID; socket auth uses only the RAM access JWT
 and reconnects on renewal. Build/signing instructions, API configuration and
 validation boundaries are in that directory's README.
 Its native UI follows the responsive parent website: bundled Poppins/vector icons,
-dynamic school branding, dark header, five bottom tabs, child/link dialogs,
+dynamic system branding (`system_name`), dark header, five bottom tabs, child/link dialogs,
 permission-aware status/results cards, structured household forms, sticky manual
 saves and keyboard-safe chat. UI_PARITY.md records source references and phone
 acceptance limits; native storage/auth/permission services retain their contracts.
@@ -197,7 +197,7 @@ carry-forward uses the per-question rules in section 7 on both parent clients.
 | Workspace | Root `pnpm-workspace.yaml` includes frontend and retains separate lockfiles; frontend has matching pnpm 12 YAML overrides and its own package-manager pin for isolated installs; automatic dependency verification before scripts is disabled |
 | Spreadsheets | openpyxl handles active workbook import/export; pandas is installed |
 | ML | V1 sigmoid-calibrated standalone Random Forest, joblib artifact, 18 PRE/demographic inputs (five household fields excluded), three supported POST outcomes; shared teacher/parent inference |
-| Migrations | Python migrations 001–021; startup checks required schema without applying migrations. All upgrades, including 016/021, are explicit. 018 retires three branding columns after the matching app is deployed. No active Alembic setup, pyproject.toml, or uv.lock |
+| Migrations | Python migrations 001–022; startup checks required schema without applying migrations. All upgrades, including 016/021/022, are explicit. 018 retires three branding columns after the matching app is deployed. No active Alembic setup, pyproject.toml, or uv.lock |
 
 Exact dependency versions belong to manifests/lockfiles. Do not assume another
 environment named `.venv` uses Python 3.12. Root and frontend workspace YAML
@@ -259,7 +259,7 @@ production default or proof of email delivery.
 Settings validation hides input values in exception text to keep startup
 tracebacks from echoing database credentials or other configured secrets.
 
-Startup checks required schema without applying migrations, including 016/021;
+Startup checks required schema without applying migrations, including 016/021/022;
 017 is checked but explicitly applied (section 4). It seeds the tracked
 7-domain/109-question fixture only if both reference tables are empty, and warms
 cached ML artifacts. It never calls `create_all` or provisions accounts.
@@ -359,7 +359,7 @@ do not treat stale graph edges as an exact current caller inventory.
 | student_eccd_evaluations / `models/eccd.py` | Evaluation/student/question IDs, nullable teacher_id/parent_id, evaluator_role=teacher/parent, PRE/MID/POST, KAYA/DI-KAYA, compatibility evaluation_date, official teacher_evaluation_date, timezone-aware parent_submitted_at and nullable teacher_marked_at; unique (student_id, question_id, testing_period) |
 | messages / `models/message.py` | Teacher/parent FKs, sender role, subject/body, read/archive flags, creation time |
 | system_logs / `models/log.py` | User-linked actions, TEXT details including rollover snapshots/chunks, timestamp |
-| system_settings / `models/settings.py` | Singleton ID 1; title, primary color and logo, school/principal/chairman names, opening month 1-12, current/previous year, rollover timestamp; secondary_color/profile_pic_url/login_background retired by explicit 018 |
+| system_settings / `models/settings.py` | Singleton ID 1; title, primary color and logo, system/principal/chairman names, opening month 1-12, current/previous year, rollover timestamp; 022 renames school_name to system_name; secondary_color/profile_pic_url/login_background retired by explicit 018 |
 | email_verifications / `models/email_verification.py` | Account/email/purpose-bound hashed challenge/OTP, expiry, attempts; login/registration/password-change/email-change purposes |
 
 Final schema has **no plaintext students.lrn_number or child student_lrn database
@@ -403,9 +403,10 @@ preserve those routes and their protection.
 | 019 | refresh_cookie_sessions | Private refresh families, 10-second rotation grace; explicit additive upgrade before deployment |
 | 020 | remove_trusted_devices | Explicit removal of retired OTP-bypass table after matching app deployment |
 | 021 | parent_home_observations | Explicit pending parent observations/reviews and private-photo cleanup ledger; no historical assessment changes |
+| 022 | system_name | Rename school_name to system_name, preserving stored values; future defaults use ECCD Management System |
 
 `backend/main.py::initialize_runtime` checks evaluator provenance first, then
-checks 016/021 without schema mutations. The teacher timestamp remains nullable,
+checks 016/021/022 without schema mutations. The teacher timestamp remains nullable,
 without a default or historical backfill. Missing or incompatible required schema
 stops startup; every upgrade remains explicit.
 Migration 011 is an explicit ownership cleanup rather than a startup repair;
@@ -444,7 +445,7 @@ are configured, the explicit bootstrap is:
 uv run --no-project --python .venv312 python -m backend.scripts.seed_supabase --apply
 ```
 
-It applies pending **001–021** in order, seeds matching reference data and
+It applies pending **001–022** in order, seeds matching reference data and
 provisions the environment-configured Chairman in one transaction. Repeated
 runs preserve accounts/reference rows; conflicting reference data aborts.
 Existing databases need missing feature upgrades in order; use the migration
@@ -570,7 +571,7 @@ backups and cleared on restore, never restored as active sessions.
 Migration 019_refresh_cookie_sessions is explicit and additive: apply/check it
 before deploying this backend; startup checks and never auto-applies it. Enable
 RLS and revoke PUBLIC/anon/authenticated access; only the direct database backend
-uses this table. Fresh bootstrap includes 001–021.
+uses this table. Fresh bootstrap includes 001–022.
 
 JWTs bind to live credentials and persistent security version. Inactive/pending
 accounts cannot use protected services. Credential changes, archive/restore and
@@ -953,12 +954,29 @@ already shared independently. Preserve cooldowns/Retry-After and live credential
 relationship checks. See `utils/messaging.py`, `realtime.py` and frontend
 `MessagingContext.tsx`.
 
-Settings contain the title, primary color, portal logo, school/principal/chairman
+Settings contain the title, primary color, portal logo, system/principal/chairman
 names, current year and opening month (default August). Public settings GET can
 create singleton defaults, so is not guaranteed read-only. Logos are base64 data
 URLs. Secondary color and profile-picture settings are retired; login and
 registration always use the bundled `background_pic.webp`. The former background
 upload endpoint is removed. New enrollment uses the configured school year.
+
+Migration `022_system_name` explicitly renames `system_settings.school_name` to
+`system_name`, retaining stored branding and all other settings. Startup checks
+022 without applying it; stop API writers for the coordinated schema/backend/client
+upgrade and never run the older ORM after renaming. `GET /api/settings` and both
+`PUT /api/settings` and `/api/settings/update` use `system_name`. Chairman System
+Personalization labels it **System Name:**. Web sidebar/login/document title and
+native branding read it; `system_title` remains an independent compatibility field.
+Older Chairman `school_name` drafts remain readable until revision-matched save.
+
+`backend/constants.py::OFFICIAL_SCHOOL_NAME` is always **APOLINARIO MABINI
+ELEMENTARY SCHOOL**. Checklist/continuation/summary workbooks, HTML previews and
+PDFs use it independently of branding; web student School fields use the same
+fixed identity. Imports validate supplied school headers in Info Sheet and domain
+tabs against this name (case/whitespace-insensitive), before student writes;
+historical workbooks without school headers remain supported. Section override
+never bypasses school identity validation.
 
 Rollover archives exactly its active batch and records snapshots transactionally.
 Undo has a **30-day window**, restores only that batch's IDs and original month
@@ -980,6 +998,8 @@ remain importable: `SettingsBackupRow` discards exactly `secondary_color`,
 settings keys are still rejected. Current school-settings submissions use an
 explicit field list so old durable drafts cannot resend retired values; drafts
 are otherwise retained until revision-matched server confirmation.
+New backups export `system_name`; restore maps legacy `school_name` into it.
+Conflicting dual-name values and unknown settings keys are rejected before writes.
 
 ## 10. Offline durability and development rules
 

@@ -21,6 +21,7 @@ import PeopleAltOutlinedIcon from "@mui/icons-material/PeopleAltOutlined";
 import LockOutlinedIcon from "@mui/icons-material/LockOutlined";
 import SaveIcon from "@mui/icons-material/Save";
 import { useSettings } from "../../context/SettingsContext";
+import { OFFICIAL_SCHOOL_NAME } from "../../constants";
 import { errorMessage } from "../../services/api";
 import { useChildren } from "../../hooks/useChildren";
 import { useParentProfile } from "../../hooks/useParentProfile";
@@ -445,9 +446,7 @@ const ChildManagement: React.FC = () => {
               </Typography>
               <TextField
                 fullWidth
-                value={
-                  settings?.school_name || "Apolinario Mabini Elementary School"
-                }
+                value={OFFICIAL_SCHOOL_NAME}
                 size="small"
                 slotProps={{ input: { readOnly: true } }}
                 sx={{

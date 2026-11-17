@@ -10,6 +10,7 @@ import pytest
 import openpyxl
 
 from backend.models import EccdDomain, EccdQuestion, Section, Student, StudentEccdEvaluation, User
+from backend.constants import OFFICIAL_SCHOOL_NAME
 from backend.routes.teachers import router as teachers_router
 from backend.tests import test_eccd_card_exports as fixtures
 from backend.utils.excel import student_workbook, summary_workbook, workbook_bytes
@@ -328,7 +329,7 @@ def test_summary_single_page_capacity_metadata_and_bottom_counts(cohort, count):
     assert_pdf(bytes(pdf.output()), True)
     for page, sheet, period in zip(pdf.pages.values(), official_sheets, ("PRETEST", "MID", "POSTTEST")):
         stream = page.contents.content_stream()
-        for text, font in (("Apolinario Mabini Elementary School", "reportB"),
+        for text, font in ((OFFICIAL_SCHOOL_NAME, "reportB"),
                            ("School Number: 136481", "reportB"),
                            (f"ECCD Section Summary — {period}", "reportB"),
                            ("Section: DIAMOND", "report"), ("School Year: 2026-2027", "report"),

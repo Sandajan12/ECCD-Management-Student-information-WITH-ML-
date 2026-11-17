@@ -4,7 +4,6 @@ import re
 
 from sqlalchemy import String, inspect, text
 from sqlalchemy.engine import Connection
-from sqlalchemy.dialects.postgresql import insert
 
 from backend.config.database import engine
 from backend.migrations.phase1 import LEDGER, MigrationError, select_schema
@@ -50,7 +49,8 @@ def apply_email_only_identity(connection: Connection, schema: str = "public") ->
         # Settings is a singleton. With historical multiple Chairmen, retain the
         # oldest account's name deterministically; no account is removed/merged.
         if connection.execute(text("SELECT EXISTS (SELECT 1 FROM users WHERE role='super-admin')")).scalar_one():
-            connection.execute(insert(SystemSettings.__table__).values(id=1).on_conflict_do_nothing(index_elements=["id"]))
+            # Use database defaults from this migration's historical settings schema.
+            connection.execute(text("INSERT INTO system_settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING"))
         connection.execute(text("UPDATE system_settings SET chairman_name = (SELECT username FROM users WHERE role='super-admin' ORDER BY user_id LIMIT 1) WHERE id=1 AND chairman_name IS NULL"))
     connection.execute(text("UPDATE users SET email=lower(btrim(email)) WHERE email IS DISTINCT FROM lower(btrim(email))"))
     connection.execute(text(f"CREATE UNIQUE INDEX IF NOT EXISTS {INDEX} ON users (lower(email))"))

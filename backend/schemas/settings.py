@@ -19,7 +19,7 @@ class SettingsResponse(BaseModel):
 
 class SchoolSettingsResponse(SettingsResponse):
     id: int = 1
-    school_name: str = Field(max_length=255)
+    system_name: str = Field(max_length=255)
     principal_name: str | None = Field(default=None, max_length=255)
     chairman_name: str | None = Field(default=None, max_length=255)
     school_year_start_month: OpeningMonth
@@ -34,7 +34,7 @@ class SettingsUpdateResult(ApiModel):
 
 
 class SchoolSettingsUpdate(ApiModel):
-    school_name: str | None = Field(default=None, min_length=1, max_length=255)
+    system_name: str | None = Field(default=None, min_length=1, max_length=255)
     principal_name: str | None = Field(default=None, max_length=255)
     chairman_name: str | None = Field(default=None, max_length=255)
     system_title: str | None = Field(default=None, min_length=1, max_length=255)

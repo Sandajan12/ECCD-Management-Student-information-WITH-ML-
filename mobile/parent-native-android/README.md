@@ -66,7 +66,7 @@ when the optional field is omitted, including for accounts created before this a
   observations in eligible open windows.
 - Readiness and manually requested Random Forest insights, including probability
   percentages, baseline domains, home activities and research limitations.
-- Dynamic school name/color/data-URL PNG/JPEG/WebP logo from `/api/settings`.
+- Dynamic `system_name`/color/data-URL PNG/JPEG/WebP logo from `/api/settings`.
   The bundled seal is the fallback for unavailable/unsupported logo formats.
 
 - Link Child validates 12 ASCII LRN digits and preserves its form until confirmed;

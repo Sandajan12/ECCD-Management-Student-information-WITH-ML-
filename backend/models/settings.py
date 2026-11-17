@@ -1,6 +1,7 @@
 from sqlalchemy import CheckConstraint, Column, Integer, String, Text
 
 from .base import Base
+from backend.constants import DEFAULT_SYSTEM_NAME
 
 
 class SystemSettings(Base):
@@ -8,7 +9,7 @@ class SystemSettings(Base):
 
     id = Column(Integer, primary_key=True, default=1)
     system_title = Column(String(255), default="School Management System")
-    school_name = Column(String(255), default="APOLINARIO MABINI ELEMENTARY SCHOOL", server_default="APOLINARIO MABINI ELEMENTARY SCHOOL", nullable=False)
+    system_name = Column(String(255), default=DEFAULT_SYSTEM_NAME, server_default=DEFAULT_SYSTEM_NAME, nullable=False)
     principal_name = Column(String(255), nullable=True)
     chairman_name = Column(String(255), nullable=True)
     school_year_start_month = Column(Integer, default=8, server_default="8", nullable=False)

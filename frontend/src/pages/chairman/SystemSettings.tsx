@@ -295,7 +295,8 @@ function AccountSettings() {
   );
 }
 interface BrandingFields {
-  school_name: string;
+  system_name: string;
+  school_name?: string; // Read older device drafts without discarding their inputs.
   principal_name: string;
   chairman_name: string;
   system_title: string;
@@ -318,7 +319,7 @@ function SchoolBranding({
   const { values, change, save } = useDurableForm<BrandingFields>(
     "school_settings",
     {
-      school_name: initial.school_name,
+      system_name: initial.system_name,
       principal_name: initial.principal_name || "",
       chairman_name: initial.chairman_name || "",
       system_title: initial.system_title,
@@ -330,6 +331,8 @@ function SchoolBranding({
   const saving = useRef(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const systemName =
+    values.system_name ?? values.school_name ?? initial.system_name;
   const chooseLogo = (file: File | undefined) => {
     if (!file) return;
     if (!file.type.startsWith("image/")) {
@@ -357,7 +360,7 @@ function SchoolBranding({
             const monthRevision =
               readDraft<OpeningMonthFields>(openingDraftKey)?.revision;
             const result = await save("/api/settings/update", "put", {
-              school_name: values.school_name,
+              system_name: systemName,
               principal_name: values.principal_name,
               system_title: values.system_title,
               primary_color: values.primary_color,
@@ -368,7 +371,7 @@ function SchoolBranding({
             });
             setMessage(
               result === "saved"
-                ? "School settings saved."
+                ? "System settings saved."
                 : "Your draft is saved on this device. Reconnect and submit again.",
             );
             if (result === "saved") {
@@ -390,15 +393,15 @@ function SchoolBranding({
           </p>
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <Field
-              label="School Name:"
-              placeholder="e.g. APOLINARIO MABINI ELEMENTARY SCHOOL"
+              label="System Name:"
+              placeholder="e.g. ECCD Management System"
               containerClassName="md:col-span-2 [&_label]:text-sm [&_label]:leading-[1.43] [&_label]:text-[#111827]"
               className="w-full rounded-lg"
               maxLength={255}
-              value={values.school_name}
+              value={systemName}
               required
               onChange={(e) =>
-                change({ ...values, school_name: e.target.value })
+                change({ ...values, system_name: e.target.value })
               }
             />
             <Field

@@ -192,7 +192,7 @@ function MainLayoutContent({ children }: MainLayoutProps) {
             />
           )}
           <p className="line-clamp-2 w-full text-xs font-bold leading-tight tracking-[-0.02em] break-words text-white/90">
-            {settings.school_name || "ECCD Management System"}
+            {settings.system_name || "ECCD Management System"}
           </p>
           <p
             className={`mt-1 leading-[1.5] tracking-[0.1px] ${role === "super-admin" || role === "admin" ? "text-base font-bold text-white" : "text-[11px] text-[#94a3b8]"}`}
@@ -278,7 +278,7 @@ function MainLayoutContent({ children }: MainLayoutProps) {
           />
         )}
         <span className="min-w-0 flex-1 truncate text-sm leading-[1.5] font-bold tracking-[0.2px] legacy-sm:text-base">
-          {settings.school_name || "ECCD Management System"}
+          {settings.system_name || "ECCD Management System"}
         </span>
         {role === "user" && (
           <button

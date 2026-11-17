@@ -38,7 +38,7 @@ export const palette = {
 };
 export const BrandColor = createContext(palette.primary);
 export const SchoolBrand = createContext<Branding>({
-  school_name: "AMES Parent",
+  system_name: "AMES Parent",
   primary_color: palette.primary,
   logo_url: null,
 });

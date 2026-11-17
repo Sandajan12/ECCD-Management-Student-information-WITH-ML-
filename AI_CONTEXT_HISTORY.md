@@ -1,5 +1,44 @@
 # AMES Context History
 
+## 2026-11-17 — System branding separated from official school identity (local)
+
+On `feat/parent-native-android`, renamed the settings column/API/client branding
+to `system_name`. Chairman System Personalization uses **System Name:**; web
+sidebar/login/document title and native branding use it. Existing stored names
+and owner-scoped legacy Chairman drafts are preserved. Official school documents,
+previews, PDFs, summary/checklist continuations and student School fields use
+**APOLINARIO MABINI ELEMENTARY SCHOOL**, independently of personalization. Imports
+validate supplied Info Sheet/domain school headers; headerless historical files
+and section authorization remain supported. Backups export `system_name`, accept
+legacy `school_name`, and reject conflicting dual values before writes.
+
+Added explicit `022_system_name`, startup-only validation and ordered bootstrap
+registration. Historical migration schemas retain the older column until 022.
+Verified the configured target was loopback `localhost/ames_parity_dev`, ledger
+021, with no other database sessions. Executed `backend.migrations.system_name`
+`--check` (pending, no mutation), `--apply`, `--check` (passed). The transaction
+compared all settings values before/after; only the future-row default changed
+to `ECCD Management System`. No remote service tool, deployment, push or main
+branch operation occurred; `mobile/parent-android` and unrelated work were left
+untouched.
+
+Executed targeted verification:
+
+- `test_system_name.py`, `test_settings_cleanup.py`, `test_checklist_workbook.py`:
+  **15 passed**, including seven subtests. Added PDF header coverage subsequently
+  passed `test_system_name.py -k documents`: **1 passed**, six deselected.
+- `test_phase2.py -k 'import or backup or form_settings'`: **11 passed**, 33
+  deselected. No complete backend or Playwright suite ran.
+- Frontend app/node TypeScript and native TypeScript: **passed**.
+- `pnpm.cmd --dir mobile/parent-native-android test`: **60 passed**; after adding
+  a branding display assertion, focused native login checks: **4 passed**.
+- `playwright.parent-sync.config.ts offline-scope.spec.ts --grep
+  'retired branding preserves old settings drafts'`: **2 passed**, desktop/mobile.
+  Mocked sessions verify draft preservation/manual submission, not production auth.
+
+Existing deprecation/Node experimental warnings remain. No Android build/JVM or
+real-device authentication checks were run; no hosted migration was performed.
+
 ## 2026-11-17 — Chairman portal title and spacing consistency (local)
 
 On `feat/parent-native-android`, aligned Dashboard, Teacher Accounts, Student

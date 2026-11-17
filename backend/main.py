@@ -37,6 +37,7 @@ from backend.migrations.teacher_marked_at import check_teacher_marked_at
 from backend.migrations.eccd_question_sequence import check_eccd_question_sequence
 from backend.migrations.refresh_cookie_sessions import check_refresh_cookie_sessions
 from backend.migrations.parent_home_observations import check_parent_home_observations
+from backend.migrations.system_name import check_system_name
 from backend.routes.home_observations import router as home_observations_router
 
 access_logger = logging.getLogger("uvicorn.access")
@@ -81,6 +82,7 @@ def initialize_runtime():
         check_email_only_identity(connection, schema)
         check_refresh_cookie_sessions(connection, schema)
         check_parent_home_observations(connection, schema)
+        check_system_name(connection, schema)
         check_phase2(connection, schema)
         check_optional_student_lrn(connection, schema)
         check_eccd_question_sequence(connection, schema)

@@ -23,12 +23,13 @@ def get_settings(db: Session = Depends(get_db)):
 
 
 @router.put("/update", response_model=SettingsUpdateResult)
+@router.put("", response_model=SettingsUpdateResult)
 async def update_settings(request: Request, db: Session = Depends(get_db), user: User = Depends(verify_role(["super-admin"]))):
     if request.headers.get("content-type", "").startswith("application/json"):
         try:
             data = await request.json()
         except ValueError:
-            raise HTTPException(422, "Invalid JSON school settings.") from None
+            raise HTTPException(422, "Invalid JSON system settings.") from None
         return await save_settings(data, None, db, user)
     async with request.form() as form:
         data = {key: value for key, value in form.items() if isinstance(value, str)}
@@ -39,7 +40,7 @@ async def save_settings(data, form, db: Session, user: User):
     try:
         payload = SchoolSettingsUpdate.model_validate(data)
     except ValidationError:
-        raise HTTPException(422, "Invalid school settings, colour or opening month.") from None
+        raise HTTPException(422, "Invalid system settings, colour or opening month.") from None
     images = {}
     if form and form.get("systemLogo") and hasattr(form["systemLogo"], "read"):
         file = form["systemLogo"]

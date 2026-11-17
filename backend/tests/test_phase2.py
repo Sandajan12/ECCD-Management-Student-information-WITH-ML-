@@ -26,6 +26,7 @@ from backend.migrations.email_only_identity import apply_email_only_identity
 from backend.migrations.remove_trusted_devices import apply_remove_trusted_devices
 from backend.migrations.refresh_cookie_sessions import apply_refresh_cookie_sessions
 from backend.migrations.parent_home_observations import apply_parent_home_observations
+from backend.migrations.system_name import apply_system_name
 from backend.models import Base, EccdQuestion, EmailVerification, FamilyAccess, Message, Parent, Section, SectionTeacher, Student, StudentEccdEvaluation, SystemLog, SystemSettings, Teacher, User
 from backend.models.eccd import EccdAnswer, TestingPeriod
 from backend.models.user import UserRole
@@ -58,6 +59,7 @@ class BackendTests(unittest.TestCase):
             apply_refresh_cookie_sessions(connection, self.schema)
             apply_remove_trusted_devices(connection, self.schema)
             apply_parent_home_observations(connection, self.schema)
+            apply_system_name(connection, self.schema)
         self.test_engine = create_engine(engine.url, connect_args={'options': f'-csearch_path={self.schema},public'})
         self.sessions = sessionmaker(bind=self.test_engine, autoflush=False)
         with self.sessions() as db:
@@ -71,7 +73,7 @@ class BackendTests(unittest.TestCase):
             db.add_all([Section(section_id=1, section_name='Test A', adviser_teacher_id=1), Section(section_id=2, section_name='Test B', adviser_teacher_id=2)])
             db.flush()
             db.add_all([SectionTeacher(section_id=1, teacher_id=1, role='Primary Adviser', status='Active'), SectionTeacher(section_id=2, teacher_id=2, role='Primary Adviser', status='Active'), SectionTeacher(section_id=1, teacher_id=3, role='Primary Adviser', status='Inactive')])
-            db.add(SystemSettings(id=1, current_school_year='2026-2027', school_name='TEST SCHOOL', principal_name='Test Principal', school_year_start_month=8))
+            db.add(SystemSettings(id=1, current_school_year='2026-2027', system_name='TEST SCHOOL', principal_name='Test Principal', school_year_start_month=8))
             db.add_all([Student(student_id=1, lrn_number=LRN, first_name='Test', middle_name='Middle', last_name='Student', date_of_birth=date(2021,1,10), gender='Female', section_id=1, school_year='2026-2027', is_active=True), Student(student_id=2, lrn_number='009876543210', first_name='Old', last_name='Archive', section_id=1, school_year='2025-2026', is_active=False), Student(student_id=3, lrn_number='001111111111', first_name='Other', last_name='Class', section_id=2, school_year='2026-2027', is_active=True)])
             db.flush()
             db.add(FamilyAccess(parent_id=1, student_id=1, relationship_type='Mother'))
@@ -506,7 +508,7 @@ class BackendTests(unittest.TestCase):
         self.assertEqual(result['excelsIn'],'Fine Motor')
 
     def test_settings_month_rollover_exact_undo_and_expiry(self):
-        self.assertEqual(self.call('PUT','/api/settings/update',json={'school_name':"School O'Connor",'principal_name':'Principal','school_year_start_month':6}).status_code,200)
+        self.assertEqual(self.call('PUT','/api/settings/update',json={'system_name':"School O'Connor",'principal_name':'Principal','school_year_start_month':6}).status_code,200)
         self.assertEqual(self.call('PUT','/api/settings/update',json={'school_year_start_month':13}).status_code,422)
         with self.sessions() as db:
             db.add_all([Message(parent_id=1,teacher_id=1,sender_role='teacher',body='Active',is_archived=False),Message(parent_id=1,teacher_id=1,sender_role='teacher',body='Old archive',is_archived=True)])
@@ -545,7 +547,7 @@ class BackendTests(unittest.TestCase):
             self.assertNotIn('lrn_number',document['students'][0])
             db.get(User,1).email='live-new@example.com'
             db.get(User,1).password_hash=get_password_hash('Updated456')
-            db.get(SystemSettings,1).school_name='Changed After Backup'
+            db.get(SystemSettings,1).system_name='Changed After Backup'
             db.commit()
             self.tokens[1]=build_session(db,db.get(User,1))['token']
             live=db.get(User,1).password_hash
@@ -554,7 +556,7 @@ class BackendTests(unittest.TestCase):
         with self.sessions() as db:
             self.assertEqual(db.get(User,1).email,'live-new@example.com')
             self.assertEqual(db.get(User,1).password_hash,live)
-            self.assertEqual(db.get(SystemSettings,1).school_name,'TEST SCHOOL')
+            self.assertEqual(db.get(SystemSettings,1).system_name,'TEST SCHOOL')
             self.assertEqual(db.query(StudentEccdEvaluation).count(),1)
             student=Student(lrn_number='001444444444',first_name='After Restore')
             db.add(student); db.commit()
@@ -571,7 +573,7 @@ class BackendTests(unittest.TestCase):
         with self.sessions() as db:
             self.assertEqual(db.query(Student).count(),3)
             self.assertEqual(db.get(Teacher,1).user_id,2)
-            self.assertEqual(db.get(SystemSettings,1).school_name,'TEST SCHOOL')
+            self.assertEqual(db.get(SystemSettings,1).system_name,'TEST SCHOOL')
         self.assertEqual(self.call('POST','/api/backup/restore',files={'file':('bad.enc',b'bad','application/octet-stream')}).status_code,400)
 
     def test_messages_ownership_persistence_notifications_and_read(self):
@@ -812,7 +814,7 @@ class BackendTests(unittest.TestCase):
         self.assertEqual(str(sheet['W10'].value),LRN)
         # W6/W7 are part of the V6/V7 merged header cells in the official file.
         self.assertIn('2026-2027',sheet['V7'].value)
-        self.assertIn('TEST SCHOOL',sheet['V6'].value)
+        self.assertIn('APOLINARIO MABINI ELEMENTARY SCHOOL',sheet['V6'].value)
         self.assertEqual(sheet['Y28'].value,'TEST PRINCIPAL')
         with self.sessions() as db:
             records=db.query(StudentEccdEvaluation).filter_by(student_id=1).all()
@@ -831,7 +833,7 @@ class BackendTests(unittest.TestCase):
         self.assertEqual(wb.sheetnames,['PR','M','PO','GMF','FMF','SHF','RLF','ELF','CF','SEF'])
         self.assertEqual(wb['PR']['C14'].value,LRN)
         self.assertEqual(wb['PR']['D14'].value,'STUDENT, TEST M.')
-        self.assertEqual(wb['PR']['B3'].value,'TEST SCHOOL')
+        self.assertEqual(wb['PR']['B3'].value,'APOLINARIO MABINI ELEMENTARY SCHOOL')
         self.assertIsNotNone(wb['PR']['Z14'].value)
         wb.close()
         response=self.call('GET','/api/chairman/export-eccd')
@@ -914,7 +916,7 @@ class BackendTests(unittest.TestCase):
         self.assertEqual(self.call('PUT','/api/parents/children/1',5,json={'emergency_contact':'x'*21}).status_code,422)
 
     def test_form_settings_and_backup_file_alias(self):
-        result=self.call('PUT','/api/settings/update',data={'school_name':'Updated School','principal_name':'Updated Principal','school_year_start_month':'7','primary_color':'#123456'})
+        result=self.call('PUT','/api/settings/update',data={'system_name':'Updated School','principal_name':'Updated Principal','school_year_start_month':'7','primary_color':'#123456'})
         self.assertEqual(result.status_code,200)
         self.assertEqual(result.json()['settings']['school_year_start_month'],7)
         backup=self.call('GET','/api/chairman/backup/export').content

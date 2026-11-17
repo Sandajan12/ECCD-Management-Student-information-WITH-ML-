@@ -39,6 +39,7 @@ describe("Compact login and website Terms interactions (mocked hosts)", () => {
     const screen = authHarness(async () => assert.fail("No request expected"));
     t.after(() => screen.unmount());
     let tree = screen.render();
+    assert.match(text(tree), /AMES Parent/);
     assert.doesNotMatch(
       text(tree),
       /Welcome back|Sign in to follow|New to AMES/,

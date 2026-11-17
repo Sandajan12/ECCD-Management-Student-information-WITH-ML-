@@ -181,7 +181,7 @@ async function dashboard(page: Page): Promise<DashboardState> {
       await route.fulfill({
         json: {
           current_school_year: "2026-2027",
-          school_name: "Sample School",
+          system_name: "Sample School",
         },
       });
     } else if (path === "/api/sections") {

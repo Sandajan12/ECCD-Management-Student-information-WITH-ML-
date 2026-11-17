@@ -24,7 +24,7 @@ export interface Child extends Permissions {
   adviser_name?: string | null; teacher_fname?: string | null; teacher_lname?: string | null;
   is_active: boolean; date_of_birth?: string | null; gender?: string | null; masked_lrn: string;
 }
-export interface Branding { school_name: string; primary_color: string; logo_url: string | null; }
+export interface Branding { system_name: string; primary_color: string; logo_url: string | null; }
 export interface ChildProfile extends Child {
   age: number | null; profile_completeness: number;
   address: string | null; handedness: string | null; num_of_siblings: number | null;

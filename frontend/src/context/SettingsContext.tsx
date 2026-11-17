@@ -11,7 +11,7 @@ import { errorMessage } from "../services/api";
 import { sharedGet } from "../services/sharedGet";
 export interface SystemSettings {
   system_title: string;
-  school_name: string;
+  system_name: string;
   principal_name: string | null;
   chairman_name: string | null;
   primary_color: string;
@@ -25,7 +25,7 @@ export interface SystemSettings {
 }
 const defaults: SystemSettings = {
   system_title: "ECCD Management System",
-  school_name: "",
+  system_name: "",
   principal_name: "",
   chairman_name: "",
   primary_color: "#2563eb",
@@ -81,7 +81,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       "--primary-color",
       settings.primary_color,
     );
-    document.title = settings.system_title;
+    document.title = settings.system_name || "ECCD Management System";
   }, [settings]);
   return (
     <SettingsContext.Provider
