@@ -6,6 +6,55 @@ import type {HomeValues} from '../src/homeObservations.ts';
 import {homeLock} from '../src/policy.ts';
 import {ApiError} from '../src/sessionCore.ts';
 
+for (const status of [400, 503]) {
+  test(`photo upload ${status} shows server detail, keeps answers and URI, and requires manual retry`, async () => {
+    const f = assessmentFixture();
+    f.assessment.domains[0].questions[0].photo_eligible = {PRE: true};
+    const photo = {uri: 'file:///private/proof.jpg', type: 'image/jpeg', name: 'proof.jpg'};
+    let fail = true, uploads = 0, posts = 0;
+    const service = new HomeObservations(f.store, 123, 7, async payload => {
+      posts++;
+      assert.equal(payload.photo_ids?.[45], 'a'.repeat(32));
+    }, async () => {
+      uploads++;
+      if (fail) throw new ApiError('Private photo storage is unavailable.', status);
+      return 'a'.repeat(32);
+    });
+    await service.change(2, 'PRE', 45, 'DI-KAYA');
+    await service.photo(2, 'PRE', 45, photo);
+    const key = homeKey(7, 'PRE', 2, 123);
+    const originalRevision = f.store.peek<HomeValues>(key, 123)?.revision;
+    await assert.rejects(service.submit(f.child, f.assessment, 'PRE'), /Private photo storage is unavailable.*answers and photo are saved.*Submit again/);
+    assert.equal(posts, 0);
+    assert.equal(uploads, 1);
+    const retained = f.store.peek<HomeValues>(key, 123);
+    assert.equal(retained?.revision, originalRevision);
+    assert.equal(retained?.values.answers['45'], 'DI-KAYA');
+    assert.deepEqual(retained?.values.photos?.['45'], photo);
+    assert.equal(retained?.is_pending_sync, status === 503);
+    await service.load(f.assessment, 'PRE');
+    assert.equal(uploads, 1);
+    assert.equal(posts, 0);
+    fail = false;
+    await service.submit(f.child, f.assessment, 'PRE');
+    assert.equal(uploads, 2);
+    assert.equal(posts, 1);
+    assert.equal(f.store.peek(key, 123), null);
+  });
+}
+
+test('photo transport failures retain generic offline guidance and never submit answers', async () => {
+  const f = assessmentFixture();
+  f.assessment.domains[0].questions[0].photo_eligible = {PRE: true};
+  let posts = 0;
+  const service = new HomeObservations(f.store, 123, 7, async () => {posts++;}, async () => {throw new TypeError('Network request failed');});
+  await service.change(2, 'PRE', 45, 'KAYA');
+  await service.photo(2, 'PRE', 45, {uri: 'file:///proof.jpg', type: 'image/jpeg', name: 'proof.jpg'});
+  await assert.rejects(service.submit(f.child, f.assessment, 'PRE'), /Your draft is saved on this device. Reconnect and submit again/);
+  assert.equal(posts, 0);
+  assert.equal(f.store.peek<HomeValues>(homeKey(7, 'PRE', 2, 123), 123)?.values.answers['45'], 'KAYA');
+});
+
 test('partial submission sends optional photo reference and preserves photo-only/unrelated drafts', async () => {
   const f = assessmentFixture();
   f.assessment.domains[0].questions[0].photo_eligible = {PRE: true};

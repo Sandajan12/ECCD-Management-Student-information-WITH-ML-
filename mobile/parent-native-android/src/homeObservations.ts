@@ -55,6 +55,7 @@ export class HomeObservations {
     // Persist every request snapshot before HTTP so a process death cannot lose the attempted answers.
     await Promise.all(snapshots.map(({key, snapshot}) => this.store.put(key, {...snapshot, is_pending_sync: true,
       error: undefined, request: {path: '/api/eccd/parent/evaluate', method: 'post', data: payload}})));
+    let uploadingPhoto = false;
     try {
       for (const {key, snapshot} of snapshots) {
         for (const row of payload.evaluations) {
@@ -63,8 +64,10 @@ export class HomeObservations {
           if (!photo) continue;
           const question = assessment.domains.flatMap(d => d.questions).find(q => q.question_id === row.question_id);
           if (question?.photo_eligible?.[period] !== true) throw new ApiError('An earlier KAYA now carries forward. Remove its optional photo before submitting.', 409);
+          uploadingPhoto = !photo.photo_id;
           if (!this.upload) throw new ApiError('Photo upload is unavailable.', 503);
           const photoId = photo.photo_id || await this.upload(row.question_id, period, photo);
+          uploadingPhoto = false;
           await this.store.confirm<HomeValues>(key, this.owner, snapshot.revision, current => ({...current,
             values: {...current.values, photos: {...current.values.photos, [row.question_id]: {...photo, photo_id: photoId}}}}));
           payload.photo_ids = {...payload.photo_ids, [row.question_id]: photoId};
@@ -76,7 +79,10 @@ export class HomeObservations {
       const network = !(error instanceof ApiError) || [408, 425].includes(error.status) || error.status >= 500;
       if (!network) await Promise.all(snapshots.map(({key, snapshot}) => this.store.confirm<HomeValues>(key, this.owner, snapshot.revision,
         current => ({...current, is_pending_sync: false, error: messageOf(error)}))));
-      throw new Error(network ? OFFLINE_MESSAGE : messageOf(error));
+      const message = uploadingPhoto && error instanceof ApiError
+        ? `${messageOf(error)} Your answers and photo are saved on this device. Submit again when photo uploads are available.`
+        : network ? OFFLINE_MESSAGE : messageOf(error);
+      throw new Error(message);
     }
     const cleanup = await Promise.allSettled(snapshots.map(({key, snapshot, answers}) => this.store.confirm<HomeValues>(key, this.owner, snapshot.revision, current => {
       const remaining = {...current.values.answers};

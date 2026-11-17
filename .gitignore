@@ -3,6 +3,7 @@
 # =============================================================================
 
 # 1. Credentials & Environment Secrets (CRITICAL)
+backend/.local_home_photos/
 .env
 .env.*
 *.env

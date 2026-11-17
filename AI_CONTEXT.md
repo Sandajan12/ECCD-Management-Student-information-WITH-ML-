@@ -66,7 +66,17 @@ side and 20 megapixels; sanitize to a fresh metadata-free JPEG, downscaled withi
 `SUPABASE_STORAGE_URL` (HTTPS project origin), `SUPABASE_STORAGE_SERVICE_KEY` and
 `HOME_OBSERVATION_PHOTO_BUCKET` (default `home-observation-proofs`). The bucket
 must already exist privately without client policies; the adapter rejects public
-buckets. Tests override storage with an isolated in-memory adapter.
+buckets. In `ENVIRONMENT=development` only, absent/blank URL and service key
+automatically use private gitignored `backend/.local_home_photos/`; partial
+configuration and configured-provider failures never fall back. Production never
+uses local storage. Internal `local/` object keys keep development reads/deletion
+routed correctly after remote configuration changes; existing remote keys remain
+remote. There is no static/public photo mount; Vite explicitly denies this
+directory through its workspace `/@fs/` file access. Existing authenticated no-store
+delivery, review deletion/retries and 24-hour unattached expiry apply to both
+backends. Tests use isolated memory/temporary filesystem storage and mocked HTTP.
+Web/native upload errors expose server detail while retaining drafts for manual
+retry; failed uploads never submit answers or report a confirmed submission.
 
 `home_observation_photos` stores opaque keys/lifecycle metadata, never image bytes.
 Only the author/current authorized reviewer can read pending evidence through

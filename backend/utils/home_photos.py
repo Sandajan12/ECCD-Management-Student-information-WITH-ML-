@@ -1,6 +1,9 @@
 """Private storage only. Tests inject MemoryPhotoStorage; no client storage keys."""
 from io import BytesIO
 import logging
+import os
+from pathlib import Path
+import re
 import warnings
 from datetime import timedelta
 from urllib.parse import quote, urlsplit
@@ -12,6 +15,17 @@ from backend.config.settings import settings
 from backend.models import HomeObservationPhoto, ParentHomeObservation
 from backend.utils.eccd_dates import now_pht
 from backend.utils.uploads import IMAGE_LIMIT
+
+
+LOCAL_PHOTO_DIR = Path(__file__).resolve().parents[1] / ".local_home_photos"
+
+
+def photo_object_key(photo_id: str) -> str:
+    secret = settings.SUPABASE_STORAGE_SERVICE_KEY
+    local = (settings.ENVIRONMENT.strip().lower() == "development"
+             and not settings.SUPABASE_STORAGE_URL.strip()
+             and not (secret and secret.get_secret_value().strip()))
+    return ("local/" if local else "") + photo_id + ".jpg"
 
 
 def sanitize_photo(data: bytes, content_type: str) -> bytes:
@@ -93,8 +107,63 @@ class MemoryPhotoStorage:
         self.objects.pop(key, None)
 
 
+class LocalPhotoStorage:
+    """Development evidence stays outside public assets and is never served directly."""
+    def _path(self, key: str) -> Path:
+        if settings.ENVIRONMENT.strip().lower() != "development":
+            raise HTTPException(503, "Local photo storage is available only in development.")
+        if not re.fullmatch(r"local/[0-9a-f]{32}\.jpg", key):
+            raise HTTPException(503, "Invalid private photo key.")
+        directory = LOCAL_PHOTO_DIR
+        path = directory / key.removeprefix("local/")
+        if (directory.is_symlink() or directory.is_junction()
+                or directory.resolve() != directory.absolute()
+                or path.is_symlink() or path.is_junction()
+                or path.resolve().parent != directory.resolve()):
+            raise HTTPException(503, "Invalid private photo path.")
+        return path
+
+    def put(self, key: str, data: bytes):
+        try:
+            path = self._path(key)
+            path.parent.mkdir(mode=0o700, exist_ok=True)
+            with os.fdopen(os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "wb") as file:
+                file.write(data)
+        except OSError:
+            raise HTTPException(503, "Private local photo storage is temporarily unavailable.") from None
+
+    def get(self, key: str) -> bytes:
+        try:
+            return self._path(key).read_bytes()
+        except FileNotFoundError:
+            raise HTTPException(404, "Photo is unavailable.") from None
+        except OSError:
+            raise HTTPException(503, "Private local photo storage is temporarily unavailable.") from None
+
+    def delete(self, key: str):
+        try:
+            self._path(key).unlink(missing_ok=True)
+        except OSError:
+            raise HTTPException(503, "Private local photo storage is temporarily unavailable.") from None
+
+
+class HomePhotoStorage:
+    # Route by persisted key, including cleanup after remote configuration changes.
+    def _backend(self, key: str):
+        return LocalPhotoStorage() if key.startswith("local/") else SupabasePhotoStorage()
+
+    def put(self, key: str, data: bytes):
+        self._backend(key).put(key, data)
+
+    def get(self, key: str) -> bytes:
+        return self._backend(key).get(key)
+
+    def delete(self, key: str):
+        self._backend(key).delete(key)
+
+
 def photo_storage():
-    return SupabasePhotoStorage()
+    return HomePhotoStorage()
 
 
 def cleanup_photos(db, storage, *, photo_ids=None) -> int:

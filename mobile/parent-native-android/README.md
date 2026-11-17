@@ -198,6 +198,15 @@ LAN origins are rejected. Auth Origin/Referer remain the audited school origin.
 The base URL is compiled into the native app and passed to TypeScript through
 the non-secret `NativeSession.baseUrl` constant. Rebuild after changing it.
 
+Local home-observation photos need no remote storage setup when the backend uses
+`ENVIRONMENT=development` with both `SUPABASE_STORAGE_URL` and
+`SUPABASE_STORAGE_SERVICE_KEY` blank. The API keeps sanitized photos in private
+gitignored `backend/.local_home_photos/`; the native multipart/payload contracts
+are unchanged. Configured remote storage stays active. Upload errors retain the
+URI and answers and show the server detail for manual retry; no upload or parent
+submission replays automatically. Real-device picker URI retention still needs
+device verification.
+
 ## Release identity (outside Git)
 
 New native-app identity, separate from the older TWA:

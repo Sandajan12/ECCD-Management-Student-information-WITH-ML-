@@ -492,15 +492,24 @@ export function useParentAssessment(child?: Student, readOnly = false) {
         message: "Submitted — awaiting teacher review.",
       };
     } catch (err) {
-      if (
+      if (currentChild.current !== identity) return;
+      const retained =
         isNetworkError(err) ||
-        (isAxiosError(err) && (err.response?.status || 0) >= 500)
-      )
+        (isAxiosError(err) && (err.response?.status || 0) >= 500);
+      const photoUploadFailed =
+        isAxiosError(err) &&
+        Boolean(err.response) &&
+        err.config?.url?.startsWith("/api/eccd/parent/home-photos/");
+      const message = photoUploadFailed
+        ? `${errorMessage(err)} Your answers and photo are saved on this device. Submit again when photo uploads are available.`
+        : retained
+          ? "Your draft is saved on this device. Reconnect and submit again."
+          : errorMessage(err);
+      if (retained)
         setFeedback({
           scope: identity,
-          error: "",
-          success:
-            "Your draft is saved on this device. Reconnect and submit again.",
+          error: photoUploadFailed ? message : "",
+          success: photoUploadFailed ? "" : message,
         });
       else {
         for (const snapshot of snapshots) {
@@ -513,21 +522,15 @@ export function useParentAssessment(child?: Student, readOnly = false) {
             write(snapshot.key, {
               ...snapshot.draft,
               is_pending_sync: false,
-              error: errorMessage(err),
+              error: message,
             });
         }
-        setFeedback({ scope: identity, error: errorMessage(err), success: "" });
+        setFeedback({ scope: identity, error: message, success: "" });
         if (currentChild.current === identity) void assessment.refresh();
       }
-      const retained =
-        isNetworkError(err) ||
-        (isAxiosError(err) && (err.response?.status || 0) >= 500);
-      if (currentChild.current !== identity) return;
       return {
-        severity: (retained ? "success" : "error") as "success" | "error",
-        message: retained
-          ? "Your draft is saved on this device. Reconnect and submit again."
-          : errorMessage(err),
+        severity: (retained && !photoUploadFailed ? "success" : "error") as "success" | "error",
+        message,
       };
     } finally {
       saveLock.current = false;

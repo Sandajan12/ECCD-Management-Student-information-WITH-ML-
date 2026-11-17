@@ -53,6 +53,16 @@ Keep database/email secrets in backend/.env. Local development may use
 requires OTP enabled and configured email delivery.
 Existing account credentials are preserved.
 
+Parent home-observation photos need no remote storage setup when the backend uses
+`ENVIRONMENT=development` and both `SUPABASE_STORAGE_URL` and
+`SUPABASE_STORAGE_SERVICE_KEY` are blank. Sanitized photos stay in gitignored
+`backend/.local_home_photos/` and are available only through the authenticated
+no-store photo endpoint. Saved Teacher Accept/Decline deletes them; failed deletions
+retain cleanup retries. Configured private Supabase storage remains active, and
+partial configuration/provider outages never fall back. Restart the backend after
+updating source/settings and restart Vite to load its explicit private-photo
+filesystem deny rule, then manually resubmit the retained answer/photo draft.
+
 ## Migrated workflows
 
 - Staff/parent dashboards, domain progress and released assessment results.

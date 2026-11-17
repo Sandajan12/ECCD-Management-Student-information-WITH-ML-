@@ -1,5 +1,48 @@
 # AMES Context History
 
+## 2026-11-17 — Local home-photo fallback and upload error visibility
+
+On `feat/parent-native-android`, diagnosed photo submissions stopping before
+`POST /api/eccd/parent/evaluate`: local storage credentials were absent but the
+backend always selected Supabase. The pending list reads metadata only; preview
+failures do not hide pending observations. Native uses the same valid multipart
+and photo-ID contracts and shares the failure when targeting the local API.
+
+Added private gitignored filesystem storage only for `ENVIRONMENT=development`
+with both URL/key absent or blank. Partial configuration, configured-provider
+failures and production never fall back. Persisted `local/` keys route development
+reads/deletion after remote configuration changes, without changing legacy remote
+keys or schemas. Existing authenticated no-store delivery, post-commit review
+deletion, durable cleanup retries and abandoned-upload expiry remain in force.
+Vite now explicitly denies the photo directory through workspace `/@fs/` access,
+preserving its existing secret-deny patterns; gitignore alone was insufficient.
+Web/native photo-upload responses now expose server detail while preserving drafts
+and manual-only retry. No dependencies, operational migrations, remote tools,
+deployments, pushes or changes to the older TWA were made.
+
+Executed only the four approved verification commands:
+
+- `uv run --no-project --python .venv312 python -m pytest backend/tests/test_home_photo_storage.py backend/tests/test_parent_home_review.py -q`
+  — **41 passed**, 3 warnings (existing TestClient deprecations and enum collection).
+  Includes isolated local upload/submission/pending/private-preview/Accept/Decline,
+  filesystem deletion retry, missing-file cleanup, configuration/key routing,
+  preview outages, authorization and retained failed-upload metadata. The final
+  rerun adds a Vite configuration/access check for denied photos and secrets while
+  keeping ordinary frontend source accessible; it starts no browser or HTTP server.
+- `pnpm.cmd --dir frontend exec tsc --noEmit -p tsconfig.app.json` — passed.
+- `pnpm.cmd --dir mobile/parent-native-android exec tsc --noEmit` — passed.
+- `pnpm.cmd --dir mobile/parent-native-android test` — **60 passed**, no skips.
+  Includes returned upload errors, retained URI/answers, manual retry, cached photo
+  IDs, account switching and multipart/RAM bearer behavior in mocked hosts.
+
+Dependency inspection refreshed relevant Python/TypeScript AST references where
+the ignored Graphify cache was stale. Ponytail review retained only the two storage
+backends and key routing needed for cleanup/configuration changes; no additional
+React state or dependencies. Website picker/end-to-end browser interaction,
+installed APK targeting, real-device URI persistence and production storage were
+not tested. Restart the local backend and Vite, then manually resubmit the retained draft;
+no remote storage setup is needed under the development fallback policy.
+
 ## 2026-11-17 — Parent Overview visibility and DI-KAYA-first viewing (local)
 
 On `feat/parent-native-android`, removed the duplicate website Home Checklist

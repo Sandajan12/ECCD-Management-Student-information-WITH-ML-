@@ -1,13 +1,17 @@
 """Review/photos exercise real HTTP authorization against disposable loopback schemas."""
 from datetime import timedelta
 from io import BytesIO
+from pathlib import Path
+from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
+from fastapi import HTTPException
 from PIL import Image
 from backend.tests import test_phase2
 from backend.models import ParentHomeObservation, HomeObservationPhoto, StudentEccdEvaluation, Teacher, Section, FamilyAccess, Student
 from backend.models.eccd import TestingPeriod, EccdAnswer
-from backend.utils.home_photos import cleanup_photos, sanitize_photo
+from backend.utils.home_photos import LocalPhotoStorage, cleanup_photos, photo_storage, sanitize_photo
+from backend.config.settings import settings
 from backend.utils.eccd_dates import now_pht
 from backend.utils.backups import export_backup, restore_backup
 from backend.migrations.parent_home_observations import apply_parent_home_observations, check_parent_home_observations
@@ -228,6 +232,90 @@ class ParentHomeReviewTests(unittest.TestCase):
         self.assertEqual(self.review(status="declined").status_code, 200)
         self.assertFalse(self.storage.objects)
         self.assertEqual(self.call("GET", url, 2).status_code, 404)
+
+    def test_local_photo_upload_pending_preview_and_review_lifecycle(self):
+        test_phase2.api.dependency_overrides.pop(photo_storage)
+        with TemporaryDirectory() as temporary, patch("backend.utils.home_photos.LOCAL_PHOTO_DIR", Path(temporary) / "photos"), \
+                patch.object(settings, "ENVIRONMENT", "development"), \
+                patch.object(settings, "SUPABASE_STORAGE_URL", ""), \
+                patch.object(settings, "SUPABASE_STORAGE_SERVICE_KEY", None), \
+                patch("backend.utils.home_photos.httpx.Client") as remote:
+            for decision in ("declined", "accepted"):
+                uploaded = self.upload()
+                self.assertEqual(uploaded.status_code, 200, uploaded.text)
+                photo_id = uploaded.json()["photo_id"]
+                file = Path(temporary) / "photos" / (photo_id + ".jpg")
+                self.assertTrue(file.is_file())
+                self.assertNotIn(b"Private location", file.read_bytes())
+                self.assertEqual(self.submit(photo=photo_id).status_code, 200)
+                row = self.pending()[0]
+                self.assertTrue(row["has_photo"])
+                url = f'/api/eccd/home-observations/{row["observation_id"]}/photo'
+                preview = self.call("GET", url, 2)
+                self.assertEqual(preview.status_code, 200)
+                self.assertEqual(preview.headers["cache-control"], "no-store")
+                self.assertEqual(preview.content, file.read_bytes())
+                self.assertEqual(self.call("GET", url, 5).status_code, 200)
+                self.assertEqual(self.call("GET", url, 6).status_code, 403)
+                self.assertEqual(self.call("GET", url, 3).status_code, 403)
+                self.assertEqual(self.fixture.client.get(url).status_code, 401)
+                with self.sessions() as db:
+                    self.assertEqual(db.get(HomeObservationPhoto, photo_id).object_key, "local/" + photo_id + ".jpg")
+                    self.assertEqual(db.query(StudentEccdEvaluation).count(), 0)
+                # A preview outage must not hide the observation or block its review.
+                with patch.object(LocalPhotoStorage, "get", side_effect=HTTPException(503, "Photo unavailable.")):
+                    self.assertEqual(self.call("GET", url, 2).status_code, 503)
+                    self.assertEqual(self.pending()[0]["observation_id"], row["observation_id"])
+                reviewed = self.review(status=decision)
+                self.assertEqual(reviewed.status_code, 200, reviewed.text)
+                self.assertEqual(reviewed.json()["cleanup_pending"], 0)
+                self.assertFalse(file.exists())
+                self.assertEqual(self.call("GET", url, 2).status_code, 404)
+                self.assertFalse(self.pending())
+            remote.assert_not_called()
+
+    def test_local_photo_delete_failure_and_missing_file_preserve_review_and_retry(self):
+        test_phase2.api.dependency_overrides.pop(photo_storage)
+        with TemporaryDirectory() as temporary, patch("backend.utils.home_photos.LOCAL_PHOTO_DIR", Path(temporary) / "photos"), \
+                patch.object(settings, "ENVIRONMENT", "development"), \
+                patch.object(settings, "SUPABASE_STORAGE_URL", ""), \
+                patch.object(settings, "SUPABASE_STORAGE_SERVICE_KEY", None):
+            uploaded = self.upload()
+            self.assertEqual(uploaded.status_code, 200, uploaded.text)
+            photo_id = uploaded.json()["photo_id"]
+            self.assertEqual(self.submit(photo=photo_id).status_code, 200)
+            row = self.pending()[0]
+            url = f'/api/eccd/home-observations/{row["observation_id"]}/photo'
+            with patch.object(Path, "unlink", side_effect=PermissionError("file busy")):
+                reviewed = self.review()
+            self.assertEqual(reviewed.status_code, 200, reviewed.text)
+            self.assertEqual(reviewed.json()["cleanup_pending"], 1)
+            self.assertEqual(self.call("GET", url, 2).status_code, 404)
+            file = Path(temporary) / "photos" / (photo_id + ".jpg")
+            self.assertTrue(file.exists())
+            # Simulate an externally removed file before retry; cleanup remains idempotent.
+            file.unlink()
+            with self.sessions() as db:
+                self.assertEqual(db.query(StudentEccdEvaluation).count(), 1)
+                self.assertTrue(db.get(HomeObservationPhoto, photo_id).delete_pending)
+                self.assertEqual(cleanup_photos(db, photo_storage()), 0)
+                self.assertIsNone(db.get(HomeObservationPhoto, photo_id).object_key)
+
+    def test_photo_storage_failure_creates_no_pending_answer_and_no_photo_still_works(self):
+        test_phase2.api.dependency_overrides.pop(photo_storage)
+        with patch.object(settings, "ENVIRONMENT", "development"), \
+                patch.object(settings, "SUPABASE_STORAGE_URL", ""), \
+                patch.object(settings, "SUPABASE_STORAGE_SERVICE_KEY", None), \
+                patch.object(LocalPhotoStorage, "put", side_effect=HTTPException(503, "Photo storage unavailable.")):
+            failed = self.upload()
+            self.assertEqual(failed.status_code, 503)
+            self.assertFalse(self.pending())
+            with self.sessions() as db:
+                self.assertFalse(db.query(HomeObservationPhoto).one().ready)
+                self.assertEqual(db.query(ParentHomeObservation).count(), 0)
+                self.assertEqual(db.query(StudentEccdEvaluation).count(), 0)
+            self.assertEqual(self.submit().status_code, 200)
+            self.assertFalse(self.pending()[0]["has_photo"])
 
     def test_rejected_uploads_and_photo_alone_creates_no_answer(self):
         for data, mime in ((b"not an image", "image/jpeg"), (image_bytes(), "image/png"), (image_bytes(), "image/svg+xml")):

@@ -8,7 +8,7 @@ from backend.schemas.home_observation import HomeObservationPublic, HomeReviewBa
 from backend.utils.access import authorize_student, resolve_student, current_teacher, teacher_sections, permissions_for_student
 from backend.utils.deps import verify_role
 from backend.utils.home_observations import parent_question_access, public_observation, save_review
-from backend.utils.home_photos import photo_storage, sanitize_photo
+from backend.utils.home_photos import photo_object_key, photo_storage, sanitize_photo
 from backend.utils.uploads import IMAGE_LIMIT
 from backend.utils.mastery import carry_sources
 from backend.utils.eccd_dates import now_pht
@@ -32,7 +32,7 @@ def upload_photo(student_id: int = Path(gt=0), question_id: int = Path(gt=0), pe
     image = sanitize_photo(file.file.read(IMAGE_LIMIT + 1), file.content_type)
     photo_id = uuid4().hex
     photo = HomeObservationPhoto(photo_id=photo_id, student_id=student_id, parent_id=parent.parent_id,
-        question_id=question_id, testing_period=period, object_key=photo_id + ".jpg", created_at=now_pht())
+        question_id=question_id, testing_period=period, object_key=photo_object_key(photo_id), created_at=now_pht())
     db.add(photo)
     db.commit()  # Persist the object key before uploading; crashes leave a retryable expiry record.
     storage.put(photo.object_key, image)
