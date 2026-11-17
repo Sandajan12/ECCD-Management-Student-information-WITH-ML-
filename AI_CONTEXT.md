@@ -118,12 +118,18 @@ documentation update, not a new application test run. It establishes neither
 the configured database's migration ledger nor hosted deployment health.
 
 Dated delivery notes, local observations, test outcomes and hybrid/V2 experiments
-are preserved in [AI_CONTEXT_HISTORY.md](AI_CONTEXT_HISTORY.md). The archive
+are preserved in `AI_CONTEXT_HISTORY.md` (local only). The archive
 includes the complete prior context snapshot to preserve the notes' context.
 Its old "current", "fresh" and "pending" labels do not override this guide. Audit
 and plan files elsewhere also retain their original dates/scope. Do not turn an
 old test failure into a current blocker without checking it. No pending code
 repair or deployment is established by this documentation pass.
+
+Documentation tracking policy (2026-11-17): only root `AI_CONTEXT.md` and
+`AGENTS.md` remain tracked Markdown. Historical notes, plans, audits, deployment
+guides and directory READMEs below are optional ignored local copies; fresh clones
+do not include them. Use this guide, `AGENTS.md`, and active source/tests as the
+shared authority. Do not force-add local Markdown or require it to perform work.
 
 For a new account/session, open this repository and start with:
 
@@ -140,12 +146,12 @@ keys with protected backups; do not regenerate them during routine setup.
 
 | Detailed guide | Use |
 | --- | --- |
-| [DEPLOYMENT.md](DEPLOYMENT.md) | Approved hosting and production configuration |
-| [backend/migrations/README.md](backend/migrations/README.md) | Schema upgrades and safeguards |
-| [backend/scripts/README.md](backend/scripts/README.md) | Explicit fresh database provisioning |
-| [frontend/README.md](frontend/README.md) | Frontend setup and targeted checks |
-| [backend/ml/README.md](backend/ml/README.md) | Current RF architecture, evaluation and limits |
-| [TEACHER_ECCD_OFFLINE_SCOPE_PLAN.md](TEACHER_ECCD_OFFLINE_SCOPE_PLAN.md) | Teacher-only replay boundary |
+| `DEPLOYMENT.md` (local only) | Approved hosting and production configuration |
+| `backend/migrations/README.md` (local only) | Schema upgrades and safeguards |
+| `backend/scripts/README.md` (local only) | Explicit fresh database provisioning |
+| `frontend/README.md` (local only) | Frontend setup and targeted checks |
+| `backend/ml/README.md` (local only) | Current RF architecture, evaluation and limits |
+| `TEACHER_ECCD_OFFLINE_SCOPE_PLAN.md` (local only) | Teacher-only replay boundary |
 
 ## 2. Stack and operation
 
@@ -218,7 +224,7 @@ Target only Render **Apolinario Mabini School System** (`backend.main:app`),
 Vercel **eccd-management-student-information-with-ml** (ameskinder.com and
 www.ameskinder.com), and Supabase **AMES_SYSTEM_ML**. Do not operate on
 **AMES-SYSTEM-1** or **ames-system**.
-See [DEPLOYMENT.md](DEPLOYMENT.md), `render.yaml` and `frontend/vercel.json`.
+See `DEPLOYMENT.md` (local only), `render.yaml` and `frontend/vercel.json`.
 Vercel builds from `frontend`; public API/socket URLs point at the Render HTTPS
 origin without `/api`. Backend CORS uses exact origins. Private credentials
 belong only in backend/provider settings.

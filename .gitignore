@@ -181,8 +181,9 @@ backend/tests/test_ml_model.py
 graphify-out/
 computation of grades of each decimal bracket.pdf
 old diagrams/
-<<<<<<< HEAD
-docs/ 
-=======
 docs/
->>>>>>> docs/defense-diagrams
+
+# Keep documentation local, except the two shared agent/context guides.
+*.[mM][dD]
+!/AI_CONTEXT.md
+!/AGENTS.md
