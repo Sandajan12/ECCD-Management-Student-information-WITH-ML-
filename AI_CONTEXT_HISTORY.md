@@ -4877,3 +4877,54 @@ No remote infrastructure tools, hosted migrations, bucket provisioning, pushes,
 main merges or APK builds. Real Android picker/URI lifetime/auth acceptance and
 live private Storage behavior remain unverified; bucket setup, backend credentials,
 hourly scheduling and localhost user review are still required before deployment.
+
+## 2026-11-17 — Authorized production Supabase baseline reset
+
+User authorized Step 2 and confirmed API writers were stopped. Production target
+AMES_SYSTEM_ML (gqywhrytxzkhpidqxhff), database postgres, was verified through MCP.
+An encrypted complete pre-migration snapshot of all 18 public tables was saved
+outside Git, round-trip verified, and compared with current production data before
+changes. Applied official migration SQL/steps 018 -> 020 -> 021 -> 022 through MCP;
+the public ledger now contains all 22 versions. Python production CLI checks were
+not run; catalog verification matched all 17 current ORM tables without mismatches.
+A single locked transaction cleared approved transactional data and all non-Chairman
+accounts. Chairman ID 1 and full domain/question data passed preservation hashes;
+7 domains, 109 questions, settings ID 1, and all 22 ledger rows remain. Authorized
+system_name trim applied. All 14 transactional tables verified empty. Private
+home-observation-proofs bucket created, zero objects, no Storage policies.
+
+No hosting overrides were performed. Render still reported older live 2109496;
+the two later automatic deployments failed, and API readiness timed out. Keep API
+writers stopped until a 022-compatible backend runs; no login/upload acceptance
+was claimed. No application code or existing local environment configuration changed.
+The encrypted backup remains outside Git at
+`C:\Users\user\Desktop\AMES-production-backups\20261117T130938Z\`:
+`snapshot.json.gz.fernet`, `snapshot.key.dpapi`, and `manifest.json`.
+The key requires the same Windows account/profile and computer. This raw public
+data/catalog snapshot is not the application's restore-upload format or a full
+PostgreSQL server backup; original LRN keys are separately required for restored
+ciphertext. Encrypted SHA-256:
+`6386f1dae690cab9c275470bfaff23ba10e6a8f9791be38b4c029c12f31a0284`.
+
+## 2026-11-17 — Render startup failure diagnosis and maintenance cleanup
+
+Read-only Render logs in approved workspace tea-db0d41gu01pc739rkq70 establish
+that both main deployments 554b5a4 (dep-dbu4kubrjlhs73bc3psg) and c2302f2
+(dep-dbu4mmlg1s2s73eth0i0) failed during startup with:
+`Parent review schema missing; explicitly apply migration 021 before starting the API`.
+The later deployment's build-success log was present. This was the intended
+schema safeguard, not a demonstrated code/dependency defect. Migration 021 and
+022 are now applied by the authorized maintenance above. Preserve startup checks;
+no application fix or dependency change is needed for this diagnosed failure.
+
+Vercel production dpl_AGEmMg2iZSEkN6Az7PSknH2Q5u8b was READY on main c2302f2.
+Project environment metadata confirms VITE_PARENT_APP_DOWNLOAD_URL is absent;
+the frontend therefore uses /downloads/ames-parent.apk unless an environment
+value is supplied. An ignored local APK is not included by a Git deployment.
+The Render connector has no environment-variable read operation; the three
+production photo-storage variables remain unverified pending Dashboard evidence.
+No secret values were printed. User requested removal of the two temporary reset
+Markdown reports; durable reset evidence and backup recovery limits are retained
+here. The external encrypted backup is untouched. This commit's push requests
+a fresh automatic deployment; deployment and endpoint success require subsequent
+live checks and are not established by this source/history update.
