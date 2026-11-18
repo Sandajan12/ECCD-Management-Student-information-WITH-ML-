@@ -196,6 +196,12 @@ test("teacher confirmations, reverted edits and corrections send intent and disp
         allow_eccd_question_management: false,
       };
     else if (path === "/api/eccd/domains-progress") json = [domain()];
+    else if (path === "/api/eccd/section/1/period-gates")
+      json = {
+        section_id: 1,
+        required_question_count: 1,
+        prerequisites: { PRE: [], MID: [] },
+      };
     else if (path.startsWith("/api/eccd/assessment/"))
       json = {
         student_id: 1,
@@ -629,6 +635,12 @@ test("teacher ECCD answers and dates survive offline student switching and reloa
         allow_eccd_question_management: false,
       };
     else if (path === "/api/eccd/domains-progress") json = [domain];
+    else if (path === "/api/eccd/section/1/period-gates")
+      json = {
+        section_id: 1,
+        required_question_count: 1,
+        prerequisites: { PRE: [], MID: [] },
+      };
     else if (path.startsWith("/api/eccd/assessment/"))
       json = {
         student_id: Number(path.split("/").at(-1)),
@@ -673,12 +685,11 @@ test("teacher ECCD answers and dates survive offline student switching and reloa
   expect(snapshot.is_pending_sync).toBe(true);
   expect(snapshot.values.answers[11]).toBe("KAYA");
   expect(submissions).toHaveLength(0);
-  const studentSelect = page
-    .locator("select")
-    .filter({ has: page.locator("option[value='2']") });
-  await studentSelect.selectOption("2");
+  await page.getByRole("button", { name: "Next Student", exact: true }).click();
   await expect(answer).not.toHaveClass(/bg-emerald-600/);
-  await studentSelect.selectOption("1");
+  await page
+    .getByRole("button", { name: "Previous Student", exact: true })
+    .click();
   await expect(answer).toHaveClass(/bg-emerald-600/);
   await page.addInitScript(() =>
     Object.defineProperty(navigator, "onLine", {

@@ -371,6 +371,8 @@ test("legacy drafts remain readable and queued payloads wait for manual review",
 test("teacher open and focus fetch fresh details while unsaved edits remain intact", async ({
   page,
 }) => {
+  const now = Date.now();
+  await page.clock.setFixedTime(now);
   const state = await portal(page, true);
   state.child.address = "Parent update before open";
   await page.getByTitle("Edit Student").click();
@@ -380,11 +382,16 @@ test("teacher open and focus fetch fresh details while unsaved edits remain inta
   const reads = state.reads;
   state.child.address = "Parent update on focus";
   await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await expect(input).toHaveValue("Parent update before open");
+  expect(state.reads).toBe(reads);
+  await page.clock.setFixedTime(now + 61000);
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
   await expect(input).toHaveValue("Parent update on focus");
   expect(state.reads).toBeGreaterThan(reads);
   await input.fill("Unsaved teacher address");
   const draftReads = state.reads;
   state.child.address = "Later parent update";
+  await page.clock.setFixedTime(now + 122000);
   await page.evaluate(() => window.dispatchEvent(new Event("focus")));
   await expect(input).toHaveValue("Unsaved teacher address");
   await expect(dialog.getByText(/Showing your unsaved edits/)).toBeVisible();

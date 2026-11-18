@@ -409,10 +409,13 @@ test("a replacement workbook starts without the previous overwrite choice", asyn
 test("a reassigned target invalidates the old confirmation", async ({
   page,
 }) => {
+  const now = Date.now();
+  await page.clock.setFixedTime(now);
   const state = await portal(page);
   await openImport(page);
   await expect(confirmation(page)).toBeVisible();
   state.sectionId = 2;
+  await page.clock.setFixedTime(now + 61000);
   await page.evaluate(() => window.dispatchEvent(new Event("focus")));
   await expect(confirmation(page)).toBeHidden();
   await page.getByRole("button", { name: "Import", exact: true }).click();

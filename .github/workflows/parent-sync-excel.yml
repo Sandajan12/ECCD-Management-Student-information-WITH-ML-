@@ -16,18 +16,18 @@ jobs:
       postgres:
         image: postgres:16
         env:
-          POSTGRES_DB: ames_ci
+          POSTGRES_DB: ames_parity_dev
           POSTGRES_USER: ames_ci
           POSTGRES_PASSWORD: disposable-ci-password
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U ames_ci -d ames_ci"
+          --health-cmd "pg_isready -U ames_ci -d ames_parity_dev"
           --health-interval 10s --health-timeout 5s --health-retries 5
     env:
       ENVIRONMENT: development
       ENABLE_OTP: 'false'
-      DATABASE_URL: postgresql://ames_ci:disposable-ci-password@127.0.0.1:5432/ames_ci
+      DATABASE_URL: postgresql://ames_ci:disposable-ci-password@127.0.0.1:5432/ames_parity_dev
       JWT_SECRET: ci-only-jwt-key-for-disposable-integration-tests
       BACKUP_ENCRYPTION_KEY: MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA=
       BACKUP_IV: unused-ci-fixture
