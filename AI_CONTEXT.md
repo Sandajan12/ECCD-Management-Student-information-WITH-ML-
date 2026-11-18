@@ -1162,6 +1162,42 @@ independently of the predicted category. Scaled <=6 or explicit DI-KAYA triggers
 support; planning tiers are <=3 Delay, 4–6 Slight Delay, >=7 Average. These are not
 official developmental scores, diagnoses or evidence of treatment effectiveness.
 
+### Artifact retention and local recovery
+
+Keep these **18 files** at their existing paths under `backend/ml/artifacts/`.
+Cleanup must preserve their bytes, model results and research limitations.
+
+| Purpose | Retained paths relative to `backend/ml/artifacts/` |
+| --- | --- |
+| Current prediction service | `rf_post_test_model.joblib`, `prescriptive_guides.json` |
+| Current evaluation and defense evidence | `evaluation_metrics.json`, `dataset_audit.json`, `MODEL_EVALUATION_REPORT.md`, `real_beneficiary_benchmark.csv`, `real_beneficiary_interventions.json` |
+| Current training evidence | `standalone_rf_selection.local`, `standalone_rf_holdout.local` |
+| Historical comparison provenance | `hybrid_comparison_metrics.json`, `hybrid_baseline_manifest.json`, `hybrid_baseline_before_standalone_rf.local` |
+| Current diagnostic plots (1–3) | `plots/01_confusion_matrix.png`, `plots/02_classification_metrics_f1.png`, `plots/03_feature_importance.png` |
+| Current diagnostic plots (4–6) | `plots/04_class_distribution_70_30.png`, `plots/05_real_beneficiary_pre_vs_post_comparison.png`, `plots/06_probability_reliability.png` |
+
+The historical comparison trio remains required provenance: the current trainer
+reads the comparison metrics, the current evaluation records their checksum,
+and acceptance checks read the baseline manifest. These files describe the
+previous hybrid, not the active standalone RF.
+
+The 83 obsolete snapshot/model/experiment/probe files are preserved in the
+ZIP-format recovery archive `backend/ml/obsolete-artifacts-2026-11-18.local`,
+outside the active artifacts directory. Its internal `SHA256_MANIFEST.json`
+records original relative paths, sizes and SHA-256 hashes, plus the retained-file
+hashes. Recovery paths are relative to `backend/ml/artifacts/`. Keep this archive
+and `md files/ML_ARTIFACT_CLEANUP_PLAN.md` ignored and outside Git; never force-add
+them. Preserve an existing archive rather than overwriting it. Local/private
+research files are not supplied by a fresh clone.
+
+Before any further cleanup, trace current source/test references, verify every
+archived member against its original SHA-256 before removing any originals, and
+verify all 18 retained files remain byte-for-byte unchanged afterward. Use exact
+resolved paths inside the intended directory, reject links/path escapes, and
+preserve uncertain/new files and unrelated workspace edits. Keep `backend/ml/data/`,
+original research inputs, ML source, scoring tables and tests. Cleanup never
+retrains, regenerates datasets, replaces artifacts or changes runtime paths.
+
 ### Tracked diagnostic assets and research limits
 
 The active model and guides are tracked, as are **six approved PNGs** through
