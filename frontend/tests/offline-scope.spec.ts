@@ -251,6 +251,7 @@ test("teacher confirmations, reverted edits and corrections send intent and disp
   await save.click();
   await expect.poll(() => submissions.length).toBe(1);
   expect(submissions[0].edited_question_ids).toEqual([]);
+  await expect(save).toBeEnabled();
   await expect(
     page.getByText("Parent Assessed · Nov 5, 2026", { exact: true }),
   ).toBeVisible();
@@ -262,6 +263,7 @@ test("teacher confirmations, reverted edits and corrections send intent and disp
   await save.click();
   await expect.poll(() => submissions.length).toBe(2);
   expect(submissions[1].edited_question_ids).toEqual([]);
+  await expect(save).toBeEnabled();
   await row
     .getByRole("button", { name: "DI-KAYA", exact: true })
     .first()
@@ -273,6 +275,7 @@ test("teacher confirmations, reverted edits and corrections send intent and disp
     exact: true,
   });
   await expect(badge).toBeVisible();
+  await expect(save).toBeEnabled();
   await badge.hover();
   await expect(page.getByRole("tooltip")).toContainText(
     "Parent submitted · Nov 5, 2026",
@@ -288,6 +291,8 @@ test("teacher confirmations, reverted edits and corrections send intent and disp
   expect(
     await page.evaluate((key) => localStorage.getItem(key), teacherKey),
   ).not.toBeNull();
+  // The 409 message appears before the assessment/period refresh finishes.
+  await expect(save).toBeEnabled();
   await row
     .getByRole("button", { name: "DI-KAYA", exact: true })
     .first()
