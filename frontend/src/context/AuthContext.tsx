@@ -98,7 +98,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setLoading(false);
           return;
         }
-        if (refreshIsDeferred()) {
+        if (refreshIsDeferred(true)) {
           setDeferred(true);
           retry = setTimeout(() => void restore(), 30000);
         } else setLoading(false);

@@ -2,6 +2,14 @@ import axios from "axios";
 import type { AxiosRequestConfig, InternalAxiosRequestConfig } from "axios";
 import type { SessionResponse, SessionUser } from "../types";
 const apiBaseUrl = import.meta.env.VITE_API_URL || "https://api.ameskinder.com";
+export function isLoopbackApiUrl(url = apiBaseUrl): boolean {
+  try {
+    const hostname = new URL(url).hostname;
+    return ["localhost", "127.0.0.1", "::1", "[::1]"].includes(hostname);
+  } catch {
+    return false;
+  }
+}
 const API = axios.create({
   baseURL: apiBaseUrl,
   withCredentials: true,
@@ -80,8 +88,11 @@ export function updateSessionUser(user: SessionUser): void {
   sessionUser = user;
   window.dispatchEvent(new Event("ames-session-updated"));
 }
-export function refreshIsDeferred(): boolean {
-  return refreshRetry !== null || !navigator.onLine;
+export function refreshIsDeferred(bootstrap = false): boolean {
+  return (
+    refreshRetry !== null ||
+    (!navigator.onLine && !(bootstrap && isLoopbackApiUrl()))
+  );
 }
 
 export function accessTokenRemaining(token: string): number {
@@ -162,7 +173,8 @@ export function refreshSession(bootstrap = false): Promise<void> {
     performance.now() < refreshRetry.at
   )
     return Promise.reject(refreshRetry.error);
-  if (!navigator.onLine)
+  // A loopback restore can reach the local backend without an internet connection.
+  if (!navigator.onLine && !(bootstrap && isLoopbackApiUrl()))
     return Promise.reject(
       new axios.AxiosError("Renewal is paused while offline.", "ERR_NETWORK"),
     );

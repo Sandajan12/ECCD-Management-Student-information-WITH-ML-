@@ -569,6 +569,11 @@ restore logged-out/replaced memory. Messaging renewal preserves form subtrees.
 Network/timeouts and 408/425/429/5xx preserve memory and drafts and share a
 30/60/120-second cooldown, honoring a longer Retry-After; offline renewal pauses.
 Startup outages show a recoverable loading state instead of assuming logout.
+Only startup session restoration to a parsed API hostname of `localhost`,
+`127.0.0.1` or `::1` (including `[::1]`) bypasses `navigator.onLine` and attempts
+the local backend; actual request failures retain the existing retry/loading
+behavior. Non-loopback APIs, proactive renewal, online/offline listeners and
+draft handling keep their existing offline checks and behavior.
 Confirmed rejection ends the session with session=expired|revoked|invalid;
 ACCOUNT_INACTIVE revokes while ordinary permission 403s do not log users out.
 No generic form replay is introduced: only authorized teacher ECCD drafts replay.
