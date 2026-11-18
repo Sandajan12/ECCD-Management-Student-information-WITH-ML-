@@ -283,16 +283,20 @@ test("teacher confirmations, reverted edits and corrections send intent and disp
   // Another staff save arrives after this checklist was loaded.
   saved = "KAYA";
   await save.click();
-  await expect(
-    page.getByText(
+  const conflictAlert = page.getByRole("alert").filter({
+    hasText:
       "Saved home answers have changed. Refresh and review before correcting them.",
-    ),
-  ).toBeVisible();
+  });
+  await expect(conflictAlert).toBeVisible();
   expect(
     await page.evaluate((key) => localStorage.getItem(key), teacherKey),
   ).not.toBeNull();
   // The 409 message appears before the assessment/period refresh finishes.
   await expect(save).toBeEnabled();
+  await conflictAlert
+    .getByRole("button", { name: "Close", exact: true })
+    .click();
+  await expect(conflictAlert).toBeHidden();
   await row
     .getByRole("button", { name: "DI-KAYA", exact: true })
     .first()
