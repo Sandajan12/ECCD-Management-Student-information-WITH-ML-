@@ -42,7 +42,7 @@ def main():
             command = ["uv", "run", "--no-project", "--python", ".venv312", "python", "-m", "unittest",
                        "backend.tests.test_ml_api", "backend.tests.test_parent_ml", "-v"]
         else:
-            config = "playwright.ml-sandbox.config.ts" if args.suite == "sandbox" else "playwright.parent-ml.config.ts"
+            config = "playwright/playwright.ml-sandbox.config.ts" if args.suite == "sandbox" else "playwright/playwright.parent-ml.config.ts"
             command = ["pnpm.cmd" if os.name == "nt" else "pnpm", "--dir", "frontend", "exec",
                        "playwright", "test", "--config", config]
         result = subprocess.run(command, cwd=Path(__file__).resolve().parents[2], env=environment, check=False)

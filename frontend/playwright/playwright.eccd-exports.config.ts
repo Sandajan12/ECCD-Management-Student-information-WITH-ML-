@@ -1,9 +1,10 @@
 import { defineConfig } from "@playwright/test";
+import path from "node:path";
 
 export default defineConfig({
-  testDir: "./tests",
+  testDir: "../tests",
   testMatch: "teacher-eccd-exports.spec.ts",
-  outputDir: "./test-results/eccd-exports",
+  outputDir: "../test-results/eccd-exports",
   workers: 1,
   timeout: 30000,
   use: {
@@ -18,7 +19,7 @@ export default defineConfig({
   ],
   webServer: {
     command: `${process.platform === "win32" ? "pnpm.cmd" : "pnpm"} dev --host 127.0.0.1 --port 5191 --strictPort`,
-    cwd: import.meta.dirname,
+    cwd: path.resolve(import.meta.dirname, ".."),
     env: {
       VITE_API_URL: "http://127.0.0.1:5191",
       VITE_SOCKET_URL: "http://127.0.0.1:5191",

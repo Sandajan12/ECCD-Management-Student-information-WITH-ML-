@@ -2,9 +2,9 @@ import { defineConfig } from "@playwright/test";
 import path from "node:path";
 
 export default defineConfig({
-  testDir: "./tests",
+  testDir: "../tests",
   testMatch: "teacher-management.spec.ts",
-  outputDir: "./test-results/teacher-management",
+  outputDir: "../test-results/teacher-management",
   workers: 1,
   timeout: 60000,
   use: { baseURL: "http://127.0.0.1:5184", trace: "retain-on-failure" },
@@ -16,7 +16,7 @@ export default defineConfig({
     {
       command:
         "uv run --no-project --python .venv312 python -m backend.tests.serve_phase3 --port 8772",
-      cwd: path.resolve(import.meta.dirname, ".."),
+      cwd: path.resolve(import.meta.dirname, "../.."),
       env: {
         ALLOWED_ORIGINS: "http://127.0.0.1:5184",
         FRONTEND_URL: "http://127.0.0.1:5184",
@@ -26,7 +26,7 @@ export default defineConfig({
     },
     {
       command: "pnpm.cmd dev --host 127.0.0.1 --port 5184 --strictPort",
-      cwd: import.meta.dirname,
+      cwd: path.resolve(import.meta.dirname, ".."),
       env: {
         VITE_API_URL: "http://127.0.0.1:8772",
         VITE_SOCKET_URL: "http://127.0.0.1:8772",

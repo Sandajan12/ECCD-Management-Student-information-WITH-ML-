@@ -1,9 +1,10 @@
 import { defineConfig } from "@playwright/test";
+import path from "node:path";
 
 export default defineConfig({
-  testDir: "./tests",
+  testDir: "../tests",
   testMatch: "performance.spec.ts",
-  outputDir: "./test-results/performance",
+  outputDir: "../test-results/performance",
   workers: 1,
   use: { baseURL: "http://127.0.0.1:5190" },
   projects: [
@@ -11,6 +12,7 @@ export default defineConfig({
     { name: "mobile", use: { viewport: { width: 320, height: 900 } } },
   ],
   webServer: {
+    cwd: path.resolve(import.meta.dirname, ".."),
     command: `${process.platform === "win32" ? "pnpm.cmd" : "pnpm"} preview --host 127.0.0.1 --port 5190 --strictPort`,
     url: "http://127.0.0.1:5190",
     timeout: 60000,

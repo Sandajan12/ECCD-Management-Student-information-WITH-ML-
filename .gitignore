@@ -182,6 +182,7 @@ graphify-out/
 computation of grades of each decimal bracket.pdf
 old diagrams/
 docs/
+md files/
 
 # Keep documentation local, except the two shared agent/context guides.
 *.[mM][dD]

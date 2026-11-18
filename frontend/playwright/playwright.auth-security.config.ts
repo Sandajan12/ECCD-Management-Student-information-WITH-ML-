@@ -3,13 +3,13 @@ import path from "node:path";
 
 const windows = process.platform === "win32";
 export default defineConfig({
-  testDir: "./tests",
+  testDir: "../tests",
   testMatch: [
     "auth-security.spec.ts",
     "terms-privacy.spec.ts",
     "refresh-auth.spec.ts",
   ],
-  outputDir: "./test-results/auth-security",
+  outputDir: "../test-results/auth-security",
   workers: 1,
   timeout: 60000,
   use: { baseURL: "http://127.0.0.1:5188" },
@@ -20,7 +20,7 @@ export default defineConfig({
   webServer: [
     {
       command: `uv run --no-project --python ${windows ? ".venv312" : "3.12"} python -m backend.tests.serve_auth_security --port 8775`,
-      cwd: path.resolve(import.meta.dirname, ".."),
+      cwd: path.resolve(import.meta.dirname, "../.."),
       env: {
         ENVIRONMENT: "development",
         ENV: "development",
@@ -32,7 +32,7 @@ export default defineConfig({
     },
     {
       command: `${windows ? "pnpm.cmd" : "pnpm"} dev --host 127.0.0.1 --port 5188 --strictPort`,
-      cwd: import.meta.dirname,
+      cwd: path.resolve(import.meta.dirname, ".."),
       env: {
         VITE_API_URL: "http://127.0.0.1:8775",
         VITE_SOCKET_URL: "http://127.0.0.1:8775",

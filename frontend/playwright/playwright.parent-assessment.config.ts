@@ -1,13 +1,14 @@
 import { defineConfig } from "@playwright/test";
+import path from "node:path";
 
 export default defineConfig({
-  testDir: "./tests",
+  testDir: "../tests",
   testMatch: [
     "parent-assessment.spec.ts",
     "teacher-eccd-assessment.spec.ts",
     "auth-download.spec.ts",
   ],
-  outputDir: "./test-results/parent-assessment",
+  outputDir: "../test-results/parent-assessment",
   workers: 1,
   timeout: 30000,
   use: {
@@ -22,7 +23,7 @@ export default defineConfig({
   ],
   webServer: {
     command: `${process.platform === "win32" ? "pnpm.cmd" : "pnpm"} dev --host 127.0.0.1 --port 5192 --strictPort`,
-    cwd: import.meta.dirname,
+    cwd: path.resolve(import.meta.dirname, ".."),
     env: {
       VITE_API_URL: "http://127.0.0.1:5192",
       VITE_SOCKET_URL: "http://127.0.0.1:5192",

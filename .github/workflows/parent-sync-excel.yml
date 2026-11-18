@@ -67,12 +67,12 @@ jobs:
           --jsx react-jsx --types node,vite/client --skipLibCheck
           tests/parent-sync.spec.ts tests/parent-profile.spec.ts tests/teacher-import.spec.ts
           tests/offline-scope.spec.ts tests/offline-settings.spec.ts tests/eccd-question-order.spec.ts
-          playwright.parent-sync.config.ts
+          playwright/playwright.parent-sync.config.ts
       - run: pnpm --dir frontend run lint
       - run: pnpm --dir frontend run build
       - run: pnpm --dir frontend exec playwright install --with-deps chromium
       - name: Check parent links, import confirmation and durable reconnect behavior
-        run: pnpm --dir frontend exec playwright test --config playwright.parent-sync.config.ts
+        run: pnpm --dir frontend exec playwright test --config playwright/playwright.parent-sync.config.ts
       - uses: actions/upload-artifact@v4
         if: failure()
         with:

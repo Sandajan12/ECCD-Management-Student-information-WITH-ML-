@@ -1,13 +1,14 @@
 import { defineConfig } from "@playwright/test";
+import path from "node:path";
 
 export default defineConfig({
-  testDir: "./tests",
-  testMatch: "teacher-dashboard.spec.ts",
-  outputDir: "./test-results/teacher-dashboard",
+  testDir: "../tests",
+  testMatch: "chairman-dashboard.spec.ts",
+  outputDir: "../test-results/chairman-dashboard",
   workers: 1,
   timeout: 30000,
   use: {
-    baseURL: "http://127.0.0.1:5194",
+    baseURL: "http://127.0.0.1:5193",
     trace: "retain-on-failure",
     reducedMotion: "reduce",
   },
@@ -19,13 +20,13 @@ export default defineConfig({
     { name: "mobile", use: { viewport: { width: 320, height: 700 } } },
   ],
   webServer: {
-    command: "pnpm.cmd dev --host 127.0.0.1 --port 5194 --strictPort",
-    cwd: import.meta.dirname,
+    command: "pnpm.cmd dev --host 127.0.0.1 --port 5193 --strictPort",
+    cwd: path.resolve(import.meta.dirname, ".."),
     env: {
-      VITE_API_URL: "http://127.0.0.1:5194",
-      VITE_SOCKET_URL: "http://127.0.0.1:5194",
+      VITE_API_URL: "http://127.0.0.1:5193",
+      VITE_SOCKET_URL: "http://127.0.0.1:5193",
     },
-    url: "http://127.0.0.1:5194",
+    url: "http://127.0.0.1:5193",
     reuseExistingServer: !process.env.CI,
   },
 });

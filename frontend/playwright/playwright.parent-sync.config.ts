@@ -1,8 +1,9 @@
 import { defineConfig } from "@playwright/test";
+import path from "node:path";
 
 // Run in CI; API calls are mocked and no school database is used.
 export default defineConfig({
-  testDir: "./tests",
+  testDir: "../tests",
   testMatch: [
     "parent-sync.spec.ts",
     "parent-profile.spec.ts",
@@ -11,7 +12,7 @@ export default defineConfig({
     "offline-settings.spec.ts",
     "eccd-question-order.spec.ts",
   ],
-  outputDir: "./test-results/parent-sync",
+  outputDir: "../test-results/parent-sync",
   workers: 1,
   timeout: 30000,
   use: {
@@ -25,7 +26,7 @@ export default defineConfig({
   ],
   webServer: {
     command: `${process.platform === "win32" ? "pnpm.cmd" : "pnpm"} dev --host 127.0.0.1 --port 5190 --strictPort`,
-    cwd: import.meta.dirname,
+    cwd: path.resolve(import.meta.dirname, ".."),
     env: {
       VITE_API_URL: "http://127.0.0.1:5190",
       VITE_SOCKET_URL: "http://127.0.0.1:5190",

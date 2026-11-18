@@ -740,7 +740,7 @@ confirmed selected-student reads replace its snapshot. Wake/sync/review refreshe
 invalidate roster snapshots, with no idle polling. Keep the checklist's 96px
 bottom padding so the sticky Save Assessment dock clears the final question.
 Focused browser coverage is `tests/teacher-eccd-assessment.spec.ts` using
-`playwright.parent-assessment.config.ts`; always select this spec explicitly.
+`playwright/playwright.parent-assessment.config.ts`; always select this spec explicitly.
 
 Carry-forward is virtual and per question: saved PRE KAYA prefills MID/POST;
 saved MID KAYA prefills POST. Parents cannot downgrade inherited KAYA. Teachers
@@ -921,7 +921,7 @@ bulk ZIP member, shows Page 1 of 2 / Page 2 of 2. Targeted checks are
 `node --test frontend/tests/pdf-export-options.test.cjs`.
 
 The focused browser spec is `frontend/tests/pdf-exports.spec.ts`, run with
-`pnpm.cmd --dir frontend exec playwright test --config playwright.pdf-exports.config.ts`.
+`pnpm.cmd --dir frontend exec playwright test --config playwright/playwright.pdf-exports.config.ts`.
 It uses synthetic SQLite records, real signed bearer validation/PDF/XLSX routes,
 the existing RAM session helper and HttpOnly cookie delivery; unrelated UI data
 is mocked. The original 2026-11-14 run exposed a 36-versus-3 page conflict;
@@ -986,7 +986,7 @@ fallback requires copying the signed native APK to ignored
 `frontend/public/downloads/ames-parent.apk`.
 The APK and `.env` remain outside Git; a source checkout alone supplies no APK.
 Focused coverage is `tests/auth-download.spec.ts`, explicitly selected with
-`playwright.parent-assessment.config.ts`; no other specs are needed for this link.
+`playwright/playwright.parent-assessment.config.ts`; no other specs are needed for this link.
 
 Migration `022_system_name` explicitly renames `system_settings.school_name` to
 `system_name`, retaining stored branding and all other settings. Startup checks
@@ -1247,34 +1247,38 @@ git diff --check
 Do not collect pytest from the repository root; archived modules can collide.
 The frontend root tsconfig only references projects; plain `tsc --noEmit`
 does not check them. Use explicit browser configurations: there is no
-`frontend/playwright.config.ts`. There are **15 tracked configurations**
-selecting **20 distinct specs**; some configurations share specs. This is an
-inventory, not an executed test count.
+`frontend/playwright.config.ts`. Configurations live in `frontend/playwright/`;
+specs and helpers remain in `frontend/tests/`. Paths below are relative to
+`frontend/`. Always pass the chosen configuration with `--config playwright/<file>`.
+Keep test output under `frontend/test-results/`, frontend servers rooted at
+`frontend/`, and disposable backend servers rooted at the repository root.
+There are **15 tracked configurations** selecting **23 distinct specs**; some
+configurations share specs. This is an inventory, not an executed test count.
 
 | Configuration | Spec | UI origin | Test API | Server management |
 | --- | --- | --- | --- | --- |
-| `playwright.audit.config.ts` | `audit-logs.spec.ts` | http://127.0.0.1:5185 | 8773 | Starts disposable API and Vite; desktop/tablet/mobile |
-| `playwright.teacher-management.config.ts` | `teacher-management.spec.ts` | http://127.0.0.1:5184 | 8772 | Starts disposable API and Vite; desktop/mobile |
-| `playwright.parent-ml.config.ts` | `parent-ml.spec.ts` | http://127.0.0.1:5183 | 8771 | Starts disposable API and Vite; spec sets desktop/mobile sizes |
-| `playwright.ml-sandbox.config.ts` | `ml-sandbox.spec.ts` | http://127.0.0.1:5186 | 8774 | Starts disposable API and Vite; desktop/mobile |
-| `playwright.terms-privacy.config.ts` | `terms-privacy.spec.ts` | http://127.0.0.1:5188 | 8775 | Starts disposable API and Vite; desktop/tablet/mobile |
-| `playwright.ml-insights.config.ts` | `ml-insights.spec.ts` | http://localhost:5173 | 8769, started separately | Starts/reuses Vite only; Desktop Chrome project, spec adjusts viewport |
-| `playwright.parent-sync.config.ts` | `parent-sync.spec.ts`, `parent-profile.spec.ts`, `teacher-import.spec.ts`, `offline-scope.spec.ts`, `offline-settings.spec.ts`, `eccd-question-order.spec.ts` | http://127.0.0.1:5190 | Mocked API | Starts Vite; desktop/mobile, no school database |
-| `playwright.auth-security.config.ts` | `auth-security.spec.ts`, `terms-privacy.spec.ts`, `refresh-auth.spec.ts` | http://127.0.0.1:5188 | 8775 | Starts disposable auth-security API and Vite; desktop/mobile |
-| `playwright.messaging.config.ts` | `messaging.spec.ts` | http://127.0.0.1:5191 | 8768 | Starts disposable API and Vite; desktop/mobile |
-| `playwright.performance.config.ts` | `performance.spec.ts` | http://127.0.0.1:5190 | Mocked API | Starts Vite preview of an existing production build; desktop/mobile |
-| `playwright.parent-assessment.config.ts` | `parent-assessment.spec.ts` | http://127.0.0.1:5192 | Mocked API | Starts/reuses Vite; desktop/tablet/mobile |
-| `playwright.eccd-exports.config.ts` | `teacher-eccd-exports.spec.ts` | http://127.0.0.1:5191 | Mocked API | Starts Vite; desktop/tablet/mobile |
-| `playwright.pdf-exports.config.ts` | `pdf-exports.spec.ts` | http://127.0.0.1:5195 | 8776, synthetic SQLite | Starts isolated export API and Vite; Chromium desktop; real export/auth checks, mocked unrelated UI data |
-| `playwright.teacher-dashboard.config.ts` | `teacher-dashboard.spec.ts` | http://127.0.0.1:5194 | Mocked API | Starts/reuses Vite; desktop/laptop/tablet/small-tablet/mobile |
-| `playwright.chairman-dashboard.config.ts` | `chairman-dashboard.spec.ts` | http://127.0.0.1:5193 | Mocked API | Starts/reuses Vite; desktop/laptop/tablet/small-tablet/mobile |
+| `playwright/playwright.audit.config.ts` | `audit-logs.spec.ts` | http://127.0.0.1:5185 | 8773 | Starts disposable API and Vite; desktop/tablet/mobile |
+| `playwright/playwright.teacher-management.config.ts` | `teacher-management.spec.ts` | http://127.0.0.1:5184 | 8772 | Starts disposable API and Vite; desktop/mobile |
+| `playwright/playwright.parent-ml.config.ts` | `parent-ml.spec.ts` | http://127.0.0.1:5183 | 8771 | Starts disposable API and Vite; spec sets desktop/mobile sizes |
+| `playwright/playwright.ml-sandbox.config.ts` | `ml-sandbox.spec.ts` | http://127.0.0.1:5186 | 8774 | Starts disposable API and Vite; desktop/mobile |
+| `playwright/playwright.terms-privacy.config.ts` | `terms-privacy.spec.ts` | http://127.0.0.1:5188 | 8775 | Starts disposable API and Vite; desktop/tablet/mobile |
+| `playwright/playwright.ml-insights.config.ts` | `ml-insights.spec.ts` | http://localhost:5173 | 8769, started separately | Starts/reuses Vite only; Desktop Chrome project, spec adjusts viewport |
+| `playwright/playwright.parent-sync.config.ts` | `parent-sync.spec.ts`, `parent-profile.spec.ts`, `teacher-import.spec.ts`, `offline-scope.spec.ts`, `offline-settings.spec.ts`, `eccd-question-order.spec.ts` | http://127.0.0.1:5190 | Mocked API | Starts Vite; desktop/mobile, no school database |
+| `playwright/playwright.auth-security.config.ts` | `auth-security.spec.ts`, `terms-privacy.spec.ts`, `refresh-auth.spec.ts` | http://127.0.0.1:5188 | 8775 | Starts disposable auth-security API and Vite; desktop/mobile |
+| `playwright/playwright.messaging.config.ts` | `messaging.spec.ts` | http://127.0.0.1:5191 | 8768 | Starts disposable API and Vite; desktop/mobile |
+| `playwright/playwright.performance.config.ts` | `performance.spec.ts` | http://127.0.0.1:5190 | Mocked API | Starts Vite preview of an existing production build; desktop/mobile |
+| `playwright/playwright.parent-assessment.config.ts` | `parent-assessment.spec.ts`, `teacher-eccd-assessment.spec.ts`, `auth-download.spec.ts` | http://127.0.0.1:5192 | Mocked API | Starts/reuses Vite; desktop/tablet/mobile |
+| `playwright/playwright.eccd-exports.config.ts` | `teacher-eccd-exports.spec.ts` | http://127.0.0.1:5191 | Mocked API | Starts Vite; desktop/tablet/mobile |
+| `playwright/playwright.pdf-exports.config.ts` | `pdf-exports.spec.ts` | http://127.0.0.1:5195 | 8776, synthetic SQLite | Starts isolated export API and Vite; Chromium desktop; real export/auth checks, mocked unrelated UI data |
+| `playwright/playwright.teacher-dashboard.config.ts` | `teacher-dashboard.spec.ts` | http://127.0.0.1:5194 | Mocked API | Starts/reuses Vite; desktop/laptop/tablet/small-tablet/mobile |
+| `playwright/playwright.chairman-dashboard.config.ts` | `chairman-dashboard.spec.ts` | http://127.0.0.1:5193 | Mocked API | Starts/reuses Vite; desktop/laptop/tablet/small-tablet/mobile |
 
 Run configurations separately when ports overlap, including messaging/exports
 on 5191. Most real-API suites start disposable API/Vite servers; `ml-insights`
 needs its API started separately. Example:
 
 ```powershell
-pnpm.cmd --dir frontend exec playwright test --config playwright.parent-assessment.config.ts tests/parent-assessment.spec.ts --grep "home card|throttling"
+pnpm.cmd --dir frontend exec playwright test --config playwright/playwright.parent-assessment.config.ts tests/parent-assessment.spec.ts --grep "home card|throttling"
 ```
 
 The parent-sync suite uses `tests/helpers/session.ts` to mock session restoration

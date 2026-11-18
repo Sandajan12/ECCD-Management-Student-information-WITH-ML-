@@ -10,7 +10,7 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "test:e2e": "playwright test",
-    "format": "prettier --write src tests playwright.config.ts vite.config.ts"
+    "format": "prettier --write src tests playwright vite.config.ts"
   },
   "dependencies": {
     "@emotion/react": "11.14.0",
