@@ -54,7 +54,6 @@ export function OverviewSummary({
 }) {
   const data = state.data,
     primary = useContext(BrandColor);
-  const [progressExpanded, setProgressExpanded] = useState(false);
   const status = overviewStatus(child, data, assessment);
   const allowed = status === "available";
   const placeholder =
@@ -121,38 +120,6 @@ export function OverviewSummary({
           icon="insights"
         />
         <Button title="View ML Insights" icon="insights" onPress={insights} />
-      </Card>
-      <Card>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityState={{ expanded: progressExpanded }}
-          onPress={() => setProgressExpanded((value) => !value)}
-          style={[styles.row, { minHeight: 44, flexWrap: "nowrap" }]}
-        >
-          <Icon name="checklist" />
-          <Label style={{ flex: 1 }}>Assessment Progress</Label>
-          <Icon name={progressExpanded ? "up" : "down"} />
-        </Pressable>
-        {progressExpanded && !allowed && <Notice>{placeholder}</Notice>}
-        {progressExpanded &&
-          allowed &&
-          data?.domainCards.map((domain) => (
-            <Card key={domain.domain_id}>
-              <Label>{domain.domain_name}</Label>
-              <View style={[styles.row, { justifyContent: "space-between" }]}>
-                <Copy>{domain.scoreText}</Copy>
-                <Badge color={statusColor(domain.statusColor)}>
-                  {domain.statusText}
-                </Badge>
-              </View>
-              <Progress
-                value={domain.progress}
-                color={statusColor(domain.statusColor)}
-                label={`${domain.domain_name} completion`}
-              />
-              <Copy>{domain.progress ?? "—"}% completion</Copy>
-            </Card>
-          ))}
       </Card>
       <Button
         secondary
@@ -256,12 +223,6 @@ export function ResultsTab({
                       <Notice>
                         {summary.interpretation || "Evaluation Not Started"}
                       </Notice>
-                      {Object.keys(summary.rawScores || {}).map((code) => (
-                        <Copy key={code}>
-                          {code} · Raw {summary.rawScores?.[code] ?? "—"} ·
-                          Scaled {summary.scaledScores?.[code] ?? "—"}
-                        </Copy>
-                      ))}
                     </>
                   )}
                 </Card>
@@ -401,40 +362,6 @@ export function ResultsTab({
             ))}
           </>
         ))}
-      {data && (
-        <Card>
-          <Label>Teacher access</Label>
-          <Copy>
-            Student information:{" "}
-            {child.allow_parent_view_student_info &&
-            data.permissions.allow_parent_view_student_info
-              ? "Available"
-              : TEACHER_LOCK}
-          </Copy>
-          <Copy>
-            Profile editing:{" "}
-            {child.allow_parent_edit_student_info &&
-            data.permissions.allow_parent_edit_student_info
-              ? "Allowed"
-              : TEACHER_LOCK}
-          </Copy>
-          <Copy>
-            Home observations:{" "}
-            {child.allow_parent_edit_home_based_eccd &&
-            data.permissions.allow_parent_edit_home_based_eccd &&
-            data.can_edit_home_based
-              ? "Enabled in open period windows"
-              : TEACHER_LOCK}
-          </Copy>
-          <Copy>
-            Prediction access:{" "}
-            {child.allow_parent_predictions &&
-            data.permissions.allow_parent_predictions
-              ? "Enabled; PRE readiness and release also required"
-              : TEACHER_LOCK}
-          </Copy>
-        </Card>
-      )}
     </Screen>
   );
 }

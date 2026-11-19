@@ -18,6 +18,9 @@ import {
   Select,
 } from "../../components/chairman/ui";
 import Icon from "../../components/chairman/Icon";
+
+const PAGE_SIZE = 10;
+
 interface InfoRowProps {
   label: string;
   value: ReactNode;
@@ -160,6 +163,7 @@ export default function StudentRecords() {
   const [search, setSearch] = useState("");
   const [section, setSection] = useState("All");
   const [year, setYear] = useState("All");
+  const [page, setPage] = useState<number>(1);
   const [selected, setSelected] = useState<number[]>([]);
   const [student, setStudent] = useState<Student | null>(null);
   const [transfer, setTransfer] = useState(false);
@@ -199,6 +203,13 @@ export default function StudentRecords() {
         .toLowerCase()
         .includes(search.toLowerCase()),
   );
+  const pageCount = Math.max(1, Math.ceil(visible.length / PAGE_SIZE));
+  const currentPage = Math.min(page, pageCount);
+  const pageStart = (currentPage - 1) * PAGE_SIZE;
+  const paginatedStudents = visible.slice(pageStart, pageStart + PAGE_SIZE);
+  useEffect(() => {
+    setPage((previous) => Math.min(previous, pageCount));
+  }, [pageCount]);
   const years = [
     ...new Set(
       students
@@ -292,7 +303,10 @@ export default function StudentRecords() {
           className="rounded-lg bg-[#f9fafb]"
           adornment={<Icon name="Search" />}
           value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          onChange={(e) => {
+            setSearch(e.target.value);
+            setPage(1);
+          }}
         />
         <Select
           aria-label="Section"
@@ -301,6 +315,7 @@ export default function StudentRecords() {
           value={section}
           onChange={(e) => {
             setSection(e.target.value);
+            setPage(1);
           }}
         >
           <option value="All">All Sections</option>
@@ -317,6 +332,7 @@ export default function StudentRecords() {
           value={year}
           onChange={(e) => {
             setYear(e.target.value);
+            setPage(1);
           }}
         >
           <option value="All">All School Years</option>
@@ -356,7 +372,7 @@ export default function StudentRecords() {
             </tr>
           </thead>
           <tbody>
-            {visible.map((s) => (
+            {paginatedStudents.map((s) => (
               <tr
                 key={s.student_id}
                 tabIndex={0}
@@ -409,6 +425,50 @@ export default function StudentRecords() {
           </tbody>
         </table>
       </div>
+      <Stack
+        component="nav"
+        aria-label="Student pagination"
+        direction={{ xs: "column", sm: "row" }}
+        sx={{
+          gap: 2,
+          p: 2,
+          borderTop: "1px solid #f3f4f6",
+          justifyContent: "space-between",
+          alignItems: { xs: "stretch", sm: "center" },
+        }}
+      >
+        <p className="text-xs text-gray-500" role="status" aria-live="polite">
+          Showing {visible.length ? pageStart + 1 : 0}–
+          {pageStart + paginatedStudents.length} of {visible.length} students
+        </p>
+        <Stack
+          direction="row"
+          sx={{ gap: 1, alignItems: "center", justifyContent: "space-between" }}
+        >
+          <button
+            type="button"
+            className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-600 shadow-sm hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={currentPage === 1}
+            onClick={() => setPage(currentPage - 1)}
+          >
+            Previous
+          </button>
+          <span
+            className="text-xs whitespace-nowrap text-gray-500"
+            aria-current="page"
+          >
+            Page {currentPage} of {pageCount}
+          </span>
+          <button
+            type="button"
+            className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-600 shadow-sm hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={currentPage === pageCount}
+            onClick={() => setPage(currentPage + 1)}
+          >
+            Next
+          </button>
+        </Stack>
+      </Stack>
       {student && (
         <Modal
           title="Student Record Details"

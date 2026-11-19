@@ -61,6 +61,9 @@ import type {
   Student,
   Teacher,
 } from "../../types";
+
+const PAGE_SIZE = 10;
+
 interface ImportSectionMismatch extends SectionMismatchResponse {
   file: File;
   revision: string;
@@ -220,6 +223,7 @@ const StudentManagement: React.FC = () => {
   const [parentNotice, setParentNotice] = useState<string>("");
   const [archivedStudents, setArchivedStudents] = useState<Student[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
+  const [page, setPage] = useState<number>(1);
   const [error, setError] = useState("");
   const [editError, setEditError] = useState("");
   const [editingLrn, setEditingLrn] = useState(0);
@@ -716,6 +720,19 @@ const StudentManagement: React.FC = () => {
         student.masked_lrn,
       ].some((value) => value?.toLocaleLowerCase().includes(query)),
   );
+  const pageCount = Math.max(1, Math.ceil(filteredStudents.length / PAGE_SIZE));
+  const currentPage = Math.min(page, pageCount);
+  const pageStart = (currentPage - 1) * PAGE_SIZE;
+  const paginatedStudents = filteredStudents.slice(
+    pageStart,
+    pageStart + PAGE_SIZE,
+  );
+  useEffect(() => {
+    setPage(1);
+  }, [section?.section_id]);
+  useEffect(() => {
+    setPage((previous) => Math.min(previous, pageCount));
+  }, [pageCount]);
   return (
     <Box
       className="bg-slate-50 [--primary:var(--primary-color,#2563eb)]"
@@ -805,7 +822,10 @@ const StudentManagement: React.FC = () => {
             variant="outlined"
             size="small"
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+              setPage(1);
+            }}
             sx={{ bgcolor: "white", borderRadius: 2, width: "100%" }}
             slotProps={{
               input: {
@@ -857,7 +877,7 @@ const StudentManagement: React.FC = () => {
               </TableRow>
             </TableHead>
             <TableBody>
-              {filteredStudents.map((student) => {
+              {paginatedStudents.map((student) => {
                 const studentId = student.student_id;
                 return (
                   <TableRow
@@ -1043,6 +1063,51 @@ const StudentManagement: React.FC = () => {
             </TableBody>
           </Table>
         </TableContainer>
+        <Stack
+          component="nav"
+          aria-label="Student pagination"
+          direction={{ xs: "column", sm: "row" }}
+          sx={{
+            gap: 2,
+            p: 2,
+            borderTop: "1px solid #f3f4f6",
+            justifyContent: "space-between",
+            alignItems: { xs: "stretch", sm: "center" },
+          }}
+        >
+          <p className="text-xs text-gray-500" role="status" aria-live="polite">
+            Showing {filteredStudents.length ? pageStart + 1 : 0}–
+            {pageStart + paginatedStudents.length} of {filteredStudents.length}{" "}
+            students
+          </p>
+          <Stack
+            direction="row"
+            sx={{ gap: 1, alignItems: "center", justifyContent: "space-between" }}
+          >
+            <button
+              type="button"
+              className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-600 shadow-sm hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={currentPage === 1}
+              onClick={() => setPage(currentPage - 1)}
+            >
+              Previous
+            </button>
+            <span
+              className="text-xs whitespace-nowrap text-gray-500"
+              aria-current="page"
+            >
+              Page {currentPage} of {pageCount}
+            </span>
+            <button
+              type="button"
+              className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-600 shadow-sm hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={currentPage === pageCount}
+              onClick={() => setPage(currentPage + 1)}
+            >
+              Next
+            </button>
+          </Stack>
+        </Stack>
       </Paper>
 
       {/* ----------- EDIT STUDENT MODAL ----------- */}

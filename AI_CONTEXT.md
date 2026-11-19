@@ -174,8 +174,12 @@ dynamic system branding (`system_name`), dark header, five bottom tabs, child/li
 permission-aware status/results cards, structured household forms, sticky manual
 saves and keyboard-safe chat. UI_PARITY.md records source references and phone
 acceptance limits; native storage/auth/permission services retain their contracts.
-Overview owns collapsed home-based editing and assessment progress; ECCD is
-read-only, and messaging stays in its own tab. Child Information derives Adviser
+Native Overview owns collapsed home-based editing, retains the ML Insights card
+and View ECCD Checklist button, and has no Assessment Progress card. Native ECCD
+is read-only; official period cards show assessment date, decimal age, standard
+score, sum of scaled scores and interpretation without inline domain scores.
+The bottom domain matrix remains; the Teacher Access card is omitted. Messaging
+stays in its own tab. Child Information derives Adviser
 from the current detail's teacher first/last name, with a nonblank fallback.
 Data screens use pull-to-refresh without refresh buttons, preserving drafts and
 live updates; ML refresh reloads readiness only. Registration offers Father/Mother/
