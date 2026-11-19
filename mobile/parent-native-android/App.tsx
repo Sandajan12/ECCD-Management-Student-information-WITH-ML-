@@ -4,6 +4,7 @@ import {
   ImageBackground,
   KeyboardAvoidingView,
   Platform,
+  RefreshControl,
   ScrollView,
   StatusBar,
   View,
@@ -22,6 +23,7 @@ import {
   Notice,
   Title,
   styles,
+  usePullRefresh,
 } from "./src/ui";
 import type { Branding } from "./src/contracts";
 
@@ -34,6 +36,12 @@ function Content() {
   const state = useSyncExternalStore(session.subscribe, session.snapshot);
   const [brand, setBrand] = useState<Branding>(fallback);
   const [signingOut, setSigningOut] = useState(false);
+  const pull = usePullRefresh(() => session.restore());
+  const loginMessage =
+    state.message ===
+    "No refresh session is available. Please sign in again."
+      ? ""
+      : state.message;
   useEffect(() => {
     void session.restore();
     void fetch(`${baseUrl}/api/settings`)
@@ -135,20 +143,24 @@ function Content() {
                         paddingVertical: 32,
                       },
                     ]}
+                    alwaysBounceVertical
+                    refreshControl={
+                      !state.session ? (
+                        <RefreshControl
+                          refreshing={pull.refreshing}
+                          onRefresh={pull.onRefresh}
+                          colors={[brand.primary_color]}
+                          tintColor={brand.primary_color}
+                          accessibilityLabel="Pull down to refresh"
+                        />
+                      ) : undefined
+                    }
                     keyboardShouldPersistTaps="handled"
+                    keyboardDismissMode="on-drag"
                   >
-                    {!!state.message && <Notice>{state.message}</Notice>}
+                    {!!loginMessage && <Notice>{loginMessage}</Notice>}
                     {!state.session ? (
-                      <>
-                        <AuthScreen />
-                        {!!state.message && (
-                          <Button
-                            secondary
-                            title="Retry session restore"
-                            onPress={() => void session.restore()}
-                          />
-                        )}
-                      </>
+                      <AuthScreen />
                     ) : (
                       <>
                         <Card>
