@@ -788,8 +788,19 @@ period fallback. Progress counts active students with every configured question
 teacher-dated. Excellence uses recorded KAYA ratio; critical focus uses recorded
 DI-KAYA counts. Pending evaluations retain partial/parent-only states and link
 by student ID/period/domain. Chairman year/section/period filters share scope.
+Chairman stats and pie queries include only active students for the configured
+current school year, both with and without an explicit period. Other specific
+years include retained active and archived students matching `Student.school_year`;
+`All` includes all retained students (including inactive current-year and null-year
+rows), counting each student/evaluation once. Missing/blank current-year settings
+keep specific-year views active-only without creating settings on reads. Manual
+and rollover archives share the same flag and both appear in historical/All views;
+permanently deleted records remain absent. Rollover preserves student year/section
+and evaluation history. Evaluation attribution still follows the student's stored
+year; Teacher authorization and active-student rules remain unchanged, and the
+Chairman teacher KPI remains a live active-account count.
 Developmental Summary uses the official five keys Delay, Slight Delay, Average,
-Slight Advance, Highly Advance (UI expands Advancement wording); active-student
+Slight Advance, Highly Advance (UI expands Advancement wording); cohort-scoped
 totals and per-section male/female counts use scoped official scoring. Preserve
 omitted-period/interpretation compatibility in `dashboard_analytics.py` and
 route validation. Dashboard ratios/support rankings are not official diagnoses.

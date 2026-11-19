@@ -183,7 +183,7 @@ class DashboardAnalyticsTests(TestCase):
         result = get_dashboard_stats("All", "2026-2027", self.db, user)
         self.assertEqual(result["criticalDomainDiKayaRate"], 50)
         result = get_dashboard_stats("All", "All", self.db, user, section_id=1)
-        self.assertEqual(result["criticalDomainDiKayaRate"], 33.33)
+        self.assertEqual(result["criticalDomainDiKayaRate"], 50)
 
     def test_chairman_critical_percentage_is_absent_without_a_critical_domain(self):
         from backend.routes.analytics import get_dashboard_stats
@@ -403,8 +403,10 @@ class DashboardAnalyticsTests(TestCase):
         self.assertEqual({key: value for key, value in pre.items() if key != "delaySummary"},
                          {key: value for key, value in mid.items() if key != "delaySummary"})
 
-    def test_global_period_scopes_all_chairman_metrics_and_preserves_legacy_defaults(self):
+    def test_global_period_scopes_all_chairman_metrics_and_omitted_period_keeps_active_current_year(self):
+        from backend.models.settings import SystemSettings
         from backend.routes.analytics import get_dashboard_stats, get_dashboard_pie_data
+        self.db.add(SystemSettings(id=1, current_school_year="2026-2027"))
         self.db.get(Student, 3).school_year = "2026-2027"
         self.db.get(Student, 4).school_year = "2026-2027"
         self.db.add(Student(student_id=5, section_id=1, is_active=True, school_year="2025-2026"))
@@ -440,7 +442,165 @@ class DashboardAnalyticsTests(TestCase):
         pie = get_dashboard_pie_data("All", "All", "MID", "2026-2027", self.db, user)
         self.assertEqual([item["value"] for item in pie], [6, 8])
         legacy = get_dashboard_stats("All", "2026-2027", self.db, user)
-        self.assertEqual(legacy["stats"]["totalStudents"], "4")
+        self.assertEqual(legacy["stats"]["totalStudents"], "3")
+
+    def test_chairman_historical_metrics_survive_rollover_for_every_period(self):
+        from backend.models.settings import SystemSettings
+        from backend.routes.analytics import get_dashboard_filters, get_dashboard_pie_data, get_dashboard_stats
+        from backend.schemas.operations import AnalyticsStats
+        from backend.schemas.settings import RolloverRequest
+        from backend.utils.rollover import rollover
+        user = User(user_id=1, email="rollover-chairman@example.test", password_hash="synthetic", role=UserRole.SUPER_ADMIN)
+        self.db.add_all([user, SystemSettings(id=1, current_school_year="2025-2026")])
+        for identifier in (1, 2, 3, 4):
+            student = self.db.get(Student, identifier)
+            student.school_year = "2025-2026"
+            student.date_of_birth = date(2021, 1, 1)
+            student.gender = "Female" if identifier in (2, 4) else "Male"
+            for period in ("PRE", "MID", "POST"):
+                self.assessment(identifier, period, failed=(1, 6) if identifier == 3 else (6,))
+        # Student 4 was already manually archived before this rollover.
+        before = get_dashboard_stats("All", "2025-2026", self.db, user, period=TestingPeriod.PRE)
+        self.assertEqual(before["stats"]["totalStudents"], "3")
+        rollover(self.db, user, RolloverRequest())
+        self.assertEqual(self.db.query(Student).filter_by(is_active=True).count(), 0)
+        self.assertEqual(self.db.query(Student).filter_by(school_year="2025-2026").count(), 4)
+        self.assertEqual(self.db.query(StudentEccdEvaluation).count(), 84)
+        filters = get_dashboard_filters(self.db, user)
+        self.assertEqual(filters["schoolYears"], ["2026-2027", "2025-2026"])
+        self.assertEqual(filters["currentSchoolYear"], "2026-2027")
+        with patch("backend.utils.dashboard_analytics.calculate_scores", return_value={"interpretation": "Delay"}):
+            for period in (*TestingPeriod, None):
+                with self.subTest(period=period):
+                    result = get_dashboard_stats("All", "2025-2026", self.db, user, period=period)
+                    AnalyticsStats.model_validate(result)
+                    self.assertEqual(result["stats"]["totalStudents"], "4")
+                    self.assertEqual(result["stats"]["priorityIntervention"], "Diamond")
+                    self.assertEqual(result["stats"]["criticalDomain"], "Cognitive")
+                    self.assertEqual(result["criticalDomainDiKayaRate"], 100)
+                    self.assertEqual(result["stats"]["eccdProgress"], "82%")
+                    self.assertEqual(result["stats"]["eccdAvg"], "82%")
+                    self.assertEqual(result["functionalMastery"], {"kaya": 82, "dikaya": 18})
+                    self.assertEqual(result["excellingDomain"], {
+                        "domainName": "Expressive Language", "masteryRate": 100,
+                        "totalKaya": 4, "totalItems": 4, "completedStudents": 4,
+                    })
+                    summary = result["delaySummary"]
+                    self.assertEqual((summary["assessedStudents"], summary["totalDelayed"], summary["totalMatched"]), (4, 4, 4))
+                    self.assertEqual((summary["male"], summary["female"]), (2, 2))
+                    self.assertEqual(summary["bySection"], {
+                        "Diamond": {"male": 1, "female": 2}, "Emerald": {"male": 1, "female": 0},
+                    })
+                    self.assertEqual(get_dashboard_stats("All", "All", self.db, user, period=period), result)
+                    pie_period = period.value if period else "All"
+                    pie = get_dashboard_pie_data("All", "All", pie_period, "2025-2026", self.db, user)
+                    multiplier = 1 if period else 3
+                    self.assertEqual([row["value"] for row in pie], [23 * multiplier, 5 * multiplier])
+                    self.assertEqual(get_dashboard_pie_data("All", "All", pie_period, "All", self.db, user), pie)
+            selected = get_dashboard_stats("All", "2025-2026", self.db, user, section_id=1, period=TestingPeriod.PRE)
+            self.assertEqual(selected["stats"]["totalStudents"], "3")
+            self.assertEqual(selected["excellingDomain"]["completedStudents"], 3)
+            self.assertEqual(sorted(row["studentId"] for row in selected["delaySummary"]["students"]), [1, 2, 4])
+            self.assertEqual(selected["delaySummary"]["bySection"], {"Diamond": {"male": 1, "female": 2}})
+            pie = get_dashboard_pie_data("All", "Cognitive Domain", "PRE", "2025-2026", self.db, user, section_id=1)
+            self.assertEqual([row["value"] for row in pie], [0, 3])
+
+    def test_chairman_current_historical_and_all_cohorts_do_not_duplicate_or_drop_records(self):
+        from backend.models.settings import SystemSettings
+        from backend.routes.analytics import get_dashboard_pie_data, get_dashboard_stats
+        self.db.add(SystemSettings(id=1, current_school_year="2026-2027"))
+        self.db.get(Student, 2).school_year = "2025-2026"
+        self.db.get(Student, 4).school_year = "2026-2027"
+        self.db.add(Student(student_id=5, section_id=1, is_active=False, school_year="2025-2026"))
+        failures = {1: (6,), 2: (1,), 3: (), 4: (1, 2, 3, 4, 5, 6, 7), 5: (1, 2, 3, 4, 5, 6, 7)}
+        for identifier in (1, 2, 3, 4, 5):
+            self.db.get(Student, identifier).date_of_birth = date(2021, 1, 1)
+            self.assessment(identifier, failed=failures[identifier])
+        user = User(role=UserRole.SUPER_ADMIN)
+        with patch("backend.utils.dashboard_analytics.calculate_scores", return_value={"interpretation": "Average"}):
+            for year, count, values in (("2026-2027", 1, [6, 1]), ("2025-2026", 2, [6, 8]), ("All", 5, [19, 16])):
+                for period in (TestingPeriod.PRE, None):
+                    with self.subTest(year=year, period=period):
+                        result = get_dashboard_stats("All", year, self.db, user, period=period, interpretation="Average")
+                        self.assertEqual(result["stats"]["totalStudents"], str(count))
+                        self.assertEqual(result["excellingDomain"]["completedStudents"], count)
+                        self.assertEqual(result["delaySummary"]["assessedStudents"], count)
+                        self.assertEqual(result["delaySummary"]["totalMatched"], count)
+                        pie = get_dashboard_pie_data("All", "All", period.value if period else "All", year, self.db, user)
+                        self.assertEqual([row["value"] for row in pie], values)
+                empty = get_dashboard_stats("All", year, self.db, user, period=TestingPeriod.MID)
+                self.assertEqual(empty["stats"]["totalStudents"], "0")
+                self.assertEqual(empty["functionalMastery"], {"kaya": 0, "dikaya": 0})
+                self.assertEqual(empty["excellingDomain"]["completedStudents"], 0)
+                self.assertEqual(empty["delaySummary"]["assessedStudents"], 0)
+                self.assertEqual([row["value"] for row in get_dashboard_pie_data("All", "All", "MID", year, self.db, user)], [0, 0])
+            # Permanent deletion still removes the student and cascades evaluations.
+            self.db.delete(self.db.get(Student, 5))
+            self.db.flush()
+            self.assertEqual(self.db.query(StudentEccdEvaluation).filter_by(student_id=5).count(), 0)
+            result = get_dashboard_stats("All", "All", self.db, user, period=TestingPeriod.PRE)
+            self.assertEqual(result["stats"]["totalStudents"], "4")
+            self.assertEqual(result["excellingDomain"]["completedStudents"], 4)
+            self.assertEqual([row["value"] for row in get_dashboard_pie_data("All", "All", "PRE", "All", self.db, user)], [19, 9])
+
+    def test_chairman_missing_or_blank_current_year_is_read_only_and_conservative(self):
+        from backend.models.settings import SystemSettings
+        from backend.routes.analytics import get_dashboard_pie_data, get_dashboard_stats
+        self.db.get(Student, 2).school_year = "2025-2026"
+        self.db.get(Student, 4).school_year = "2025-2026"
+        self.assessment(2, failed=(6,))
+        self.assessment(4, failed=(1, 2, 3, 4, 5, 6, 7))
+        for configured in ("missing", None, "", "   "):
+            with self.subTest(configured=configured):
+                if configured != "missing":
+                    setting = self.db.get(SystemSettings, 1)
+                    if setting is None:
+                        setting = SystemSettings(id=1, current_school_year="2026-2027")
+                        self.db.add(setting)
+                        self.db.flush()
+                    setting.current_school_year = configured
+                    self.db.flush()
+                # Exercise the legacy Chairman role branch as well.
+                user = User(role="chairman")
+                for period in (TestingPeriod.PRE, None):
+                    result = get_dashboard_stats("All", "2025-2026", self.db, user, period=period)
+                    self.assertEqual(result["stats"]["totalStudents"], "1")
+                    pie = get_dashboard_pie_data("All", "All", period.value if period else "All", "2025-2026", self.db, user)
+                    self.assertEqual([row["value"] for row in pie], [6, 1])
+                setting = self.db.get(SystemSettings, 1)
+                if configured == "missing":
+                    self.assertIsNone(setting)
+                else:
+                    self.assertEqual(setting.current_school_year, configured)
+
+    def test_chairman_http_aliases_keep_historical_response_shapes(self):
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+        from backend.config.database import get_db
+        from backend.models.settings import SystemSettings
+        from backend.routes.analytics import router as analytics_router
+        from backend.routes.chairman import router as chairman_router
+        from backend.utils.deps import get_current_user
+        self.db.add(SystemSettings(id=1, current_school_year="2026-2027"))
+        self.db.get(Student, 1).school_year = "2025-2026"
+        self.db.get(Student, 1).is_active = False
+        self.assessment(1, failed=(6,))
+        app = FastAPI()
+        app.include_router(analytics_router)
+        app.include_router(chairman_router)
+        app.dependency_overrides[get_db] = lambda: self.db
+        app.dependency_overrides[get_current_user] = lambda: User(role=UserRole.SUPER_ADMIN)
+        with TestClient(app) as client:
+            for endpoint, alias in (("stats", "dashboard-stats"), ("pie-data", "dashboard-pie"), ("filters", "dashboard-filters")):
+                params = {"schoolYear": "2025-2026", "period": "PRE", "section_id": 1}
+                canonical = client.get(f"/api/analytics/{endpoint}", params=params)
+                legacy = client.get(f"/api/chairman/{alias}", params=params)
+                self.assertEqual(canonical.status_code, 200, canonical.text)
+                self.assertEqual(legacy.status_code, 200, legacy.text)
+                self.assertEqual(legacy.json(), canonical.json())
+            self.assertEqual(client.get("/api/chairman/dashboard-stats", params=params).json()["stats"]["totalStudents"], "1")
+            app.dependency_overrides[get_current_user] = lambda: User(role=UserRole.ADMIN)
+            self.assertEqual(client.get("/api/chairman/dashboard-stats", params=params).status_code, 403)
 
     def test_excellence_explicit_period_does_not_fall_back_to_other_completed_period(self):
         self.assessment(1, failed=(1, 2, 3))
@@ -696,10 +856,11 @@ class DashboardAnalyticsTests(TestCase):
         self.assertEqual(teacher_period_insights(self.db, self.scope, TestingPeriod.PRE).completedStudents, 1)
 
     def test_teacher_period_route_enforces_assignments_even_with_forged_section_and_year(self):
+        from backend.models.settings import SystemSettings
         from backend.routes.analytics import get_dashboard_pie_data, get_dashboard_stats
         from backend.schemas.operations import AnalyticsStats
         user = User(user_id=20, email="scoped@example.test", password_hash="synthetic", role=UserRole.ADMIN)
-        self.db.add_all([user, Teacher(teacher_id=20, user_id=20),
+        self.db.add_all([user, SystemSettings(id=1, current_school_year="2026-2027"), Teacher(teacher_id=20, user_id=20),
                          SectionTeacher(section_id=1, teacher_id=20, role="Primary Adviser", status="Active")])
         self.db.flush()
         for identifier in (1, 2, 3, 4):
@@ -713,11 +874,25 @@ class DashboardAnalyticsTests(TestCase):
         pie = get_dashboard_pie_data("All", "All", "PRE", "All", self.db, user, section_id=1)
         result = get_dashboard_stats("All", "All", self.db, user, section_id=1, period=TestingPeriod.PRE)
         self.assertEqual(sum(row["value"] for row in pie), sum(d["totalItems"] for d in result["teacherInsights"]["domains"]))
+        # Specific-year Teacher reads retain their existing roster/pie behavior;
+        # period insights remain active-only, independently of the Chairman scope.
+        for identifier in (2, 4):
+            self.db.get(Student, identifier).school_year = "2025-2026"
+        self.db.flush()
+        result = get_dashboard_stats("All", "2025-2026", self.db, user, period=TestingPeriod.PRE)
+        self.assertEqual(result["stats"]["totalStudents"], "2")
+        self.assertEqual(result["teacherInsights"]["totalStudents"], 1)
+        pie = get_dashboard_pie_data("All", "All", "PRE", "2025-2026", self.db, user)
+        self.assertEqual([row["value"] for row in pie], [12, 2])
+        pie = get_dashboard_pie_data("All", "All", "PRE", "2025-2026", self.db, user, section_id=2)
+        self.assertEqual([row["value"] for row in pie], [0, 0])
         self.db.query(SectionTeacher).filter_by(teacher_id=20).update({"status": "Inactive"})
         self.db.flush()
         result = get_dashboard_stats("All", "All", self.db, user, period=TestingPeriod.PRE)
         self.assertEqual(result["teacherInsights"]["totalStudents"], 0)
         self.assertIsNone(result["teacherInsights"]["priorityStudent"])
+        pie = get_dashboard_pie_data("All", "All", "PRE", "2025-2026", self.db, user)
+        self.assertEqual([row["value"] for row in pie], [0, 0])
 
     def test_teacher_without_profile_gets_typed_empty_period_insights(self):
         from backend.routes.analytics import get_dashboard_stats
